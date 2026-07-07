@@ -1,0 +1,32 @@
+[submodule "kernel"]
+	path = kernel
+	url = git@atomgit.com:openairymax/kernel.git
+	branch = feature/official-hubs-01
+[submodule "memory"]
+	path = memory
+	url = git@atomgit.com:openairymax/memory.git
+	branch = feature/official-hubs-01
+[submodule "security"]
+	path = security
+	url = git@atomgit.com:openairymax/security.git
+	branch = feature/official-hubs-01
+[submodule "cognition"]
+	path = cognition
+	url = git@atomgit.com:openairymax/cognition.git
+	branch = feature/official-hubs-01
+[submodule "services"]
+	path = services
+	url = git@atomgit.com:openairymax/services.git
+	branch = feature/official-hubs-01
+[submodule "system"]
+	path = system
+	url = git@atomgit.com:openairymax/system.git
+	branch = feature/official-hubs-01
+[submodule "cloudnative"]
+	path = cloudnative
+	url = git@atomgit.com:openairymax/cloudnative.git
+	branch = feature/official-hubs-01
+[submodule "airymaxos-tests"]
+	path = airymaxos-tests
+	url = git@atomgit.com:openairymax/airymaxos-tests.git
+	branch = feature/official-hubs-01
