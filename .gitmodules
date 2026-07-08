@@ -26,7 +26,7 @@
 	path = cloudnative
 	url = git@atomgit.com:openairymax/cloudnative.git
 	branch = feature/official-hubs-01
-[submodule "airymaxos-tests"]
-	path = airymaxos-tests
-	url = git@atomgit.com:openairymax/airymaxos-tests.git
+[submodule "tests-linux"]
+	path = tests-linux
+	url = git@atomgit.com:openairymax/tests-linux.git
 	branch = feature/official-hubs-01
