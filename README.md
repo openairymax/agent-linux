@@ -93,7 +93,7 @@ agentrt-linux/             # Management repository (this repo)
 
 ### Relationship with Airymax agentrt
 
-agentrt-liunx and `agentrt` share the same Airymax design philosophy (architectural homology). The core microkernel primitives (`atoms/corekern`), daemon services, security framework (`cupolas`), memory engine (`heapstore` / `memoryrovol`), and cognition loop (`coreloopthree`) are reused between the user-space runtime (`agentrt`) and the OS-level kernel (agentrt-liunx). This ensures `agentrt` runs natively on agentrt-liunx with no adaptation layer.
+agentrt-liunx and `agentrt` share the same Airymax design philosophy (architectural homology). The core micro-core primitives (`atoms/corekern`), daemon services, security framework (`cupolas`), memory engine (`heapstore` / `memoryrovol`), and cognition loop (`coreloopthree`) are reused between the user-space runtime (`agentrt`) and the OS-level kernel (agentrt-liunx). This ensures `agentrt` runs natively on agentrt-liunx with no adaptation layer.
 
 ### Relationship with Euler Standards
 

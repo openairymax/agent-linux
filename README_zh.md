@@ -93,7 +93,7 @@ agentrt-linux/             # 管理仓（本仓库）
 
 ### 与 Airymax agentrt 的关系
 
-agentrt-liunx 与 `agentrt` 共享相同的 Airymax 设计理念（架构同源）。核心微内核原语（`atoms/corekern`）、daemon 服务、安全框架（`cupolas`）、内存引擎（`heapstore` / `memoryrovol`）和认知循环（`coreloopthree`）在用户态运行时（`agentrt`）与 OS 级内核（agentrt-liunx）之间复用。这确保了 `agentrt` 在 agentrt-liunx 上原生运行，无适配层。
+agentrt-liunx 与 `agentrt` 共享相同的 Airymax 设计理念（架构同源）。核心微核心原语（`atoms/corekern`）、daemon 服务、安全框架（`cupolas`）、内存引擎（`heapstore` / `memoryrovol`）和认知循环（`coreloopthree`）在用户态运行时（`agentrt`）与 OS 级内核（agentrt-liunx）之间复用。这确保了 `agentrt` 在 agentrt-liunx 上原生运行，无适配层。
 
 ### 与 Euler 标准的关系
 
