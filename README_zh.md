@@ -35,7 +35,7 @@ agentrt-linux/             # 管理仓（本仓库）
 ├── cognition/             # agentrt-linux 认知层叶子仓（submodule）
 ├── cloudnative/           # agentrt-linux 云原生叶子仓（submodule）
 ├── system/                # agentrt-linux 系统层叶子仓（submodule）
-├── airymaxos-tests/       # agentrt-linux 测试叶子仓（submodule）
+├── tests-linux/       # agentrt-linux 测试叶子仓（submodule）
 ├── .gitmodules            # Submodule 定义
 ├── LICENSE                # AGPL-3.0 + Apache-2.0 双许可证全文
 ├── NOTICE                 # 版权、商标与第三方声明
@@ -50,11 +50,11 @@ agentrt-linux/             # 管理仓（本仓库）
 | **airymaxos-kernel** | `kernel/` | `git@atomgit.com:openairymax/kernel.git` | atoms/corekern | Linux 6.6 + sched_ext + eBPF + io_uring + Rust（实验性）+ 微内核化改造 |
 | **airymaxos-services** | `services/` | `git@atomgit.com:openairymax/services.git` | daemons | VFS + 网络 + 驱动用户态化 + 12 daemons systemd 集成 + io_uring 消息传递 |
 | **airymaxos-security** | `security/` | `git@atomgit.com:openairymax/security.git` | cupolas | capability(seL4) + LSM + Landlock + 机密计算 + 国密 |
-| **airymaxos-memory** | `memory/` | `git@atomgit.com:openairymax/memory.git` | heapstore + memoryrovol | MemoryRovol 内核态 + CXL + PMEM + MGLRU 2.0 |
+| **airymaxos-memory** | `memory/` | `git@atomgit.com:openairymax/memory.git` | heapstore + memoryrovol | MemoryRovol 内核态 + CXL + PMEM + MGLRU 多代 LRU |
 | **airymaxos-cognition** | `cognition/` | `git@atomgit.com:openairymax/cognition.git` | coreloopthree + frameworks | CoreLoopThree kthread + Wasm 3.0 + LLM 调度 + Token 能效 + 超节点沙箱 |
 | **airymaxos-cloudnative** | `cloudnative/` | `git@atomgit.com:openairymax/cloudnative.git` | gateway + sdk | K8s CRD + containerd shim + OCI + CNI + agentctl + 超节点 OS |
 | **airymaxos-system** | `system/` | `git@atomgit.com:openairymax/system.git` | commons | RPM + dnf + 配置 + shell + DevStation |
-| **airymaxos-tests** | `airymaxos-tests/` | `git@atomgit.com:openairymax/airymaxos-tests.git` | 全模块测试 | 单元 + 集成 + 形式化验证(seL4 风格) + Soak + 混沌 |
+| **airymaxos-tests-linux** | `tests-linux/` | `git@atomgit.com:openairymax/tests-linux.git` | 全模块测试 | 单元 + 集成 + 形式化验证(seL4 风格) + Soak + 混沌 |
 
 ## 架构
 
@@ -75,7 +75,7 @@ agentrt-linux/             # 管理仓（本仓库）
 │    Cupolas · seL4 capability · Landlock · 机密计算                   │
 ├─────────────────────────────────────────────────────────────────────┤
 │  内存层（内核态）                       ← airymaxos-memory            │
-│    MemoryRovol · CXL · PMEM · MGLRU 2.0                              │
+│    MemoryRovol · CXL · PMEM · MGLRU 多代 LRU                              │
 ├─────────────────────────────────────────────────────────────────────┤
 │  云原生层                              ← airymaxos-cloudnative       │
 │    K8s CRD · containerd shim · OCI · CNI                             │
@@ -86,7 +86,7 @@ agentrt-linux/             # 管理仓（本仓库）
 │  微内核（基于 Linux 6.6）              ← airymaxos-kernel            │
 │    sched_ext · eBPF · io_uring · Rust · 微内核化改造                  │
 ├─────────────────────────────────────────────────────────────────────┤
-│  测试与验证                            ← airymaxos-tests             │
+│  测试与验证                            ← airymaxos-tests-linux             │
 │    单元 · 集成 · 形式化(seL4) · Soak · 混沌                          │
 └─────────────────────────────────────────────────────────────────────┘
 ```

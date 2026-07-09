@@ -35,7 +35,7 @@ agentrt-linux/             # Management repository (this repo)
 ├── cognition/             # agentrt-linux Cognition leaf repo (submodule)
 ├── cloudnative/           # agentrt-linux CloudNative leaf repo (submodule)
 ├── system/                # agentrt-linux System leaf repo (submodule)
-├── airymaxos-tests/       # agentrt-linux Tests leaf repo (submodule)
+├── tests-linux/       # agentrt-linux Tests leaf repo (submodule)
 ├── .gitmodules            # Submodule definitions
 ├── LICENSE                # AGPL-3.0 + Apache-2.0 dual license full text
 ├── NOTICE                 # Copyright, trademark and third-party notices
@@ -50,11 +50,11 @@ agentrt-linux/             # Management repository (this repo)
 | **airymaxos-kernel** | `kernel/` | `git@atomgit.com:openairymax/kernel.git` | atoms/corekern | Linux 6.6 + sched_ext + eBPF + io_uring + Rust + microkernel refactoring |
 | **airymaxos-services** | `services/` | `git@atomgit.com:openairymax/services.git` | daemons | VFS + network + driver user-space migration + 12 daemons systemd integration + io_uring message passing |
 | **airymaxos-security** | `security/` | `git@atomgit.com:openairymax/security.git` | cupolas | capability (seL4) + LSM + Landlock + confidential computing + national crypto |
-| **airymaxos-memory** | `memory/` | `git@atomgit.com:openairymax/memory.git` | heapstore + memoryrovol | MemoryRovol kernel-mode + CXL + PMEM + MGLRU 2.0 |
+| **airymaxos-memory** | `memory/` | `git@atomgit.com:openairymax/memory.git` | heapstore + memoryrovol | MemoryRovol kernel-mode + CXL + PMEM + MGLRU 多代 LRU |
 | **airymaxos-cognition** | `cognition/` | `git@atomgit.com:openairymax/cognition.git` | coreloopthree + frameworks | CoreLoopThree kthread + Wasm 3.0 + LLM scheduling + Token energy efficiency + hyper-node sandbox |
 | **airymaxos-cloudnative** | `cloudnative/` | `git@atomgit.com:openairymax/cloudnative.git` | gateway + sdk | K8s CRD + containerd shim + OCI + CNI + agentctl + hyper-node OS |
 | **airymaxos-system** | `system/` | `git@atomgit.com:openairymax/system.git` | commons | RPM + dnf + configuration + shell + DevStation |
-| **airymaxos-tests** | `airymaxos-tests/` | `git@atomgit.com:openairymax/airymaxos-tests.git` | all modules | Unit + integration + formal verification (seL4 style) + Soak + chaos |
+| **airymaxos-tests-linux** | `tests-linux/` | `git@atomgit.com:openairymax/tests-linux.git` | all modules | Unit + integration + formal verification (seL4 style) + Soak + chaos |
 
 ## Architecture
 
@@ -75,7 +75,7 @@ agentrt-linux/             # Management repository (this repo)
 │    Cupolas · seL4 capability · Landlock · confidential computing     │
 ├─────────────────────────────────────────────────────────────────────┤
 │  Memory Layer (kernel-mode)            ← airymaxos-memory            │
-│    MemoryRovol · CXL · PMEM · MGLRU 2.0                              │
+│    MemoryRovol · CXL · PMEM · MGLRU 多代 LRU                              │
 ├─────────────────────────────────────────────────────────────────────┤
 │  CloudNative Layer                     ← airymaxos-cloudnative       │
 │    K8s CRD · containerd shim · OCI · CNI                             │
@@ -86,7 +86,7 @@ agentrt-linux/             # Management repository (this repo)
 │  Microkernel (Linux 6.6 based)         ← airymaxos-kernel            │
 │    sched_ext · eBPF · io_uring · Rust · microkernel refactoring      │
 ├─────────────────────────────────────────────────────────────────────┤
-│  Tests & Verification                  ← airymaxos-tests             │
+│  Tests & Verification                  ← airymaxos-tests-linux             │
 │    Unit · Integration · Formal (seL4) · Soak · Chaos                 │
 └─────────────────────────────────────────────────────────────────────┘
 ```
