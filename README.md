@@ -1,6 +1,6 @@
-# agentrt-liunx（AirymaxOS）— AI Agent Operating System
+# agentrt-linux（AirymaxOS）— AI Agent Operating System
 
-> Management repository for the agentrt-liunx (AirymaxOS) intelligent agent operating system.
+> Management repository for the agentrt-linux (AirymaxOS) intelligent agent operating system.
 > One of five management repositories under the [airymaxhub](https://atomgit.com/openairymax/airymaxhub) umbrella.
 
 **Language:** English | [简体中文](README_zh.md)
@@ -14,9 +14,9 @@
 
 ## Overview
 
-**agentrt-liunx** (formal English name: AirymaxOS, Chinese: 极境智能体操作系统) is an AI Agent Operating System research project built on top of Linux 6.6. It is a management repository at the same level as `agentrt` under the `airymaxhub` umbrella, aggregating **8 leaf repositories** as git submodules.
+**agentrt-linux** (formal English name: AirymaxOS, Chinese: 极境智能体操作系统) is an AI Agent Operating System research project built on top of Linux 6.6. It is a management repository at the same level as `agentrt` under the `airymaxhub` umbrella, aggregating **8 leaf repositories** as git submodules.
 
-agentrt-liunx is based on three design pillars:
+agentrt-linux is based on three design pillars:
 
 1. **Microkernel Design Principles** — referencing seL4 / Zircon / Minix3, Liedtke minimality principle, capability-based security, user-space service isolation, message-passing communication
 2. **Euler Standards Compatibility** — comprehensive reference to Euler 24.03 LTS / 26.03 module design, technical specifications, and standards; Euler-compatible
@@ -28,14 +28,14 @@ In Airymax 0.1.1, this repository and its leaf repos contain design documents, a
 
 ```
 agentrt-linux/             # Management repository (this repo)
-├── kernel/                # agentrt-liunx Kernel leaf repo (submodule)
-├── services/              # agentrt-liunx Services leaf repo (submodule)
-├── security/              # agentrt-liunx Security leaf repo (submodule)
-├── memory/                # agentrt-liunx Memory leaf repo (submodule)
-├── cognition/             # agentrt-liunx Cognition leaf repo (submodule)
-├── cloudnative/           # agentrt-liunx CloudNative leaf repo (submodule)
-├── system/                # agentrt-liunx System leaf repo (submodule)
-├── airymaxos-tests/       # agentrt-liunx Tests leaf repo (submodule)
+├── kernel/                # agentrt-linux Kernel leaf repo (submodule)
+├── services/              # agentrt-linux Services leaf repo (submodule)
+├── security/              # agentrt-linux Security leaf repo (submodule)
+├── memory/                # agentrt-linux Memory leaf repo (submodule)
+├── cognition/             # agentrt-linux Cognition leaf repo (submodule)
+├── cloudnative/           # agentrt-linux CloudNative leaf repo (submodule)
+├── system/                # agentrt-linux System leaf repo (submodule)
+├── airymaxos-tests/       # agentrt-linux Tests leaf repo (submodule)
 ├── .gitmodules            # Submodule definitions
 ├── LICENSE                # AGPL-3.0 + Apache-2.0 dual license full text
 ├── NOTICE                 # Copyright, trademark and third-party notices
@@ -60,7 +60,7 @@ agentrt-linux/             # Management repository (this repo)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│           agentrt-liunx（AirymaxOS / 极境智能体操作系统）              │
+│           agentrt-linux（AirymaxOS / 极境智能体操作系统）              │
 ├─────────────────────────────────────────────────────────────────────┤
 │  Applications (Agent tenants)                                        │
 │    └── Airymax SDK (Python / Go / Rust / TypeScript)                 │
@@ -93,21 +93,21 @@ agentrt-linux/             # Management repository (this repo)
 
 ### Relationship with Airymax agentrt
 
-agentrt-liunx and `agentrt` share the same Airymax design philosophy (architectural homology). The core micro-core primitives (`atoms/corekern`), daemon services, security framework (`cupolas`), memory engine (`heapstore` / `memoryrovol`), and cognition loop (`coreloopthree`) are reused between the user-space runtime (`agentrt`) and the OS-level kernel (agentrt-liunx). This ensures `agentrt` runs natively on agentrt-liunx with no adaptation layer.
+agentrt-linux and `agentrt` share the same Airymax design philosophy (architectural homology). The core micro-core primitives (`atoms/corekern`), daemon services, security framework (`cupolas`), memory engine (`heapstore` / `memoryrovol`), and cognition loop (`coreloopthree`) are reused between the user-space runtime (`agentrt`) and the OS-level kernel (agentrt-linux). This ensures `agentrt` runs natively on agentrt-linux with no adaptation layer.
 
 ### Relationship with Euler Standards
 
-agentrt-liunx comprehensively references Euler 24.03 LTS / 26.03 for:
+agentrt-linux comprehensively references Euler 24.03 LTS / 26.03 for:
 - Module design and technical specifications
 - Engineering standards and quality norms
 - Package management (RPM / dnf)
 - Distribution lifecycle and LTS support model
 
-agentrt-liunx is Euler-compatible and can consume Euler-standard packages and tooling.
+agentrt-linux is Euler-compatible and can consume Euler-standard packages and tooling.
 
 ### Relationship with Linux 6.6
 
-agentrt-liunx is built on Linux 6.6 (openEuler 24.03 LTS kernel baseline) with:
+agentrt-linux is built on Linux 6.6 (openEuler 24.03 LTS kernel baseline) with:
 - **sched_ext** sub-scheduler (Linux 6.15+) for AI-aware CPU scheduling
 - **eBPF signed verification** (Linux 6.15) for secure in-kernel programmability
 - **io_uring** for high-performance async I/O and message passing
@@ -123,8 +123,8 @@ The microkernel refactoring strategy does NOT develop a microkernel from scratch
 
 ## Downstream Consumers
 
-- **Agent applications** — run natively on agentrt-liunx via the Airymax SDK
-- **Cloud / edge deployments** — agentrt-liunx as the base OS for AI agent infrastructure
+- **Agent applications** — run natively on agentrt-linux via the Airymax SDK
+- **Cloud / edge deployments** — agentrt-linux as the base OS for AI agent infrastructure
 - **Researchers** — microkernel design and AI-native OS research
 
 ## Branch Strategy

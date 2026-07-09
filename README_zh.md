@@ -1,6 +1,6 @@
-# agentrt-liunx（AirymaxOS）— 极境智能体操作系统
+# agentrt-linux（AirymaxOS）— 极境智能体操作系统
 
-> agentrt-liunx（AirymaxOS / 极境智能体操作系统）智能体操作系统管理仓。
+> agentrt-linux（AirymaxOS / 极境智能体操作系统）智能体操作系统管理仓。
 > [airymaxhub](https://atomgit.com/openairymax/airymaxhub) 伞仓下五个管理仓之一。
 
 **语言:** [English](README.md) | 简体中文
@@ -14,9 +14,9 @@
 
 ## 概述
 
-**agentrt-liunx**（正式英文名：AirymaxOS，中文：极境智能体操作系统）是基于 Linux 6.6 构建的 AI 智能体操作系统研究项目。它是 `airymaxhub` 伞仓下与 `agentrt` 同级的管理仓，聚合 **8 个叶子仓**作为 git submodule。
+**agentrt-linux**（正式英文名：AirymaxOS，中文：极境智能体操作系统）是基于 Linux 6.6 构建的 AI 智能体操作系统研究项目。它是 `airymaxhub` 伞仓下与 `agentrt` 同级的管理仓，聚合 **8 个叶子仓**作为 git submodule。
 
-agentrt-liunx 基于三大设计支柱：
+agentrt-linux 基于三大设计支柱：
 
 1. **微内核设计思想** — 参考 seL4 / Zircon / Minix3、Liedtke 极简原则、capability 安全模型、服务用户态化、消息传递通信
 2. **Euler 标准兼容性** — 全面参考 Euler 24.03 LTS / 26.03 模块设计、技术规格和标准；兼容 Euler 标准
@@ -28,14 +28,14 @@ agentrt-liunx 基于三大设计支柱：
 
 ```
 agentrt-linux/             # 管理仓（本仓库）
-├── kernel/                # agentrt-liunx 内核叶子仓（submodule）
-├── services/              # agentrt-liunx 服务态叶子仓（submodule）
-├── security/              # agentrt-liunx 安全态叶子仓（submodule）
-├── memory/                # agentrt-liunx 内存管理叶子仓（submodule）
-├── cognition/             # agentrt-liunx 认知层叶子仓（submodule）
-├── cloudnative/           # agentrt-liunx 云原生叶子仓（submodule）
-├── system/                # agentrt-liunx 系统层叶子仓（submodule）
-├── airymaxos-tests/       # agentrt-liunx 测试叶子仓（submodule）
+├── kernel/                # agentrt-linux 内核叶子仓（submodule）
+├── services/              # agentrt-linux 服务态叶子仓（submodule）
+├── security/              # agentrt-linux 安全态叶子仓（submodule）
+├── memory/                # agentrt-linux 内存管理叶子仓（submodule）
+├── cognition/             # agentrt-linux 认知层叶子仓（submodule）
+├── cloudnative/           # agentrt-linux 云原生叶子仓（submodule）
+├── system/                # agentrt-linux 系统层叶子仓（submodule）
+├── airymaxos-tests/       # agentrt-linux 测试叶子仓（submodule）
 ├── .gitmodules            # Submodule 定义
 ├── LICENSE                # AGPL-3.0 + Apache-2.0 双许可证全文
 ├── NOTICE                 # 版权、商标与第三方声明
@@ -60,7 +60,7 @@ agentrt-linux/             # 管理仓（本仓库）
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│           agentrt-liunx（AirymaxOS / 极境智能体操作系统）              │
+│           agentrt-linux（AirymaxOS / 极境智能体操作系统）              │
 ├─────────────────────────────────────────────────────────────────────┤
 │  应用层（Agent 租户）                                                  │
 │    └── Airymax SDK（Python / Go / Rust / TypeScript）                │
@@ -93,21 +93,21 @@ agentrt-linux/             # 管理仓（本仓库）
 
 ### 与 Airymax agentrt 的关系
 
-agentrt-liunx 与 `agentrt` 共享相同的 Airymax 设计理念（架构同源）。核心微核心原语（`atoms/corekern`）、daemon 服务、安全框架（`cupolas`）、内存引擎（`heapstore` / `memoryrovol`）和认知循环（`coreloopthree`）在用户态运行时（`agentrt`）与 OS 级内核（agentrt-liunx）之间复用。这确保了 `agentrt` 在 agentrt-liunx 上原生运行，无适配层。
+agentrt-linux 与 `agentrt` 共享相同的 Airymax 设计理念（架构同源）。核心微核心原语（`atoms/corekern`）、daemon 服务、安全框架（`cupolas`）、内存引擎（`heapstore` / `memoryrovol`）和认知循环（`coreloopthree`）在用户态运行时（`agentrt`）与 OS 级内核（agentrt-linux）之间复用。这确保了 `agentrt` 在 agentrt-linux 上原生运行，无适配层。
 
 ### 与 Euler 标准的关系
 
-agentrt-liunx 全面参考 Euler 24.03 LTS / 26.03 的：
+agentrt-linux 全面参考 Euler 24.03 LTS / 26.03 的：
 - 模块设计和技术规格
 - 工程标准和质量规范
 - 包管理（RPM / dnf）
 - 发行版生命周期和 LTS 支持模型
 
-agentrt-liunx 兼容 Euler 标准，可消费 Euler 标准包和工具链。
+agentrt-linux 兼容 Euler 标准，可消费 Euler 标准包和工具链。
 
 ### 与 Linux 6.6 的关系
 
-agentrt-liunx 基于 Linux 6.6（openEuler 24.03 LTS 内核基线），集成：
+agentrt-linux 基于 Linux 6.6（openEuler 24.03 LTS 内核基线），集成：
 - **sched_ext** 子调度器（Linux 6.15+）实现 AI 感知的 CPU 调度
 - **eBPF 签名验证**（Linux 6.15）保障内核可编程安全性
 - **io_uring** 提供高性能异步 I/O 与消息传递
@@ -123,8 +123,8 @@ agentrt-liunx 基于 Linux 6.6（openEuler 24.03 LTS 内核基线），集成：
 
 ## 下游消费者
 
-- **Agent 应用** — 通过 Airymax SDK 在 agentrt-liunx 上原生运行
-- **云 / 边缘部署** — agentrt-liunx 作为 AI 智能体基础设施的基础 OS
+- **Agent 应用** — 通过 Airymax SDK 在 agentrt-linux 上原生运行
+- **云 / 边缘部署** — agentrt-linux 作为 AI 智能体基础设施的基础 OS
 - **研究人员** — 微内核设计与 AI 原生 OS 研究
 
 ## 分支策略
