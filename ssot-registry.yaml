@@ -1,0 +1,576 @@
+# ===========================================================================
+# agentrt-linux (AirymaxOS) + agentrt SSoT Rule ID Registry (YAML)
+# ===========================================================================
+# 机器可读 Schema — 管理仓根（agentrt-linux/ssot-registry.yaml）
+# 权威 Markdown 源：docs/AirymaxOS/50-engineering-standards/09-ssot-registry.md
+# OS-IRON-015: All rule IDs must be registered; deprecated IDs are
+#              retained but marked as deprecated.
+# Registration method (SSoT §1.5):
+#   - full: enumerate every entry (≤30 rules)
+#   - range: start~end expansion (>30 rules)
+#   - individual: non-contiguous IDs listed individually
+# ===========================================================================
+
+version: "0.2.8"
+last_updated: "2026-07-15"
+
+# ===========================================================================
+# Part 1: agentrt-linux (OS-*) Rules — Chapters 2-13
+# ===========================================================================
+agentrt_linux_rules:
+
+  # ── Chapter 2: OS-IRON Engineering Iron Rules (15 rules, full) ──────
+  - prefix: OS-IRON
+    authority: "04-engineering-philosophy.md"
+    chapter: "Ch 2"
+    registration: full
+    entries:
+      - { id: OS-IRON-001, desc: "用户空间 ABI 永不破坏", section: "04 §2.1", status: active }
+      - { id: OS-IRON-002, desc: "内核内部 API 不保证稳定", section: "04 §2.2", status: active }
+      - { id: OS-IRON-003, desc: "策略与机制分离", section: "04 §3", status: active }
+      - { id: OS-IRON-004, desc: "渐进式开发，补丁自包含", section: "04 §4 / 05", status: active }
+      - { id: OS-IRON-005, desc: "审查优先文化", section: "04 §6 / 07 §6", status: active }
+      - { id: OS-IRON-006, desc: "不破坏用户空间（regression 零容忍）", section: "04 §9 / 05", status: active }
+      - { id: OS-IRON-007, desc: "DCO Signed-off-by 强制", section: "07 §5", status: active }
+      - { id: OS-IRON-008, desc: "[SC] 共享契约层双向 CI 验证", section: "120", status: active }
+      - { id: OS-IRON-009, desc: "代码共享边界：仅 agentrt ↔ AirymaxOS", section: "120 / 07 §1.4", status: active }
+      - { id: OS-IRON-010, desc: "Linux 6.6 为基、seL4 为鉴工程取向", section: "04 §12", status: active }
+      - { id: OS-IRON-011, desc: "双源边界声明", section: "04 §12", status: active }
+      - { id: OS-IRON-012, desc: "seL4 借鉴仅限架构层", section: "04 §12", status: active }
+      - { id: OS-IRON-013, desc: "8 子仓独立 git 仓库 + submodule", section: "04 §13", status: active }
+      - { id: OS-IRON-014, desc: "[SC] 共享契约层 6+2 头文件单一数据源", section: "120", status: active }
+      - { id: OS-IRON-015, desc: "编号管理元规则——编号一经分配不得复用", section: "90-obs/02 §14.2", status: active }
+      - { id: OS-IRON-016, desc: "UAPI 头文件编译器无关原则", section: "04 §2.4", status: active }
+
+  # ── Chapter 3: OS-KER Kernel Engineering Rules (229 rules, range) ──
+  - prefix: OS-KER
+    authority: "01-coding-standards.md + C_Cpp_coding_style.md"
+    chapter: "Ch 3"
+    registration: range
+    ranges:
+      - { start: OS-KER-001, end: OS-KER-229, count: 229, section: "Ch 3" }
+    deprecated:
+      - OS-KER-005
+      - OS-KER-007
+      - OS-KER-008
+      - OS-KER-011
+      - OS-KER-012
+      - OS-KER-013
+      - OS-KER-014
+
+  # ── Chapter 4.1: OS-STD-CODE Coding Standards ─────────────────────
+  - prefix: OS-STD-CODE
+    authority: "01-coding-standards.md"
+    chapter: "Ch 4.1"
+    registration: individual
+    individual_entries:
+      - { id: OS-STD-CODE-001, desc: "全局函数/变量描述性命名", section: "4.1", status: active }
+      - { id: OS-STD-CODE-002, desc: "goto 集中出口，分级标签逆序释放", section: "4.1", status: active }
+      - { id: OS-STD-CODE-003, desc: "禁止 strcpy/strncpy/strlcpy，强制 strscpy", section: "4.1", status: active }
+      - { id: OS-STD-CODE-004, desc: "编译期 0 警告 0 错误", section: "4.1", status: active }
+      - { id: OS-STD-CODE-005, desc: "代码重复 3 处以上应抽出", section: "4.1", status: active }
+      - { id: OS-STD-CODE-006, desc: "4 层接口稳定性分级", section: "4.1", status: active }
+      - { id: OS-STD-CODE-007, desc: "跨语言 FFI 边界必须显式声明", section: "4.1", status: active }
+      - { id: OS-STD-CODE-020, desc: "typedef 仅 5 种例外", section: "4.1", status: active }
+
+  # ── Chapter 4.2: OS-STD-FMT Format Standards (30 rules, range) ────
+  - prefix: OS-STD-FMT
+    authority: "01-coding-standards.md Part II"
+    chapter: "Ch 4.2"
+    registration: range
+    ranges:
+      - { start: OS-STD-FMT-001, end: OS-STD-FMT-030, count: 30, section: "Part II" }
+
+  # ── Chapter 4.3: OS-STD-STY Style Standards (12 rules, range) ─────
+  - prefix: OS-STD-STY
+    authority: "01-coding-standards.md Part III"
+    chapter: "Ch 4.3"
+    registration: range
+    ranges:
+      - { start: OS-STD-STY-001, end: OS-STD-STY-012, count: 12, section: "Part III §8" }
+
+  # ── Chapter 4.4: OS-STD-GOV Governance Standards (10 rules, range) ─
+  - prefix: OS-STD-GOV
+    authority: "07-maintainers-and-governance.md"
+    chapter: "Ch 4.4"
+    registration: range
+    ranges:
+      - { start: OS-STD-GOV-001, end: OS-STD-GOV-010, count: 10, section: "07" }
+
+  # ── Chapter 4.5: OS-STD Rust Coding Standards (28 rules, range) ───
+  # Note: These use plain OS-STD-0NN format (030-057)
+  - prefix: OS-STD
+    authority: "Rust_coding_style.md"
+    chapter: "Ch 4.5"
+    registration: range
+    ranges:
+      - { start: "OS-STD-030", end: "OS-STD-057", count: 28, section: "Rust Parts I-III" }
+
+  # ── Chapter 4.6: OS-STD-TOOL Toolchain Rules (range) ──────────────
+  - prefix: OS-STD-TOOL
+    authority: "05-development-process.md Part II"
+    chapter: "Ch 4.6"
+    registration: range
+    ranges:
+      - { start: OS-STD-TOOL-001, end: OS-STD-TOOL-099, count: 99, section: "Part II L1-3" }
+      - { start: OS-STD-TOOL-101, end: OS-STD-TOOL-161, count: 61, section: "Part II L4-7" }
+
+  # ── Chapter 4.6.1: OS-STD-PROD Development Process Rules (range) ──
+  - prefix: OS-STD-PROD
+    authority: "05-development-process.md"
+    chapter: "Ch 4.6.1"
+    registration: range
+    ranges:
+      - { start: OS-STD-PROD-001, end: OS-STD-PROD-099, count: 99, section: "05" }
+      - { start: OS-STD-PROD-101, end: OS-STD-PROD-158, count: 58, section: "05" }
+
+  # ── Chapter 4.8: OS-FMT Closed-Source Format Rules (7, full) ──────
+  - prefix: OS-FMT
+    authority: "agentrt-linux基本工程标准规范.md §3"
+    chapter: "Ch 4.8"
+    registration: full
+    entries:
+      - { id: OS-FMT-001, desc: "Tab 缩进 8 字符宽", section: "§3.1", status: active }
+      - { id: OS-FMT-002, desc: "C 代码首选 80 列", section: "§3.2", status: active }
+      - { id: OS-FMT-003, desc: "K&R 风格大括号", section: "§3.3", status: active }
+      - { id: OS-FMT-004, desc: "即使单语句也用大括号", section: "§3.3", status: active }
+      - { id: OS-FMT-005, desc: "空格规则", section: "§3.4", status: active }
+      - { id: OS-FMT-006, desc: "行尾禁止空白字符", section: "§3.5", status: active }
+      - { id: OS-FMT-007, desc: "必须通过 .clang-format", section: "§3.6", status: active }
+
+  # ── Chapter 4.9: OS-STD-DOC Documentation Standards (14, range) ────
+  - prefix: OS-STD-DOC
+    authority: "01-coding-standards.md Part IV"
+    chapter: "Ch 4.9"
+    registration: range
+    ranges:
+      - { start: OS-STD-DOC-001, end: OS-STD-DOC-014, count: 14, section: "Part IV" }
+
+  # ── Chapter 4.10: OS-STD-SEC Secure Coding (2, individual) ───────
+  - prefix: OS-STD-SEC
+    authority: "110-security/02-landlock-sandbox.md"
+    chapter: "Ch 4.10"
+    registration: individual
+    individual_entries:
+      - { id: OS-STD-SEC-010, desc: "is_initialized 失败返回 -EOPNOTSUPP", section: "§A-1", status: active }
+      - { id: OS-STD-SEC-011, desc: "沙箱失败必须中止启动", section: "§A-4", status: active }
+
+  # ── Chapter 4.11: OS-STD-SPDX License Standards (3, full) ─────────
+  - prefix: OS-STD-SPDX
+    authority: "05-development-process.md Part IV"
+    chapter: "Ch 4.11"
+    registration: full
+    entries:
+      - { id: OS-STD-SPDX-001, desc: "按文件类型分类使用许可证", section: "Part IV §1.1", status: active }
+      - { id: OS-STD-SPDX-002, desc: "注释样式正确性", section: "Part IV §3.1", status: active }
+      - { id: OS-STD-SPDX-003, desc: "SPDX 标识必须在首行", section: "Part IV §3.2", status: active }
+
+  # ── Chapter 4.12: OS-STD-TEST Test Standards (2, individual) ──────
+  - prefix: OS-STD-TEST
+    authority: "80-testing/02-kselftest.md"
+    chapter: "Ch 4.12"
+    registration: individual
+    individual_entries:
+      - { id: OS-STD-TEST-010, desc: "TEST_F 必须有 FIXTURE_SETUP/TEARDOWN", section: "02-kselftest", status: active }
+      - { id: OS-STD-TEST-011, desc: "CI 总时长不得超过 60 分钟", section: "02-kselftest", status: active }
+
+  # ── Chapter 5: OS-BAN Prohibition Rules (11, full) ────────────────
+  - prefix: OS-BAN
+    authority: "01-coding-standards.md"
+    chapter: "Ch 5"
+    registration: full
+    entries:
+      - { id: OS-BAN-001, desc: "禁止敏感术语 master/slave", section: "Ch 5", status: active }
+      - { id: OS-BAN-002, desc: "禁止 BUG()/BUG_ON()", section: "Ch 5", status: active }
+      - { id: OS-BAN-003, desc: "sizeof(*p)/kmalloc_array/struct_size", section: "Ch 5", status: active }
+      - { id: OS-BAN-004, desc: "禁止 strcpy/strncpy/strlcpy", section: "Ch 5", status: active }
+      - { id: OS-BAN-005, desc: "禁止 %p 默认输出", section: "Ch 5", status: active }
+      - { id: OS-BAN-006, desc: "禁止匈牙利命名法", section: "Ch 5", status: active }
+      - { id: OS-BAN-007, desc: "禁止函数声明 extern", section: "Ch 5", status: active }
+      - { id: OS-BAN-008, desc: "禁止自动排序 include", section: "Ch 5", status: active }
+      - { id: OS-BAN-009, desc: "禁止五类危险宏", section: "Ch 5", status: active }
+      - { id: OS-BAN-010, desc: "开源文档禁词", section: "Ch 5", status: active }
+      - { id: OS-BAN-011, desc: "禁词违规处罚", section: "Ch 5", status: active }
+
+  # ── Chapter 6: OS-ACC Acceptance Criteria (110, range) ─────────────
+  - prefix: OS-ACC
+    authority: "130-roadmap/06-acceptance-criteria.md"
+    chapter: "Ch 6"
+    registration: range
+    ranges:
+      - { start: OS-ACC-001, end: OS-ACC-110, count: 110, section: "130-roadmap/06" }
+
+  # ── Chapter 7: OS-ABI Interface Stability (1, full) ───────────────
+  - prefix: OS-ABI
+    authority: "04-engineering-philosophy.md §6.2"
+    chapter: "Ch 7"
+    registration: full
+    entries:
+      - { id: OS-ABI-001, desc: "4 层接口稳定性分级", section: "04 §6.2", status: active }
+
+  # ── Chapter 9: OS-SEC Security Engineering (3 ranges) ─────────────
+  - prefix: OS-SEC
+    authority: "10-architecture/07-threat-model.md + 110-security/"
+    chapter: "Ch 9"
+    registration: range
+    ranges:
+      - { start: OS-SEC-001, end: OS-SEC-099, count: 99, section: "9.1 LSM/Cupolas" }
+      - { start: OS-SEC-100, end: OS-SEC-199, count: 100, section: "9.2 C/C++ Security" }
+      - { start: OS-SEC-200, end: OS-SEC-299, count: 100, section: "9.3 Rust Security" }
+
+  # ── Chapter 10: OS-ARCH Architecture Engineering (10, range) ───────
+  - prefix: OS-ARCH
+    authority: "10-architecture/01-05"
+    chapter: "Ch 10"
+    registration: range
+    ranges:
+      - { start: OS-ARCH-001, end: OS-ARCH-010, count: 10, section: "10-architecture" }
+
+  # ── Chapter 11: OS-IFACE Interface Engineering (10, range) ─────────
+  - prefix: OS-IFACE
+    authority: "30-interfaces/01-05"
+    chapter: "Ch 11"
+    registration: range
+    ranges:
+      - { start: OS-IFACE-001, end: OS-IFACE-010, count: 10, section: "30-interfaces" }
+
+  # ── Chapter 12: OS-TEST Test Engineering (22, range) ───────────────
+  - prefix: OS-TEST
+    authority: "80-testing/01-kunit-framework.md + 02-kselftest.md"
+    chapter: "Ch 12"
+    registration: range
+    ranges:
+      - { start: OS-TEST-001, end: OS-TEST-022, count: 22, section: "80-testing" }
+
+  # ── Chapter 13.1: OS-OPS Operations Engineering (2 ranges) ─────────
+  - prefix: OS-OPS
+    authority: "60-operations/"
+    chapter: "Ch 13.1"
+    registration: range
+    ranges:
+      - { start: OS-OPS-001, end: OS-OPS-041, count: 41, section: "13.1" }
+      - { start: OS-OPS-101, end: OS-OPS-139, count: 39, section: "13.1" }
+
+  # ── Chapter 13.2: OS-IPC IPC Engineering (10, range) ───────────────
+  - prefix: OS-IPC
+    authority: "30-interfaces/02-ipc-protocol.md"
+    chapter: "Ch 13.2"
+    registration: range
+    ranges:
+      - { start: OS-IPC-001, end: OS-IPC-010, count: 10, section: "13.2" }
+
+  # ── Chapter 13.3: OS-CHK-DOC Document Check (individual) ───────────
+  - prefix: OS-CHK-DOC
+    authority: "SSoT internal"
+    chapter: "Ch 13.3"
+    registration: individual
+    individual_entries:
+      - { id: OS-CHK-DOC-01, desc: "doc check rule 01", section: "13.3", status: active }
+      - { id: OS-CHK-DOC-02, desc: "doc check rule 02", section: "13.3", status: active }
+      - { id: OS-CHK-DOC-03, desc: "doc check rule 03", section: "13.3", status: active }
+      - { id: OS-CHK-DOC-04, desc: "doc check rule 04", section: "13.3", status: active }
+      - { id: OS-CHK-DOC-05, desc: "doc check rule 05", section: "13.3", status: active }
+      - { id: OS-CHK-DOC-06, desc: "doc check rule 06", section: "13.3", status: active }
+      - { id: OS-CHK-DOC-07, desc: "doc check rule 07", section: "13.3", status: active }
+      - { id: OS-CHK-DOC-08, desc: "doc check rule 08", section: "13.3", status: active }
+      - { id: OS-CHK-DOC-18, desc: "doc check rule 18", section: "13.3", status: active }
+      - { id: OS-CHK-DOC-19, desc: "doc check rule 19", section: "13.3", status: active }
+
+  # ── Chapter 13.4: OS-CHK-CODE Code Check (individual) ──────────────
+  - prefix: OS-CHK-CODE
+    authority: "SSoT internal"
+    chapter: "Ch 13.4"
+    registration: individual
+    individual_entries:
+      - { id: OS-CHK-CODE-01, desc: "code check rule 01", section: "13.4", status: active }
+      - { id: OS-CHK-CODE-02, desc: "code check rule 02", section: "13.4", status: active }
+      - { id: OS-CHK-CODE-03, desc: "code check rule 03", section: "13.4", status: active }
+      - { id: OS-CHK-CODE-04, desc: "code check rule 04", section: "13.4", status: active }
+      - { id: OS-CHK-CODE-05, desc: "code check rule 05", section: "13.4", status: active }
+      - { id: OS-CHK-CODE-08, desc: "code check rule 08", section: "13.4", status: active }
+
+  # ── Chapter 13.5: OS-CHK-IRON IRON Check (individual) ──────────────
+  - prefix: OS-CHK-IRON
+    authority: "SSoT internal"
+    chapter: "Ch 13.5"
+    registration: individual
+    individual_entries:
+      - { id: OS-CHK-IRON-01, desc: "IRON check rule 01", section: "13.5", status: active }
+      - { id: OS-CHK-IRON-02, desc: "IRON check rule 02", section: "13.5", status: active }
+      - { id: OS-CHK-IRON-03, desc: "IRON check rule 03", section: "13.5", status: active }
+      - { id: OS-CHK-IRON-04, desc: "IRON check rule 04", section: "13.5", status: active }
+      - { id: OS-CHK-IRON-18, desc: "IRON check rule 18", section: "13.5", status: active }
+
+  # ── Chapter 13.6: OS-DEV Development Process Engineering (2 ranges) ─
+  - prefix: OS-DEV
+    authority: "01-patch-lifecycle"
+    chapter: "Ch 13.6"
+    registration: range
+    ranges:
+      - { start: OS-DEV-101, end: OS-DEV-194, count: 94, section: "13.6" }
+      - { start: OS-DEV-201, end: OS-DEV-282, count: 82, section: "13.6" }
+
+  # ── Chapter 13.7: OS-BUILD Build System Engineering (2 ranges) ──────
+  - prefix: OS-BUILD
+    authority: "70-build-system/"
+    chapter: "Ch 13.7"
+    registration: range
+    ranges:
+      - { start: OS-BUILD-001, end: OS-BUILD-016, count: 16, section: "13.7" }
+      - { start: OS-BUILD-021, end: OS-BUILD-028, count: 8, section: "13.7" }
+
+  # ── Chapter 13.8: OS-DRV Driver Model Engineering (35, range) ──────
+  - prefix: OS-DRV
+    authority: "50-project-erp/03-driver-model.md"
+    chapter: "Ch 13.8"
+    registration: range
+    ranges:
+      - { start: OS-DRV-001, end: OS-DRV-035, count: 35, section: "13.8" }
+
+  # ── Chapter 13.9: OS-OBS Observability Engineering (22, range) ─────
+  - prefix: OS-OBS
+    authority: "90-observability/"
+    chapter: "Ch 13.9"
+    registration: range
+    ranges:
+      - { start: OS-OBS-001, end: OS-OBS-022, count: 22, section: "13.9" }
+
+  # ── Chapter 13.10: OS-MM Memory Management Engineering (2, full) ────
+  - prefix: OS-MM
+    authority: "20-modules/04-memory.md"
+    chapter: "Ch 13.10"
+    registration: full
+    entries:
+      - { id: OS-MM-001, desc: "MemoryRovol kernel-mode L1-L4", section: "13.10", status: active }
+      - { id: OS-MM-002, desc: "CXL/PMEM/MGLRU integration", section: "13.10", status: active }
+
+  # ── Chapter 13.11: OS-TST Test Engineering Supplementary (4, range) ─
+  - prefix: OS-TST
+    authority: "80-testing/"
+    chapter: "Ch 13.11"
+    registration: range
+    ranges:
+      - { start: OS-TST-013, end: OS-TST-016, count: 4, section: "13.11" }
+
+
+# ===========================================================================
+# Part 2: agentrt (non-OS) Rules — Chapter 14
+# ===========================================================================
+agentrt_rules:
+
+  # ── 14.1: IRON Engineering Iron Rules (10, full) ──────────────────
+  - prefix: IRON
+    authority: "agentrt工程标准规范手册.md §35.10/§36.1/§38.1/§38.10"
+    chapter: "Ch 14.1"
+    registration: full
+    entries:
+      - { id: IRON-1, desc: "禁止新特性", section: "§35.10", status: active }
+      - { id: IRON-2, desc: "禁止桩函数/桩文件", section: "§35.10", status: active }
+      - { id: IRON-3, desc: "禁止绕开功能限制的编译/集成", section: "§35.10", status: active }
+      - { id: IRON-4, desc: "禁止简化功能", section: "§35.10", status: active }
+      - { id: IRON-5, desc: "禁止未实现的功能设计", section: "§35.10", status: active }
+      - { id: IRON-6, desc: "8 子仓 submodule 管理", section: "§36.1", status: active }
+      - { id: IRON-7, desc: "agentrt_→airymax_ 改名彻底", section: "§36.1", status: active }
+      - { id: IRON-8, desc: "0.1.1 后直接 1.0.1", section: "§36.1", status: active }
+      - { id: IRON-9, desc: "同源且部分代码共享（v2 三层模型）", section: "§38.1", status: active }
+      - { id: IRON-10, desc: "Agent Runtime Platform Engineering 定位", section: "§38.10", status: active }
+
+  # ── 14.2: BAN Prohibition Rules (361, range) ────────────────────────
+  - prefix: BAN
+    authority: "agentrt工程标准规范手册.md §3-§38"
+    chapter: "Ch 14.2"
+    registration: range
+    ranges:
+      - { start: BAN-001, end: BAN-361, count: 361, section: "§3-§38" }
+
+  # ── 14.3: STD Open Standards (8, full) ──────────────────────────────
+  - prefix: STD
+    authority: "agentrt工程标准规范手册.md §34.1-§34.8"
+    chapter: "Ch 14.3"
+    registration: full
+    entries:
+      - { id: STD-01, desc: "open standard 01", section: "§34.1", status: active }
+      - { id: STD-02, desc: "open standard 02", section: "§34.2", status: active }
+      - { id: STD-03, desc: "open standard 03", section: "§34.3", status: active }
+      - { id: STD-04, desc: "open standard 04", section: "§34.4", status: active }
+      - { id: STD-05, desc: "open standard 05", section: "§34.5", status: active }
+      - { id: STD-06, desc: "open standard 06", section: "§34.6", status: active }
+      - { id: STD-07, desc: "open standard 07", section: "§34.7", status: active }
+      - { id: STD-08, desc: "open standard 08", section: "§34.8", status: active }
+
+  # ── 14.4: ACC Acceptance Criteria (149 + 12 + 1, range + individual) ─
+  - prefix: ACC
+    authority: "130-roadmap/06-acceptance-criteria.md"
+    chapter: "Ch 14.4"
+    registration: range
+    ranges:
+      - { start: ACC-001, end: ACC-149, count: 149, section: "130-roadmap/06" }
+    individual_entries:
+      - { id: ACC-SP01, desc: "SP01 acceptance", section: "130-roadmap", status: active }
+      - { id: ACC-SP02, desc: "SP02 acceptance", section: "130-roadmap", status: active }
+      - { id: ACC-SP03, desc: "SP03 acceptance", section: "130-roadmap", status: active }
+      - { id: ACC-SP04, desc: "SP04 acceptance", section: "130-roadmap", status: active }
+      - { id: ACC-SP05, desc: "SP05 acceptance", section: "130-roadmap", status: active }
+      - { id: ACC-SP06, desc: "SP06 acceptance", section: "130-roadmap", status: active }
+      - { id: ACC-SP07, desc: "SP07 acceptance", section: "130-roadmap", status: active }
+      - { id: ACC-SP08, desc: "SP08 acceptance", section: "130-roadmap", status: active }
+      - { id: ACC-SP09, desc: "SP09 acceptance", section: "130-roadmap", status: active }
+      - { id: ACC-SP10, desc: "SP10 acceptance", section: "130-roadmap", status: active }
+      - { id: ACC-SP11, desc: "SP11 acceptance", section: "130-roadmap", status: active }
+      - { id: ACC-SP12, desc: "SP12 acceptance", section: "130-roadmap", status: active }
+      - { id: ACC-OS04, desc: "OS04 acceptance", section: "130-roadmap", status: active }
+
+  # ── 14.5: FOUND Foundational Version Engineering (10, full) ────────
+  - prefix: FOUND
+    authority: "agentrt工程标准规范手册.md §35.1-§35.10"
+    chapter: "Ch 14.5"
+    registration: full
+    entries:
+      - { id: FOUND-01, desc: "foundational rule 01", section: "§35.1", status: active }
+      - { id: FOUND-02, desc: "foundational rule 02", section: "§35.2", status: active }
+      - { id: FOUND-03, desc: "foundational rule 03", section: "§35.3", status: active }
+      - { id: FOUND-04, desc: "foundational rule 04", section: "§35.4", status: active }
+      - { id: FOUND-05, desc: "foundational rule 05", section: "§35.5", status: active }
+      - { id: FOUND-06, desc: "foundational rule 06", section: "§35.6", status: active }
+      - { id: FOUND-07, desc: "foundational rule 07", section: "§35.7", status: active }
+      - { id: FOUND-08, desc: "foundational rule 08", section: "§35.8", status: active }
+      - { id: FOUND-09, desc: "foundational rule 09", section: "§35.9", status: active }
+      - { id: FOUND-10, desc: "foundational rule 10", section: "§35.10", status: active }
+
+  # ── 14.6: SPLIT 38-repo Split Engineering (8, full) ─────────────────
+  - prefix: SPLIT
+    authority: "agentrt工程标准规范手册.md §36.2-§36.9"
+    chapter: "Ch 14.6"
+    registration: full
+    entries:
+      - { id: SPLIT-01, desc: "split rule 01", section: "§36.2", status: active }
+      - { id: SPLIT-02, desc: "split rule 02", section: "§36.3", status: active }
+      - { id: SPLIT-03, desc: "split rule 03", section: "§36.4", status: active }
+      - { id: SPLIT-04, desc: "split rule 04", section: "§36.5", status: active }
+      - { id: SPLIT-05, desc: "split rule 05", section: "§36.6", status: active }
+      - { id: SPLIT-06, desc: "split rule 06", section: "§36.7", status: active }
+      - { id: SPLIT-07, desc: "split rule 07", section: "§36.8", status: active }
+      - { id: SPLIT-08, desc: "split rule 08", section: "§36.9", status: active }
+
+  # ── 14.7: PROD Production Readiness Engineering (6, full) ───────────
+  - prefix: PROD
+    authority: "agentrt工程标准规范手册.md §37.1-§37.6"
+    chapter: "Ch 14.7"
+    registration: full
+    entries:
+      - { id: PROD-01, desc: "production rule 01", section: "§37.1", status: active }
+      - { id: PROD-02, desc: "production rule 02", section: "§37.2", status: active }
+      - { id: PROD-03, desc: "production rule 03", section: "§37.3", status: active }
+      - { id: PROD-04, desc: "production rule 04", section: "§37.4", status: active }
+      - { id: PROD-05, desc: "production rule 05", section: "§37.5", status: active }
+      - { id: PROD-06, desc: "production rule 06", section: "§37.6", status: active }
+
+  # ── 14.8: ARC Microkernel Architecture (8, full) ────────────────────
+  - prefix: ARC
+    authority: "agentrt工程标准规范手册.md §33.1-§33.8"
+    chapter: "Ch 14.8"
+    registration: full
+    entries:
+      - { id: ARC-01, desc: "architecture rule 01", section: "§33.1", status: active }
+      - { id: ARC-02, desc: "architecture rule 02", section: "§33.2", status: active }
+      - { id: ARC-03, desc: "architecture rule 03", section: "§33.3", status: active }
+      - { id: ARC-04, desc: "architecture rule 04", section: "§33.4", status: active }
+      - { id: ARC-05, desc: "architecture rule 05", section: "§33.5", status: active }
+      - { id: ARC-06, desc: "architecture rule 06", section: "§33.6", status: active }
+      - { id: ARC-07, desc: "architecture rule 07", section: "§33.7", status: active }
+      - { id: ARC-08, desc: "architecture rule 08", section: "§33.8", status: active }
+
+  # ── 14.9: LC Open Source License (8, full) ────────────────────────
+  - prefix: LC
+    authority: "agentrt工程标准规范手册.md §32.1-§32.8"
+    chapter: "Ch 14.9"
+    registration: full
+    entries:
+      - { id: LC-01, desc: "license rule 01", section: "§32.1", status: active }
+      - { id: LC-02, desc: "license rule 02", section: "§32.2", status: active }
+      - { id: LC-03, desc: "license rule 03", section: "§32.3", status: active }
+      - { id: LC-04, desc: "license rule 04", section: "§32.4", status: active }
+      - { id: LC-05, desc: "license rule 05", section: "§32.5", status: active }
+      - { id: LC-06, desc: "license rule 06", section: "§32.6", status: active }
+      - { id: LC-07, desc: "license rule 07", section: "§32.7", status: active }
+      - { id: LC-08, desc: "license rule 08", section: "§32.8", status: active }
+
+  # ── 14.10: PRT Unified Print System (18, range) ─────────────────────
+  - prefix: PRT
+    authority: "agentrt工程标准规范手册.md §29.2-§29.4"
+    chapter: "Ch 14.10"
+    registration: range
+    ranges:
+      - { start: PRT-01, end: PRT-18, count: 18, section: "§29.2-§29.4" }
+
+  # ── 14.11: LOG Unified Logging System (26, range) ────────────────────
+  - prefix: LOG
+    authority: "agentrt工程标准规范手册.md §30.1-§30.6"
+    chapter: "Ch 14.11"
+    registration: range
+    ranges:
+      - { start: LOG-01, end: LOG-26, count: 26, section: "§30.1-§30.6" }
+
+  # ── 14.12: PATH-BAN Path Hardcoding Prohibition (5, full) ──────────
+  - prefix: PATH-BAN
+    authority: "agentrt工程标准规范手册.md §3.5"
+    chapter: "Ch 14.12"
+    registration: full
+    entries:
+      - { id: PATH-BAN-1, desc: "path ban rule 1", section: "§3.5", status: active }
+      - { id: PATH-BAN-2, desc: "path ban rule 2", section: "§3.5", status: active }
+      - { id: PATH-BAN-3, desc: "path ban rule 3", section: "§3.5", status: active }
+      - { id: PATH-BAN-4, desc: "path ban rule 4", section: "§3.5", status: active }
+      - { id: PATH-BAN-5, desc: "path ban rule 5", section: "§3.5", status: active }
+
+  # ── 14.13: L Historical Lessons (53, range) ─────────────────────────
+  - prefix: L
+    authority: "agentrt工程标准规范手册.md §2.1-§2.2"
+    chapter: "Ch 14.13"
+    registration: range
+    ranges:
+      - { start: L-01, end: L-53, count: 53, section: "§2.1-§2.2" }
+
+  # ── 14.14: CROSS Cross-Platform (6, full) ───────────────────────────
+  - prefix: CROSS
+    authority: "agentrt工程标准规范手册.md §4.6"
+    chapter: "Ch 14.14"
+    registration: full
+    entries:
+      - { id: CROSS-01, desc: "cross-platform rule 01", section: "§4.6", status: active }
+      - { id: CROSS-02, desc: "cross-platform rule 02", section: "§4.6", status: active }
+      - { id: CROSS-03, desc: "cross-platform rule 03", section: "§4.6", status: active }
+      - { id: CROSS-04, desc: "cross-platform rule 04", section: "§4.6", status: active }
+      - { id: CROSS-05, desc: "cross-platform rule 05", section: "§4.6", status: active }
+      - { id: CROSS-06, desc: "cross-platform rule 06", section: "§4.6", status: active }
+
+  # ── 14.15: REQ Requirements (8, full) ──────────────────────────────
+  - prefix: REQ
+    authority: "agentrt工程标准规范手册.md §4.7"
+    chapter: "Ch 14.15"
+    registration: full
+    entries:
+      - { id: REQ-01, desc: "requirement 01", section: "§4.7", status: active }
+      - { id: REQ-02, desc: "requirement 02", section: "§4.7", status: active }
+      - { id: REQ-03, desc: "requirement 03", section: "§4.7", status: active }
+      - { id: REQ-04, desc: "requirement 04", section: "§4.7", status: active }
+      - { id: REQ-05, desc: "requirement 05", section: "§4.7", status: active }
+      - { id: REQ-06, desc: "requirement 06", section: "§4.7", status: active }
+      - { id: REQ-07, desc: "requirement 07", section: "§4.7", status: active }
+      - { id: REQ-08, desc: "requirement 08", section: "§4.7", status: active }
+
+  # ── 14.16: W Work Tasks (30, range) ─────────────────────────────────
+  - prefix: W
+    authority: "130-roadmap/01-development-strategy.md"
+    chapter: "Ch 14.16"
+    registration: range
+    ranges:
+      - { start: W01, end: W30, count: 30, section: "130-roadmap/01" }
+
+  # ── 14.17: SP 29-repo Split Work (37, range) ────────────────────────
+  - prefix: SP
+    authority: "130-roadmap/01-development-strategy.md"
+    chapter: "Ch 14.17"
+    registration: range
+    ranges:
+      - { start: SP01, end: SP37, count: 37, section: "130-roadmap/01" }

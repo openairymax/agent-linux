@@ -1,0 +1,49 @@
+# ===========================================================================
+# agentrt-linux (AirymaxOS) CODEOWNERS
+# https://docs.github.com/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+# ===========================================================================
+# This file is the GitHub CODEOWNERS projection of MAINTAINERS.
+# The authoritative source is MAINTAINERS (OS-STD-GOV-004).
+# CI validates that CODEOWNERS and MAINTAINERS stay in sync.
+# ===========================================================================
+
+# --------------------------------------------------------------------------
+# Default: all changes require SPHARX Engineering review
+# --------------------------------------------------------------------------
+*                           @spharx
+
+# --------------------------------------------------------------------------
+# Submodule directories
+# --------------------------------------------------------------------------
+/kernel/                    @spharx
+/services/                  @spharx
+/security/                  @spharx
+/memory/                   @spharx
+/cognition/                @spharx
+/cloudnative/               @spharx
+/system/                    @spharx
+/tests-linux/               @spharx
+
+# --------------------------------------------------------------------------
+# [SC] Shared Contract Layer (kernel/include/airymax/)
+# Requires dual CI + L3 top maintainer approval (OS-IRON-014)
+# --------------------------------------------------------------------------
+/kernel/include/airymax/    @spharx
+
+# --------------------------------------------------------------------------
+# SSoT Registry & Validation
+# --------------------------------------------------------------------------
+/.github/workflows/         @spharx
+/tools/                     @spharx
+
+# --------------------------------------------------------------------------
+# Governance files
+# --------------------------------------------------------------------------
+/MAINTAINERS                @spharx
+/CONTRIBUTING.md            @spharx
+/SECURITY.md                @spharx
+/CODEOWNERS                 @spharx
+/.editorconfig              @spharx
+/.clang-format              @spharx
+/.gitignore                 @spharx
+/.gitmodules                @spharx

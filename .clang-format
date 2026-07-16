@@ -1,0 +1,141 @@
+# ===========================================================================
+# agentrt-linux (AirymaxOS) .clang-format
+# OS-STD-FMT-001: Tab-8 indentation, 80-column limit
+# Based on Linux 6.6 kernel .clang-format
+# ===========================================================================
+
+---
+BasedOnStyle: LLVM
+Language: Cpp
+
+# Indentation (OS-STD-FMT-001)
+IndentWidth: 8
+TabWidth: 8
+UseTab: Always
+ContinuationIndentWidth: 8
+Cpp11BracedListStyle: true
+
+# Line width (OS-STD-FMT-002)
+ColumnLimit: 80
+
+# Braces
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterEnum: false
+  AfterStruct: false
+  AfterUnion: false
+  AfterFunction: true
+  AfterControlStatement: Never
+  BeforeCatch: false
+  BeforeElse: false
+  IndentBraces: false
+  SplitEmptyFunction: false
+  SplitEmptyRecord: false
+
+# Alignment
+AlignAfterOpenBracket: Align
+AlignConsecutiveAssignments: false
+AlignConsecutiveDeclarations: false
+AlignConsecutiveMacros: true
+AlignEscapedNewlines: Left
+AlignOperands: true
+AlignTrailingComments: true
+
+# Space rules
+SpaceAfterCStyleCast: false
+SpaceBeforeParens: ControlStatements
+SpaceBeforeSquareBrackets: false
+SpaceInEmptyParentheses: false
+SpacesInCStyleCastParentheses: false
+SpacesInConditionalStatement: false
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+SpacesBeforeTrailingComments: 1
+BitFieldColonSpacing: Both
+
+# Include sorting
+SortIncludes: false
+IncludeBlocks: Preserve
+
+# Short forms
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: None
+AllowShortBlocksOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortEnumsOnASingleLine: false
+
+# Break rules
+AlwaysBreakAfterReturnType: None
+AlwaysBreakBeforeMultilineStrings: false
+BinPackArguments: true
+BinPackParameters: true
+BreakBeforeBinaryOperators: None
+BreakBeforeTernaryOperators: true
+BreakStringLiterals: true
+AlwaysBreakTemplateDeclarations: true
+
+# Penalty (influence wrapping decisions)
+PenaltyBreakAssignment: 25
+PenaltyBreakBeforeFirstCallParameter: 19
+PenaltyBreakComment: 300
+PenaltyBreakFirstLessLess: 120
+PenaltyBreakString: 1000
+PenaltyExcessCharacter: 100
+PenaltyReturnTypeOnItsOwnLine: 60
+
+# Miscellaneous
+IndentCaseLabels: false
+IndentGotoLabels: false
+IndentPPDirectives: None
+KeepEmptyLinesAtTheStartOfBlocks: false
+MaxEmptyLinesToKeep: 1
+NamespaceIndentation: None
+PointerAlignment: Right
+ReflowComments: true
+SqueezeImpreciseFlow: false
+
+# Macro handling (agentrt-linux specific)
+ForEachMacros:
+  - list_for_each_entry
+  - list_for_each_entry_reverse
+  - list_for_each_entry_safe
+  - list_for_each_entry_reverse_safe
+  - hlist_for_each_entry
+  - hlist_bl_for_each_entry
+  - rbtree_postorder_for_each_entry_safe
+  - airymax_for_each_task
+  - airymax_for_each_cap
+StatementMacros:
+  - EXPORT_SYMBOL
+  - EXPORT_SYMBOL_GPL
+  - EXPORT_PER_CPU_SYMBOL
+  - MODULE_LICENSE
+  - MODULE_AUTHOR
+  - MODULE_DESCRIPTION
+  - MODULE_VERSION
+  - MODULE_PARM_DESC
+  - DEFINE_PER_CPU
+  - DECLARE_PER_CPU
+  - DEFINE_SPINLOCK
+  - DEFINE_MUTEX
+  - DEFINE_RWLOCK
+  - DEFINE_IDR
+  - DEFINE_IDA
+  - DEFINE_STATIC_KEY_TRUE
+  - DEFINE_STATIC_KEY_FALSE
+  - DEFINE_EVENT
+  - DEFINE_TRACE
+  - DEFINE_AIRYMAX_SCHED_OPS
+  - DEFINE_AIRYMAX_IPC_HANDLER
+AttributeMacros:
+  - __init
+  - __exit
+  - __read_mostly
+  - __aligned
+  - __packed
+  - __cold
+  - __always_inline
+  - __noreturn
+  - AGENTRT_API
+  - AIRYRT_API

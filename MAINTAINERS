@@ -1,0 +1,141 @@
+List of maintainers
+===================
+
+agentrt-linux (AirymaxOS) umbrella maintainers. Field format
+inherited from Linux 6.6 MAINTAINERS. See
+Documentation/process/maintainers.rst for field semantics.
+
+	M: *Mail* patches to: FullName <address@domain>
+	R: Designated *Reviewer*: FullName <address@domain>
+	L: *Mailing list* relevant to this area
+	S: *Status*: Supported/Maintained/Odd Fixes/Orphan/Obsolete
+	W: *Web-page* with status/info
+	B: URI for where to file *bugs*
+	T: *SCM* tree type and location (git)
+	F: *Files* and directories wildcard patterns
+	H: *Homologous* agentrt module (IRON-9 v2)
+	V: *Version* baseline declaration
+
+Preferred order: M: R: L: S: W: B: T: F: H: V:
+
+For 0.1.1 all submodules are S: Experimental.
+For 1.0.1 core submodules upgrade to S: Pilot.
+
+----------------------------------------------------------------------
+
+AGENTRT-LINUX UMBRELLA
+M:	SPHARX Engineering <eng@spharx.com>
+L:	airymax-dev@spharx.com
+S:	Supported
+W:	https://github.com/openairymax/agentrt-linux
+B:	https://github.com/openairymax/agentrt-linux/issues
+T:	git https://atomgit.com/openairymax/agentrt-linux.git
+F:	*
+
+KERNEL SUBSYSTEM (Linux 6.6 + sched_ext + eBPF + io_uring + Rust)
+M:	SPHARX Engineering <eng@spharx.com>
+R:	Kernel Core Lead <kernel-lead@spharx.com>
+L:	airymax-dev@spharx.com
+S:	Experimental
+W:	https://github.com/openairymax/kernel
+B:	https://github.com/openairymax/kernel/issues
+T:	git https://atomgit.com/openairymax/kernel.git
+F:	kernel/
+H:	atoms/corekern
+V:	agentrt-linux 1.0.1 / Linux 6.6
+
+SERVICES SUBSYSTEM (VFS + network + driver user-space + 12 daemons)
+M:	SPHARX Engineering <eng@spharx.com>
+R:	Services Lead <services-lead@spharx.com>
+L:	airymax-dev@spharx.com
+S:	Experimental
+W:	https://github.com/openairymax/services
+B:	https://github.com/openairymax/services/issues
+T:	git https://atomgit.com/openairymax/services.git
+F:	services/
+H:	daemons
+V:	agentrt-linux 1.0.1 / Linux 6.6
+
+SECURITY SUBSYSTEM (Cupolas LSM + capability + Landlock + national crypto)
+M:	SPHARX Engineering <eng@spharx.com>
+R:	Security Lead <security-lead@spharx.com>
+L:	airymax-security@spharx.com
+S:	Experimental
+W:	https://github.com/openairymax/security
+B:	https://github.com/openairymax/security/issues
+T:	git https://atomgit.com/openairymax/security.git
+F:	security/
+H:	cupolas
+V:	agentrt-linux 1.0.1 / Linux 6.6
+
+MEMORY SUBSYSTEM (MemoryRovol + CXL + PMEM + MGLRU)
+M:	SPHARX Engineering <eng@spharx.com>
+R:	Memory Lead <memory-lead@spharx.com>
+L:	airymax-memory@spharx.com
+S:	Experimental
+W:	https://github.com/openairymax/memory
+B:	https://github.com/openairymax/memory/issues
+T:	git https://atomgit.com/openairymax/memory.git
+F:	memory/
+H:	heapstore + memoryrovol
+V:	agentrt-linux 1.0.1 / Linux 6.6
+
+COGNITION SUBSYSTEM (CoreLoopThree + Wasm 3.0 + LLM scheduling)
+M:	SPHARX Engineering <eng@spharx.com>
+R:	Cognition Lead <cognition-lead@spharx.com>
+L:	airymax-cognition@spharx.com
+S:	Experimental
+W:	https://github.com/openairymax/cognition
+B:	https://github.com/openairymax/cognition/issues
+T:	git https://atomgit.com/openairymax/cognition.git
+F:	cognition/
+H:	coreloopthree + frameworks
+V:	agentrt-linux 1.0.1 / Linux 6.6
+
+CLOUDNATIVE SUBSYSTEM (K8s CRD + containerd shim + OCI + CNI)
+M:	SPHARX Engineering <eng@spharx.com>
+R:	Cloud Native Lead <cloudnative-lead@spharx.com>
+L:	airymax-cloudnative@spharx.com
+S:	Experimental
+W:	https://github.com/openairymax/cloudnative
+B:	https://github.com/openairymax/cloudnative/issues
+T:	git https://atomgit.com/openairymax/cloudnative.git
+F:	cloudnative/
+H:	gateway + sdk
+V:	agentrt-linux 1.0.1 / Linux 6.6
+
+SYSTEM SUBSYSTEM (RPM + dnf + configuration + shell + DevStation)
+M:	SPHARX Engineering <eng@spharx.com>
+R:	System Lead <system-lead@spharx.com>
+L:	airymax-system@spharx.com
+S:	Experimental
+W:	https://github.com/openairymax/system
+B:	https://github.com/openairymax/system/issues
+T:	git https://atomgit.com/openairymax/system.git
+F:	system/
+H:	commons
+V:	agentrt-linux 1.0.1 / Linux 6.6
+
+TESTS-LINUX SUBSYSTEM (Unit + integration + formal verification + soak + chaos)
+M:	SPHARX Engineering <eng@spharx.com>
+R:	Tests Lead <tests-lead@spharx.com>
+L:	airymax-tests@spharx.com
+S:	Experimental
+W:	https://github.com/openairymax/tests-linux
+B:	https://github.com/openairymax/tests-linux/issues
+T:	git https://atomgit.com/openairymax/tests-linux.git
+F:	tests-linux/
+H:	all modules test
+V:	agentrt-linux 1.0.1 / Linux 6.6
+
+[SC] SHARED CONTRACT LAYER
+(kernel/include/airymax/ — 6+2 headers, OS-IRON-014 single physical host)
+M:	SPHARX Engineering <eng@spharx.com>
+R:	Kernel Core Lead <kernel-lead@spharx.com>
+L:	airymax-dev@spharx.com
+S:	Supported
+F:	kernel/include/airymax/
+H:	atoms/corekern (shared with agentrt)
+V:	agentrt-linux 1.0.1 / Linux 6.6
+Note: [SC] changes require dual CI validation (agentrt-linux + agentrt)
+      and final approval by L3 top maintainer (SPHARX Engineering).

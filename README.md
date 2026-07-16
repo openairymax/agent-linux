@@ -47,14 +47,14 @@ agentrt-linux/             # Management repository (this repo)
 
 | Module | Directory | Repository URL | Reuses | Description |
 |--------|-----------|----------------|--------|-------------|
-| **airymaxos-kernel** | `kernel/` | `git@atomgit.com:openairymax/kernel.git` | atoms/corekern | Linux 6.6 + sched_ext + eBPF + io_uring + Rust + microkernel refactoring |
-| **airymaxos-services** | `services/` | `git@atomgit.com:openairymax/services.git` | daemons | VFS + network + driver user-space migration + 12 daemons systemd integration + io_uring message passing |
-| **airymaxos-security** | `security/` | `git@atomgit.com:openairymax/security.git` | cupolas | capability (seL4) + LSM + Landlock + confidential computing + national crypto |
-| **airymaxos-memory** | `memory/` | `git@atomgit.com:openairymax/memory.git` | heapstore + memoryrovol | MemoryRovol kernel-mode + CXL + PMEM + MGLRU 多代 LRU |
-| **airymaxos-cognition** | `cognition/` | `git@atomgit.com:openairymax/cognition.git` | coreloopthree + frameworks | CoreLoopThree kthread + Wasm 3.0 + LLM scheduling + Token energy efficiency + hyper-node sandbox |
-| **airymaxos-cloudnative** | `cloudnative/` | `git@atomgit.com:openairymax/cloudnative.git` | gateway + sdk | K8s CRD + containerd shim + OCI + CNI + agentctl + hyper-node OS |
-| **airymaxos-system** | `system/` | `git@atomgit.com:openairymax/system.git` | commons | RPM + dnf + configuration + shell + DevStation |
-| **airymaxos-tests-linux** | `tests-linux/` | `git@atomgit.com:openairymax/tests-linux.git` | all modules | Unit + integration + formal verification (seL4 style) + Soak + chaos |
+| **kernel** | `kernel/` | `git@atomgit.com:openairymax/kernel.git` | atoms/corekern | Linux 6.6 + sched_ext + eBPF + io_uring + Rust + microkernel refactoring |
+| **services** | `services/` | `git@atomgit.com:openairymax/services.git` | daemons | VFS + network + driver user-space migration + 12 daemons systemd integration + io_uring message passing |
+| **security** | `security/` | `git@atomgit.com:openairymax/security.git` | cupolas | capability (seL4) + LSM + Landlock + confidential computing + national crypto |
+| **memory** | `memory/` | `git@atomgit.com:openairymax/memory.git` | heapstore + memoryrovol | MemoryRovol kernel-mode + CXL + PMEM + MGLRU 多代 LRU |
+| **cognition** | `cognition/` | `git@atomgit.com:openairymax/cognition.git` | coreloopthree + frameworks | CoreLoopThree kthread + Wasm 3.0 + LLM scheduling + Token energy efficiency + hyper-node sandbox |
+| **cloudnative** | `cloudnative/` | `git@atomgit.com:openairymax/cloudnative.git` | gateway + sdk | K8s CRD + containerd shim + OCI + CNI + agentctl + hyper-node OS |
+| **system** | `system/` | `git@atomgit.com:openairymax/system.git` | commons | RPM + dnf + configuration + shell + DevStation |
+| **tests-linux** | `tests-linux/` | `git@atomgit.com:openairymax/tests-linux.git` | all modules | Unit + integration + formal verification (seL4 style) + Soak + chaos |
 
 ## Architecture
 
@@ -65,28 +65,28 @@ agentrt-linux/             # Management repository (this repo)
 │  Applications (Agent tenants)                                        │
 │    └── Airymax SDK (Python / Go / Rust / TypeScript)                 │
 ├─────────────────────────────────────────────────────────────────────┤
-│  Daemon Services (user-space)          ← airymaxos-services          │
+│  Daemon Services (user-space)          ← services                     │
 │    gateway_d · llm_d · tool_d · sched_d · market_d · monit_d · ...   │
 ├─────────────────────────────────────────────────────────────────────┤
-│  Cognition Layer (kthread + Wasm)      ← airymaxos-cognition         │
+│  Cognition Layer (kthread + Wasm)      ← cognition                    │
 │    CoreLoopThree · TimeSliceInfer · Token energy efficiency          │
 ├─────────────────────────────────────────────────────────────────────┤
-│  Security Layer (LSM + capability)     ← airymaxos-security          │
+│  Security Layer (LSM + capability)     ← security                     │
 │    Cupolas · seL4 capability · Landlock · confidential computing     │
 ├─────────────────────────────────────────────────────────────────────┤
-│  Memory Layer (kernel-mode)            ← airymaxos-memory            │
+│  Memory Layer (kernel-mode)            ← memory                       │
 │    MemoryRovol · CXL · PMEM · MGLRU 多代 LRU                              │
 ├─────────────────────────────────────────────────────────────────────┤
-│  CloudNative Layer                     ← airymaxos-cloudnative       │
+│  CloudNative Layer                     ← cloudnative                   │
 │    K8s CRD · containerd shim · OCI · CNI                             │
 ├─────────────────────────────────────────────────────────────────────┤
-│  System Layer                          ← airymaxos-system            │
+│  System Layer                          ← system                        │
 │    RPM · dnf · configuration · shell · DevStation                    │
 ├─────────────────────────────────────────────────────────────────────┤
-│  Microkernel (Linux 6.6 based)         ← airymaxos-kernel            │
+│  Microkernel (Linux 6.6 based)         ← kernel                        │
 │    sched_ext · eBPF · io_uring · Rust · microkernel refactoring      │
 ├─────────────────────────────────────────────────────────────────────┤
-│  Tests & Verification                  ← airymaxos-tests-linux             │
+│  Tests & Verification                  ← tests-linux                  │
 │    Unit · Integration · Formal (seL4) · Soak · Chaos                 │
 └─────────────────────────────────────────────────────────────────────┘
 ```

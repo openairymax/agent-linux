@@ -47,14 +47,14 @@ agentrt-linux/             # 管理仓（本仓库）
 
 | 模块                        | 目录             | 仓库 URL                                        | 复用                         | 描述                                                            |
 | ------------------------- | -------------- | --------------------------------------------- | -------------------------- | ------------------------------------------------------------- |
-| **airymaxos-kernel**      | `kernel/`      | `git@atomgit.com:openairymax/kernel.git`      | atoms/corekern             | Linux 6.6 + sched\_ext + eBPF + io\_uring + Rust（实验性）+ 微内核化改造 |
-| **airymaxos-services**    | `services/`    | `git@atomgit.com:openairymax/services.git`    | daemons                    | VFS + 网络 + 驱动用户态化 + 12 daemons systemd 集成 + io\_uring 消息传递    |
-| **airymaxos-security**    | `security/`    | `git@atomgit.com:openairymax/security.git`    | cupolas                    | capability(seL4) + LSM + Landlock + 机密计算 + 国密                 |
-| **airymaxos-memory**      | `memory/`      | `git@atomgit.com:openairymax/memory.git`      | heapstore + memoryrovol    | MemoryRovol 内核态 + CXL + PMEM + MGLRU 多代 LRU                   |
-| **airymaxos-cognition**   | `cognition/`   | `git@atomgit.com:openairymax/cognition.git`   | coreloopthree + frameworks | CoreLoopThree kthread + Wasm 3.0 + LLM 调度 + Token 能效 + 超节点沙箱  |
-| **airymaxos-cloudnative** | `cloudnative/` | `git@atomgit.com:openairymax/cloudnative.git` | gateway + sdk              | K8s CRD + containerd shim + OCI + CNI + agentctl + 超节点 OS     |
-| **airymaxos-system**      | `system/`      | `git@atomgit.com:openairymax/system.git`      | commons                    | RPM + dnf + 配置 + shell + DevStation                           |
-| **airymaxos-tests-linux** | `tests-linux/` | `git@atomgit.com:openairymax/tests-linux.git` | 全模块测试                      | 单元 + 集成 + 形式化验证(seL4 风格) + Soak + 混沌                          |
+| **kernel**      | `kernel/`      | `git@atomgit.com:openairymax/kernel.git`      | atoms/corekern             | Linux 6.6 + sched\_ext + eBPF + io\_uring + Rust（实验性）+ 微内核化改造 |
+| **services**    | `services/`    | `git@atomgit.com:openairymax/services.git`    | daemons                    | VFS + 网络 + 驱动用户态化 + 12 daemons systemd 集成 + io\_uring 消息传递    |
+| **security**    | `security/`    | `git@atomgit.com:openairymax/security.git`    | cupolas                    | capability(seL4) + LSM + Landlock + 机密计算 + 国密                 |
+| **memory**      | `memory/`      | `git@atomgit.com:openairymax/memory.git`      | heapstore + memoryrovol    | MemoryRovol 内核态 + CXL + PMEM + MGLRU 多代 LRU                   |
+| **cognition**   | `cognition/`   | `git@atomgit.com:openairymax/cognition.git`   | coreloopthree + frameworks | CoreLoopThree kthread + Wasm 3.0 + LLM 调度 + Token 能效 + 超节点沙箱  |
+| **cloudnative** | `cloudnative/` | `git@atomgit.com:openairymax/cloudnative.git` | gateway + sdk              | K8s CRD + containerd shim + OCI + CNI + agentctl + 超节点 OS     |
+| **system**      | `system/`      | `git@atomgit.com:openairymax/system.git`      | commons                    | RPM + dnf + 配置 + shell + DevStation                           |
+| **tests-linux** | `tests-linux/` | `git@atomgit.com:openairymax/tests-linux.git` | 全模块测试                      | 单元 + 集成 + 形式化验证(seL4 风格) + Soak + 混沌                          |
 
 ## 架构
 
@@ -65,28 +65,28 @@ agentrt-linux/             # 管理仓（本仓库）
 │  应用层（Agent 租户）                                                  │
 │    └── Airymax SDK（Python / Go / Rust / TypeScript）                │
 ├─────────────────────────────────────────────────────────────────────┤
-│  服务态（用户态）                       ← airymaxos-services          │
+│  服务态（用户态）                       ← services          │
 │    gateway_d · llm_d · tool_d · sched_d · market_d · monit_d · ...   │
 ├─────────────────────────────────────────────────────────────────────┤
-│  认知层（kthread + Wasm）              ← airymaxos-cognition         │
+│  认知层（kthread + Wasm）              ← cognition         │
 │    CoreLoopThree · TimeSliceInfer · Token 能效                       │
 ├─────────────────────────────────────────────────────────────────────┤
-│  安全层（LSM + capability）            ← airymaxos-security          │
+│  安全层（LSM + capability）            ← security          │
 │    Cupolas · seL4 capability · Landlock · 机密计算                   │
 ├─────────────────────────────────────────────────────────────────────┤
-│  内存层（内核态）                       ← airymaxos-memory            │
+│  内存层（内核态）                       ← memory            │
 │    MemoryRovol · CXL · PMEM · MGLRU 多代 LRU                              │
 ├─────────────────────────────────────────────────────────────────────┤
-│  云原生层                              ← airymaxos-cloudnative       │
+│  云原生层                              ← cloudnative       │
 │    K8s CRD · containerd shim · OCI · CNI                             │
 ├─────────────────────────────────────────────────────────────────────┤
-│  系统层                                ← airymaxos-system            │
+│  系统层                                ← system            │
 │    RPM · dnf · 配置 · shell · DevStation                             │
 ├─────────────────────────────────────────────────────────────────────┤
-│  微内核（基于 Linux 6.6）              ← airymaxos-kernel            │
+│  微内核（基于 Linux 6.6）              ← kernel            │
 │    sched_ext · eBPF · io_uring · Rust · 微内核化改造                  │
 ├─────────────────────────────────────────────────────────────────────┤
-│  测试与验证                            ← airymaxos-tests-linux             │
+│  测试与验证                            ← tests-linux             │
 │    单元 · 集成 · 形式化(seL4) · Soak · 混沌                          │
 └─────────────────────────────────────────────────────────────────────┘
 ```
