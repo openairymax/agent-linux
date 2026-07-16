@@ -1,0 +1,135 @@
+# ===========================================================================
+# agentrt-linux (AirymaxOS) CI Pipeline
+# SSoT Validation CI（2 jobs：YAML 语法/规则 + 跨文档引用一致性）
+# ===========================================================================
+# Authority: docs/AirymaxOS/50-engineering-standards/09-ssot-registry.md
+#           docs/AirymaxOS/70-build-system/03-ci-cd-pipeline.md
+# Design: 管理仓只做必要验证，file-integrity 已移至 mgmt-orchestrator.yml
+# ===========================================================================
+
+name: agentrt-linux SSoT CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'ssot-registry.yaml'
+      - 'docs/AirymaxOS/**'
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  # ─── Job 1: SSoT YAML 语法 + 规则 ID 唯一性 ────────────────────────
+  # 合并原 ssot-validate + doc-format 的 YAML 校验部分
+  ssot-syntax-and-rules:
+    name: SSoT YAML Syntax & Rule ID Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: false }
+
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+
+      - name: Install PyYAML
+        run: pip install pyyaml
+
+      - name: Validate SSoT YAML syntax + rule count
+        run: |
+          set -e
+          YAML_FILE="ssot-registry.yaml"
+          if [ ! -f "$YAML_FILE" ]; then
+            echo "ERROR: $YAML_FILE not found at management repo root"
+            exit 1
+          fi
+
+          python3 -c "
+          import yaml, sys, re
+          with open('$YAML_FILE') as f:
+              data = yaml.safe_load(f)
+
+          os_rules = data.get('agentrt_linux_rules', [])
+          agentrt_rules = data.get('agentrt_rules', [])
+          total = 0
+          for g in os_rules:
+              total += len(g.get('entries', []))
+              for r in g.get('ranges', []):
+                  s = int(re.search(r'(\d+)$', r['start']).group(1))
+                  e = int(re.search(r'(\d+)$', r['end']).group(1))
+                  total += (e - s + 1)
+              total += len(g.get('individual_entries', []))
+          for g in agentrt_rules:
+              total += len(g.get('entries', []))
+              for r in g.get('ranges', []):
+                  s = int(re.search(r'(\d+)$', r['start']).group(1))
+                  e = int(re.search(r'(\d+)$', r['end']).group(1))
+                  total += (e - s + 1)
+              total += len(g.get('individual_entries', []))
+          print(f'YAML valid. Registered rule IDs: {total}')
+          "
+
+      - name: Run SSoT cross-reference validation (OS-IRON-015)
+        run: |
+          if [ -d "docs/AirymaxOS" ]; then
+            python3 tools/validate-ssot.py docs/AirymaxOS ssot-registry.yaml
+          else
+            echo "docs/AirymaxOS not present, YAML syntax validation only"
+          fi
+
+  # ─── Job 2: 跨文档引用一致性 + 章节导航 ─────────────────────────────
+  # 合并原 doc-format 的 trailing whitespace + cross-ref 检查
+  ssot-cross-ref:
+    name: SSoT Cross-Reference & Doc Format
+    runs-on: ubuntu-latest
+    needs: ssot-syntax-and-rules
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: false }
+
+      - name: Check for trailing whitespace in .md files (warning only)
+        run: |
+          FOUND=0
+          while IFS= read -r line; do
+            echo "TRAILING WS: $line"
+            FOUND=1
+          done < <(grep -rnP ' +$' --include='*.md' . 2>/dev/null || true)
+          if [ $FOUND -eq 1 ]; then
+            echo "WARNING: trailing whitespace found (non-blocking)"
+          fi
+          echo "Trailing whitespace check complete."
+
+      - name: Verify cross-document links (relative paths)
+        run: |
+          set -e
+          if [ ! -d "docs/AirymaxOS" ]; then
+            echo "docs/AirymaxOS not present, skipping cross-ref check"
+            exit 0
+          fi
+          # Check for broken relative-path markdown links
+          python3 -c "
+          import os, re, sys
+          broken = 0
+          for root, dirs, files in os.walk('docs/AirymaxOS'):
+              for f in files:
+                  if not f.endswith('.md'):
+                      continue
+                  path = os.path.join(root, f)
+                  with open(path) as fh:
+                      for i, line in enumerate(fh, 1):
+                          for m in re.finditer(r'\]\(([^)]+\.md[^)]*)\)', line):
+                              link = m.group(1).split('#')[0]
+                              if link.startswith('http'):
+                                  continue
+                              target = os.path.normpath(os.path.join(root, link))
+                              if not os.path.exists(target):
+                                  print(f'BROKEN LINK: {path}:{i} -> {link}')
+                                  broken += 1
+          if broken > 0:
+              print(f'FAIL: {broken} broken links found')
+              sys.exit(1)
+          print(f'OK: all relative links valid')
+          "

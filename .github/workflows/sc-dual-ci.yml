@@ -1,0 +1,92 @@
+# ===========================================================================
+# agentrt-linux (AirymaxOS) CI Pipeline
+# [SC] 共享契约层双向 CI（OS-IRON-008）（2 jobs：验证 + 触发 agentrt）
+# ===========================================================================
+# Authority: docs/AirymaxOS/70-build-system/03-ci-cd-pipeline.md
+# Design: L1/L3 审查改为 GitHub 分支保护规则，不在 CI 中执行
+# ===========================================================================
+
+name: sc-dual-ci
+on:
+  pull_request:
+    paths:
+      - 'kernel/include/airymax/airy_agent.h'
+      - 'kernel/include/airymax/airy_ipc.h'
+      - 'kernel/include/airymax/airy_sched.h'
+      - 'kernel/include/airymax/airy_mem.h'
+      - 'kernel/include/airymax/airy_security.h'
+      - 'kernel/include/airymax/airy_version.h'
+      - 'kernel/include/airymax/bpf_struct_ops.h'
+      - 'kernel/include/airymax/error.h'
+
+jobs:
+  # ─── Job 1: [SC] 头文件验证（agentrt-linux 侧） ────────────────────
+  # 合并原 kernel-ci 的 6+2 头文件验证部分
+  sc-validate:
+    name: [SC] Header Validation (agentrt-linux side)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+
+      - name: Verify [SC] 6+2 shared headers (OS-IRON-014)
+        run: |
+          set -e
+          for h in airy_agent.h airy_ipc.h airy_sched.h airy_mem.h airy_security.h \
+                   airy_version.h bpf_struct_ops.h error.h; do
+            test -f "kernel/include/airymax/$h" || { echo "FAIL: $h missing"; exit 1; }
+            echo "OK: $h present"
+          done
+
+      - name: Verify no physical duplicates (OS-IRON-014)
+        run: |
+          set -e
+          # 6+2 头文件应仅存在于 kernel/include/airymax/，不应有物理副本
+          COUNT=$(find . -path './.git' -prune -o -name 'airy_ipc.h' -print | wc -l)
+          if [ "$COUNT" -ne 1 ]; then
+            echo "FAIL: airy_ipc.h has $COUNT copies (expected 1)"
+            find . -name 'airy_ipc.h' -not -path './.git/*'
+            exit 1
+          fi
+          echo "OK: no physical duplicates"
+
+      - name: Run kernel CI for [SC] changes (deferred to kernel submodule)
+        run: |
+          echo "[SC] header changes detected"
+          echo "Kernel CI is now handled by kernel submodule .github/workflows/"
+          echo "This job validates [SC] layer integrity only"
+
+  # ─── Job 2: 触发 agentrt 镜像 PR + 等待 CI ──────────────────────────
+  # 合并原 trigger-agentrt-mirror-pr + await-agentrt-ci
+  sc-trigger-and-await:
+    name: [SC] Trigger & Await agentrt Mirror CI
+    runs-on: ubuntu-latest
+    needs: sc-validate
+    if: success()
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create mirror PR in agentrt repo
+        env:
+          AGENTRT_TOKEN: ${{ secrets.AGENTRT_CI_TOKEN }}
+        run: |
+          # 导出 6+2 头文件变更补丁
+          git format-patch origin/${{ github.base_ref }} HEAD -- \
+            kernel/include/airymax/ -o /tmp/patches
+          # 在 agentrt 仓创建镜像 PR
+          python3 agentrt-linux/tools/create-agentrt-mirror-pr.py \
+            --patches /tmp/patches \
+            --source-pr ${{ github.event.pull_request.number }} \
+            --token "$AGENTRT_TOKEN"
+
+      - name: Poll agentrt mirror PR CI status
+        env:
+          AGENTRT_TOKEN: ${{ secrets.AGENTRT_CI_TOKEN }}
+        run: |
+          python3 agentrt-linux/tools/await-agentrt-ci.py \
+            --source-pr ${{ github.event.pull_request.number }} \
+            --timeout 30m \
+            --token "$AGENTRT_TOKEN"
+
+# L1/L3 审查通过 GitHub 分支保护规则强制（require-l1-l3-review 已移除）
+# 分支保护配置：require_code_owner_reviews + required_reviewers: 2

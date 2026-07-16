@@ -1,0 +1,115 @@
+# ===========================================================================
+# agentrt-linux (AirymaxOS) CI Pipeline
+# 管理仓编排 CI（2 jobs：文件完整性 + 子仓编排）
+# ===========================================================================
+# Authority: docs/AirymaxOS/70-build-system/03-ci-cd-pipeline.md
+# Design: 管理仓只做必要验证（SSoT/file-integrity/submodule-orchestration）
+#         语言级 CI 下沉到各子仓 .github/workflows/
+# ===========================================================================
+
+name: mgmt-orchestrator
+on:
+  pull_request:
+    paths:
+      - 'docs/**'
+      - '.gitmodules'
+      - 'ssot-registry.yaml'
+      - 'MAINTAINERS'
+      - 'CODEOWNERS'
+  push:
+    branches: [main, develop]
+
+jobs:
+  # ─── Job 1: 治理文件完整性 ─────────────────────────────────────────
+  # 合并原 file-integrity + submodule-status 两个 job
+  file-integrity:
+    name: Governance File & Submodule Integrity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+
+      - name: Verify 8 submodule directories exist
+        run: |
+          set -e
+          for sub in kernel services security memory cognition cloudnative system tests-linux; do
+            if [ ! -d "$sub" ]; then
+              echo "FAIL: $sub/ missing"
+              exit 1
+            fi
+            echo "OK: $sub/"
+          done
+
+      - name: Verify .gitmodules references (8 submodules)
+        run: |
+          set -e
+          SUB_COUNT=$(grep -c '\[submodule' .gitmodules)
+          if [ "$SUB_COUNT" -ne 8 ]; then
+            echo "FAIL: expected 8 submodules, found $SUB_COUNT"
+            exit 1
+          fi
+          for sub in kernel services security memory cognition cloudnative system tests-linux; do
+            grep -q "path = $sub" .gitmodules || { echo "FAIL: $sub not in .gitmodules"; exit 1; }
+          done
+
+      - name: Verify [SC] 6+2 shared headers exist
+        run: |
+          set -e
+          for h in airy_agent.h airy_ipc.h airy_sched.h airy_mem.h airy_security.h \
+                   airy_version.h bpf_struct_ops.h error.h; do
+            test -f "kernel/include/airymax/$h" || { echo "FAIL: $h missing"; exit 1; }
+          done
+
+      - name: Verify required governance files
+        run: |
+          set -e
+          for f in README.md README_zh.md LICENSE NOTICE CONTRIBUTING.md \
+                   MAINTAINERS SECURITY.md .editorconfig .clang-format \
+                   CODEOWNERS .gitignore .gitmodules; do
+            test -f "$f" || { echo "FAIL: $f missing"; exit 1; }
+          done
+
+      - name: Check no airymaxos- prefix (2026-07-12 decision)
+        run: |
+          set -e
+          if grep -r "airymaxos-" README.md README_zh.md MAINTAINERS 2>/dev/null; then
+            echo "FAIL: deprecated 'airymaxos-' prefix found"
+            exit 1
+          fi
+          echo "OK: no airymaxos- prefix"
+
+  # ─── Job 2: 子仓 CI 编排 ────────────────────────────────────────────
+  # 合并原 subrepo-status + doc-format 两个 job
+  orchestrate-leaf-ci:
+    name: Orchestrate Leaf Submodule CI
+    runs-on: ubuntu-latest
+    needs: file-integrity
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+
+      - name: Aggregate 8 subrepo CI status
+        run: |
+          python3 agentrt-linux/tools/aggregate-subrepo-ci.py --fail-on-red || {
+            echo "WARN: some submodule CI not yet configured (expected in 0.1.1 design phase)"
+            exit 0
+          }
+
+      - name: markdownlint (docs only)
+        run: |
+          npm install -g markdownlint-cli2
+          markdownlint-cli2 'docs/**/*.md' || {
+            echo "WARN: markdownlint warnings (non-blocking in 0.1.1)"
+            exit 0
+          }
+
+      - name: Verify copyright header (line 1)
+        run: |
+          python3 agentrt-linux/tools/check-copyright.py --root docs || {
+            echo "WARN: copyright header issues (non-blocking in 0.1.1)"
+            exit 0
+          }

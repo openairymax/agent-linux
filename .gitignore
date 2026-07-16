@@ -1,34 +1,28 @@
 # ===========================================================================
 # agentrt-linux（AirymaxOS）管理仓 .gitignore
-# 策略：非必要不追踪
-# ===========================================================================
-
+# 策略：非必要不追踪。各叶子仓自行维护 .gitignore
+# ---------------------------------------------------------------------------
 # 默认忽略所有
+# ---------------------------------------------------------------------------
 *
-
-# ===========================================================================
+# ---------------------------------------------------------------------------
 # 管理仓必要文件（白名单）
-# ===========================================================================
+# ---------------------------------------------------------------------------
 !.gitignore
 !.gitmodules
 !.github/
+!.github/**
+!CODEOWNERS
+!CONTRIBUTING.md
 !LICENSE
+!MAINTAINERS
+!Makefile
 !NOTICE
 !README.md
 !README_zh.md
-!CONTRIBUTING.md
-!MAINTAINERS
 !SECURITY.md
 !.editorconfig
 !.clang-format
-!CODEOWNERS
-!Makefile
-!tools/
 !scripts/
 !ssot-registry.yaml
-
-# .github/ 子目录白名单（.github/ 已在上方放行，但需显式放行子文件）
-!.github/PULL_REQUEST_TEMPLATE.md
-!.github/ISSUE_TEMPLATE/
-!.github/ISSUE_TEMPLATE/bug_report.md
-!.github/ISSUE_TEMPLATE/feature_request.md
+!tools/

@@ -1,0 +1,106 @@
+# ===========================================================================
+# agentrt-linux (AirymaxOS) CI Pipeline
+# release tag 流水线（L7 发布验证）
+# 重组为 2 jobs：build-and-sign（SBOM + 构建签名）+ publish-release（发布渠道）
+# ===========================================================================
+# Authority: docs/AirymaxOS/70-build-system/03-ci-cd-pipeline.md
+# Constraint: 管理仓每个 workflow 最多 2 条流水线
+# ===========================================================================
+
+name: release
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'        # 稳定版 v0.2.8
+      - 'v[0-9]+.[0-9]+.[0-9]+-rc[0-9]+' # 候选版 v0.2.8-rc1
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag'
+        required: true
+
+jobs:
+  build-and-sign:
+    name: Build + SBOM + Sign (L7)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+      - name: Generate SPDX SBOM
+        run: |
+          # 内核态：扫描 vmlinux + 模块符号
+          syft kernel/ -o spdx-json > sbom-kernel.spdx.json
+          # 用户态：扫描 8 子仓依赖
+          for repo in memory security cognition services system cloudnative tests-linux; do
+            syft "$repo/" -o spdx-json > "sbom-${repo}.spdx.json"
+          done
+          # 合并为统一 SBOM
+          python3 agentrt-linux/tools/merge-sbom.py \
+            --output sbom-airymaxos-${{ github.ref_name }}.spdx.json \
+            sbom-*.spdx.json
+      - name: Build kernel image + modules
+        run: |
+          make ARCH=x86_64 -j$(nproc) binrpm-pkg
+      - name: Import GPG signing key
+        uses: crazy-max/ghaction-import-gpg@v6
+        with:
+          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+          passphrase: ${{ secrets.GPG_PASSPHRASE }}
+      - name: Sign kernel image + modules (GPG)
+        run: |
+          gpg --batch --yes --detach-sign --armor \
+            -o airymaxos-kernel-${{ github.ref_name }}.rpm.asc \
+            airymaxos-kernel-${{ github.ref_name }}.rpm
+      - name: Sign OCI image (cosign)
+        env:
+          COSIGN_KEY: ${{ secrets.COSIGN_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+        run: |
+          cosign sign --key env://COSIGN_KEY \
+            ghcr.io/spharx/airymaxos:${{ github.ref_name }}
+      - name: Build SDK tarball + sign
+        run: |
+          tar czf airymaxos-sdk-${{ github.ref_name }}.tar.gz sdk/
+          gpg --batch --yes --detach-sign --armor \
+            -o airymaxos-sdk-${{ github.ref_name }}.tar.gz.asc \
+            airymaxos-sdk-${{ github.ref_name }}.tar.gz
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts-${{ github.ref_name }}
+          path: |
+            sbom-airymaxos-${{ github.ref_name }}.spdx.json
+            airymaxos-kernel-*.rpm
+            airymaxos-kernel-*.rpm.asc
+            airymaxos-sdk-*.tar.gz
+            airymaxos-sdk-*.tar.gz.asc
+
+  publish-release:
+    name: Publish + GitHub Release (L7)
+    runs-on: ubuntu-latest
+    needs: build-and-sign
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-artifacts-${{ github.ref_name }}
+      - name: Publish dnf repo
+        run: |
+          createrepo airymaxos-repo/${{ github.ref_name }}/
+          rsync -avz airymaxos-repo/ ${{ secrets.DNF_REPO_HOST }}:/var/www/airymaxos-repo/
+      - name: Publish OCI image
+        run: |
+          docker build -t ghcr.io/spharx/airymaxos:${{ github.ref_name }} .
+          docker push ghcr.io/spharx/airymaxos:${{ github.ref_name }}
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            airymaxos-kernel-*.rpm
+            airymaxos-kernel-*.rpm.asc
+            airymaxos-sdk-*.tar.gz
+            airymaxos-sdk-*.tar.gz.asc
+            sbom-airymaxos-*.spdx.json
+          generate_release_notes: true

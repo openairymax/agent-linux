@@ -1,0 +1,82 @@
+# ===========================================================================
+# agentrt-linux (AirymaxOS) CI Pipeline
+# kernel 子仓 CI（Kbuild 矩阵 + 静态分析 + 运行时测试）
+# 重组为 2 jobs：kernel-build（编译矩阵）+ kernel-verify（静态分析 + 测试）
+# ===========================================================================
+# Authority: docs/AirymaxOS/70-build-system/03-ci-cd-pipeline.md
+# Constraint: 管理仓每个 workflow 最多 2 条流水线
+# Rules: OS-STD-TOOL-161（矩阵）/ OS-STD-TOOL-160（checkpatch）
+#        OS-STD-TOOL-081-CI（sparse）/ OS-TEST-001~022（KUnit + kselftest）
+# ===========================================================================
+
+name: ci-kernel
+on:
+  pull_request:
+    paths: ['kernel/**']
+  push:
+    branches: [main, develop]
+    paths: ['kernel/**']
+
+jobs:
+  kernel-build:
+    name: Kbuild Matrix (18 configs)
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      max-parallel: 9
+      matrix:
+        config: [defconfig, allnoconfig, allmodconfig]
+        arch: [x86_64, arm64, riscv64]
+        compiler: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+      - uses: ./.github/actions/setup-toolchain
+        with:
+          arch: ${{ matrix.arch }}
+          compiler: ${{ matrix.compiler }}
+      - uses: hendrikmuhs/ccache-action@v1
+        with:
+          key: kernel-${{ matrix.config }}-${{ matrix.arch }}-${{ matrix.compiler }}
+          max-size: 2G
+      - name: Kbuild ${{ matrix.config }} / ${{ matrix.arch }} / ${{ matrix.compiler }}
+        run: |
+          make ARCH=${{ matrix.arch }} CC=${{ matrix.compiler }} ${{ matrix.config }}
+          make ARCH=${{ matrix.arch }} CC=${{ matrix.compiler }} -j$(nproc) W=2 2>&1 | tee build.log
+          ! grep -E "error:|warning:" build.log
+
+  kernel-verify:
+    name: Static Analysis + Runtime Tests
+    runs-on: ubuntu-latest
+    needs: kernel-build
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+      - name: Install static analysis tools
+        run: sudo apt-get install -y sparse coccinelle
+      - name: checkpatch.pl --strict (OS-STD-TOOL-160)
+        run: |
+          git diff --name-only origin/${{ github.base_ref }} HEAD -- 'kernel/**/*.c' 'kernel/**/*.h' > files.txt
+          while read f; do
+            scripts/checkpatch.pl --strict --no-tree -f "$f" || exit 1
+          done < files.txt
+      - name: sparse make C=2 W=2 (OS-STD-TOOL-081-CI)
+        run: |
+          make ARCH=x86_64 defconfig
+          make ARCH=x86_64 C=2 W=2 -j$(nproc) 2>&1 | tee sparse.log
+          ! grep -E "warning:" sparse.log
+      - name: Coccinelle (make coccicheck)
+        run: make ARCH=x86_64 coccicheck MODE=report V=1
+      - name: KUnit on UML (OS-TEST-001~012)
+        run: |
+          make ARCH=um defconfig
+          ./tools/testing/kunit/kunit.py run --arch=um --raw_output=TAP
+      - name: Verify TAP case count monotonic (OS-TEST-012)
+        run: python3 agentrt-linux/tools/kunit-tap-diff.py --baseline origin/develop
+      - name: kselftest on QEMU (OS-TEST-013~022)
+        run: |
+          make ARCH=x86_64 defconfig
+          ./tools/testing/kselftest/run_kselftest.sh --tap > kselftest.tap
+          python3 agentrt-linux/tools/parse-tap.py --input kselftest.tap --fail-on-not-ok
