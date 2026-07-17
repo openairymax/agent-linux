@@ -38,7 +38,7 @@ agentrt_linux_rules:
       - { id: OS-IRON-011, desc: "双源边界声明", section: "04 §12", status: active }
       - { id: OS-IRON-012, desc: "seL4 借鉴仅限架构层", section: "04 §12", status: active }
       - { id: OS-IRON-013, desc: "8 子仓独立 git 仓库 + submodule", section: "04 §13", status: active }
-      - { id: OS-IRON-014, desc: "[SC] 共享契约层 6+2 头文件单一数据源", section: "120", status: active }
+      - { id: OS-IRON-014, desc: "[SC] 共享契约层 10 个头文件单一数据源", section: "120", status: active }
       - { id: OS-IRON-015, desc: "编号管理元规则——编号一经分配不得复用", section: "90-obs/02 §14.2", status: active }
       - { id: OS-IRON-016, desc: "UAPI 头文件编译器无关原则", section: "04 §2.4", status: active }
 
@@ -210,7 +210,7 @@ agentrt_linux_rules:
 
   # ── Chapter 9: OS-SEC Security Engineering (3 ranges) ─────────────
   - prefix: OS-SEC
-    authority: "10-architecture/07-threat-model.md + 110-security/"
+    authority: "10-architecture/08-threat-model.md + 110-security/"
     chapter: "Ch 9"
     registration: range
     ranges:
@@ -574,3 +574,104 @@ agentrt_rules:
     registration: range
     ranges:
       - { start: SP01, end: SP37, count: 37, section: "130-roadmap/01" }
+
+
+# ===========================================================================
+# Part 3: Technical Point Single Source of Truth (Tier 0)
+# ===========================================================================
+# 方案 §2.2 Tier 0：每个技术点在整个文档体系中只允许有一个权威定义源
+# （Single Source of Truth），其余文档只能引用，禁止重新定义。
+# 引用格式：[SSoT:技术点名] 或 [SSoT:文档路径#章节]
+# ===========================================================================
+
+technical_points:
+
+  # ── 11 个技术点权威源映射 ──────────────────────────────────────────
+
+  - id: TP-001
+    name: "错误码定义（UEF）"
+    authority_doc: "docs/AirymaxOS/30-interfaces/08-sc-error-contract.md"
+    sc_header: "kernel/include/airymax/error.h"
+    tier: 1
+    description: "AIRY_E* 错误码（负数可恢复）与 AIRY_FAULT_* 故障码（正数 0x1000+ 不可恢复）的唯一定义源"
+    constraint: "禁止 AIRY_ERR_* 双轨定义；所有错误码必须引用本源"
+
+  - id: TP-002
+    name: "日志类型（ULPS）"
+    authority_doc: "docs/AirymaxOS/30-interfaces/09-sc-log-types-contract.md"
+    sc_header: "kernel/include/airymax/log_types.h"
+    tier: 1
+    description: "128B 固定日志记录格式与 LOG_* 5 级枚举的唯一定义源"
+    constraint: "LOG_* 为权威前缀；AIRY_LOG_* 已废弃"
+
+  - id: TP-003
+    name: "IPC 消息头协议（UIPF）"
+    authority_doc: "docs/AirymaxOS/30-interfaces/02-ipc-protocol.md"
+    sc_header: "kernel/include/airymax/ipc.h"
+    tier: 1
+    description: "128B IPC 消息头布局、AIRY_IPC_MAGIC、操作码枚举的唯一定义源"
+    constraint: "128B 消息头大小仅在 02-ipc-protocol.md 定义，其余文档引用"
+
+  - id: TP-004
+    name: "调度策略（方案 C-Prime，USV）"
+    authority_doc: "docs/AirymaxOS/30-interfaces/10-sc-sched-extension.md"
+    sc_header: "kernel/include/airymax/sched.h"
+    tier: 1
+    description: "方案 C-Prime（SCHED_DEADLINE + SCHED_FIFO + EEVDF + seL4 MCS 映射）调度接口的唯一定义源"
+    constraint: "标准 Linux 6.6 主线不含 sched_ext；禁止 backport sched_ext"
+
+  - id: TP-005
+    name: "安全模型（Capability）"
+    authority_doc: "docs/AirymaxOS/110-security/03-capability-model.md"
+    sc_header: "kernel/include/airymax/security_types.h"
+    tier: 1
+    description: "Capability 引用句柄（cap_t）、离线缓存校验、Reconciliation 的唯一定义源"
+    constraint: "cap_t 定义于 security_types.h；禁止在其他文档重新定义"
+
+  - id: TP-006
+    name: "微内核策略"
+    authority_doc: "docs/AirymaxOS/10-architecture/03-microkernel-strategy.md"
+    sc_header: null
+    tier: 1
+    description: "微内核化改造策略、VFS 用户态化决策（USV 统一：内核保留路径解析，FS 实现用户态化）的唯一定义源"
+    constraint: "VFS 决策以 USV 统一为准"
+
+  - id: TP-007
+    name: "IRON-9 跨端共享模型（v3）"
+    authority_doc: "docs/AirymaxOS/10-architecture/06-iron9-shared-model.md"
+    sc_header: "kernel/include/airymax/uapi_compat.h"
+    tier: 1
+    description: "[SC]/[SS]/[IND]/[DSL] 四层模型、10 个 [SC] 头文件清单的唯一定义源"
+    constraint: "[SC] 头文件数量统一为 10 个；禁止 6 个的过时表述"
+
+  - id: TP-008
+    name: "Airymax Unify Design"
+    authority_doc: "docs/AirymaxOS/10-architecture/10-unify-design.md"
+    sc_header: null
+    tier: 1
+    description: "UEF/ULPS/UCF/USV/UIPF 5 模块统一设计的唯一定义源，覆盖通信/治理/观测/韧性四大技术领域"
+    constraint: "5 模块设计以本文件为唯一权威"
+
+  - id: TP-009
+    name: "[DSL] 降级生存层"
+    authority_doc: "docs/AirymaxOS/10-architecture/11-degraded-survival-layer.md"
+    sc_header: null
+    tier: 1
+    description: "每个 [SC] 头文件 #ifdef AIRY_SC_FALLBACK 降级块、Panic 回退路径、最小可运行子集的唯一定义源"
+    constraint: "[DSL] 是 IRON-9 v3 第四层；降级策略以本文件为唯一权威"
+
+  - id: TP-010
+    name: "内核基线"
+    authority_doc: "docs/AirymaxOS/10-architecture/04-engineering-baseline.md"
+    sc_header: null
+    tier: 1
+    description: "标准 Linux 6.6 LTS 主线内核基线（不含 sched_ext，采用方案 C-Prime）的唯一定义源"
+    constraint: "统一表述为'标准 Linux 6.6 主线，不含 sched_ext'；禁止 sched_ext forward-port 表述"
+
+  - id: TP-011
+    name: "[SC] 头文件物理宿主与目录结构"
+    authority_doc: "docs/AirymaxOS/10-architecture/07-directory-structure.md"
+    sc_header: "kernel/include/airymax/ (10 个头文件物理宿主目录)"
+    tier: 1
+    description: "agentrt-linux 目录结构、[SC] 头文件物理宿主（kernel/include/airymax/）的唯一定义源"
+    constraint: "OS-IRON-014：[SC] 头文件唯一物理宿主，禁止物理副本"
