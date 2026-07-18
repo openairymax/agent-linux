@@ -146,4 +146,31 @@ git submodule update --remote --checkout
 
 采用 **AGPL v3 + Apache 2.0** 双许可证（SPDX: `AGPL-3.0-or-later OR Apache-2.0`）。详见 [LICENSE](LICENSE) 双许可证全文和 [NOTICE](NOTICE) 版权、商标与第三方声明。
 
+### 双许可证使用指南
+
+你可以**任选其一**适用——不是同时遵守两个，也不是都不遵守。
+
+**SPDX 表达式**：`AGPL-3.0-or-later OR Apache-2.0`
+
+| 你的场景 | 选择 | 原因 |
+|----------|------|------|
+| 构建**SaaS 网络服务**并修改 AirymaxOS | **AGPL v3** | 网络服务条款要求公开修改后的源代码 |
+| 开发**开源衍生作品**（copyleft 项目） | **AGPL v3** | 衍生作品必须同样以 AGPL 开源 |
+| 在**商业闭源产品**中集成 AirymaxOS | **Apache 2.0** | 宽松许可证，允许闭源衍生 |
+| 构建**企业内部工具** | **Apache 2.0** | 无需公开源代码 |
+| 需要**专利保护** | **Apache 2.0** | 贡献者明确授予专利使用权 |
+| 仅用于学习与研究 | **任一** | 两者均允许个人使用 |
+
+### kernel 子仓许可证例外
+
+本管理仓本身（即 `agentrt-linux/` 仓库）及其所有子模块**除 `kernel/` 外**均采用 AGPL v3 + Apache 2.0 双许可证。`kernel/` 子模块采用 **GPL-2.0-only** 许可证，以保持与上游 Linux 内核（6.6 LTS / 7.1）的兼容性。
+
+| 路径 | 许可证 | 原因 |
+|------|--------|------|
+| `agentrt-linux/`（管理仓） | `AGPL-3.0-or-later OR Apache-2.0` | 用户态管理代码 |
+| `agentrt-linux/{cloudnative,cognition,memory,security,services,system,tests-linux}/` | `AGPL-3.0-or-later OR Apache-2.0` | 用户态子模块 |
+| `agentrt-linux/kernel/` | `GPL-2.0-only` | Linux 内核派生代码——AGPL v3 和 Apache 2.0 与 GPL-2.0-only **不兼容** |
+
+> **注意**：`agentrt-linux/{cloudnative,cognition,memory,security,services,system,tests-linux}/` 中包含内核模块头文件（`#include <linux/module.h>`、`MODULE_LICENSE("GPL")` 等）的源代码文件，其 SPDX 标签**必须**使用 `GPL-2.0-only`。完整策略见 [docs/AirymaxOS/50-engineering-standards/12-license-policy.md](../docs/AirymaxOS/50-engineering-standards/12-license-policy.md)。
+
 Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.

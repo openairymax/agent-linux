@@ -182,4 +182,31 @@ See the [Branch Strategy](#branch-strategy) section above for clone-with-submodu
 
 Dual-licensed under **AGPL v3 + Apache 2.0** (SPDX: `AGPL-3.0-or-later OR Apache-2.0`). You may choose either license at your option. See [LICENSE](LICENSE) for the full text of both licenses and [NOTICE](NOTICE) for copyright, trademark and third-party notices.
 
+### Dual License Guide
+
+You may choose **either** license at your option — not both, not neither.
+
+**SPDX Expression**: `AGPL-3.0-or-later OR Apache-2.0`
+
+| If you are... | Choose | Why |
+|---------------|--------|-----|
+| Building a **SaaS** or network service that modifies AirymaxOS | **AGPL v3** | Network service clause requires source disclosure |
+| Developing **open-source** derivative works (copyleft) | **AGPL v3** | Derivatives must remain open-source under AGPL |
+| Using AirymaxOS in **commercial closed-source** products | **Apache 2.0** | Permissive, allows proprietary derivatives |
+| Building **enterprise internal tools** | **Apache 2.0** | No source disclosure required |
+| Needing **patent protection** | **Apache 2.0** | Explicit patent grant from contributors |
+| Just learning or researching | **Either** | Both permit personal use |
+
+### Kernel Submodule Exception
+
+The management repository itself (this `agentrt-linux/` repo) and all its submodules **except `kernel/`** are dual-licensed under AGPL v3 + Apache 2.0. The `kernel/` submodule is licensed under **GPL-2.0-only** to maintain compatibility with the upstream Linux kernel (6.6 LTS / 7.1).
+
+| Path | License | Why |
+|------|---------|-----|
+| `agentrt-linux/` (management repo) | `AGPL-3.0-or-later OR Apache-2.0` | User-space management code |
+| `agentrt-linux/{cloudnative,cognition,memory,security,services,system,tests-linux}/` | `AGPL-3.0-or-later OR Apache-2.0` | User-space submodules |
+| `agentrt-linux/kernel/` | `GPL-2.0-only` | Linux kernel derived code — AGPL v3 and Apache 2.0 are NOT compatible with GPL-2.0-only |
+
+> **Note**: Source files within `agentrt-linux/{cloudnative,cognition,memory,security,services,system,tests-linux}/` that include kernel module headers (`#include <linux/module.h>`, `MODULE_LICENSE("GPL")`, etc.) MUST use `GPL-2.0-only` in their SPDX tag. See [docs/AirymaxOS/50-engineering-standards/12-license-policy.md](../docs/AirymaxOS/50-engineering-standards/12-license-policy.md) for the full policy.
+
 Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
