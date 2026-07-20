@@ -1,32 +1,32 @@
 [submodule "kernel"]
 	path = kernel
 	url = ../kernel.git
-	branch = feature/official-hubs-01
+	branch = develop/hubs-01
 [submodule "memory"]
 	path = memory
 	url = ../memory.git
-	branch = feature/official-hubs-01
+	branch = develop/hubs-01
 [submodule "security"]
 	path = security
 	url = ../security.git
-	branch = feature/official-hubs-01
+	branch = develop/hubs-01
 [submodule "cognition"]
 	path = cognition
 	url = ../cognition.git
-	branch = feature/official-hubs-01
+	branch = develop/hubs-01
 [submodule "services"]
 	path = services
 	url = ../services.git
-	branch = feature/official-hubs-01
+	branch = develop/hubs-01
 [submodule "system"]
 	path = system
 	url = ../system.git
-	branch = feature/official-hubs-01
+	branch = develop/hubs-01
 [submodule "cloudnative"]
 	path = cloudnative
 	url = ../cloudnative.git
-	branch = feature/official-hubs-01
+	branch = develop/hubs-01
 [submodule "tests-linux"]
 	path = tests-linux
 	url = ../tests-linux.git
-	branch = feature/official-hubs-01
+	branch = develop/hubs-01
