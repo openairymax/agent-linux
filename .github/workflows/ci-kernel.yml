@@ -19,16 +19,21 @@ on:
 
 jobs:
   kernel-build:
-    name: Kbuild Matrix (18 configs)
+    name: Kbuild Matrix (32 configs)
     runs-on: ubuntu-latest
     timeout-minutes: 50
     strategy:
       fail-fast: false
-      max-parallel: 9
+      max-parallel: 8
       matrix:
-        config: [defconfig, allnoconfig, allmodconfig]
-        arch: [x86_64, arm64, riscv64]
+        config: [defconfig, allnoconfig, allmodconfig, airy_defconfig]
+        arch: [x86_64, arm64, riscv64, loongarch64]
         compiler: [gcc, clang]
+        exclude:
+          # clang + loongarch64 not yet supported in upstream toolchain
+          # (airy_defconfig now available for all 4 archs: x86_64/arm64/riscv64/loongarch64)
+          - arch: loongarch64
+            compiler: clang
     steps:
       - uses: actions/checkout@v4
         with: { submodules: recursive }

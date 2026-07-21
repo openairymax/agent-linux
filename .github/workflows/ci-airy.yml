@@ -1,0 +1,225 @@
+# ===========================================================================
+# agentrt-linux (AirymaxOS) Airymax-Specific CI Pipeline
+# 专门验证 Airymax 专属代码（security/airy + kernel/superv + corekern 等）
+# Authority: docs/AirymaxOS/70-build-system/03-ci-cd-pipeline.md
+# Rules: OS-STD-TOOL-160（checkpatch）/ OS-STD-TOOL-081-CI（sparse）
+#        IRON-3（所有 Airymax 增强代码必须在新增目录中）
+# ===========================================================================
+
+name: ci-airy
+on:
+  pull_request:
+    paths:
+      - 'kernel/security/airy/**'
+      - 'kernel/kernel/superv/**'
+      - 'kernel/kernel/syscalls/**'
+      - 'kernel/kernel/corekern/**'
+      - 'kernel/kernel/log/**'
+      - 'kernel/kernel/ipc/**'
+      - 'kernel/include/uapi/linux/airymax/**'
+      - 'kernel/include/airymax/**'
+      - 'kernel/configs/**'
+      - 'kernel/config/Kconfig.alk'
+      - 'kernel/arch/*/configs/airy_defconfig'
+  push:
+    branches: [main, develop]
+    paths:
+      - 'kernel/security/airy/**'
+      - 'kernel/kernel/superv/**'
+      - 'kernel/kernel/syscalls/**'
+      - 'kernel/kernel/corekern/**'
+      - 'kernel/kernel/log/**'
+      - 'kernel/kernel/ipc/**'
+      - 'kernel/include/uapi/linux/airymax/**'
+      - 'kernel/include/airymax/**'
+      - 'kernel/configs/**'
+      - 'kernel/config/Kconfig.alk'
+      - 'kernel/arch/*/configs/airy_defconfig'
+
+jobs:
+  airy-defconfig-verify:
+    name: airy_defconfig Build Verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86_64, arm64, riscv64, loongarch64]
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flex bison libelf-dev libssl-dev bc cpio
+      - name: Install cross-toolchain (arm64)
+        if: matrix.arch == 'arm64'
+        run: |
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+          echo "CROSS_COMPILE=aarch64-linux-gnu-" >> $GITHUB_ENV
+      - name: Install cross-toolchain (riscv64)
+        if: matrix.arch == 'riscv64'
+        run: |
+          sudo apt-get install -y gcc-riscv64-linux-gnu
+          echo "CROSS_COMPILE=riscv64-linux-gnu-" >> $GITHUB_ENV
+      - name: Install cross-toolchain (loongarch64)
+        if: matrix.arch == 'loongarch64'
+        run: |
+          # loongarch64 cross-toolchain from loongson
+          sudo apt-get install -y gcc-loongarch64-linux-gnu || true
+          echo "CROSS_COMPILE=loongarch64-linux-gnu-" >> $GITHUB_ENV
+      - name: Apply airy_defconfig
+        run: |
+          cd kernel
+          make ARCH=${{ matrix.arch }} defconfig
+          ./scripts/kconfig/merge_config.sh -m .config arch/${{ matrix.arch }}/configs/airy_defconfig
+          make ARCH=${{ matrix.arch }} olddefconfig
+      - name: Verify Airymax CONFIGs are enabled
+        run: |
+          cd kernel
+          grep -q 'CONFIG_SECURITY=y' .config
+          grep -q 'CONFIG_SECURITY_AIRY=y' .config
+          grep -q 'CONFIG_AIRY_SYSCALL=y' .config
+          grep -q 'CONFIG_AIRY_COREKERN=y' .config
+          grep -q 'CONFIG_AIRY_LOG=y' .config
+          grep -q 'CONFIG_AIRY_IPC=y' .config
+          grep -q 'CONFIG_AIRY_CAP_TABLE_SIZE=1024' .config
+          grep -q 'CONFIG_IO_URING=y' .config
+      - name: Build kernel with airy_defconfig
+        run: |
+          cd kernel
+          make ARCH=${{ matrix.arch }} -j$(nproc) 2>&1 | tee build.log
+          ! grep -E "error:|warning:" build.log
+      - name: Verify Airymax .o artifacts
+        run: |
+          cd kernel
+          # security/airy/ should produce 11 .o files (airy_lsm + airy_cap_init +
+          # airy_cap_array + airy_cap_derive + airy_cap_check + airy_cap_revoke +
+          # airy_cap_rotate + airy_superv_lsm + airy_ipc_freeze + airy_die_notify +
+          # airy_eventfd) combined into airy.o
+          test -f security/airy/airy.o
+          # kernel/superv/ should produce 5 .o files combined into airy_superv.o
+          test -f kernel/superv/airy_superv.o
+          # kernel/corekern/ should produce 19 .o files
+          test -f kernel/corekern/corekern.o
+          # kernel/log/ should produce 3 .o files combined into airy_log.o
+          test -f kernel/log/airy_log.o
+          # kernel/ipc/ should produce 2 .o files combined into airy_ipc.o
+          test -f kernel/ipc/airy_ipc.o
+          echo "All Airymax .o artifacts verified"
+
+  airy-checkpatch:
+    name: Airymax Code Style Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+      - name: Run checkpatch.pl on Airymax-specific files
+        run: |
+          cd kernel
+          AIRY_DIRS=(
+            "security/airy/"
+            "kernel/superv/"
+            "kernel/syscalls/"
+            "kernel/corekern/"
+            "kernel/log/"
+            "kernel/ipc/"
+            "include/uapi/linux/airymax/"
+            "include/airymax/"
+          )
+          FAIL=0
+          for dir in "${AIRY_DIRS[@]}"; do
+            find "$dir" -type f \( -name '*.c' -o -name '*.h' \) | while read f; do
+              echo "Checking: $f"
+              scripts/checkpatch.pl --strict --no-tree -f "$f" || FAIL=1
+            done
+          done
+          exit $FAIL
+
+  airy-spdx-audit:
+    name: SPDX License Identifier Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+      - name: Verify SPDX identifiers on Airymax-specific files
+        run: |
+          cd kernel
+          FAIL=0
+          # [SC] shared contract headers must be BSD-3-Clause OR GPL-2.0
+          for f in include/uapi/linux/airymax/*.h; do
+            if ! head -1 "$f" | grep -q 'SPDX-License-Identifier: BSD-3-Clause OR GPL-2.0'; then
+              echo "ERROR: $f must have 'SPDX-License-Identifier: BSD-3-Clause OR GPL-2.0'"
+              FAIL=1
+            fi
+          done
+          # Airymax .c files must be GPL-2.0-only
+          AIRY_C_FILES=$(find security/airy/ kernel/superv/ kernel/syscalls/ \
+            kernel/corekern/ kernel/log/ kernel/ipc/ -name '*.c' 2>/dev/null)
+          for f in $AIRY_C_FILES; do
+            if ! head -1 "$f" | grep -q 'SPDX-License-Identifier: GPL-2.0-only'; then
+              echo "ERROR: $f must have 'SPDX-License-Identifier: GPL-2.0-only'"
+              FAIL=1
+            fi
+          done
+          # Non-[SC] .h files must be GPL-2.0-only
+          AIRY_H_FILES=$(find include/airymax/ security/airy/ kernel/corekern/ \
+            kernel/ipc/ -name '*.h' 2>/dev/null)
+          for f in $AIRY_H_FILES; do
+            if ! head -1 "$f" | grep -q 'SPDX-License-Identifier: GPL-2.0-only'; then
+              echo "ERROR: $f must have 'SPDX-License-Identifier: GPL-2.0-only'"
+              FAIL=1
+            fi
+          done
+          # Kbuild files must be GPL-2.0-only
+          AIRY_KBUILD_FILES=$(find security/airy/ kernel/superv/ kernel/syscalls/ \
+            kernel/corekern/ kernel/log/ kernel/ipc/ -name 'Kbuild' 2>/dev/null)
+          for f in $AIRY_KBUILD_FILES; do
+            if ! head -1 "$f" | grep -q 'SPDX-License-Identifier: GPL-2.0-only'; then
+              echo "ERROR: $f must have 'SPDX-License-Identifier: GPL-2.0-only'"
+              FAIL=1
+            fi
+          done
+          exit $FAIL
+
+  airy-symbol-integrity:
+    name: Airymax Symbol Integrity Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: airy-defconfig-verify
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flex bison libelf-dev libssl-dev bc cpio
+      - name: Build with airy_defconfig
+        run: |
+          cd kernel
+          make ARCH=x86_64 defconfig
+          ./scripts/kconfig/merge_config.sh -m .config arch/x86_64/configs/airy_defconfig
+          make ARCH=x86_64 olddefconfig
+          make ARCH=x86_64 -j$(nproc)
+      - name: Verify no symbol clashes between security/airy/ and kernel/superv/
+        run: |
+          cd kernel
+          # After rename, security/airy/airy_cap_check.o and
+          # kernel/superv/airy_cap_check_superv.o should have no clashing symbols
+          if nm security/airy/airy_cap_check.o | awk '{print $3}' | sort | uniq -d | grep -q .; then
+            echo "ERROR: duplicate symbols in security/airy/airy_cap_check.o"
+            exit 1
+          fi
+          if nm kernel/superv/airy_cap_check_superv.o | awk '{print $3}' | sort | uniq -d | grep -q .; then
+            echo "ERROR: duplicate symbols in kernel/superv/airy_cap_check_superv.o"
+            exit 1
+          fi
+          echo "Symbol integrity verified: no clashes between security/airy/ and kernel/superv/"
+      - name: Verify airy_superv_lsm.o exists in both security/airy/ and kernel/superv/
+        run: |
+          cd kernel
+          test -f security/airy/airy_superv_lsm.o
+          test -f kernel/superv/airy_superv_lsm.o
+          echo "airy_superv_lsm.o verified in both security/airy/ and kernel/superv/"
