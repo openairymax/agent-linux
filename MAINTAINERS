@@ -129,12 +129,12 @@ H:	all modules test
 V:	agentrt-linux 1.0.1 / Linux 6.6
 
 [SC] SHARED CONTRACT LAYER
-(kernel/include/airymax/ — 6+2 headers, OS-IRON-014 single physical host)
+(kernel/include/uapi/linux/airymax/ — 10 core headers, OS-IRON-014 single physical host)
 M:	SPHARX Engineering <eng@spharx.com>
 R:	Kernel Core Lead <kernel-lead@spharx.com>
 L:	airymax-dev@spharx.com
 S:	Supported
-F:	kernel/include/airymax/
+F:	kernel/include/uapi/linux/airymax/
 H:	atoms/corekern (shared with agentrt)
 V:	agentrt-linux 1.0.1 / Linux 6.6
 Note: [SC] changes require dual CI validation (agentrt-linux + agentrt)

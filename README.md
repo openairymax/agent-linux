@@ -147,20 +147,31 @@ The management repository hosts **6 GitHub Actions workflows** (each capped at 2
 | Workflow | Trigger | Jobs | Purpose |
 |----------|---------|------|---------|
 | `ci-kernel.yml` | PR / push on `kernel/**` | `kernel-build` + `kernel-verify` | Kbuild matrix (18 configs) + checkpatch / sparse / Coccinelle / KUnit / kselftest |
-| `mgmt-orchestrator.yml` | PR / push on docs, `.gitmodules`, SSoT, governance files | `file-integrity` + `orchestrate-leaf-ci` | Verify 8 submodules, [SC] 6+2 headers, governance files; aggregate leaf CI status |
+| `mgmt-orchestrator.yml` | PR / push on docs, `.gitmodules`, SSoT, governance files | `file-integrity` + `orchestrate-leaf-ci` | Verify 8 submodules, [SC] 10 core headers, governance files; aggregate leaf CI status |
 | `nightly.yml` | cron `0 2 * * *` / manual | `nightly-test-suite` + `nightly-revert-or-budget` | Formal verification (seL4-style) + 72h soak + chaos; auto-revert or CI budget check |
 | `release.yml` | tag `v*` / manual | `build-and-sign` + `publish-release` | SPDX SBOM + kernel/SDK build + GPG & cosign signing; publish dnf repo, OCI image, GitHub Release |
-| `sc-dual-ci.yml` | PR on [SC] 6+2 headers | `sc-validate` + `sc-trigger-and-await` | Validate shared-contract headers, no duplicates; trigger & await agentrt mirror PR CI |
+| `sc-dual-ci.yml` | PR on [SC] 10 core headers | `sc-validate` + `sc-trigger-and-await` | Validate shared-contract headers, no duplicates; trigger & await agentrt mirror PR CI |
 | `ssot-validate.yml` | PR / push on `ssot-registry.yaml`, `docs/AirymaxOS/**` | `ssot-syntax-and-rules` + `ssot-cross-ref` | YAML syntax + rule-ID uniqueness; cross-document link & format consistency |
 
 ### [SC] Shared Contract Layer
 
-The shared-contract (`[SC]`) layer is the single physical source of truth for kernel↔agentrt ABI. It lives under `kernel/include/airymax/` and consists of the **6+2** headers:
+The shared-contract (`[SC]`) layer is the single physical source of truth for kernel↔agentrt ABI. It lives under `kernel/include/uapi/linux/airymax/` (maintained by agentrt-linux) and is mirrored to `agentrt/commons/include/airymax/` for user-space consumption. It consists of **10 core headers** (per OS-IRON-014):
 
-| Category | Headers |
-|----------|---------|
-| Core 6 | `syscalls.h`, `memory_types.h`, `security_types.h`, `cognition_types.h`, `sched.h`, `ipc.h` |
-| Extended 2 | `bpf_struct_ops.h`, `error.h` |
+| # | Header | Responsibility |
+|---|--------|---------------|
+| 1 | `error.h` | A-UEF unified error codes (AIRY_E* POSIX negative + AIRY_FAULT_* 0x1000+ fault codes) + [DSL] fallback block |
+| 2 | `log_types.h` | A-ULP unified log types (128B fixed record format + 5-level log enum) |
+| 3 | `ipc.h` | IPC magic (0x41524531 'ARE1') + 128B message header `struct airy_ipc_msg_hdr` (Layout C v4) + Capability Folding Badge |
+| 4 | `sched.h` | sched_tac scheduling constraints + task descriptor (magic 0x41475453 'AGTS') + vtime types |
+| 5 | `memory_types.h` | MemoryRovol L1-L4 data structures + GFP mask semantics |
+| 6 | `security_types.h` | capability 44 IDs (41 POSIX + 3 Airymax extensions) + Cupolas blob layout + capability derivation model |
+| 7 | `lsm_types.h` | LSM hook 250 ID enumeration + policy verdict 4-value enum |
+| 8 | `cognition_types.h` | CoreLoopThree phase enum (`AIRY_COG_PERCEPT/THINK/ACT`) + Thinkdual mode (`AIRY_THINK_FAST/SLOW`) |
+| 9 | `syscalls.h` | 4 syscall numbers (548-551) + number constants |
+| 10 | `uapi_compat.h` | Linux kernel-style UAPI type bridging (`__u8`/`__u16`/`__u32`/`__u64`) |
+
+**Supplementary shared file** (non-[SC] core): `bpf_struct_ops.h` (sched_tac struct airy_sched_ops state machine definition)
+**Codegen product** (auto-generated from `syscall.xml`): `syscall.h`
 
 Changes to any `[SC]` header require dual CI validation (agentrt-linux `sc-dual-ci.yml` + agentrt mirror PR) per **OS-IRON-014**. The IPC ABI uses magic `0x41524531` (`'ARE1'`); the task descriptor magic is `0x41475453` (`'AGTS'`). Kernel-side functions use the `airy_*` prefix.
 

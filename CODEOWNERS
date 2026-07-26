@@ -25,10 +25,10 @@
 /tests-linux/               @spharx
 
 # --------------------------------------------------------------------------
-# [SC] Shared Contract Layer (kernel/include/airymax/)
+# [SC] Shared Contract Layer (kernel/include/uapi/linux/airymax/)
 # Requires dual CI + L3 top maintainer approval (OS-IRON-014)
 # --------------------------------------------------------------------------
-/kernel/include/airymax/    @spharx
+/kernel/include/uapi/linux/airymax/    @spharx
 
 # --------------------------------------------------------------------------
 # SSoT Registry & Validation

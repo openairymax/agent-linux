@@ -71,7 +71,7 @@ agentrt-linux adopts seL4-style capability-based security:
 
 ### 3.3 [SC] Shared Contract Layer Integrity
 
-The 6+2 header files in `kernel/include/airymax/` are the single physical source of truth for cross-subsystem contracts. Any change requires:
+The 10 core header files in `kernel/include/uapi/linux/airymax/` are the single physical source of truth for cross-subsystem contracts. Any change requires:
 
 1. Dual CI validation (agentrt-linux + agentrt)
 2. L1 subsystem maintainer review

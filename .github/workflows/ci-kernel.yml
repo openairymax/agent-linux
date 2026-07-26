@@ -37,10 +37,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { submodules: recursive }
-      - uses: ./.github/actions/setup-toolchain
-        with:
-          arch: ${{ matrix.arch }}
-          compiler: ${{ matrix.compiler }}
+      # ── M1 计划：将以下内联工具链设置提取为 .github/actions/setup-toolchain 复合 action ──
+      # 当前内联实现原因：P0-10 审查发现 .github/actions/ 目录不存在，IRON-2 禁止桩文件，
+      # 故 M0 阶段采用内联步骤保证 CI 可用；M1 阶段将重构为复合 action 以消除重复。
+      - name: Setup toolchain (${{ matrix.arch }} / ${{ matrix.compiler }})
+        run: |
+          sudo apt-get update -qq
+          if [ "${{ matrix.compiler }}" = "gcc" ]; then
+            case "${{ matrix.arch }}" in
+              x86_64)       sudo apt-get install -y gcc ;;
+              arm64)        sudo apt-get install -y gcc-aarch64-linux-gnu ;;
+              riscv64)      sudo apt-get install -y gcc-riscv64-linux-gnu ;;
+              loongarch64)  sudo apt-get install -y gcc-loongarch64-linux-gnu ;;
+            esac
+          else
+            sudo apt-get install -y clang lld llvm
+          fi
       - uses: hendrikmuhs/ccache-action@v1
         with:
           key: kernel-${{ matrix.config }}-${{ matrix.arch }}-${{ matrix.compiler }}

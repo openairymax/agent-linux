@@ -15,7 +15,7 @@ Before contributing, ensure you understand:
 
 1. **IRON-1~15 Engineering Iron Rules** — defined in [04-engineering-philosophy.md](https://github.com/openairymax/docs/blob/main/AirymaxOS/50-engineering-standards/04-engineering-philosophy.md). These are non-negotiable.
 2. **OS-IRON-013**: 8 submodule architecture — changes to one submodule must not break others.
-3. **OS-IRON-014**: [SC] shared contract layer — headers in `kernel/include/airymax/` are the single physical source; changes require dual CI validation.
+3. **OS-IRON-014**: [SC] shared contract layer — headers in `kernel/include/uapi/linux/airymax/` are the single physical source; changes require dual CI validation.
 4. **SSoT Registry** — all rule IDs (OS-IRON, OS-KER, OS-STD-*) are registered in [`09-ssot-registry.md`](https://github.com/openairymax/docs/blob/main/AirymaxOS/50-engineering-standards/09-ssot-registry.md). Never invent new IDs.
 
 ## 2. Repository Structure
@@ -96,7 +96,7 @@ Signed-off-by: Your Name <your.email@example.com>
 
 ### 4.3 [SC] Shared Contract Layer Changes
 
-Changes to `kernel/include/airymax/` ([SC] layer) require:
+Changes to `kernel/include/uapi/linux/airymax/` ([SC] layer) require:
 
 1. Submit PR to the **kernel** submodule repository.
 2. CI validates the kernel submodule builds.

@@ -40,20 +40,22 @@ management-level orchestration.
 | Workflow | Job 1 | Job 2 | Trigger |
 |----------|-------|-------|---------|
 | `ci-kernel.yml` | `kernel-build` — Kbuild matrix (3 configs × 3 arches × 2 compilers = 18) with `W=2` zero-warning gate | `kernel-verify` — checkpatch `--strict`, sparse `C=2`, Coccinelle, KUnit on UML, kselftest on QEMU | PR / push on `kernel/**` |
-| `mgmt-orchestrator.yml` | `file-integrity` — verify 8 submodule dirs, `.gitmodules` (8 entries), `[SC]` 6+2 headers, 13 governance files, no `airymaxos-` prefix | `orchestrate-leaf-ci` — aggregate 8 leaf CI statuses, markdownlint docs, copyright header check | PR / push on docs, `.gitmodules`, `ssot-registry.yaml`, `MAINTAINERS`, `CODEOWNERS` |
+| `mgmt-orchestrator.yml` | `file-integrity` — verify 8 submodule dirs, `.gitmodules` (8 entries), `[SC]` 10 core headers, 13 governance files, no `airymaxos-` prefix | `orchestrate-leaf-ci` — aggregate 8 leaf CI statuses, markdownlint docs, copyright header check | PR / push on docs, `.gitmodules`, `ssot-registry.yaml`, `MAINTAINERS`, `CODEOWNERS` |
 | `nightly.yml` | `nightly-test-suite` — seL4-style formal verification, 72h soak test, chaos injection (CPU hotplug / mem hotremove / I/O error / net partition) | `nightly-revert-or-budget` — auto-revert on regression via `auto-bisect`, or CI budget check (60 min gate, OS-STD-TEST-011) | cron `0 2 * * *` / `workflow_dispatch` |
 | `release.yml` | `build-and-sign` — SPDX SBOM (syft per submodule + merge), kernel RPM build, GPG + cosign signing, SDK tarball | `publish-release` — publish dnf repo, push OCI image, create GitHub Release with artifacts | tag `v*` / `v*-rc*` / `workflow_dispatch` |
-| `sc-dual-ci.yml` | `sc-validate` — verify `[SC]` 6+2 headers exist under `kernel/include/airymax/`, no physical duplicates (OS-IRON-014) | `sc-trigger-and-await` — export header patches, create mirror PR in agentrt repo, poll mirror CI status (30 min timeout) | PR touching any `[SC]` header |
+| `sc-dual-ci.yml` | `sc-validate` — verify `[SC]` 10 core headers exist under `kernel/include/uapi/linux/airymax/`, no physical duplicates (OS-IRON-014) | `sc-trigger-and-await` — export header patches, create mirror PR in agentrt repo, poll mirror CI status (30 min timeout) | PR touching any `[SC]` header |
 | `ssot-validate.yml` | `ssot-syntax-and-rules` — PyYAML syntax check, rule-ID count + uniqueness (OS-IRON-015), `validate-ssot.py` cross-ref | `ssot-cross-ref` — trailing-whitespace warning, broken relative-path markdown link detection under `docs/AirymaxOS/` | PR / push on `ssot-registry.yaml`, `docs/AirymaxOS/**` |
 
 ## `[SC]` Shared-Contract Headers
 
 The `sc-dual-ci.yml` and `mgmt-orchestrator.yml` workflows guard the `[SC]` layer —
 the single physical source of truth for the kernel↔agentrt ABI, located at
-`kernel/include/airymax/`:
+`kernel/include/uapi/linux/airymax/`:
 
-- **Core 6**: `syscalls.h`, `memory_types.h`, `security_types.h`, `cognition_types.h`, `sched.h`, `ipc.h`
-- **Extended 2**: `bpf_struct_ops.h`, `error.h`
+**10 core [SC] headers** (per OS-IRON-014):
+`error.h`, `log_types.h`, `ipc.h`, `sched.h`, `memory_types.h`, `security_types.h`, `lsm_types.h`, `cognition_types.h`, `syscalls.h`, `uapi_compat.h`
+
+**Supplementary** (non-[SC] core): `bpf_struct_ops.h`
 
 Any change requires dual CI (agentrt-linux + agentrt mirror) per OS-IRON-014.
 

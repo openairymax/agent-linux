@@ -27,7 +27,7 @@
 
 ## [SC] Layer Changes (if applicable)
 
-<!-- If this PR touches kernel/include/airymax/*.h, describe the impact on agentrt -->
+<!-- If this PR touches kernel/include/uapi/linux/airymax/*.h, describe the impact on agentrt -->
 
 ## Test Results
 

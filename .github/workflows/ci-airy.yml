@@ -17,7 +17,6 @@ on:
       - 'kernel/kernel/log/**'
       - 'kernel/kernel/ipc/**'
       - 'kernel/include/uapi/linux/airymax/**'
-      - 'kernel/include/airymax/**'
       - 'kernel/configs/**'
       - 'kernel/config/Kconfig.alk'
       - 'kernel/arch/*/configs/airy_defconfig'
@@ -31,7 +30,6 @@ on:
       - 'kernel/kernel/log/**'
       - 'kernel/kernel/ipc/**'
       - 'kernel/include/uapi/linux/airymax/**'
-      - 'kernel/include/airymax/**'
       - 'kernel/configs/**'
       - 'kernel/config/Kconfig.alk'
       - 'kernel/arch/*/configs/airy_defconfig'
@@ -93,10 +91,10 @@ jobs:
       - name: Verify Airymax .o artifacts
         run: |
           cd kernel
-          # security/airy/ should produce 11 .o files (airy_lsm + airy_cap_init +
-          # airy_cap_array + airy_cap_derive + airy_cap_check + airy_cap_revoke +
-          # airy_cap_rotate + airy_superv_lsm + airy_ipc_freeze + airy_die_notify +
-          # airy_eventfd) combined into airy.o
+          # security/airy/ produces 10 .o files (airy_lsm + airy_cap_array +
+          # airy_cap_derive + airy_cap_check + airy_cap_revoke + airy_cap_rotate +
+          # airy_superv_lsm + airy_ipc_freeze + airy_die_notify + airy_eventfd)
+          # combined into airy.o. Source list MUST match kernel/security/airy/Kbuild.
           test -f security/airy/airy.o
           # kernel/superv/ should produce 5 .o files combined into airy_superv.o
           test -f kernel/superv/airy_superv.o
@@ -104,7 +102,7 @@ jobs:
           test -f kernel/corekern/corekern.o
           # kernel/log/ should produce 3 .o files combined into airy_log.o
           test -f kernel/log/airy_log.o
-          # kernel/ipc/ should produce 2 .o files combined into airy_ipc.o
+          # kernel/ipc/ should produce 1 .o file combined into airy_ipc.o
           test -f kernel/ipc/airy_ipc.o
           echo "All Airymax .o artifacts verified"
 

@@ -52,12 +52,13 @@ jobs:
             grep -q "path = $sub" .gitmodules || { echo "FAIL: $sub not in .gitmodules"; exit 1; }
           done
 
-      - name: Verify [SC] 6+2 shared headers exist
+      - name: Verify [SC] 12 shared headers exist
         run: |
           set -e
-          for h in airy_agent.h airy_ipc.h airy_sched.h airy_mem.h airy_security.h \
-                   airy_version.h bpf_struct_ops.h error.h; do
-            test -f "kernel/include/airymax/$h" || { echo "FAIL: $h missing"; exit 1; }
+          for h in error.h log_types.h ipc.h sched.h memory_types.h \
+                   security_types.h cognition_types.h syscalls.h uapi_compat.h \
+                   lsm_types.h bpf_struct_ops.h syscall.h; do
+            test -f "kernel/include/uapi/linux/airymax/$h" || { echo "FAIL: $h missing"; exit 1; }
           done
 
       - name: Verify required governance files

@@ -37,7 +37,7 @@ jobs:
           done
           # 合并为统一 SBOM
           python3 agentrt-linux/tools/merge-sbom.py \
-            --output sbom-airymaxos-${{ github.ref_name }}.spdx.json \
+            --output sbom-agentrt-linux-${{ github.ref_name }}.spdx.json \
             sbom-*.spdx.json
       - name: Build kernel image + modules
         run: |
@@ -50,31 +50,31 @@ jobs:
       - name: Sign kernel image + modules (GPG)
         run: |
           gpg --batch --yes --detach-sign --armor \
-            -o airymaxos-kernel-${{ github.ref_name }}.rpm.asc \
-            airymaxos-kernel-${{ github.ref_name }}.rpm
+            -o agentrt-linux-kernel-${{ github.ref_name }}.rpm.asc \
+            agentrt-linux-kernel-${{ github.ref_name }}.rpm
       - name: Sign OCI image (cosign)
         env:
           COSIGN_KEY: ${{ secrets.COSIGN_KEY }}
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
         run: |
           cosign sign --key env://COSIGN_KEY \
-            ghcr.io/spharx/airymaxos:${{ github.ref_name }}
+            ghcr.io/spharx/agentrt-linux:${{ github.ref_name }}
       - name: Build SDK tarball + sign
         run: |
-          tar czf airymaxos-sdk-${{ github.ref_name }}.tar.gz sdk/
+          tar czf agentrt-linux-sdk-${{ github.ref_name }}.tar.gz sdk/
           gpg --batch --yes --detach-sign --armor \
-            -o airymaxos-sdk-${{ github.ref_name }}.tar.gz.asc \
-            airymaxos-sdk-${{ github.ref_name }}.tar.gz
+            -o agentrt-linux-sdk-${{ github.ref_name }}.tar.gz.asc \
+            agentrt-linux-sdk-${{ github.ref_name }}.tar.gz
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: release-artifacts-${{ github.ref_name }}
           path: |
-            sbom-airymaxos-${{ github.ref_name }}.spdx.json
-            airymaxos-kernel-*.rpm
-            airymaxos-kernel-*.rpm.asc
-            airymaxos-sdk-*.tar.gz
-            airymaxos-sdk-*.tar.gz.asc
+            sbom-agentrt-linux-${{ github.ref_name }}.spdx.json
+            agentrt-linux-kernel-*.rpm
+            agentrt-linux-kernel-*.rpm.asc
+            agentrt-linux-sdk-*.tar.gz
+            agentrt-linux-sdk-*.tar.gz.asc
 
   publish-release:
     name: Publish + GitHub Release (L7)
@@ -88,19 +88,19 @@ jobs:
           name: release-artifacts-${{ github.ref_name }}
       - name: Publish dnf repo
         run: |
-          createrepo airymaxos-repo/${{ github.ref_name }}/
-          rsync -avz airymaxos-repo/ ${{ secrets.DNF_REPO_HOST }}:/var/www/airymaxos-repo/
+          createrepo agentrt-linux-repo/${{ github.ref_name }}/
+          rsync -avz agentrt-linux-repo/ ${{ secrets.DNF_REPO_HOST }}:/var/www/agentrt-linux-repo/
       - name: Publish OCI image
         run: |
-          docker build -t ghcr.io/spharx/airymaxos:${{ github.ref_name }} .
-          docker push ghcr.io/spharx/airymaxos:${{ github.ref_name }}
+          docker build -t ghcr.io/spharx/agentrt-linux:${{ github.ref_name }} .
+          docker push ghcr.io/spharx/agentrt-linux:${{ github.ref_name }}
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            airymaxos-kernel-*.rpm
-            airymaxos-kernel-*.rpm.asc
-            airymaxos-sdk-*.tar.gz
-            airymaxos-sdk-*.tar.gz.asc
-            sbom-airymaxos-*.spdx.json
+            agentrt-linux-kernel-*.rpm
+            agentrt-linux-kernel-*.rpm.asc
+            agentrt-linux-sdk-*.tar.gz
+            agentrt-linux-sdk-*.tar.gz.asc
+            sbom-agentrt-linux-*.spdx.json
           generate_release_notes: true
