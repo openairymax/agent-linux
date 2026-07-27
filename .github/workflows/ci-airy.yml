@@ -98,8 +98,9 @@ jobs:
           test -f security/airy/airy.o
           # kernel/superv/ should produce 5 .o files combined into airy_superv.o
           test -f kernel/superv/airy_superv.o
-          # kernel/corekern/ should produce 19 .o files
-          test -f kernel/corekern/corekern.o
+          # kernel/corekern/ has 10 subdirectories (api/sched/ipc/taskflow/
+          # memory/time/object/locking/irq/bpf) linked via built-in.a
+          test -f kernel/corekern/built-in.a
           # kernel/log/ should produce 3 .o files combined into airy_log.o
           test -f kernel/log/airy_log.o
           # kernel/ipc/ should produce 1 .o file combined into airy_ipc.o

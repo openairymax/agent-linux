@@ -39,7 +39,7 @@ management-level orchestration.
 
 | Workflow | Job 1 | Job 2 | Trigger |
 |----------|-------|-------|---------|
-| `ci-kernel.yml` | `kernel-build` — Kbuild matrix (3 configs × 3 arches × 2 compilers = 18) with `W=2` zero-warning gate | `kernel-verify` — checkpatch `--strict`, sparse `C=2`, Coccinelle, KUnit on UML, kselftest on QEMU | PR / push on `kernel/**` |
+| `ci-kernel.yml` | `kernel-build` — Kbuild matrix (4 configs × 4 arches × 2 compilers − 1 exclude = 31) with `W=2` zero-warning gate | `kernel-verify` — checkpatch `--strict`, sparse `C=2`, Coccinelle, KUnit on UML, kselftest on QEMU | PR / push on `kernel/**` |
 | `mgmt-orchestrator.yml` | `file-integrity` — verify 8 submodule dirs, `.gitmodules` (8 entries), `[SC]` 10 core headers, 13 governance files, no `airymaxos-` prefix | `orchestrate-leaf-ci` — aggregate 8 leaf CI statuses, markdownlint docs, copyright header check | PR / push on docs, `.gitmodules`, `ssot-registry.yaml`, `MAINTAINERS`, `CODEOWNERS` |
 | `nightly.yml` | `nightly-test-suite` — seL4-style formal verification, 72h soak test, chaos injection (CPU hotplug / mem hotremove / I/O error / net partition) | `nightly-revert-or-budget` — auto-revert on regression via `auto-bisect`, or CI budget check (60 min gate, OS-STD-TEST-011) | cron `0 2 * * *` / `workflow_dispatch` |
 | `release.yml` | `build-and-sign` — SPDX SBOM (syft per submodule + merge), kernel RPM build, GPG + cosign signing, SDK tarball | `publish-release` — publish dnf repo, push OCI image, create GitHub Release with artifacts | tag `v*` / `v*-rc*` / `workflow_dispatch` |

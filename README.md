@@ -47,7 +47,7 @@ agentrt-linux/             # Management repository (this repo)
 
 | Module | Directory | Repository URL | Reuses | Description |
 |--------|-----------|----------------|--------|-------------|
-| **kernel** | `kernel/` | `git@atomgit.com:openairymax/kernel.git` | atoms/corekern | Linux 6.6 + sched_ext + eBPF + io_uring + Rust + microkernel refactoring |
+| **kernel** | `kernel/` | `git@atomgit.com:openairymax/kernel.git` | atoms/corekern | Linux 6.6 + sched_tac + eBPF + io_uring + Rust + microkernel refactoring |
 | **services** | `services/` | `git@atomgit.com:openairymax/services.git` | daemons | VFS + network + driver user-space migration + 12 daemons systemd integration + io_uring message passing |
 | **security** | `security/` | `git@atomgit.com:openairymax/security.git` | cupolas | capability (seL4) + LSM + Landlock + confidential computing + national crypto |
 | **memory** | `memory/` | `git@atomgit.com:openairymax/memory.git` | heapstore + memoryrovol | MemoryRovol kernel-mode + CXL + PMEM + MGLRU 多代 LRU |
@@ -84,7 +84,7 @@ agentrt-linux/             # Management repository (this repo)
 │    RPM · dnf · configuration · shell · DevStation                    │
 ├─────────────────────────────────────────────────────────────────────┤
 │  Microkernel (Linux 6.6 based)         ← kernel                        │
-│    sched_ext · eBPF · io_uring · Rust · microkernel refactoring      │
+│    sched_tac · eBPF · io_uring · Rust · microkernel refactoring      │
 ├─────────────────────────────────────────────────────────────────────┤
 │  Tests & Verification                  ← tests-linux                  │
 │    Unit · Integration · Formal (seL4) · Soak · Chaos                 │
@@ -108,7 +108,7 @@ agentrt-linux is Euler-compatible and can consume Euler-standard packages and to
 ### Relationship with Linux 6.6
 
 agentrt-linux is built on Linux 6.6 (Euler-standard kernel baseline) with:
-- **sched_ext** sub-scheduler (Linux 6.15+) for AI-aware CPU scheduling
+- **sched_tac** (native scheduler classes, no sched_ext) for AI-aware CPU scheduling
 - **eBPF signed verification** (Linux 6.15) for secure in-kernel programmability
 - **io_uring** for high-performance async I/O and message passing
 - **Rust** (experimental support in Linux 6.6) for memory-safe kernel modules
@@ -119,7 +119,7 @@ The microkernel refactoring strategy does NOT develop a microkernel from scratch
 
 - **Airymax agentrt** — provides the runtime platform whose modules are reused and extended
 - **Euler 24.03 LTS / 26.03** — reference distribution for standards and specifications
-- **Linux 6.6** — base kernel with sched_ext, eBPF, io_uring, and Rust（实验性）support
+- **Linux 6.6** — base kernel with sched_tac (no sched_ext), eBPF, io_uring, and Rust（实验性）support
 
 ## Downstream Consumers
 
@@ -146,7 +146,7 @@ The management repository hosts **6 GitHub Actions workflows** (each capped at 2
 
 | Workflow | Trigger | Jobs | Purpose |
 |----------|---------|------|---------|
-| `ci-kernel.yml` | PR / push on `kernel/**` | `kernel-build` + `kernel-verify` | Kbuild matrix (18 configs) + checkpatch / sparse / Coccinelle / KUnit / kselftest |
+| `ci-kernel.yml` | PR / push on `kernel/**` | `kernel-build` + `kernel-verify` | Kbuild matrix (31 configs) + checkpatch / sparse / Coccinelle / KUnit / kselftest |
 | `mgmt-orchestrator.yml` | PR / push on docs, `.gitmodules`, SSoT, governance files | `file-integrity` + `orchestrate-leaf-ci` | Verify 8 submodules, [SC] 10 core headers, governance files; aggregate leaf CI status |
 | `nightly.yml` | cron `0 2 * * *` / manual | `nightly-test-suite` + `nightly-revert-or-budget` | Formal verification (seL4-style) + 72h soak + chaos; auto-revert or CI budget check |
 | `release.yml` | tag `v*` / manual | `build-and-sign` + `publish-release` | SPDX SBOM + kernel/SDK build + GPG & cosign signing; publish dnf repo, OCI image, GitHub Release |

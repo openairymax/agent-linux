@@ -20,12 +20,10 @@ on:
       - 'kernel/include/uapi/linux/airymax/syscalls.h'
       - 'kernel/include/uapi/linux/airymax/uapi_compat.h'
       - 'kernel/include/uapi/linux/airymax/lsm_types.h'
-      - 'kernel/include/uapi/linux/airymax/bpf_struct_ops.h'
-      - 'kernel/include/uapi/linux/airymax/syscall.h'
 
 jobs:
   # ─── Job 1: [SC] 头文件验证（agentrt-linux 侧） ────────────────────
-  # 合并原 kernel-ci 的 12 头文件验证部分
+  # 合并原 kernel-ci 的 10 头文件验证部分
   sc-validate:
     name: [SC] Header Validation (agentrt-linux side)
     runs-on: ubuntu-latest
@@ -33,12 +31,12 @@ jobs:
       - uses: actions/checkout@v4
         with: { submodules: recursive }
 
-      - name: Verify [SC] 12 shared headers (OS-IRON-014)
+      - name: Verify [SC] 10 shared headers (OS-IRON-014)
         run: |
           set -e
           for h in error.h log_types.h ipc.h sched.h memory_types.h \
                    security_types.h cognition_types.h syscalls.h uapi_compat.h \
-                   lsm_types.h bpf_struct_ops.h syscall.h; do
+                   lsm_types.h; do
             test -f "kernel/include/uapi/linux/airymax/$h" || { echo "FAIL: $h missing"; exit 1; }
             echo "OK: $h present"
           done
@@ -46,7 +44,7 @@ jobs:
       - name: Verify no physical duplicates (OS-IRON-014)
         run: |
           set -e
-          # 12 头文件应仅存在于 kernel/include/uapi/linux/airymax/，不应有物理副本
+          # 10 头文件应仅存在于 kernel/include/uapi/linux/airymax/，不应有物理副本
           COUNT=$(find . -path './.git' -prune -o -name 'ipc.h' -print | wc -l)
           if [ "$COUNT" -ne 1 ]; then
             echo "FAIL: ipc.h has $COUNT copies (expected 1)"
@@ -75,7 +73,7 @@ jobs:
         env:
           AGENTRT_TOKEN: ${{ secrets.AGENTRT_CI_TOKEN }}
         run: |
-          # 导出 12 头文件变更补丁
+          # 导出 10 头文件变更补丁
           git format-patch origin/${{ github.base_ref }} HEAD -- \
             kernel/include/uapi/linux/airymax/ -o /tmp/patches
           # 在 agentrt 仓创建镜像 PR

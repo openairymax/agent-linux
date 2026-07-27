@@ -47,7 +47,7 @@ agentrt-linux/             # 管理仓（本仓库）
 
 | 模块                        | 目录             | 仓库 URL                                        | 复用                         | 描述                                                            |
 | ------------------------- | -------------- | --------------------------------------------- | -------------------------- | ------------------------------------------------------------- |
-| **kernel**      | `kernel/`      | `git@atomgit.com:openairymax/kernel.git`      | atoms/corekern             | Linux 6.6 + sched\_ext + eBPF + io\_uring + Rust（实验性）+ 微内核化改造 |
+| **kernel**      | `kernel/`      | `git@atomgit.com:openairymax/kernel.git`      | atoms/corekern             | Linux 6.6 + sched\_tac + eBPF + io\_uring + Rust（实验性）+ 微内核化改造 |
 | **services**    | `services/`    | `git@atomgit.com:openairymax/services.git`    | daemons                    | VFS + 网络 + 驱动用户态化 + 12 daemons systemd 集成 + io\_uring 消息传递    |
 | **security**    | `security/`    | `git@atomgit.com:openairymax/security.git`    | cupolas                    | capability(seL4) + LSM + Landlock + 机密计算 + 国密                 |
 | **memory**      | `memory/`      | `git@atomgit.com:openairymax/memory.git`      | heapstore + memoryrovol    | MemoryRovol 内核态 + CXL + PMEM + MGLRU 多代 LRU                   |
@@ -84,7 +84,7 @@ agentrt-linux/             # 管理仓（本仓库）
 │    RPM · dnf · 配置 · shell · DevStation                             │
 ├─────────────────────────────────────────────────────────────────────┤
 │  微内核（基于 Linux 6.6）              ← kernel            │
-│    sched_ext · eBPF · io_uring · Rust · 微内核化改造                  │
+│    sched_tac · eBPF · io_uring · Rust · 微内核化改造                  │
 ├─────────────────────────────────────────────────────────────────────┤
 │  测试与验证                            ← tests-linux             │
 │    单元 · 集成 · 形式化(seL4) · Soak · 混沌                          │
@@ -143,7 +143,7 @@ agentrt-linux 兼容 Euler 标准，可消费 Euler 标准包和工具链。
 
 agentrt-linux 基于 Linux 6.6（openEuler 24.03 LTS 内核基线），集成：
 
-- **sched\_ext** 子调度器（Linux 6.15+）实现 AI 感知的 CPU 调度
+- **sched\_tac**（原生调度类，不使用 sched_ext）实现 AI 感知的 CPU 调度
 - **eBPF 签名验证**（Linux 6.15）保障内核可编程安全性
 - **io\_uring** 提供高性能异步 I/O 与消息传递
 - **Rust**（Linux 6.6 实验性支持）用于内存安全的内核模块
@@ -154,7 +154,7 @@ agentrt-linux 基于 Linux 6.6（openEuler 24.03 LTS 内核基线），集成：
 
 - **Airymax agentrt** — 提供被复用并扩展的运行时平台模块
 - **Euler 24.03 LTS / 26.03** — 标准与规范参考发行版
-- **Linux 6.6** — 提供 sched\_ext、eBPF、io\_uring 与 Rust（实验性）支持的基础内核
+- **Linux 6.6** — 提供 sched\_tac（不使用 sched_ext）、eBPF、io\_uring 与 Rust（实验性）支持的基础内核
 
 ## 下游消费者
 

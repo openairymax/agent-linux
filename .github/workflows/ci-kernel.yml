@@ -19,7 +19,7 @@ on:
 
 jobs:
   kernel-build:
-    name: Kbuild Matrix (32 configs)
+    name: Kbuild Matrix (31 configs)
     runs-on: ubuntu-latest
     timeout-minutes: 50
     strategy:
@@ -58,6 +58,7 @@ jobs:
           key: kernel-${{ matrix.config }}-${{ matrix.arch }}-${{ matrix.compiler }}
           max-size: 2G
       - name: Kbuild ${{ matrix.config }} / ${{ matrix.arch }} / ${{ matrix.compiler }}
+        working-directory: kernel
         run: |
           make ARCH=${{ matrix.arch }} CC=${{ matrix.compiler }} ${{ matrix.config }}
           make ARCH=${{ matrix.arch }} CC=${{ matrix.compiler }} -j$(nproc) W=2 2>&1 | tee build.log
@@ -73,27 +74,38 @@ jobs:
         with: { submodules: recursive }
       - name: Install static analysis tools
         run: sudo apt-get install -y sparse coccinelle
+      - name: ABI consistency check (OS-IRON-001, 6/6 PASS required)
+        run: python3 tools/abi-check/abi_check.py --check
+      - name: Codegen drift check (R-01 SSoT, diff must be empty)
+        run: python3 tools/codegen/syscall_gen.py --check
+      - name: Codegen syscall_64.tbl check (R-01 SSoT, Airymax section)
+        run: python3 tools/codegen/syscall_gen.py --check-tbl
       - name: checkpatch.pl --strict (OS-STD-TOOL-160)
         run: |
           git diff --name-only origin/${{ github.base_ref }} HEAD -- 'kernel/**/*.c' 'kernel/**/*.h' > files.txt
           while read f; do
-            scripts/checkpatch.pl --strict --no-tree -f "$f" || exit 1
+            kernel/scripts/checkpatch.pl --strict --no-tree -f "$f" || exit 1
           done < files.txt
       - name: sparse make C=2 W=2 (OS-STD-TOOL-081-CI)
+        working-directory: kernel
         run: |
           make ARCH=x86_64 defconfig
           make ARCH=x86_64 C=2 W=2 -j$(nproc) 2>&1 | tee sparse.log
           ! grep -E "warning:" sparse.log
       - name: Coccinelle (make coccicheck)
+        working-directory: kernel
         run: make ARCH=x86_64 coccicheck MODE=report V=1
       - name: KUnit on UML (OS-TEST-001~012)
+        working-directory: kernel
         run: |
           make ARCH=um defconfig
           ./tools/testing/kunit/kunit.py run --arch=um --raw_output=TAP
       - name: Verify TAP case count monotonic (OS-TEST-012)
-        run: python3 agentrt-linux/tools/kunit-tap-diff.py --baseline origin/develop
+        run: python3 tools/kunit-tap-diff.py --baseline origin/develop
       - name: kselftest on QEMU (OS-TEST-013~022)
+        working-directory: kernel
         run: |
           make ARCH=x86_64 defconfig
-          ./tools/testing/kselftest/run_kselftest.sh --tap > kselftest.tap
-          python3 agentrt-linux/tools/parse-tap.py --input kselftest.tap --fail-on-not-ok
+          ./tools/testing/kselftest/run_kselftest.sh --tap > /tmp/kselftest.tap
+      - name: Parse kselftest TAP
+        run: python3 tools/parse-tap.py --input /tmp/kselftest.tap --fail-on-not-ok
