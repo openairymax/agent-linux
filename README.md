@@ -5,7 +5,7 @@
 
 **Language:** English | [简体中文](README_zh.md)
 
-[![Version](https://img.shields.io/badge/version-0.1.1-5a6b7e)](https://atomgit.com/openairymax/agentrt-linux)
+[![Version](https://img.shields.io/badge/version-v1.0.1-5a6b7e)](https://atomgit.com/openairymax/agentrt-linux)
 [![License](https://img.shields.io/badge/license-AGPL--3.0+Apache--2.0-4a90d9)](LICENSE)
 [![Linux](https://img.shields.io/badge/Linux-6.6-FCC624?logo=linux&logoColor=black)](https://www.kernel.org)
 [![Rust](https://img.shields.io/badge/Rust-experimental-DEA584?logo=rust&logoColor=white)](https://www.rust-lang.org)

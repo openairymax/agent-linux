@@ -32,7 +32,7 @@ B:	https://github.com/openairymax/agentrt-linux/issues
 T:	git https://atomgit.com/openairymax/agentrt-linux.git
 F:	*
 
-KERNEL SUBSYSTEM (Linux 6.6 + sched_ext + eBPF + io_uring + Rust)
+KERNEL SUBSYSTEM (Linux 6.6 + sched_tac + eBPF + io_uring + Rust)
 M:	SPHARX Engineering <eng@spharx.com>
 R:	Kernel Core Lead <kernel-lead@spharx.com>
 L:	airymax-dev@spharx.com

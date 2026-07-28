@@ -53,6 +53,43 @@ jobs:
           fi
           echo "OK: no physical duplicates"
 
+      - name: Byte-level [SC] header consistency check (diff -q)
+        run: |
+          set -e
+          # IRON-9 v3: kernel-side and commons-side [SC] headers must be
+          # byte-level identical (except include path prefixes).
+          # Clone agentrt commons for comparison; skip if unavailable.
+          git clone --depth 1 https://atomgit.com/openairymax/agentrt.git /tmp/agentrt 2>/dev/null || {
+            echo "WARN: Cannot clone agentrt repo, skipping byte-level comparison"
+            exit 0
+          }
+
+          FAIL=0
+          for h in error.h log_types.h ipc.h sched.h memory_types.h \
+                   security_types.h cognition_types.h syscalls.h uapi_compat.h \
+                   lsm_types.h; do
+            kern="kernel/include/uapi/linux/airymax/$h"
+            comm="/tmp/agentrt/commons/include/airymax/$h"
+
+            if [ ! -f "$comm" ]; then
+              echo "WARN: $h not found in commons"
+              continue
+            fi
+
+            if ! diff -q "$kern" "$comm" > /dev/null 2>&1; then
+              echo "FAIL: $h differs between kernel and commons"
+              diff -u "$kern" "$comm" || true
+              FAIL=1
+            else
+              echo "OK: $h byte-level identical"
+            fi
+          done
+
+          if [ "$FAIL" -ne 0 ]; then
+            echo "FAIL: [SC] header byte-level consistency check failed"
+            exit 1
+          fi
+
       - name: Run kernel CI for [SC] changes (deferred to kernel submodule)
         run: |
           echo "[SC] header changes detected"
