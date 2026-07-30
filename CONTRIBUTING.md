@@ -129,7 +129,7 @@ cd kernel
 git checkout feature/official-hubs-01
 git checkout -b my-feature-branch
 # ... make changes ...
-git commit -s -m "kernel: add airymax_sched_ext policy"
+git commit -s -m "kernel: add airymax_sched_tac policy"
 git push origin my-feature-branch
 # Create PR targeting feature/official-hubs-01
 ```
