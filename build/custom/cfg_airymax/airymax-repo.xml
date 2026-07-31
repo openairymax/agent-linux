@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SPDX-License-Identifier: GPL-2.0-only
+  AirymaxOS imageTailor repository descriptor.
+  Mirrors openEuler repo convention; three suites × three arches per §3.1.
+  See docs-closed/agentrt-linux/01-openeuler-tech-reference/12-build-and-flash-strategy.md §3.1
+-->
+<repos>
+    <repo id="airymax-everything" name="AirymaxOS 1.0.1 everything">
+        <baseurl arch="x86_64">file:///airymax-os/everything/x86_64</baseurl>
+        <baseurl arch="aarch64">file:///airymax-os/everything/aarch64</baseurl>
+        <baseurl arch="sw_64">file:///airymax-os/everything/sw_64</baseurl>
+    </repo>
+    <repo id="airymax-update" name="AirymaxOS 1.0.1 update">
+        <baseurl arch="x86_64">file:///airymax-os/update/x86_64</baseurl>
+        <baseurl arch="aarch64">file:///airymax-os/update/aarch64</baseurl>
+        <baseurl arch="sw_64">file:///airymax-os/update/sw_64</baseurl>
+    </repo>
+    <repo id="airymax-EPOL" name="AirymaxOS 1.0.1 EPOL">
+        <baseurl arch="x86_64">file:///airymax-os/EPOL/x86_64</baseurl>
+        <baseurl arch="aarch64">file:///airymax-os/EPOL/aarch64</baseurl>
+        <baseurl arch="sw_64">file:///airymax-os/EPOL/sw_64</baseurl>
+    </repo>
+</repos>

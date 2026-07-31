@@ -26,3 +26,5 @@
 !scripts/
 !ssot-registry.yaml
 !tools/
+!build/
+!build/**
