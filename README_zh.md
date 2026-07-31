@@ -1,4 +1,4 @@
-# agentrt-linux（AirymaxOS 极境智能体操作系统）
+# agentrt-linux 极境智能体操作系统（AirymaxOS）
 
 > agentrt-linux（AirymaxOS / 极境智能体操作系统）智能体操作系统管理仓。
 > [airymaxhub](https://atomgit.com/openairymax/airymaxhub) 伞仓下五个管理仓之一。
@@ -18,11 +18,11 @@
 
 agentrt-linux 基于三大设计支柱：
 
-1. **微内核设计思想** — 参考 seL4 / Zircon / Minix3、Liedtke 极简原则、capability 安全模型、服务用户态化、消息传递通信
-2. **Euler 标准兼容性** — 全面参考 Euler 24.03 LTS / 26.03 模块设计、技术规格和标准；兼容 Euler 标准
-3. **Airymax 同源性** — 与 `agentrt` 共享 Airymax 设计理念；架构同源，OS 上运行 `agentrt` 天然更稳健和适配，无适配层
+1. **微内核思想** — 参考 seL4 ，Liedtke 极简原则、capability 安全模型、服务用户态化、消息传递通信
+2. **标准兼容性** — 全面参考 Linux 6.6 LTS、openEuler 24.03 LTS 模块设计、技术规格和标准；兼容主流社区标准
+3. **Airymax同源性** — 与 `agentrt` 共享 Airymax 设计理念；架构同源，OS 上运行 `agentrt` 天然更稳健和适配，无适配层
 
-在 Airymax 0.1.1 中，本仓库及其叶子仓包含设计文档、架构草案和工程基线声明。实际的内核与 OS 开发在 **1.0.1** 版本进行。
+在 Airymax 0.1.1 中，本仓库及其叶子仓包含设计文档、架构草案和工程基线声明。
 
 ## 仓库结构
 
@@ -45,8 +45,8 @@ agentrt-linux/             # 管理仓（本仓库）
 
 ## 叶子仓
 
-| 模块                        | 目录             | 仓库 URL                                        | 复用                         | 描述                                                            |
-| ------------------------- | -------------- | --------------------------------------------- | -------------------------- | ------------------------------------------------------------- |
+| 模块              | 目录             | 仓库 URL                                        | 复用                         | 描述                                                            |
+| --------------- | -------------- | --------------------------------------------- | -------------------------- | ------------------------------------------------------------- |
 | **kernel**      | `kernel/`      | `git@atomgit.com:openairymax/kernel.git`      | atoms/corekern             | Linux 6.6 + sched\_tac + eBPF + io\_uring + Rust（实验性）+ 微内核化改造 |
 | **services**    | `services/`    | `git@atomgit.com:openairymax/services.git`    | daemons                    | VFS + 网络 + 驱动用户态化 + 12 daemons systemd 集成 + io\_uring 消息传递    |
 | **security**    | `security/`    | `git@atomgit.com:openairymax/security.git`    | cupolas                    | capability(seL4) + LSM + Landlock + 机密计算 + 国密                 |
@@ -95,66 +95,65 @@ agentrt-linux/             # 管理仓（本仓库）
 
 agentrt-linux 与 `agentrt` 共享相同的 Airymax 设计理念（架构同源）。核心微核心原语（`atoms/corekern`）、daemon 服务、安全框架（`cupolas`）、内存引擎（`heapstore` / `memoryrovol`）和认知循环（`coreloopthree`）在用户态运行时（`agentrt`）与 OS 级内核（agentrt-linux）之间复用。这确保了 `agentrt` 在 agentrt-linux 上原生运行，无适配层。
 
-### [SC] 共享契约层
+### \[SC] 共享契约层
 
-agentrt 与 agentrt-linux 通过 **IRON-9 v3 四层共享模型**协作，其中 [SC] 共享契约层是字节级完全共享的核心。SSoT 物理宿主为 `kernel/include/uapi/linux/airymax/`，由 agentrt-linux 维护，agentrt 通过 `commons/include/airymax/` 同步引用。
+agentrt 与 agentrt-linux 通过 **IRON-9 v3 四层共享模型**协作，其中 \[SC] 共享契约层是字节级完全共享的核心。SSoT 物理宿主为 `kernel/include/uapi/linux/airymax/`，由 agentrt-linux 维护，agentrt 通过 `commons/include/airymax/` 同步引用。
 
-**10 个 [SC] 核心头文件**（详见 [09-ssot-registry.md](../docs/AirymaxOS/50-engineering-standards/09-ssot-registry.md) OS-IRON-014）：
+**10 个 \[SC] 核心头文件**（详见 [09-ssot-registry.md](../docs/AirymaxOS/50-engineering-standards/09-ssot-registry.md) OS-IRON-014）：
 
-| # | 头文件 | 物理宿主 | 职责 |
-|---|--------|---------|------|
-| 1 | `error.h` | `include/uapi/linux/airymax/error.h` | A-UEF 统一错误码（AIRY_E* POSIX 负值 + AIRY_FAULT_* 0x1000+ 故障码）+ [DSL] 降级块 |
-| 2 | `log_types.h` | `include/uapi/linux/airymax/log_types.h` | A-ULP 统一日志类型（128B 固定记录格式 + 5 级日志枚举） |
-| 3 | `ipc.h` | `include/uapi/linux/airymax/ipc.h` | IPC magic（0x41524531 'ARE1'）+ 128B 消息头 `struct airy_ipc_msg_hdr`（Layout C v4）+ Capability Folding Badge |
-| 4 | `sched.h` | `include/uapi/linux/airymax/sched.h` | sched_tac 调度约束 + 任务描述符（magic 0x41475453 'AGTS'）+ vtime 类型 |
-| 5 | `memory_types.h` | `include/uapi/linux/airymax/memory_types.h` | MemoryRovol L1-L4 数据结构 + GFP 掩码语义 |
-| 6 | `security_types.h` | `include/uapi/linux/airymax/security_types.h` | capability 44 ID（41 POSIX + 3 Airymax 扩展）+ Cupolas blob 布局 + capability 派生模型 |
-| 7 | `lsm_types.h` | `include/uapi/linux/airymax/lsm_types.h` | LSM 钩子 250 ID 枚举 + 策略裁决 4 值枚举 |
-| 8 | `cognition_types.h` | `include/uapi/linux/airymax/cognition_types.h` | CoreLoopThree 阶段枚举（`AIRY_COG_PERCEPT/THINK/ACT`）+ Thinkdual 模式（`AIRY_THINK_FAST/SLOW`） |
-| 9 | `syscalls.h` | `include/uapi/linux/airymax/syscalls.h` | 4 syscall 编号（548-551）+ 编号常量 |
-| 10 | `uapi_compat.h` | `include/uapi/linux/airymax/uapi_compat.h` | Linux kernel-style UAPI 类型桥接（`__u8`/`__u16`/`__u32`/`__u64`） |
+| #  | 头文件                 | 物理宿主                                           | 职责                                                                                                      |
+| -- | ------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| 1  | `error.h`           | `include/uapi/linux/airymax/error.h`           | A-UEF 统一错误码（AIRY\_E\* POSIX 负值 + AIRY\_FAULT\_\* 0x1000+ 故障码）+ \[DSL] 降级块                               |
+| 2  | `log_types.h`       | `include/uapi/linux/airymax/log_types.h`       | A-ULP 统一日志类型（128B 固定记录格式 + 5 级日志枚举）                                                                     |
+| 3  | `ipc.h`             | `include/uapi/linux/airymax/ipc.h`             | IPC magic（0x41524531 'ARE1'）+ 128B 消息头 `struct airy_ipc_msg_hdr`（Layout C v4）+ Capability Folding Badge |
+| 4  | `sched.h`           | `include/uapi/linux/airymax/sched.h`           | sched\_tac 调度约束 + 任务描述符（magic 0x41475453 'AGTS'）+ vtime 类型                                              |
+| 5  | `memory_types.h`    | `include/uapi/linux/airymax/memory_types.h`    | MemoryRovol L1-L4 数据结构 + GFP 掩码语义                                                                       |
+| 6  | `security_types.h`  | `include/uapi/linux/airymax/security_types.h`  | capability 44 ID（41 POSIX + 3 Airymax 扩展）+ Cupolas blob 布局 + capability 派生模型                            |
+| 7  | `lsm_types.h`       | `include/uapi/linux/airymax/lsm_types.h`       | LSM 钩子 250 ID 枚举 + 策略裁决 4 值枚举                                                                           |
+| 8  | `cognition_types.h` | `include/uapi/linux/airymax/cognition_types.h` | CoreLoopThree 阶段枚举（`AIRY_COG_PERCEPT/THINK/ACT`）+ Thinkdual 模式（`AIRY_THINK_FAST/SLOW`）                  |
+| 9  | `syscalls.h`        | `include/uapi/linux/airymax/syscalls.h`        | 4 syscall 编号（548-551）+ 编号常量                                                                             |
+| 10 | `uapi_compat.h`     | `include/uapi/linux/airymax/uapi_compat.h`     | Linux kernel-style UAPI 类型桥接（`__u8`/`__u16`/`__u32`/`__u64`）                                            |
 
-**补充共享文件**（非 [SC] 核心）：`bpf_struct_ops.h`（sched_tac struct airy_sched_ops 状态机定义）  
+**补充共享文件**（非 \[SC] 核心）：`bpf_struct_ops.h`（sched\_tac struct airy\_sched\_ops 状态机定义）\
 **Codegen 产物**（由 `syscall.xml` 自动生成）：`syscall.h`
 
 **IRON-9 v3 四层共享模型**：
 
-| 层次 | 共享程度 | 内容 |
-|------|---------|------|
-| **[SC] 共享契约层** | 完全共享代码 | 10 个核心头文件（字节级一致） |
-| **[SS] 语义同源层** | 高层 API 语义同源 | 调度/IPC/安全/记忆/认知 API（签名因抽象层级不同独立演进） |
-| **[IND] 完全独立层** | 完全独立 | 平台适配层、构建系统、跨平台兼容层 |
-| **[DSL] 降级生存层** | 最小生存子集 | `#ifdef AIRY_SC_FALLBACK` 降级块（capability_badge=0，跳过 C-S9） |
+| 层次               | 共享程度        | 内容                                                         |
+| ---------------- | ----------- | ---------------------------------------------------------- |
+| **\[SC] 共享契约层**  | 完全共享代码      | 10 个核心头文件（字节级一致）                                           |
+| **\[SS] 语义同源层**  | 高层 API 语义同源 | 调度/IPC/安全/记忆/认知 API（签名因抽象层级不同独立演进）                         |
+| **\[IND] 完全独立层** | 完全独立        | 平台适配层、构建系统、跨平台兼容层                                          |
+| **\[DSL] 降级生存层** | 最小生存子集      | `#ifdef AIRY_SC_FALLBACK` 降级块（capability\_badge=0，跳过 C-S9） |
 
 详见 [120-cross-project-code-sharing.md](../docs/AirymaxOS/50-engineering-standards/120-cross-project-code-sharing.md)。
 
-### 与 Euler 标准的关系
+### 与 openEuler 的关系
 
-agentrt-linux 全面参考 Euler 24.03 LTS / 26.03 的：
+agentrt-linux 全面参考 Euler 的：
 
-- 模块设计和技术规格
 - 工程标准和质量规范
 - 包管理（RPM / dnf）
-- 发行版生命周期和 LTS 支持模型
+- 复用硬件驱动，以适配国内主流硬件
 
 agentrt-linux 兼容 Euler 标准，可消费 Euler 标准包和工具链。
 
 ### 与 Linux 6.6 的关系
 
-agentrt-linux 基于 Linux 6.6（openEuler 24.03 LTS 内核基线），集成：
+agentrt-linux 基于 Linux 6.6（openEuler 24.03 LTS 同内核基线），集成：
 
-- **sched\_tac**（原生调度类，不使用 sched_ext）实现 AI 感知的 CPU 调度
+- **sched\_tac**（原生调度类，不使用 sched\_ext）实现 AI 感知的 CPU 调度
 - **eBPF 签名验证**（Linux 6.15）保障内核可编程安全性
 - **io\_uring** 提供高性能异步 I/O 与消息传递
 - **Rust**（Linux 6.6 实验性支持）用于内存安全的内核模块
 
-微内核化改造策略不从零开发微内核 —— 而是在 Linux 6.6 宏内核之上应用微内核设计原则（服务用户态化、capability 安全、消息传递）。
+微内核化改造策略不从零开发微内核，而是在 Linux 宏内核之上应用微内核设计原则（策略内核：服务用户态化、capability 安全、消息传递）。
 
 ## 上游依赖
 
 - **Airymax agentrt** — 提供被复用并扩展的运行时平台模块
 - **Euler 24.03 LTS / 26.03** — 标准与规范参考发行版
-- **Linux 6.6** — 提供 sched\_tac（不使用 sched_ext）、eBPF、io\_uring 与 Rust（实验性）支持的基础内核
+- **Linux 6.6** — 提供 sched\_tac（不使用 sched\_ext）、eBPF、io\_uring 与 Rust（实验性）支持的基础内核
 
 ## 下游消费者
 
@@ -185,24 +184,24 @@ git submodule update --remote --checkout
 
 **SPDX 表达式**：`AGPL-3.0-or-later OR Apache-2.0`
 
-| 你的场景 | 选择 | 原因 |
-|----------|------|------|
-| 构建**SaaS 网络服务**并修改 AirymaxOS | **AGPL v3** | 网络服务条款要求公开修改后的源代码 |
-| 开发**开源衍生作品**（copyleft 项目） | **AGPL v3** | 衍生作品必须同样以 AGPL 开源 |
-| 在**商业闭源产品**中集成 AirymaxOS | **Apache 2.0** | 宽松许可证，允许闭源衍生 |
-| 构建**企业内部工具** | **Apache 2.0** | 无需公开源代码 |
-| 需要**专利保护** | **Apache 2.0** | 贡献者明确授予专利使用权 |
-| 仅用于学习与研究 | **任一** | 两者均允许个人使用 |
+| 你的场景                         | 选择             | 原因                |
+| ---------------------------- | -------------- | ----------------- |
+| 构建**SaaS 网络服务**并修改 AirymaxOS | **AGPL v3**    | 网络服务条款要求公开修改后的源代码 |
+| 开发**开源衍生作品**（copyleft 项目）    | **AGPL v3**    | 衍生作品必须同样以 AGPL 开源 |
+| 在**商业闭源产品**中集成 AirymaxOS     | **Apache 2.0** | 宽松许可证，允许闭源衍生      |
+| 构建**企业内部工具**                 | **Apache 2.0** | 无需公开源代码           |
+| 需要**专利保护**                   | **Apache 2.0** | 贡献者明确授予专利使用权      |
+| 仅用于学习与研究                     | **任一**         | 两者均允许个人使用         |
 
 ### kernel 子仓许可证例外
 
-本管理仓本身（即 `agentrt-linux/` 仓库）及其所有子模块**除 `kernel/` 外**均采用 AGPL v3 + Apache 2.0 双许可证。`kernel/` 子模块采用 **GPL-2.0-only** 许可证，以保持与上游 Linux 内核（6.6 LTS / 7.1）的兼容性。
+本管理仓本身（即 `agentrt-linux/` 仓库）及其所有子模块**除** **`kernel/`** **外**均采用 AGPL v3 + Apache 2.0 双许可证。`kernel/` 子模块采用 **GPL-2.0-only** 许可证，以保持与上游 Linux 内核（6.6 LTS / 7.1）的兼容性。
 
-| 路径 | 许可证 | 原因 |
-|------|--------|------|
-| `agentrt-linux/`（管理仓） | `AGPL-3.0-or-later OR Apache-2.0` | 用户态管理代码 |
-| `agentrt-linux/{cloudnative,cognition,memory,security,services,system,tests-linux}/` | `AGPL-3.0-or-later OR Apache-2.0` | 用户态子模块 |
-| `agentrt-linux/kernel/` | `GPL-2.0-only` | Linux 内核派生代码——AGPL v3 和 Apache 2.0 与 GPL-2.0-only **不兼容** |
+| 路径                                                                                   | 许可证                               | 原因                                                        |
+| ------------------------------------------------------------------------------------ | --------------------------------- | --------------------------------------------------------- |
+| `agentrt-linux/`（管理仓）                                                                | `AGPL-3.0-or-later OR Apache-2.0` | 用户态管理代码                                                   |
+| `agentrt-linux/{cloudnative,cognition,memory,security,services,system,tests-linux}/` | `AGPL-3.0-or-later OR Apache-2.0` | 用户态子模块                                                    |
+| `agentrt-linux/kernel/`                                                              | `GPL-2.0-only`                    | Linux 内核派生代码——AGPL v3 和 Apache 2.0 与 GPL-2.0-only **不兼容** |
 
 > **注意**：`agentrt-linux/{cloudnative,cognition,memory,security,services,system,tests-linux}/` 中包含内核模块头文件（`#include <linux/module.h>`、`MODULE_LICENSE("GPL")` 等）的源代码文件，其 SPDX 标签**必须**使用 `GPL-2.0-only`。完整策略见 [docs/AirymaxOS/50-engineering-standards/12-license-policy.md](../docs/AirymaxOS/50-engineering-standards/12-license-policy.md)。
 
