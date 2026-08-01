@@ -1,7 +1,7 @@
 [submodule "kernel"]
 	path = kernel
 	url = ../kernel.git
-	branch = develop/hubs-01
+	branch = ALK-6.6-dev
 [submodule "memory"]
 	path = memory
 	url = ../memory.git
