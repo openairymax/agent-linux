@@ -26,22 +26,34 @@ jobs:
 
       - name: Formal verification (seL4-style)
         run: |
-          python3 agentrt-linux/tools/formal-verify.py --target kernel/sched/core.c || \
-            echo "WARN: formal verification incomplete (expected in 0.1.1 design phase)"
-          python3 agentrt-linux/tools/formal-verify.py --target drivers/airymax/ipc/airy_ipc.c || \
-            echo "WARN: formal verification incomplete (expected in 0.1.1 design phase)"
-          python3 agentrt-linux/tools/formal-verify.py --target mm/share_pool.c || \
-            echo "WARN: formal verification incomplete (expected in 0.1.1 design phase)"
+          if [ -f agentrt-linux/tools/formal-verify.py ]; then
+            python3 agentrt-linux/tools/formal-verify.py --target kernel/sched/core.c || \
+              echo "WARN: formal verification incomplete (expected in 0.1.1 design phase)"
+            python3 agentrt-linux/tools/formal-verify.py --target drivers/airymax/ipc/airy_ipc.c || \
+              echo "WARN: formal verification incomplete (expected in 0.1.1 design phase)"
+            python3 agentrt-linux/tools/formal-verify.py --target mm/share_pool.c || \
+              echo "WARN: formal verification incomplete (expected in 0.1.1 design phase)"
+          else
+            echo "SKIP: formal-verify.py not yet implemented (1.0.1+ verification path)"
+          fi
 
       - name: 72h soak test (memory leak / refcount drift)
         run: |
-          python3 agentrt-linux/tools/soak-runner.py --duration 72h --workload agent-busy-loop || \
-            echo "WARN: soak test skipped (no kernel binary in 0.1.1 design phase)"
+          if [ -f agentrt-linux/tools/soak-runner.py ]; then
+            python3 agentrt-linux/tools/soak-runner.py --duration 72h --workload agent-busy-loop || \
+              echo "WARN: soak test skipped (no kernel binary in 0.1.1 design phase)"
+          else
+            echo "SKIP: soak-runner.py not yet implemented"
+          fi
 
       - name: Chaos injection (CPU hotplug / mem hotremove / I/O error / net partition)
         run: |
-          python3 agentrt-linux/tools/chaos-runner.py --profile full || \
-            echo "WARN: chaos test skipped (no kernel binary in 0.1.1 design phase)"
+          if [ -f agentrt-linux/tools/chaos-runner.py ]; then
+            python3 agentrt-linux/tools/chaos-runner.py --profile full || \
+              echo "WARN: chaos test skipped (no kernel binary in 0.1.1 design phase)"
+          else
+            echo "SKIP: chaos-runner.py not yet implemented"
+          fi
 
   # ─── Job 2: 回滚或预算检查 ─────────────────────────────────────────
   # 合并原 auto-revert-on-regression + ci-budget
@@ -56,13 +68,25 @@ jobs:
       - name: Auto-revert on regression (if nightly-test-suite failed)
         if: needs.nightly-test-suite.result == 'failure'
         run: |
-          python3 agentrt-linux/tools/auto-bisect.py --baseline last-green || \
-            echo "WARN: auto-bisect skipped (no commits to bisect in 0.1.1 design phase)"
-          python3 agentrt-linux/tools/create-revert-pr.py --regression-commit $COMMIT || \
-            echo "WARN: create-revert-pr skipped"
+          if [ -f agentrt-linux/tools/auto-bisect.py ]; then
+            python3 agentrt-linux/tools/auto-bisect.py --baseline last-green || \
+              echo "WARN: auto-bisect skipped (no commits to bisect in 0.1.1 design phase)"
+          else
+            echo "SKIP: auto-bisect.py not yet implemented"
+          fi
+          if [ -f agentrt-linux/tools/create-revert-pr.py ]; then
+            python3 agentrt-linux/tools/create-revert-pr.py --regression-commit $COMMIT || \
+              echo "WARN: create-revert-pr skipped"
+          else
+            echo "SKIP: create-revert-pr.py not yet implemented"
+          fi
 
       - name: Check CI total budget (60min gate, OS-STD-TEST-011)
         if: always()
         run: |
-          python3 agentrt-linux/tools/ci-budget-check.py --max-minutes 60 || \
-            echo "WARN: CI budget check skipped (no actual CI runs in 0.1.1 design phase)"
+          if [ -f agentrt-linux/tools/ci-budget-check.py ]; then
+            python3 agentrt-linux/tools/ci-budget-check.py --max-minutes 60 || \
+              echo "WARN: CI budget check skipped (no actual CI runs in 0.1.1 design phase)"
+          else
+            echo "SKIP: ci-budget-check.py not yet implemented"
+          fi

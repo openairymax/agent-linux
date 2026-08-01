@@ -36,10 +36,15 @@ jobs:
             syft "$repo/" -o spdx-json > "sbom-${repo}.spdx.json"
           done
           # 合并为统一 SBOM
-          python3 agentrt-linux/tools/merge-sbom.py \
-            --output sbom-agentrt-linux-${{ github.ref_name }}.spdx.json \
-            sbom-*.spdx.json
+          if [ -f agentrt-linux/tools/merge-sbom.py ]; then
+            python3 agentrt-linux/tools/merge-sbom.py \
+              --output sbom-agentrt-linux-${{ github.ref_name }}.spdx.json \
+              sbom-*.spdx.json
+          else
+            echo "SKIP: merge-sbom.py not yet implemented"
+          fi
       - name: Build kernel image + modules
+        working-directory: kernel
         run: |
           make ARCH=x86_64 -j$(nproc) binrpm-pkg
       - name: Import GPG signing key

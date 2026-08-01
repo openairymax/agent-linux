@@ -18,7 +18,6 @@ on:
       - 'kernel/kernel/ipc/**'
       - 'kernel/include/uapi/linux/airymax/**'
       - 'kernel/configs/**'
-      - 'kernel/config/Kconfig.alk'
       - 'kernel/arch/*/configs/airy_defconfig'
   push:
     branches: [main, develop]
@@ -31,7 +30,6 @@ on:
       - 'kernel/kernel/ipc/**'
       - 'kernel/include/uapi/linux/airymax/**'
       - 'kernel/configs/**'
-      - 'kernel/config/Kconfig.alk'
       - 'kernel/arch/*/configs/airy_defconfig'
 
 jobs:
