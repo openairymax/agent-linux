@@ -40,7 +40,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [x86_64, arm64, riscv64, loongarch64]
+        arch: [x86_64, arm64, riscv, loongarch]
     steps:
       - uses: actions/checkout@v4
         with: { submodules: recursive }
@@ -53,13 +53,13 @@ jobs:
         run: |
           sudo apt-get install -y gcc-aarch64-linux-gnu
           echo "CROSS_COMPILE=aarch64-linux-gnu-" >> $GITHUB_ENV
-      - name: Install cross-toolchain (riscv64)
-        if: matrix.arch == 'riscv64'
+      - name: Install cross-toolchain (riscv)
+        if: matrix.arch == 'riscv'
         run: |
           sudo apt-get install -y gcc-riscv64-linux-gnu
           echo "CROSS_COMPILE=riscv64-linux-gnu-" >> $GITHUB_ENV
-      - name: Install cross-toolchain (loongarch64)
-        if: matrix.arch == 'loongarch64'
+      - name: Install cross-toolchain (loongarch)
+        if: matrix.arch == 'loongarch'
         run: |
           # loongarch64 cross-toolchain from loongson
           sudo apt-get install -y gcc-loongarch64-linux-gnu || true

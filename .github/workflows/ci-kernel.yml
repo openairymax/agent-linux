@@ -27,12 +27,12 @@ jobs:
       max-parallel: 8
       matrix:
         config: [defconfig, allnoconfig, allmodconfig, airy_defconfig]
-        arch: [x86_64, arm64, riscv64, loongarch64]
+        arch: [x86_64, arm64, riscv, loongarch]
         compiler: [gcc, clang]
         exclude:
-          # clang + loongarch64 not yet supported in upstream toolchain
-          # (airy_defconfig now available for all 4 archs: x86_64/arm64/riscv64/loongarch64)
-          - arch: loongarch64
+          # clang + loongarch not yet supported in upstream toolchain
+          # (airy_defconfig now available for all 4 archs: x86_64/arm64/riscv/loongarch)
+          - arch: loongarch
             compiler: clang
     steps:
       - uses: actions/checkout@v4
@@ -47,8 +47,8 @@ jobs:
             case "${{ matrix.arch }}" in
               x86_64)       sudo apt-get install -y gcc ;;
               arm64)        sudo apt-get install -y gcc-aarch64-linux-gnu ;;
-              riscv64)      sudo apt-get install -y gcc-riscv64-linux-gnu ;;
-              loongarch64)  sudo apt-get install -y gcc-loongarch64-linux-gnu ;;
+              riscv)        sudo apt-get install -y gcc-riscv64-linux-gnu ;;
+              loongarch)    sudo apt-get install -y gcc-loongarch64-linux-gnu ;;
             esac
           else
             sudo apt-get install -y clang lld llvm
