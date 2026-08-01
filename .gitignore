@@ -24,7 +24,13 @@
 !.editorconfig
 !.clang-format
 !scripts/
+!scripts/**
 !ssot-registry.yaml
 !tools/
+!tools/**
 !build/
 !build/**
+# Python bytecode cache must stay untracked
+tools/__pycache__/
+tools/**/__pycache__/
+**/__pycache__/

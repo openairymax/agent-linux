@@ -1,0 +1,29 @@
+{
+  "version": "v1.0.1",
+  "date": "2026-07-22",
+  "linux_base": 548,
+  "syscalls": [
+    {
+      "name": "airy_sys_call",
+      "internal_number": 0,
+      "linux_number": 548
+    },
+    {
+      "name": "airy_sys_rovol_ctl",
+      "internal_number": 1,
+      "linux_number": 549
+    },
+    {
+      "name": "airy_sys_sched_ctl",
+      "internal_number": 2,
+      "linux_number": 550
+    },
+    {
+      "name": "airy_sys_clt_notify",
+      "internal_number": 3,
+      "linux_number": 551
+    }
+  ],
+  "reserved_range": [552, 571],
+  "nr_syscalls": 552
+}
