@@ -171,7 +171,7 @@ The shared-contract (`[SC]`) layer is the single physical source of truth for ke
 | 10 | `uapi_compat.h` | Linux kernel-style UAPI type bridging (`__u8`/`__u16`/`__u32`/`__u64`) |
 
 **Supplementary shared file** (non-[SC] core): `bpf_struct_ops.h` (sched_tac struct airy_sched_ops state machine definition)
-**Codegen product** (auto-generated from `syscall.xml`): `syscall.h`
+**Codegen product** (auto-generated from `syscall.xml`): `syscall_gen.h`
 
 Changes to any `[SC]` header require dual CI validation (agentrt-linux `sc-dual-ci.yml` + agentrt mirror PR) per **OS-IRON-014**. The IPC ABI uses magic `0x41524531` (`'ARE1'`); the task descriptor magic is `0x41475453` (`'AGTS'`). Kernel-side functions use the `airy_*` prefix.
 

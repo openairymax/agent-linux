@@ -44,20 +44,33 @@ jobs:
       - name: Verify no physical duplicates (OS-IRON-014)
         run: |
           set -e
-          # 10 头文件应仅存在于 kernel/include/uapi/linux/airymax/，不应有物理副本
-          COUNT=$(find . -path './.git' -prune -o -name 'ipc.h' -print | wc -l)
+          # [SC] ipc.h 应仅有一个物理副本（kernel/include/uapi/linux/airymax/）。
+          # 注意：kernel 子模块是完整 Linux 6.6 内核树，本身含多个标准
+          # ipc.h（linux/ipc.h、apparmor、selftests 等），因此 find 必须
+          # 限定到 airymax/ 路径，否则计数恒 >1 导致检查永远失败。
+          COUNT=$(find . -path './.git' -prune -o -path '*/airymax/ipc.h' -print | wc -l)
           if [ "$COUNT" -ne 1 ]; then
-            echo "FAIL: ipc.h has $COUNT copies (expected 1)"
-            find . -name 'ipc.h' -not -path './.git/*'
+            echo "FAIL: airymax/ipc.h has $COUNT copies (expected 1)"
+            find . -path './.git' -prune -o -path '*/airymax/ipc.h' -print
             exit 1
           fi
-          echo "OK: no physical duplicates"
+          echo "OK: no physical duplicates of [SC] ipc.h"
 
-      - name: Byte-level [SC] header consistency check (diff -q)
+      - name: Byte-level [SC] header consistency check (normalized diff)
         run: |
           set -e
           # IRON-9 v3: kernel-side and commons-side [SC] headers must be
-          # byte-level identical (except include path prefixes).
+          # content-identical. Two regions are legitimately per-side and
+          # are normalized away before the byte comparison:
+          #   1. SPDX 许可头（kernel: GPL-2.0-only WITH Linux-syscall-note；
+          #      commons: BSD-3-Clause OR GPL-2.0 —— 2026-08-14 决策保留各自许可）
+          #   2. include 前缀（kernel: <linux/airymax/...>；commons: <airymax/...>）
+          # 其余内容必须逐字节一致（含字段名/布局/注释文本/空白格式）。
+          norm_sc_header() {
+            grep -v '^/\* SPDX-' "$1" \
+              | grep -v '^ \* Copyright (c)' \
+              | sed 's|<linux/airymax/|<airymax/|g'
+          }
           # Clone agentrt commons for comparison; skip if unavailable.
           git clone --depth 1 https://atomgit.com/openairymax/agentrt.git /tmp/agentrt 2>/dev/null || {
             echo "WARN: Cannot clone agentrt repo, skipping byte-level comparison"
@@ -76,17 +89,17 @@ jobs:
               continue
             fi
 
-            if ! diff -q "$kern" "$comm" > /dev/null 2>&1; then
-              echo "FAIL: $h differs between kernel and commons"
-              diff -u "$kern" "$comm" || true
+            if ! diff <(norm_sc_header "$kern") <(norm_sc_header "$comm") > /dev/null 2>&1; then
+              echo "FAIL: $h differs between kernel and commons (normalized)"
+              diff <(norm_sc_header "$kern") <(norm_sc_header "$comm") || true
               FAIL=1
             else
-              echo "OK: $h byte-level identical"
+              echo "OK: $h content-identical (after SPDX/include-prefix normalization)"
             fi
           done
 
           if [ "$FAIL" -ne 0 ]; then
-            echo "FAIL: [SC] header byte-level consistency check failed"
+            echo "FAIL: [SC] header consistency check failed"
             exit 1
           fi
 

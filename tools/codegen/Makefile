@@ -17,7 +17,7 @@ SYSCALL_GEN := $(CODEGEN_DIR)syscall_gen.py
 # 生成产物路径（相对于 agentrt-linux/ 仓库根）
 # CODEGEN_DIR 为 .../agentrt-linux/tools/codegen/，需上两级到仓库根
 REPO_ROOT   := $(abspath $(CODEGEN_DIR)/../../)
-SYSCALL_H   := $(REPO_ROOT)/kernel/include/uapi/linux/airymax/syscall.h
+SYSCALL_H   := $(REPO_ROOT)/kernel/include/uapi/linux/airymax/syscall_gen.h
 
 # 生成的文件列表（clean 目标使用）
 GENERATED_FILES := $(SYSCALL_H)
@@ -30,7 +30,7 @@ all: syscall
 
 # syscall: 运行 syscall_gen.py 生成 C UAPI 头文件
 syscall:
-	@echo "  CODEGEN  syscall_gen.py → syscall.h"
+	@echo "  CODEGEN  syscall_gen.py → syscall_gen.h"
 	@$(PYTHON) $(SYSCALL_GEN)
 
 # check: 运行所有生成器的 --check 模式（CI 集成用）

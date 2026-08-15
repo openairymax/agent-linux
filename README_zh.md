@@ -115,7 +115,7 @@ agentrt 与 agentrt-linux 通过 **IRON-9 v3 四层共享模型**协作，其中
 | 10 | `uapi_compat.h`     | `include/uapi/linux/airymax/uapi_compat.h`     | Linux kernel-style UAPI 类型桥接（`__u8`/`__u16`/`__u32`/`__u64`）                                            |
 
 **补充共享文件**（非 \[SC] 核心）：`bpf_struct_ops.h`（sched\_tac struct airy\_sched\_ops 状态机定义）\
-**Codegen 产物**（由 `syscall.xml` 自动生成）：`syscall.h`
+**Codegen 产物**（由 `syscall.xml` 自动生成）：`syscall_gen.h`
 
 **IRON-9 v3 四层共享模型**：
 

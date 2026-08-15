@@ -3,10 +3,10 @@
 #
 # syscall_gen.py — agentrt-linux syscall 契约代码生成器
 #
-# 解析 syscall.xml 契约源（R-01 SSoT），生成 C UAPI 头文件 syscall.h。
+# 解析 syscall.xml 契约源（R-01 SSoT），生成 C UAPI 头文件 syscall_gen.h。
 #
 # 输入: include/uapi/linux/airymax/syscall.xml
-# 输出: include/uapi/linux/airymax/syscall.h
+# 输出: include/uapi/linux/airymax/syscall_gen.h
 #
 # 生成内容：
 #   a. #define AIRY_SYS_* 宏（内部编号 0-3）
@@ -32,7 +32,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parents[1]
 
 DEFAULT_INPUT = REPO_ROOT / "kernel" / "include" / "uapi" / "linux" / "airymax" / "syscall.xml"
-DEFAULT_OUTPUT = REPO_ROOT / "kernel" / "include" / "uapi" / "linux" / "airymax" / "syscall.h"
+DEFAULT_OUTPUT = REPO_ROOT / "kernel" / "include" / "uapi" / "linux" / "airymax" / "syscall_gen.h"
 
 
 def parse_xml(xml_path):
@@ -370,8 +370,8 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\
 示例:
-  %(prog)s                          # 生成 syscall.h（使用默认路径）
-  %(prog)s --check                  # CI 校验 syscall.h
+  %(prog)s                          # 生成 syscall_gen.h（使用默认路径）
+  %(prog)s --check                  # CI 校验 syscall_gen.h
   %(prog)s --check-tbl              # CI 校验 syscall_64.tbl Airymax 段
   %(prog)s --mode tbl               # 输出 Airymax tbl 片段到 stdout
   %(prog)s -i custom.xml -o out.h   # 自定义输入输出
@@ -385,12 +385,12 @@ def main():
     parser.add_argument(
         "--output", "-o",
         default=str(DEFAULT_OUTPUT),
-        help="输出 syscall.h 路径（默认: %(default)s）",
+        help="输出 syscall_gen.h 路径（默认: %(default)s）",
     )
     parser.add_argument(
         "--check",
         action="store_true",
-        help="校验 syscall.h：对比生成内容与已提交文件，diff 不为空则返回非零退出码",
+        help="校验 syscall_gen.h：对比生成内容与已提交文件，diff 不为空则返回非零退出码",
     )
     parser.add_argument(
         "--check-tbl",
