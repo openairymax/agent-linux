@@ -601,8 +601,8 @@ technical_points:
     authority_doc: "docs/AirymaxOS/30-interfaces/09-sc-log-types-contract.md"
     sc_header: "kernel/include/uapi/linux/airymax/log_types.h"
     tier: 1
-    description: "128B 固定日志记录格式与 LOG_* 5 级枚举的唯一定义源"
-    constraint: "LOG_* 为权威前缀；AIRY_LOG_* 已废弃"
+    description: "128B 固定日志记录格式与 AIRY_LOG_* 5 级枚举的唯一定义源"
+    constraint: "AIRY_LOG_* 为权威前缀；LOG_* 已废弃（S-2 收敛，2026-08-14）"
 
   - id: TP-003
     name: "IPC 消息头协议（UIPF）"
