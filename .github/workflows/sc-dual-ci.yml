@@ -20,6 +20,7 @@ on:
       - 'kernel/include/uapi/linux/airymax/syscalls.h'
       - 'kernel/include/uapi/linux/airymax/uapi_compat.h'
       - 'kernel/include/uapi/linux/airymax/lsm_types.h'
+      - 'kernel/include/uapi/linux/airymax/bpf_struct_ops.h'
 
 jobs:
   # ─── Job 1: [SC] 头文件验证（agentrt-linux 侧） ────────────────────
@@ -31,12 +32,12 @@ jobs:
       - uses: actions/checkout@v4
         with: { submodules: recursive }
 
-      - name: Verify [SC] 10 shared headers (OS-IRON-014)
+      - name: Verify [SC] 11 shared headers (OS-IRON-014)
         run: |
           set -e
           for h in error.h log_types.h ipc.h sched.h memory_types.h \
                    security_types.h cognition_types.h syscalls.h uapi_compat.h \
-                   lsm_types.h; do
+                   lsm_types.h bpf_struct_ops.h; do
             test -f "kernel/include/uapi/linux/airymax/$h" || { echo "FAIL: $h missing"; exit 1; }
             echo "OK: $h present"
           done
@@ -80,7 +81,7 @@ jobs:
           FAIL=0
           for h in error.h log_types.h ipc.h sched.h memory_types.h \
                    security_types.h cognition_types.h syscalls.h uapi_compat.h \
-                   lsm_types.h; do
+                   lsm_types.h bpf_struct_ops.h; do
             kern="kernel/include/uapi/linux/airymax/$h"
             comm="/tmp/agentrt/commons/include/airymax/$h"
 
