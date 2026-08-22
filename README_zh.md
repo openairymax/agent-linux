@@ -1,11 +1,11 @@
-# agentrt-linux 极境智能体操作系统（AirymaxOS）
+# agent-linux 极境智能体操作系统（AirymaxOS）
 
-> agentrt-linux（AirymaxOS / 极境智能体操作系统）智能体操作系统管理仓。
+> agent-linux（AirymaxOS / 极境智能体操作系统）智能体操作系统管理仓。
 > [airymaxhub](https://atomgit.com/openairymax/airymaxhub) 伞仓下五个管理仓之一。
 
 **语言:** [English](README.md) | 简体中文
 
-[![Version](https://img.shields.io/badge/version-v1.0.1-5a6b7e)](https://atomgit.com/openairymax/agentrt-linux)
+[![Version](https://img.shields.io/badge/version-v1.0.1-5a6b7e)](https://atomgit.com/openairymax/agent-linux)
 [![License](https://img.shields.io/badge/license-AGPL--3.0+Apache--2.0-4a90d9)](LICENSE)
 [![Linux](https://img.shields.io/badge/Linux-6.6-FCC624?logo=linux\&logoColor=black)](https://www.kernel.org)
 [![Rust](https://img.shields.io/badge/Rust-experimental-DEA584?logo=rust\&logoColor=white)](https://www.rust-lang.org)
@@ -14,9 +14,9 @@
 
 ## 概述
 
-**agentrt-linux**（正式英文名：AirymaxOS，中文：极境智能体操作系统）是基于 Linux 6.6 构建的 AI 智能体操作系统研究项目。它是 `airymaxhub` 伞仓下与 `agentrt` 同级的管理仓，聚合 **8 个叶子仓**作为 git submodule。
+**agent-linux**（正式英文名：AirymaxOS，中文：极境智能体操作系统）是基于 Linux 6.6 构建的 AI 智能体操作系统研究项目。它是 `airymaxhub` 伞仓下的**内核态工程**大管理仓（v0.1.3 由 `agentrt-linux` 改名），与用户态工程 `agent-runtim` 同级，聚合 **8 个叶子仓**作为 git submodule。
 
-agentrt-linux 基于三大设计支柱：
+agent-linux 基于三大设计支柱：
 
 1. **微内核思想** — 参考 seL4 ，Liedtke 极简原则、capability 安全模型、服务用户态化、消息传递通信
 2. **标准兼容性** — 全面参考 Linux 6.6 LTS、openEuler 24.03 LTS 模块设计、技术规格和标准；兼容主流社区标准
@@ -27,15 +27,15 @@ agentrt-linux 基于三大设计支柱：
 ## 仓库结构
 
 ```
-agentrt-linux/             # 管理仓（本仓库）
-├── kernel/                # agentrt-linux 内核叶子仓（submodule）
-├── services/              # agentrt-linux 服务态叶子仓（submodule）
-├── security/              # agentrt-linux 安全态叶子仓（submodule）
-├── memory/                # agentrt-linux 内存管理叶子仓（submodule）
-├── cognition/             # agentrt-linux 认知层叶子仓（submodule）
-├── cloudnative/           # agentrt-linux 云原生叶子仓（submodule）
-├── system/                # agentrt-linux 系统层叶子仓（submodule）
-├── tests-linux/       # agentrt-linux 测试叶子仓（submodule）
+agent-linux/             # 管理仓（本仓库）
+├── kernel/                # agent-linux 内核叶子仓（submodule）
+├── services/              # agent-linux 服务态叶子仓（submodule）
+├── security/              # agent-linux 安全态叶子仓（submodule）
+├── memory/                # agent-linux 内存管理叶子仓（submodule）
+├── cognition/             # agent-linux 认知层叶子仓（submodule）
+├── cloudnative/           # agent-linux 云原生叶子仓（submodule）
+├── system/                # agent-linux 系统层叶子仓（submodule）
+├── tests-linux/       # agent-linux 测试叶子仓（submodule）
 ├── .gitmodules            # Submodule 定义
 ├── LICENSE                # AGPL-3.0 + Apache-2.0 双许可证全文
 ├── NOTICE                 # 版权、商标与第三方声明
@@ -60,7 +60,7 @@ agentrt-linux/             # 管理仓（本仓库）
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│           agentrt-linux（AirymaxOS / 极境智能体操作系统）              │
+│           agent-linux（AirymaxOS / 极境智能体操作系统）              │
 ├─────────────────────────────────────────────────────────────────────┤
 │  应用层（Agent 租户）                                                  │
 │    └── Airymax SDK（Python / Go / Rust / TypeScript）                │
@@ -93,11 +93,11 @@ agentrt-linux/             # 管理仓（本仓库）
 
 ### 与 Airymax agentrt 的关系
 
-agentrt-linux 与 `agentrt` 共享相同的 Airymax 设计理念（架构同源）。核心微核心原语（`atoms/corekern`）、daemon 服务、安全框架（`cupolas`）、内存引擎（`heapstore` / `memoryrovol`）和认知循环（`coreloopthree`）在用户态运行时（`agentrt`）与 OS 级内核（agentrt-linux）之间复用。这确保了 `agentrt` 在 agentrt-linux 上原生运行，无适配层。
+agent-linux 与 `agentrt` 共享相同的 Airymax 设计理念（架构同源）。核心微核心原语（`atoms/corekern`）、daemon 服务、安全框架（`cupolas`）、内存引擎（`heapstore` / `memoryrovol`）和认知循环（`coreloopthree`）在用户态运行时（`agentrt`）与 OS 级内核（agent-linux）之间复用。这确保了 `agentrt` 在 agent-linux 上原生运行，无适配层。
 
 ### \[SC] 共享契约层
 
-agentrt 与 agentrt-linux 通过 **IRON-9 v3 四层共享模型**协作，其中 \[SC] 共享契约层是字节级完全共享的核心。SSoT 物理宿主为 `kernel/include/uapi/linux/airymax/`，由 agentrt-linux 维护，agentrt 通过 `commons/include/airymax/` 同步引用。
+agentrt 与 agent-linux 通过 **IRON-9 v3 四层共享模型**协作，其中 \[SC] 共享契约层是字节级完全共享的核心。SSoT 物理宿主为 `kernel/include/uapi/linux/airymax/`，由 agent-linux 维护，agentrt 通过 `commons/include/airymax/` 同步引用。
 
 **10 个 \[SC] 核心头文件**（详见 [09-ssot-registry.md](../docs/AirymaxOS/50-engineering-standards/09-ssot-registry.md) OS-IRON-014）：
 
@@ -130,17 +130,17 @@ agentrt 与 agentrt-linux 通过 **IRON-9 v3 四层共享模型**协作，其中
 
 ### 与 openEuler 的关系
 
-agentrt-linux 全面参考 Euler 的：
+agent-linux 全面参考 Euler 的：
 
 - 工程标准和质量规范
 - 包管理（RPM / dnf）
 - 复用硬件驱动，以适配国内主流硬件
 
-agentrt-linux 兼容 Euler 标准，可消费 Euler 标准包和工具链。
+agent-linux 兼容 Euler 标准，可消费 Euler 标准包和工具链。
 
 ### 与 Linux 6.6 的关系
 
-agentrt-linux 基于 Linux 6.6（openEuler 24.03 LTS 同内核基线），集成：
+agent-linux 基于 Linux 6.6（openEuler 24.03 LTS 同内核基线），集成：
 
 - **sched\_tac**（原生调度类，不使用 sched\_ext）实现 AI 感知的 CPU 调度
 - **eBPF 签名验证**（Linux 6.15）保障内核可编程安全性
@@ -157,8 +157,8 @@ agentrt-linux 基于 Linux 6.6（openEuler 24.03 LTS 同内核基线），集成
 
 ## 下游消费者
 
-- **Agent 应用** — 通过 Airymax SDK 在 agentrt-linux 上原生运行
-- **云 / 边缘部署** — agentrt-linux 作为 AI 智能体基础设施的基础 OS
+- **Agent 应用** — 通过 Airymax SDK 在 agent-linux 上原生运行
+- **云 / 边缘部署** — agent-linux 作为 AI 智能体基础设施的基础 OS
 - **研究人员** — 微内核设计与 AI 原生 OS 研究
 
 ## 分支策略
@@ -169,8 +169,8 @@ agentrt-linux 基于 Linux 6.6（openEuler 24.03 LTS 同内核基线），集成
 克隆本仓库（含 submodule）：
 
 ```bash
-git clone --recurse-submodules git@atomgit.com:openairymax/agentrt-linux.git
-cd agentrt-linux
+git clone --recurse-submodules git@atomgit.com:openairymax/agent-linux.git
+cd agent-linux
 git submodule update --remote --checkout
 ```
 
@@ -195,14 +195,14 @@ git submodule update --remote --checkout
 
 ### kernel 子仓许可证例外
 
-本管理仓本身（即 `agentrt-linux/` 仓库）及其所有子模块**除** **`kernel/`** **外**均采用 AGPL v3 + Apache 2.0 双许可证。`kernel/` 子模块采用 **GPL-2.0-only** 许可证，以保持与上游 Linux 内核（6.6 LTS / 7.1）的兼容性。
+本管理仓本身（即 `agent-linux/` 仓库）及其所有子模块**除** **`kernel/`** **外**均采用 AGPL v3 + Apache 2.0 双许可证。`kernel/` 子模块采用 **GPL-2.0-only** 许可证，以保持与上游 Linux 内核（6.6 LTS / 7.1）的兼容性。
 
 | 路径                                                                                   | 许可证                               | 原因                                                        |
 | ------------------------------------------------------------------------------------ | --------------------------------- | --------------------------------------------------------- |
-| `agentrt-linux/`（管理仓）                                                                | `AGPL-3.0-or-later OR Apache-2.0` | 用户态管理代码                                                   |
-| `agentrt-linux/{cloudnative,cognition,memory,security,services,system,tests-linux}/` | `AGPL-3.0-or-later OR Apache-2.0` | 用户态子模块                                                    |
-| `agentrt-linux/kernel/`                                                              | `GPL-2.0-only`                    | Linux 内核派生代码——AGPL v3 和 Apache 2.0 与 GPL-2.0-only **不兼容** |
+| `agent-linux/`（管理仓）                                                                | `AGPL-3.0-or-later OR Apache-2.0` | 用户态管理代码                                                   |
+| `agent-linux/{cloudnative,cognition,memory,security,services,system,tests-linux}/` | `AGPL-3.0-or-later OR Apache-2.0` | 用户态子模块                                                    |
+| `agent-linux/kernel/`                                                              | `GPL-2.0-only`                    | Linux 内核派生代码——AGPL v3 和 Apache 2.0 与 GPL-2.0-only **不兼容** |
 
-> **注意**：`agentrt-linux/{cloudnative,cognition,memory,security,services,system,tests-linux}/` 中包含内核模块头文件（`#include <linux/module.h>`、`MODULE_LICENSE("GPL")` 等）的源代码文件，其 SPDX 标签**必须**使用 `GPL-2.0-only`。完整策略见 [docs/AirymaxOS/50-engineering-standards/12-license-policy.md](../docs/AirymaxOS/50-engineering-standards/12-license-policy.md)。
+> **注意**：`agent-linux/{cloudnative,cognition,memory,security,services,system,tests-linux}/` 中包含内核模块头文件（`#include <linux/module.h>`、`MODULE_LICENSE("GPL")` 等）的源代码文件，其 SPDX 标签**必须**使用 `GPL-2.0-only`。完整策略见 [docs/AirymaxOS/50-engineering-standards/12-license-policy.md](../docs/AirymaxOS/50-engineering-standards/12-license-policy.md)。
 
 Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.

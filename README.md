@@ -1,11 +1,11 @@
-# agentrt-linux（AirymaxOS）— AI Agent Operating System
+# agent-linux（AirymaxOS）— AI Agent Operating System
 
-> Management repository for the agentrt-linux (AirymaxOS) intelligent agent operating system.
+> Management repository for the agent-linux (AirymaxOS) intelligent agent operating system.
 > One of five management repositories under the [airymaxhub](https://atomgit.com/openairymax/airymaxhub) umbrella.
 
 **Language:** English | [简体中文](README_zh.md)
 
-[![Version](https://img.shields.io/badge/version-v1.0.1-5a6b7e)](https://atomgit.com/openairymax/agentrt-linux)
+[![Version](https://img.shields.io/badge/version-v1.0.1-5a6b7e)](https://atomgit.com/openairymax/agent-linux)
 [![License](https://img.shields.io/badge/license-AGPL--3.0+Apache--2.0-4a90d9)](LICENSE)
 [![Linux](https://img.shields.io/badge/Linux-6.6-FCC624?logo=linux&logoColor=black)](https://www.kernel.org)
 [![Rust](https://img.shields.io/badge/Rust-experimental-DEA584?logo=rust&logoColor=white)](https://www.rust-lang.org)
@@ -14,28 +14,28 @@
 
 ## Overview
 
-**agentrt-linux** (formal English name: AirymaxOS, Chinese: 极境智能体操作系统) is an AI Agent Operating System research project built on top of Linux 6.6. It is a management repository at the same level as `agentrt` under the `airymaxhub` umbrella, aggregating **8 leaf repositories** as git submodules.
+**agent-linux** (formal English name: AirymaxOS, Chinese: 极境智能体操作系统) is an AI Agent Operating System research project built on top of Linux 6.6. It is the **kernel-space engineering** super-management repository under the `airymaxhub` umbrella (renamed from `agentrt-linux` in v0.1.3), peer to the user-space engineering repo `agent-runtim`, aggregating **8 leaf repositories** as git submodules.
 
-agentrt-linux is based on three design pillars:
+agent-linux is based on three design pillars:
 
 1. **Microkernel Design Principles** — referencing seL4 / Zircon / Minix3, Liedtke minimality principle, capability-based security, user-space service isolation, message-passing communication
 2. **Euler Standards Compatibility** — comprehensive reference to Euler 24.03 LTS / 26.03 module design, technical specifications, and standards; Euler-compatible
 3. **Airymax Homology** — shares the same Airymax design philosophy with `agentrt`; the OS runs `agentrt` natively with no adaptation layer due to architectural homology
 
-This repository and its leaf repos hold design documents, architectural drafts, and engineering baseline declarations for the agentrt-linux operating system.
+This repository and its leaf repos hold design documents, architectural drafts, and engineering baseline declarations for the agent-linux operating system.
 
 ## Repository Structure
 
 ```
-agentrt-linux/             # Management repository (this repo)
-├── kernel/                # agentrt-linux Kernel leaf repo (submodule)
-├── services/              # agentrt-linux Services leaf repo (submodule)
-├── security/              # agentrt-linux Security leaf repo (submodule)
-├── memory/                # agentrt-linux Memory leaf repo (submodule)
-├── cognition/             # agentrt-linux Cognition leaf repo (submodule)
-├── cloudnative/           # agentrt-linux CloudNative leaf repo (submodule)
-├── system/                # agentrt-linux System leaf repo (submodule)
-├── tests-linux/       # agentrt-linux Tests leaf repo (submodule)
+agent-linux/             # Management repository (this repo)
+├── kernel/                # agent-linux Kernel leaf repo (submodule)
+├── services/              # agent-linux Services leaf repo (submodule)
+├── security/              # agent-linux Security leaf repo (submodule)
+├── memory/                # agent-linux Memory leaf repo (submodule)
+├── cognition/             # agent-linux Cognition leaf repo (submodule)
+├── cloudnative/           # agent-linux CloudNative leaf repo (submodule)
+├── system/                # agent-linux System leaf repo (submodule)
+├── tests-linux/       # agent-linux Tests leaf repo (submodule)
 ├── .gitmodules            # Submodule definitions
 ├── LICENSE                # AGPL-3.0 + Apache-2.0 dual license full text
 ├── NOTICE                 # Copyright, trademark and third-party notices
@@ -60,7 +60,7 @@ agentrt-linux/             # Management repository (this repo)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│           agentrt-linux（AirymaxOS / 极境智能体操作系统）              │
+│           agent-linux（AirymaxOS / 极境智能体操作系统）              │
 ├─────────────────────────────────────────────────────────────────────┤
 │  Applications (Agent tenants)                                        │
 │    └── Airymax SDK (Python / Go / Rust / TypeScript)                 │
@@ -93,21 +93,21 @@ agentrt-linux/             # Management repository (this repo)
 
 ### Relationship with Airymax agentrt
 
-agentrt-linux and `agentrt` share the same Airymax design philosophy (architectural homology). The core micro-core primitives (`atoms/corekern`), daemon services, security framework (`cupolas`), memory engine (`heapstore` / `memoryrovol`), and cognition loop (`coreloopthree`) are reused between the user-space runtime (`agentrt`) and the OS-level kernel (agentrt-linux). This ensures `agentrt` runs natively on agentrt-linux with no adaptation layer.
+agent-linux and `agentrt` share the same Airymax design philosophy (architectural homology). The core micro-core primitives (`atoms/corekern`), daemon services, security framework (`cupolas`), memory engine (`heapstore` / `memoryrovol`), and cognition loop (`coreloopthree`) are reused between the user-space runtime (`agentrt`) and the OS-level kernel (agent-linux). This ensures `agentrt` runs natively on agent-linux with no adaptation layer.
 
 ### Relationship with Euler Standards
 
-agentrt-linux comprehensively references Euler 24.03 LTS / 26.03 for:
+agent-linux comprehensively references Euler 24.03 LTS / 26.03 for:
 - Module design and technical specifications
 - Engineering standards and quality norms
 - Package management (RPM / dnf)
 - Distribution lifecycle and LTS support model
 
-agentrt-linux is Euler-compatible and can consume Euler-standard packages and tooling.
+agent-linux is Euler-compatible and can consume Euler-standard packages and tooling.
 
 ### Relationship with Linux 6.6
 
-agentrt-linux is built on Linux 6.6 (Euler-standard kernel baseline) with:
+agent-linux is built on Linux 6.6 (Euler-standard kernel baseline) with:
 - **sched_tac** (native scheduler classes, no sched_ext) for AI-aware CPU scheduling
 - **eBPF signed verification** (Linux 6.15) for secure in-kernel programmability
 - **io_uring** for high-performance async I/O and message passing
@@ -123,8 +123,8 @@ The microkernel refactoring strategy does NOT develop a microkernel from scratch
 
 ## Downstream Consumers
 
-- **Agent applications** — run natively on agentrt-linux via the Airymax SDK
-- **Cloud / edge deployments** — agentrt-linux as the base OS for AI agent infrastructure
+- **Agent applications** — run natively on agent-linux via the Airymax SDK
+- **Cloud / edge deployments** — agent-linux as the base OS for AI agent infrastructure
 - **Researchers** — microkernel design and AI-native OS research
 
 ## Branch Strategy
@@ -135,8 +135,8 @@ The microkernel refactoring strategy does NOT develop a microkernel from scratch
 When cloning this repo with submodules:
 
 ```bash
-git clone --recurse-submodules git@atomgit.com:openairymax/agentrt-linux.git
-cd agentrt-linux
+git clone --recurse-submodules git@atomgit.com:openairymax/agent-linux.git
+cd agent-linux
 git submodule update --remote --checkout
 ```
 
@@ -155,7 +155,7 @@ The management repository hosts **6 GitHub Actions workflows** (each capped at 2
 
 ### [SC] Shared Contract Layer
 
-The shared-contract (`[SC]`) layer is the single physical source of truth for kernel↔agentrt ABI. It lives under `kernel/include/uapi/linux/airymax/` (maintained by agentrt-linux) and is mirrored to `agentrt/commons/include/airymax/` for user-space consumption. It consists of **10 core headers** (per OS-IRON-014):
+The shared-contract (`[SC]`) layer is the single physical source of truth for kernel↔agentrt ABI. It lives under `kernel/include/uapi/linux/airymax/` (maintained by agent-linux) and is mirrored to `agentrt/commons/include/airymax/` for user-space consumption. It consists of **10 core headers** (per OS-IRON-014):
 
 | # | Header | Responsibility |
 |---|--------|---------------|
@@ -173,7 +173,7 @@ The shared-contract (`[SC]`) layer is the single physical source of truth for ke
 **Supplementary shared file** (non-[SC] core): `bpf_struct_ops.h` (sched_tac struct airy_sched_ops state machine definition)
 **Codegen product** (auto-generated from `syscall.xml`): `syscall_gen.h`
 
-Changes to any `[SC]` header require dual CI validation (agentrt-linux `sc-dual-ci.yml` + agentrt mirror PR) per **OS-IRON-014**. The IPC ABI uses magic `0x41524531` (`'ARE1'`); the task descriptor magic is `0x41475453` (`'AGTS'`). Kernel-side functions use the `airy_*` prefix.
+Changes to any `[SC]` header require dual CI validation (agent-linux `sc-dual-ci.yml` + agentrt mirror PR) per **OS-IRON-014**. The IPC ABI uses magic `0x41524531` (`'ARE1'`); the task descriptor magic is `0x41475453` (`'AGTS'`). Kernel-side functions use the `airy_*` prefix.
 
 ## Development Guide
 
@@ -210,14 +210,14 @@ You may choose **either** license at your option — not both, not neither.
 
 ### Kernel Submodule Exception
 
-The management repository itself (this `agentrt-linux/` repo) and all its submodules **except `kernel/`** are dual-licensed under AGPL v3 + Apache 2.0. The `kernel/` submodule is licensed under **GPL-2.0-only** to maintain compatibility with the upstream Linux kernel (6.6 LTS / 7.1).
+The management repository itself (this `agent-linux/` repo) and all its submodules **except `kernel/`** are dual-licensed under AGPL v3 + Apache 2.0. The `kernel/` submodule is licensed under **GPL-2.0-only** to maintain compatibility with the upstream Linux kernel (6.6 LTS / 7.1).
 
 | Path | License | Why |
 |------|---------|-----|
-| `agentrt-linux/` (management repo) | `AGPL-3.0-or-later OR Apache-2.0` | User-space management code |
-| `agentrt-linux/{cloudnative,cognition,memory,security,services,system,tests-linux}/` | `AGPL-3.0-or-later OR Apache-2.0` | User-space submodules |
-| `agentrt-linux/kernel/` | `GPL-2.0-only` | Linux kernel derived code — AGPL v3 and Apache 2.0 are NOT compatible with GPL-2.0-only |
+| `agent-linux/` (management repo) | `AGPL-3.0-or-later OR Apache-2.0` | User-space management code |
+| `agent-linux/{cloudnative,cognition,memory,security,services,system,tests-linux}/` | `AGPL-3.0-or-later OR Apache-2.0` | User-space submodules |
+| `agent-linux/kernel/` | `GPL-2.0-only` | Linux kernel derived code — AGPL v3 and Apache 2.0 are NOT compatible with GPL-2.0-only |
 
-> **Note**: Source files within `agentrt-linux/{cloudnative,cognition,memory,security,services,system,tests-linux}/` that include kernel module headers (`#include <linux/module.h>`, `MODULE_LICENSE("GPL")`, etc.) MUST use `GPL-2.0-only` in their SPDX tag. See [docs/AirymaxOS/50-engineering-standards/12-license-policy.md](../docs/AirymaxOS/50-engineering-standards/12-license-policy.md) for the full policy.
+> **Note**: Source files within `agent-linux/{cloudnative,cognition,memory,security,services,system,tests-linux}/` that include kernel module headers (`#include <linux/module.h>`, `MODULE_LICENSE("GPL")`, etc.) MUST use `GPL-2.0-only` in their SPDX tag. See [docs/AirymaxOS/50-engineering-standards/12-license-policy.md](../docs/AirymaxOS/50-engineering-standards/12-license-policy.md) for the full policy.
 
 Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
