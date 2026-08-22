@@ -1,6 +1,6 @@
 ---
 name: Feature Request
-about: Suggest a new feature for agentrt-linux (AirymaxOS)
+about: Suggest a new feature for agent-linux (AirymaxOS)
 title: "[FEAT] "
 labels: enhancement
 assignees: ''

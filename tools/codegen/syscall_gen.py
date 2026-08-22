@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0
 #
-# syscall_gen.py — agentrt-linux syscall 契约代码生成器
+# syscall_gen.py — agent-linux syscall 契约代码生成器
 #
 # 解析 syscall.xml 契约源（R-01 SSoT），生成 C UAPI 头文件 syscall_gen.h。
 #
@@ -27,7 +27,7 @@ from pathlib import Path
 
 GENERATOR_VERSION = "1.0.1"
 
-# 脚本所在目录与仓库根（agentrt-linux/）
+# 脚本所在目录与仓库根（agent-linux/）
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parents[1]
 
@@ -145,7 +145,7 @@ def render_c_header(data):
     lines.append("/*")
     lines.append(" * Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.")
     lines.append(" *")
-    lines.append(" * agentrt-linux (AirymaxOS) Agent 专用系统调用编号定义（生成产物）")
+    lines.append(" * agent-linux (AirymaxOS) Agent 专用系统调用编号定义（生成产物）")
     lines.append(" *")
     lines.append(" * 编号规则:")
     lines.append(" *   - 起始编号 %d（避开 Linux 标准 0-511 + x86_64 x32 区域 512-547）" % linux_base)
@@ -165,7 +165,7 @@ def render_c_header(data):
 
     # ── 3. 基址与槽位计数 ──
     lines.append("/* ===== 基址与槽位计数 ===== */")
-    lines.append("#define AIRY_SYS_BASE\t\t%d  /* agentrt-linux 专用编号起始 */" % linux_base)
+    lines.append("#define AIRY_SYS_BASE\t\t%d  /* agent-linux 专用编号起始 */" % linux_base)
     lines.append("#define AIRY_SYS_NR_CORE\t%d    /* 核心 syscall 数 */" % data["core_count"])
     lines.append("#define AIRY_SYS_NR_RESERVED\t%d   /* 预留槽位数 */" % data["reserved_count"])
     lines.append("#define AIRY_SYS_NR_TOTAL\t%d   /* 总槽位数（%d-%d） */"

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0
 """
-abi_check.py — agentrt-linux syscall ABI stability checker
+abi_check.py — agent-linux syscall ABI stability checker
 
 Validates syscall number ABI stability (OS-IRON-001: 用户空间 ABI 永不破坏)
 by cross-checking three authoritative sources against a baseline snapshot:
@@ -14,7 +14,7 @@ Usage:
     python3 tools/abi-check/abi_check.py [options]
 
 Options:
-    --repo-root PATH    agentrt-linux repo root (default: auto-detect)
+    --repo-root PATH    agent-linux repo root (default: auto-detect)
     --ssot-path PATH    SSoT document path (default: auto)
     --unistd-path PATH  unistd.h path (default: auto)
     --tbl-path PATH     syscall_64.tbl path (default: auto)
@@ -51,7 +51,7 @@ CORE_SYSCALLS = [
     ("airy_sys_clt_notify", "AIRY_SYS_CLT_NOTIFY", 551),
 ]
 
-# Default paths relative to agentrt-linux repo root
+# Default paths relative to agent-linux repo root
 DEFAULT_SSOT_REL = os.path.join("..", "docs", "AirymaxOS",
                                 "140-application-development",
                                 "07-syscall-registry.md")
@@ -66,7 +66,7 @@ DEFAULT_BASELINE_REL = os.path.join("tools", "abi-check", "abi_baseline.json")
 
 
 def find_repo_root():
-    """Auto-detect agentrt-linux repo root from script location.
+    """Auto-detect agent-linux repo root from script location.
 
     Script lives at <repo_root>/tools/abi-check/abi_check.py.
     """
@@ -457,7 +457,7 @@ def print_report(results, ssot, unistd, tbl, baseline, sources, check_mode):
 
     # Verbose mode: full report
     print("=" * 72)
-    print("agentrt-linux ABI Stability Check Report")
+    print("agent-linux ABI Stability Check Report")
     print("OS-IRON-001: 用户空间 ABI 永不破坏")
     print("=" * 72)
     print()
@@ -501,12 +501,12 @@ def print_report(results, ssot, unistd, tbl, baseline, sources, check_mode):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="agentrt-linux ABI stability checker (OS-IRON-001)",
+        description="agent-linux ABI stability checker (OS-IRON-001)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         "--repo-root", default=None,
-        help="agentrt-linux repo root (default: auto-detect)")
+        help="agent-linux repo root (default: auto-detect)")
     parser.add_argument(
         "--ssot-path", default=None,
         help="SSoT document path (default: "

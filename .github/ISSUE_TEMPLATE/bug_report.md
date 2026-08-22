@@ -1,6 +1,6 @@
 ---
 name: Bug Report
-about: Report a bug in agentrt-linux (AirymaxOS)
+about: Report a bug in agent-linux (AirymaxOS)
 title: "[BUG] "
 labels: bug
 assignees: ''
@@ -26,7 +26,7 @@ assignees: ''
 
 ## Environment
 
-- agentrt-linux version:
+- agent-linux version:
 - Linux kernel version:
 - Architecture (x86_64/arm64/riscv64):
 - Distribution:

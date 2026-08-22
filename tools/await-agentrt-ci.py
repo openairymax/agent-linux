@@ -29,7 +29,7 @@ def http_request(method, url, token, body=None):
     headers = {
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": "agentrt-linux-ci",
+        "User-Agent": "agent-linux-ci",
     }
     if token:
         headers["Authorization"] = f"Bearer {token}"
@@ -175,7 +175,7 @@ def main():
     )
     parser.add_argument(
         "--source-pr", required=True, type=int,
-        help="源 PR 编号（agentrt-linux PR，必填）",
+        help="源 PR 编号（agent-linux PR，必填）",
     )
     parser.add_argument(
         "--timeout", required=True,

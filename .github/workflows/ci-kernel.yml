@@ -1,5 +1,5 @@
 # ===========================================================================
-# agentrt-linux (AirymaxOS) CI Pipeline
+# agent-linux (AirymaxOS) CI Pipeline
 # kernel 子仓 CI（Kbuild 矩阵 + 静态分析 + 运行时测试）
 # 重组为 2 jobs：kernel-build（编译矩阵）+ kernel-verify（静态分析 + 测试）
 # ===========================================================================

@@ -1,5 +1,5 @@
 # ===========================================================================
-# agentrt-linux (AirymaxOS) .clang-format
+# agent-linux (AirymaxOS) .clang-format
 # OS-STD-FMT-001: Tab-8 indentation, 80-column limit
 # Based on Linux 6.6 kernel .clang-format
 # ===========================================================================
@@ -95,7 +95,7 @@ PointerAlignment: Right
 ReflowComments: true
 SqueezeImpreciseFlow: false
 
-# Macro handling (agentrt-linux specific)
+# Macro handling (agent-linux specific)
 ForEachMacros:
   - list_for_each_entry
   - list_for_each_entry_reverse

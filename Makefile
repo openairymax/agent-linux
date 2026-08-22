@@ -1,5 +1,5 @@
 # ===========================================================================
-# agentrt-linux (AirymaxOS) Management Repository Makefile
+# agent-linux (AirymaxOS) Management Repository Makefile
 # ===========================================================================
 # Authority: docs/AirymaxOS/50-engineering-standards/07-maintainers-and-governance.md §2.4.4
 # ===========================================================================
@@ -7,7 +7,7 @@
 .PHONY: codeowners-sync codeowners-check help
 
 help:
-	@echo "agentrt-linux management repository targets:"
+	@echo "agent-linux management repository targets:"
 	@echo "  codeowners-sync    Generate .github/CODEOWNERS from MAINTAINERS"
 	@echo "  codeowners-check   Verify CODEOWNERS consistency with MAINTAINERS"
 

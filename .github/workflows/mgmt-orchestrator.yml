@@ -1,5 +1,5 @@
 # ===========================================================================
-# agentrt-linux (AirymaxOS) CI Pipeline
+# agent-linux (AirymaxOS) CI Pipeline
 # 管理仓编排 CI（2 jobs：文件完整性 + 子仓编排）
 # ===========================================================================
 # Authority: docs/AirymaxOS/70-build-system/03-ci-cd-pipeline.md
@@ -95,7 +95,7 @@ jobs:
 
       - name: Aggregate 8 subrepo CI status
         run: |
-          python3 agentrt-linux/tools/aggregate-subrepo-ci.py --fail-on-red || {
+          python3 agent-linux/tools/aggregate-subrepo-ci.py --fail-on-red || {
             echo "WARN: some submodule CI not yet configured (expected in 0.1.1 design phase)"
             exit 0
           }
@@ -110,7 +110,7 @@ jobs:
 
       - name: Verify copyright header (line 1)
         run: |
-          python3 agentrt-linux/tools/check-copyright.py --root docs || {
+          python3 agent-linux/tools/check-copyright.py --root docs || {
             echo "WARN: copyright header issues (non-blocking in 0.1.1)"
             exit 0
           }

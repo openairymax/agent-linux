@@ -1,5 +1,5 @@
 # ===========================================================================
-# agentrt-linux (AirymaxOS) CI Pipeline
+# agent-linux (AirymaxOS) CI Pipeline
 # SSoT Validation CI（2 jobs：YAML 语法/规则 + 跨文档引用一致性）
 # ===========================================================================
 # Authority: docs/AirymaxOS/50-engineering-standards/09-ssot-registry.md
@@ -7,7 +7,7 @@
 # Design: 管理仓只做必要验证，file-integrity 已移至 mgmt-orchestrator.yml
 # ===========================================================================
 
-name: agentrt-linux SSoT CI
+name: agent-linux SSoT CI
 
 on:
   pull_request:

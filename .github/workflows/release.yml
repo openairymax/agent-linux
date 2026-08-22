@@ -1,5 +1,5 @@
 # ===========================================================================
-# agentrt-linux (AirymaxOS) CI Pipeline
+# agent-linux (AirymaxOS) CI Pipeline
 # release tag 流水线（L7 发布验证）
 # 重组为 2 jobs：build-and-sign（SBOM + 构建签名）+ publish-release（发布渠道）
 # ===========================================================================
@@ -36,9 +36,9 @@ jobs:
             syft "$repo/" -o spdx-json > "sbom-${repo}.spdx.json"
           done
           # 合并为统一 SBOM
-          if [ -f agentrt-linux/tools/merge-sbom.py ]; then
-            python3 agentrt-linux/tools/merge-sbom.py \
-              --output sbom-agentrt-linux-${{ github.ref_name }}.spdx.json \
+          if [ -f agent-linux/tools/merge-sbom.py ]; then
+            python3 agent-linux/tools/merge-sbom.py \
+              --output sbom-agent-linux-${{ github.ref_name }}.spdx.json \
               sbom-*.spdx.json
           else
             echo "SKIP: merge-sbom.py not yet implemented"
@@ -55,31 +55,31 @@ jobs:
       - name: Sign kernel image + modules (GPG)
         run: |
           gpg --batch --yes --detach-sign --armor \
-            -o agentrt-linux-kernel-${{ github.ref_name }}.rpm.asc \
-            agentrt-linux-kernel-${{ github.ref_name }}.rpm
+            -o agent-linux-kernel-${{ github.ref_name }}.rpm.asc \
+            agent-linux-kernel-${{ github.ref_name }}.rpm
       - name: Sign OCI image (cosign)
         env:
           COSIGN_KEY: ${{ secrets.COSIGN_KEY }}
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
         run: |
           cosign sign --key env://COSIGN_KEY \
-            ghcr.io/spharx/agentrt-linux:${{ github.ref_name }}
+            ghcr.io/spharx/agent-linux:${{ github.ref_name }}
       - name: Build SDK tarball + sign
         run: |
-          tar czf agentrt-linux-sdk-${{ github.ref_name }}.tar.gz sdk/
+          tar czf agent-linux-sdk-${{ github.ref_name }}.tar.gz sdk/
           gpg --batch --yes --detach-sign --armor \
-            -o agentrt-linux-sdk-${{ github.ref_name }}.tar.gz.asc \
-            agentrt-linux-sdk-${{ github.ref_name }}.tar.gz
+            -o agent-linux-sdk-${{ github.ref_name }}.tar.gz.asc \
+            agent-linux-sdk-${{ github.ref_name }}.tar.gz
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: release-artifacts-${{ github.ref_name }}
           path: |
-            sbom-agentrt-linux-${{ github.ref_name }}.spdx.json
-            agentrt-linux-kernel-*.rpm
-            agentrt-linux-kernel-*.rpm.asc
-            agentrt-linux-sdk-*.tar.gz
-            agentrt-linux-sdk-*.tar.gz.asc
+            sbom-agent-linux-${{ github.ref_name }}.spdx.json
+            agent-linux-kernel-*.rpm
+            agent-linux-kernel-*.rpm.asc
+            agent-linux-sdk-*.tar.gz
+            agent-linux-sdk-*.tar.gz.asc
 
   publish-release:
     name: Publish + GitHub Release (L7)
@@ -93,19 +93,19 @@ jobs:
           name: release-artifacts-${{ github.ref_name }}
       - name: Publish dnf repo
         run: |
-          createrepo agentrt-linux-repo/${{ github.ref_name }}/
-          rsync -avz agentrt-linux-repo/ ${{ secrets.DNF_REPO_HOST }}:/var/www/agentrt-linux-repo/
+          createrepo agent-linux-repo/${{ github.ref_name }}/
+          rsync -avz agent-linux-repo/ ${{ secrets.DNF_REPO_HOST }}:/var/www/agent-linux-repo/
       - name: Publish OCI image
         run: |
-          docker build -t ghcr.io/spharx/agentrt-linux:${{ github.ref_name }} .
-          docker push ghcr.io/spharx/agentrt-linux:${{ github.ref_name }}
+          docker build -t ghcr.io/spharx/agent-linux:${{ github.ref_name }} .
+          docker push ghcr.io/spharx/agent-linux:${{ github.ref_name }}
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            agentrt-linux-kernel-*.rpm
-            agentrt-linux-kernel-*.rpm.asc
-            agentrt-linux-sdk-*.tar.gz
-            agentrt-linux-sdk-*.tar.gz.asc
-            sbom-agentrt-linux-*.spdx.json
+            agent-linux-kernel-*.rpm
+            agent-linux-kernel-*.rpm.asc
+            agent-linux-sdk-*.tar.gz
+            agent-linux-sdk-*.tar.gz.asc
+            sbom-agent-linux-*.spdx.json
           generate_release_notes: true

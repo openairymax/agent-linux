@@ -24,7 +24,7 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 Report vulnerabilities privately:
 
 1. **Email**: `security@spharx.com`
-2. **Subject**: `[SECURITY] agentrt-linux — <brief description>`
+2. **Subject**: `[SECURITY] agent-linux — <brief description>`
 3. **PGP**: Request public key from `security@spharx.com`
 
 Include in your report:
@@ -63,7 +63,7 @@ The `include/uapi/airymax/` interface is permanently stable. Changes that break 
 
 ### 3.2 Capability-Based Security (OS-SEC-*)
 
-agentrt-linux adopts seL4-style capability-based security:
+agent-linux adopts seL4-style capability-based security:
 
 - Every kernel resource access requires a capability
 - Capabilities are unforgeable tokens
@@ -73,7 +73,7 @@ agentrt-linux adopts seL4-style capability-based security:
 
 The 10 core header files in `kernel/include/uapi/linux/airymax/` are the single physical source of truth for cross-subsystem contracts. Any change requires:
 
-1. Dual CI validation (agentrt-linux + agentrt)
+1. Dual CI validation (agent-linux + agentrt)
 2. L1 subsystem maintainer review
 3. L3 top maintainer (SPHARX Engineering) final approval
 

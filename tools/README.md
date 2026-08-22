@@ -1,7 +1,7 @@
 # tools/ — Cross-Submodule CI & Validation Tools
 
 > Cross-submodule tool aggregation for the
-> [agentrt-linux (AirymaxOS)](https://atomgit.com/openairymax/agentrt-linux) management repository.
+> [agent-linux (AirymaxOS)](https://atomgit.com/openairymax/agent-linux) management repository.
 
 Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 
@@ -29,12 +29,12 @@ tools/
 
 | Tool | Description | Used by |
 |------|-------------|---------|
-| `validate-ssot.py` | SSoT rule-ID consistency validator — checks that every `OS-*-NNN` (agentrt-linux) and `*-NNN` (agentrt) rule ID referenced in documentation is registered in `ssot-registry.yaml`. Authority: OS-IRON-015. | `ssot-validate.yml` (`ssot-syntax-and-rules`), local contributor runs |
+| `validate-ssot.py` | SSoT rule-ID consistency validator — checks that every `OS-*-NNN` (agent-linux) and `*-NNN` (agentrt) rule ID referenced in documentation is registered in `ssot-registry.yaml`. Authority: OS-IRON-015. | `ssot-validate.yml` (`ssot-syntax-and-rules`), local contributor runs |
 
 ### CI-Referenced Helper Surface
 
 The management workflows reference the following helper scripts (invoked as
-`agentrt-linux/tools/<name>.py` or `tools/<name>.py`). They form the CI helper
+`agent-linux/tools/<name>.py` or `tools/<name>.py`). They form the CI helper
 surface that contributors implement as the corresponding subsystem matures:
 
 | Script | Workflow | Role |
@@ -61,7 +61,7 @@ surface that contributors implement as the corresponding subsystem matures:
 # Install dependency
 pip install pyyaml
 
-# Run validation (from agentrt-linux management repo root)
+# Run validation (from agent-linux management repo root)
 python3 tools/validate-ssot.py docs/AirymaxOS ssot-registry.yaml
 ```
 
@@ -71,7 +71,7 @@ python3 tools/validate-ssot.py docs/AirymaxOS ssot-registry.yaml
 - `1` — one or more unregistered rule IDs found (FAIL)
 - `2` — YAML parsing or file error
 
-The validator recognises both `OS-*-NNN` (agentrt-linux) and `*-NNN` (agentrt)
+The validator recognises both `OS-*-NNN` (agent-linux) and `*-NNN` (agentrt)
 rule-ID patterns, including range forms (`OS-TEST-001~012`) and suffix variants
 (`-SP1`, `OS1`). Deprecated IDs are retained but flagged.
 

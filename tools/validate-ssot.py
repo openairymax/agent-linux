@@ -2,7 +2,7 @@
 """
 validate-ssot.py — SSoT Rule ID Consistency Validator
 
-Validates that every OS-*-NNN (agentrt-linux) and *-NNN (agentrt) rule ID
+Validates that every OS-*-NNN (agent-linux) and *-NNN (agentrt) rule ID
 referenced in documentation is registered in the SSoT YAML registry.
 
 Usage:
@@ -32,7 +32,7 @@ except ImportError:
 
 # ─── Rule ID Patterns ──────────────────────────────────────────────────────
 
-# agentrt-linux rules: OS-<PREFIX>-<SUBDOMAIN>-NNN or OS-<PREFIX>-NNN
+# agent-linux rules: OS-<PREFIX>-<SUBDOMAIN>-NNN or OS-<PREFIX>-NNN
 OS_PATTERN = re.compile(
     r'\bOS-'
     r'(?:'
@@ -92,7 +92,7 @@ def load_ssot(yaml_path):
             for n in range(start_num, end_num + 1)
         ]
 
-    # Process agentrt-linux (OS-*) rules
+    # Process agent-linux (OS-*) rules
     for group in data.get('agentrt_linux_rules', []):
         prefix = group.get('prefix', '')
         entries = group.get('entries', [])

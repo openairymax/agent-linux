@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0
 #
-# Makefile — agentrt-linux codegen 管道入口
+# Makefile — agent-linux codegen 管道入口
 #
 # 目标:
 #   all     — 运行所有生成器
@@ -14,8 +14,8 @@ PYTHON      := python3
 CODEGEN_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 SYSCALL_GEN := $(CODEGEN_DIR)syscall_gen.py
 
-# 生成产物路径（相对于 agentrt-linux/ 仓库根）
-# CODEGEN_DIR 为 .../agentrt-linux/tools/codegen/，需上两级到仓库根
+# 生成产物路径（相对于 agent-linux/ 仓库根）
+# CODEGEN_DIR 为 .../agent-linux/tools/codegen/，需上两级到仓库根
 REPO_ROOT   := $(abspath $(CODEGEN_DIR)/../../)
 SYSCALL_H   := $(REPO_ROOT)/kernel/include/uapi/linux/airymax/syscall_gen.h
 

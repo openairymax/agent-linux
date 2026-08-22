@@ -1,7 +1,7 @@
 # ===========================================================================
-# agentrt-linux (AirymaxOS) + agentrt SSoT Rule ID Registry (YAML)
+# agent-linux (AirymaxOS) + agentrt SSoT Rule ID Registry (YAML)
 # ===========================================================================
-# 机器可读 Schema — 管理仓根（agentrt-linux/ssot-registry.yaml）
+# 机器可读 Schema — 管理仓根（agent-linux/ssot-registry.yaml）
 # 权威 Markdown 源：docs/AirymaxOS/50-engineering-standards/09-ssot-registry.md
 # OS-IRON-015: All rule IDs must be registered; deprecated IDs are
 #              retained but marked as deprecated.
@@ -15,7 +15,7 @@ version: "0.2.8"
 last_updated: "2026-07-15"
 
 # ===========================================================================
-# Part 1: agentrt-linux (OS-*) Rules — Chapters 2-13
+# Part 1: agent-linux (OS-*) Rules — Chapters 2-13
 # ===========================================================================
 agentrt_linux_rules:
 
@@ -126,7 +126,7 @@ agentrt_linux_rules:
 
   # ── Chapter 4.8: OS-FMT Closed-Source Format Rules (7, full) ──────
   - prefix: OS-FMT
-    authority: "agentrt-linux基本工程标准规范.md §3"
+    authority: "agent-linux基本工程标准规范.md §3"
     chapter: "Ch 4.8"
     registration: full
     entries:
@@ -673,5 +673,5 @@ technical_points:
     authority_doc: "docs/AirymaxOS/10-architecture/07-directory-structure.md"
     sc_header: "kernel/include/uapi/linux/airymax/ (10 个头文件物理宿主目录)"
     tier: 1
-    description: "agentrt-linux 目录结构、[SC] 头文件物理宿主（kernel/include/uapi/linux/airymax/）的唯一定义源"
+    description: "agent-linux 目录结构、[SC] 头文件物理宿主（kernel/include/uapi/linux/airymax/）的唯一定义源"
     constraint: "OS-IRON-014：[SC] 头文件唯一物理宿主，禁止物理副本"

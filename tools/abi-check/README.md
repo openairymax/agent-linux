@@ -1,6 +1,6 @@
 <!-- SPDX-License-Identifier: GPL-2.0 -->
 
-# abi-check — agentrt-linux syscall ABI 稳定性检查工具
+# abi-check — agent-linux syscall ABI 稳定性检查工具
 
 Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 
@@ -8,7 +8,7 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 
 ## 用途
 
-验证 agentrt-linux 系统调用编号的 ABI 稳定性，对齐
+验证 agent-linux 系统调用编号的 ABI 稳定性，对齐
 **OS-IRON-001（用户空间 ABI 永不破坏）**。
 
 工具从三个权威来源提取 syscall 编号并进行三方对比，同时与基线快照
@@ -45,7 +45,7 @@ tools/abi-check/
 ### 本地运行（详细报告）
 
 ```bash
-# 从 agentrt-linux 仓库根目录运行
+# 从 agent-linux 仓库根目录运行
 python3 tools/abi-check/abi_check.py
 ```
 
@@ -53,7 +53,7 @@ python3 tools/abi-check/abi_check.py
 
 ```
 ========================================================================
-agentrt-linux ABI Stability Check Report
+agent-linux ABI Stability Check Report
 OS-IRON-001: 用户空间 ABI 永不破坏
 ========================================================================
 
@@ -95,7 +95,7 @@ python3 tools/abi-check/abi_check.py --no-baseline
 
 ```bash
 python3 tools/abi-check/abi_check.py \
-    --repo-root /path/to/agentrt-linux \
+    --repo-root /path/to/agent-linux \
     --ssot-path /path/to/07-syscall-registry.md \
     --unistd-path /path/to/unistd.h \
     --tbl-path /path/to/syscall_64.tbl \

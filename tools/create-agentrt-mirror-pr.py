@@ -35,7 +35,7 @@ def http_request(method, url, token, body=None):
     headers = {
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": "agentrt-linux-ci",
+        "User-Agent": "agent-linux-ci",
     }
     if token:
         headers["Authorization"] = f"Bearer {token}"
@@ -96,7 +96,7 @@ def main():
         "--source-pr",
         required=True,
         type=int,
-        help="源 PR 编号（agentrt-linux PR，必填）",
+        help="源 PR 编号（agent-linux PR，必填）",
     )
     parser.add_argument(
         "--token",
@@ -157,11 +157,11 @@ def main():
                 return 0
     # 422/404 等忽略，继续尝试创建
 
-    title = f"[SC] mirror of agentrt-linux #{args.source_pr}"
+    title = f"[SC] mirror of agent-linux #{args.source_pr}"
     body_lines = [
-        f"本 PR 由 agentrt-linux `sc-dual-ci` 工作流自动创建。",
+        f"本 PR 由 agent-linux `sc-dual-ci` 工作流自动创建。",
         "",
-        f"- 源 PR：agentrt-linux #{args.source_pr}",
+        f"- 源 PR：agent-linux #{args.source_pr}",
         f"- head 分支：`{head}`",
         f"- base 分支：`{base}`",
         "",

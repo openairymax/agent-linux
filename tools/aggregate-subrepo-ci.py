@@ -40,7 +40,7 @@ def http_request(method, url, token, body=None):
     headers = {
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": "agentrt-linux-ci",
+        "User-Agent": "agent-linux-ci",
     }
     if token:
         headers["Authorization"] = f"Bearer {token}"

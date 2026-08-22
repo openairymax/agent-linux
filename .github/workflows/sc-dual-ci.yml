@@ -1,5 +1,5 @@
 # ===========================================================================
-# agentrt-linux (AirymaxOS) CI Pipeline
+# agent-linux (AirymaxOS) CI Pipeline
 # [SC] 共享契约层双向 CI（OS-IRON-008）（2 jobs：验证 + 触发 agentrt）
 # ===========================================================================
 # Authority: docs/AirymaxOS/70-build-system/03-ci-cd-pipeline.md
@@ -23,10 +23,10 @@ on:
       - 'kernel/include/uapi/linux/airymax/bpf_struct_ops.h'
 
 jobs:
-  # ─── Job 1: [SC] 头文件验证（agentrt-linux 侧） ────────────────────
+  # ─── Job 1: [SC] 头文件验证（agent-linux 侧） ────────────────────
   # 合并原 kernel-ci 的 10 头文件验证部分
   sc-validate:
-    name: "[SC] Header Validation (agentrt-linux side)"
+    name: "[SC] Header Validation (agent-linux side)"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -128,7 +128,7 @@ jobs:
           git format-patch origin/${{ github.base_ref }} HEAD -- \
             kernel/include/uapi/linux/airymax/ -o /tmp/patches
           # 在 agentrt 仓创建镜像 PR
-          python3 agentrt-linux/tools/create-agentrt-mirror-pr.py \
+          python3 agent-linux/tools/create-agentrt-mirror-pr.py \
             --patches /tmp/patches \
             --source-pr ${{ github.event.pull_request.number }} \
             --token "$AGENTRT_TOKEN"
@@ -137,7 +137,7 @@ jobs:
         env:
           AGENTRT_TOKEN: ${{ secrets.AGENTRT_CI_TOKEN }}
         run: |
-          python3 agentrt-linux/tools/await-agentrt-ci.py \
+          python3 agent-linux/tools/await-agentrt-ci.py \
             --source-pr ${{ github.event.pull_request.number }} \
             --timeout 30m \
             --token "$AGENTRT_TOKEN"

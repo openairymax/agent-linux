@@ -1,4 +1,4 @@
-# Contributing to agentrt-linux (AirymaxOS)
+# Contributing to agent-linux (AirymaxOS)
 
 > ** Governance authority**: [`docs/AirymaxOS/50-engineering-standards/07-maintainers-and-governance.md`](https://github.com/openairymax/docs/blob/main/AirymaxOS/50-engineering-standards/07-maintainers-and-governance.md)
 > ** Development process**: [`docs/AirymaxOS/50-engineering-standards/05-development-process.md`](https://github.com/openairymax/docs/blob/main/AirymaxOS/50-engineering-standards/05-development-process.md)
@@ -21,7 +21,7 @@ Before contributing, ensure you understand:
 ## 2. Repository Structure
 
 ```
-agentrt-linux/          # This management repository (main branch only)
+agent-linux/          # This management repository (main branch only)
 ├── kernel/             # submodule → feature/official-hubs-01
 ├── services/           # submodule → feature/official-hubs-01
 ├── security/           # submodule → feature/official-hubs-01
@@ -121,8 +121,8 @@ Changes to `kernel/include/uapi/linux/airymax/` ([SC] layer) require:
 
 ```bash
 # Clone with submodules
-git clone --recurse-submodules git@atomgit.com:openairymax/agentrt-linux.git
-cd agentrt-linux
+git clone --recurse-submodules git@atomgit.com:openairymax/agent-linux.git
+cd agent-linux
 
 # Work in a submodule
 cd kernel
