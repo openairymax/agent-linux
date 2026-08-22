@@ -1,7 +1,7 @@
 # `.github/` — GitHub Automation & Templates
 
 > GitHub Actions workflows, issue/PR templates and community health files for the
-> [agentrt-linux (AirymaxOS)](https://atomgit.com/openairymax/agentrt-linux) management repository.
+> [agent-linux (AirymaxOS)](https://atomgit.com/openairymax/agent-linux) management repository.
 
 Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 
@@ -57,7 +57,7 @@ the single physical source of truth for the kernel↔agentrt ABI, located at
 
 **Supplementary** (non-[SC] core): `bpf_struct_ops.h`
 
-Any change requires dual CI (agentrt-linux + agentrt mirror) per OS-IRON-014.
+Any change requires dual CI (agent-linux + agentrt mirror) per OS-IRON-014.
 
 ## Issue & PR Templates
 
