@@ -14,7 +14,7 @@
 
 ## Overview
 
-**agent-linux** (formal English name: AirymaxOS, Chinese: 极境智能体操作系统) is an AI Agent Operating System research project built on top of Linux 6.6. It is the **kernel-space engineering** super-management repository under the `airymaxhub` umbrella (renamed from `agentrt-linux` in v0.1.3), peer to the user-space engineering repo `agent-runtim`, aggregating **8 leaf repositories** as git submodules.
+**agent-linux** (formal English name: AirymaxOS, Chinese: 极境智能体操作系统) is an AI Agent Operating System research project built on top of Linux 6.6. It is the **kernel-space engineering** super-management repository under the `airymaxhub` umbrella (renamed from `agentrt-linux` in v0.1.3), peer to the user-space engineering repo `agent-workload` (renamed from `agent-runtim` in v0.1.4), aggregating **8 leaf repositories** as git submodules.
 
 agent-linux is based on three design pillars:
 

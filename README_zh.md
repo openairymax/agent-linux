@@ -14,7 +14,7 @@
 
 ## 概述
 
-**agent-linux**（正式英文名：AirymaxOS，中文：极境智能体操作系统）是基于 Linux 6.6 构建的 AI 智能体操作系统研究项目。它是 `airymaxhub` 伞仓下的**内核态工程**大管理仓（v0.1.3 由 `agentrt-linux` 改名），与用户态工程 `agent-runtim` 同级，聚合 **8 个叶子仓**作为 git submodule。
+**agent-linux**（正式英文名：AirymaxOS，中文：极境智能体操作系统）是基于 Linux 6.6 构建的 AI 智能体操作系统研究项目。它是 `airymaxhub` 伞仓下的**内核态工程**大管理仓（v0.1.3 由 `agentrt-linux` 改名），与用户态工程 `agent-workload`（v0.1.4 由 `agent-runtim` 改名）同级，聚合 **8 个叶子仓**作为 git submodule。
 
 agent-linux 基于三大设计支柱：
 
