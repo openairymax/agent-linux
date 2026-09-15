@@ -14,7 +14,7 @@
 
 ## Overview
 
-**agent-linux** (formal English name: AirymaxOS, Chinese: 极境智能体操作系统) is an AI Agent Operating System research project built on top of Linux 6.6. It is the **kernel-space engineering** super-management repository under the `airymaxhub` umbrella (renamed from `agentrt-linux` in v0.1.3), peer to the user-space engineering repo `agent-workload` (renamed from `agent-runtim` in v0.1.4), aggregating **8 leaf repositories** as git submodules.
+**agent-linux** (formal English name: AirymaxOS, Chinese: 极境智能体操作系统) is an AI Agent Operating System research project built on top of Linux 6.6. It is the **kernel-space engineering** super-management repository under the `airymaxhub` umbrella (renamed from `agentrt-linux` in v0.1.3), peer to the user-space engineering repo `agent-workload` (renamed from `agent-runtim` in v0.1.4), aggregating **9 leaf repositories** as git submodules.
 
 agent-linux is based on three design pillars:
 
@@ -35,6 +35,7 @@ agent-linux/             # Management repository (this repo)
 ├── cognition/             # agent-linux Cognition leaf repo (submodule)
 ├── cloudnative/           # agent-linux CloudNative leaf repo (submodule)
 ├── system/                # agent-linux System leaf repo (submodule)
+├── distro/                # agent-linux Distro leaf repo (submodule)
 ├── tests-linux/       # agent-linux Tests leaf repo (submodule)
 ├── .gitmodules            # Submodule definitions
 ├── LICENSE                # AGPL-3.0 + Apache-2.0 dual license full text
@@ -54,6 +55,7 @@ agent-linux/             # Management repository (this repo)
 | **cognition** | `cognition/` | `git@atomgit.com:openairymax/cognition.git` | coreloopthree + frameworks | CoreLoopThree kthread + Wasm 3.0 + LLM scheduling + Token energy efficiency + hyper-node sandbox |
 | **cloudnative** | `cloudnative/` | `git@atomgit.com:openairymax/cloudnative.git` | gateway + sdk | K8s CRD + containerd shim + OCI + CNI + agentctl + hyper-node OS |
 | **system** | `system/` | `git@atomgit.com:openairymax/system.git` | commons | RPM + dnf + configuration + shell + DevStation |
+| **distro** | `distro/` | `git@atomgit.com:openairymax/distro.git` | commons | OS image assembly: kickstart + comps + rpm lockfile (openEuler 24.03 base) + ostree + UKUI desktop integration |
 | **tests-linux** | `tests-linux/` | `git@atomgit.com:openairymax/tests-linux.git` | all modules | Unit + integration + formal verification (seL4 style) + Soak + chaos |
 
 ## Architecture
@@ -82,6 +84,9 @@ agent-linux/             # Management repository (this repo)
 ├─────────────────────────────────────────────────────────────────────┤
 │  System Layer                          ← system                        │
 │    RPM · dnf · configuration · shell · DevStation                    │
+├─────────────────────────────────────────────────────────────────────┤
+│  Distro Assembly Layer                 ← distro                        │
+│    kickstart · comps · rpm lockfile · ostree · UKUI desktop          │
 ├─────────────────────────────────────────────────────────────────────┤
 │  Microkernel (Linux 6.6 based)         ← kernel                        │
 │    sched_tac · eBPF · io_uring · Rust · microkernel refactoring      │

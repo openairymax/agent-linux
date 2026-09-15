@@ -30,3 +30,7 @@
 	path = tests-linux
 	url = ../tests-linux.git
 	branch = develop/hubs-01
+[submodule "distro"]
+	path = distro
+	url = ../distro.git
+	branch = develop/hubs-01

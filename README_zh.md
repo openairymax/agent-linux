@@ -14,7 +14,7 @@
 
 ## 概述
 
-**agent-linux**（正式英文名：AirymaxOS，中文：极境智能体操作系统）是基于 Linux 6.6 构建的 AI 智能体操作系统研究项目。它是 `airymaxhub` 伞仓下的**内核态工程**大管理仓（v0.1.3 由 `agentrt-linux` 改名），与用户态工程 `agent-workload`（v0.1.4 由 `agent-runtim` 改名）同级，聚合 **8 个叶子仓**作为 git submodule。
+**agent-linux**（正式英文名：AirymaxOS，中文：极境智能体操作系统）是基于 Linux 6.6 构建的 AI 智能体操作系统研究项目。它是 `airymaxhub` 伞仓下的**内核态工程**大管理仓（v0.1.3 由 `agentrt-linux` 改名），与用户态工程 `agent-workload`（v0.1.4 由 `agent-runtim` 改名）同级，聚合 **9 个叶子仓**作为 git submodule。
 
 agent-linux 基于三大设计支柱：
 
@@ -35,6 +35,7 @@ agent-linux/             # 管理仓（本仓库）
 ├── cognition/             # agent-linux 认知层叶子仓（submodule）
 ├── cloudnative/           # agent-linux 云原生叶子仓（submodule）
 ├── system/                # agent-linux 系统层叶子仓（submodule）
+├── distro/                # agent-linux 发行版组装层叶子仓（submodule）
 ├── tests-linux/       # agent-linux 测试叶子仓（submodule）
 ├── .gitmodules            # Submodule 定义
 ├── LICENSE                # AGPL-3.0 + Apache-2.0 双许可证全文
@@ -54,6 +55,7 @@ agent-linux/             # 管理仓（本仓库）
 | **cognition**   | `cognition/`   | `git@atomgit.com:openairymax/cognition.git`   | coreloopthree + frameworks | CoreLoopThree kthread + Wasm 3.0 + LLM 调度 + Token 能效 + 超节点沙箱  |
 | **cloudnative** | `cloudnative/` | `git@atomgit.com:openairymax/cloudnative.git` | gateway + sdk              | K8s CRD + containerd shim + OCI + CNI + agentctl + 超节点 OS     |
 | **system**      | `system/`      | `git@atomgit.com:openairymax/system.git`      | commons                    | RPM + dnf + 配置 + shell + DevStation                           |
+| **distro**      | `distro/`      | `git@atomgit.com:openairymax/distro.git`      | commons                    | OS 镜像组装：kickstart + comps + rpm lockfile（openEuler 24.03 基础仓库）+ ostree + UKUI 桌面集成     |
 | **tests-linux** | `tests-linux/` | `git@atomgit.com:openairymax/tests-linux.git` | 全模块测试                      | 单元 + 集成 + 形式化验证(seL4 风格) + Soak + 混沌                          |
 
 ## 架构
@@ -82,6 +84,9 @@ agent-linux/             # 管理仓（本仓库）
 ├─────────────────────────────────────────────────────────────────────┤
 │  系统层                                ← system            │
 │    RPM · dnf · 配置 · shell · DevStation                             │
+├─────────────────────────────────────────────────────────────────────┤
+│  发行版组装层                            ← distro            │
+│    kickstart · comps · rpm lockfile · ostree · UKUI 桌面              │
 ├─────────────────────────────────────────────────────────────────────┤
 │  微内核（基于 Linux 6.6）              ← kernel            │
 │    sched_tac · eBPF · io_uring · Rust · 微内核化改造                  │
