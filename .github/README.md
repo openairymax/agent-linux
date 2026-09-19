@@ -44,7 +44,7 @@ management-level orchestration.
 | `nightly.yml` | `nightly-test-suite` — seL4-style formal verification, 72h soak test, chaos injection (CPU hotplug / mem hotremove / I/O error / net partition) | `nightly-revert-or-budget` — auto-revert on regression via `auto-bisect`, or CI budget check (60 min gate, OS-STD-TEST-011) | cron `0 2 * * *` / `workflow_dispatch` |
 | `release.yml` | `build-and-sign` — SPDX SBOM (syft per submodule + merge), kernel RPM build, GPG + cosign signing, SDK tarball | `publish-release` — publish dnf repo, push OCI image, create GitHub Release with artifacts | tag `v*` / `v*-rc*` / `workflow_dispatch` |
 | `sc-dual-ci.yml` | `sc-validate` — verify `[SC]` 10 core headers exist under `kernel/include/uapi/linux/airymax/`, no physical duplicates (OS-IRON-014) | `sc-trigger-and-await` — export header patches, create mirror PR in agentrt repo, poll mirror CI status (30 min timeout) | PR touching any `[SC]` header |
-| `ssot-validate.yml` | `ssot-syntax-and-rules` — PyYAML syntax check, rule-ID count + uniqueness (OS-IRON-015), `validate-ssot.py` cross-ref | `ssot-cross-ref` — trailing-whitespace warning, broken relative-path markdown link detection under `docs/AirymaxOS/` | PR / push on `ssot-registry.yaml`, `docs/AirymaxOS/**` |
+| `ssot-validate.yml` | `ssot-syntax-and-rules` — PyYAML syntax check, rule-ID count + uniqueness (OS-IRON-015), `validate-ssot.py` cross-ref | `ssot-cross-ref` — trailing-whitespace warning, broken relative-path markdown link detection under `docs/docs-linux/` | PR / push on `ssot-registry.yaml`, `docs/docs-linux/**` |
 
 ## `[SC]` Shared-Contract Headers
 
@@ -70,7 +70,7 @@ Any change requires dual CI (agent-linux + agentrt mirror) per OS-IRON-014.
 - **Trigger a workflow manually** — workflows exposing `workflow_dispatch` can be
   run from the GitHub Actions UI (`nightly.yml`, `release.yml`).
 - **Add a new workflow** — keep the 2-job cap; reference the authority document
-  `docs/AirymaxOS/70-build-system/03-ci-cd-pipeline.md` in the header comment.
+  `docs/docs-linux/70-build-system/03-ci-cd-pipeline.md` in the header comment.
 - **Local SSoT validation** before pushing:
   ```bash
   python3 tools/validate-ssot.py docs/AirymaxOS ssot-registry.yaml

@@ -13,13 +13,13 @@
 
 ## Checklist
 
-- [ ] My code follows the [coding style](../docs/AirymaxOS/50-engineering-standards/10-coding-style/) (OS-STD-FMT-001/002)
+- [ ] My code follows the [coding style](../docs/docs-linux/50-engineering-standards/10-coding-style/) (OS-STD-FMT-001/002)
 - [ ] I have run `clang-format` on C/C++ code
 - [ ] I have added tests that prove my fix is effective or my feature works
 - [ ] New and existing unit tests pass locally with my changes
 - [ ] I have updated the documentation accordingly
 - [ ] My commits are signed (DCO, OS-IRON-007/OS-KER-068)
-- [ ] I have referenced the relevant rule IDs (OS-*-NNN) from the [SSoT registry](../docs/AirymaxOS/50-engineering-standards/09-ssot-registry.md)
+- [ ] I have referenced the relevant rule IDs (OS-*-NNN) from the [SSoT registry](../docs/docs-linux/50-engineering-standards/09-ssot-registry.md)
 
 ## SSoT Rule IDs Referenced
 

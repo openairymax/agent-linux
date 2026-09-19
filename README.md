@@ -156,7 +156,7 @@ The management repository hosts **6 GitHub Actions workflows** (each capped at 2
 | `nightly.yml` | cron `0 2 * * *` / manual | `nightly-test-suite` + `nightly-revert-or-budget` | Formal verification (seL4-style) + 72h soak + chaos; auto-revert or CI budget check |
 | `release.yml` | tag `v*` / manual | `build-and-sign` + `publish-release` | SPDX SBOM + kernel/SDK build + GPG & cosign signing; publish dnf repo, OCI image, GitHub Release |
 | `sc-dual-ci.yml` | PR on [SC] 10 core headers | `sc-validate` + `sc-trigger-and-await` | Validate shared-contract headers, no duplicates; trigger & await agentrt mirror PR CI |
-| `ssot-validate.yml` | PR / push on `ssot-registry.yaml`, `docs/AirymaxOS/**` | `ssot-syntax-and-rules` + `ssot-cross-ref` | YAML syntax + rule-ID uniqueness; cross-document link & format consistency |
+| `ssot-validate.yml` | PR / push on `ssot-registry.yaml`, `docs/docs-linux/**` | `ssot-syntax-and-rules` + `ssot-cross-ref` | YAML syntax + rule-ID uniqueness; cross-document link & format consistency |
 
 ### [SC] Shared Contract Layer
 
@@ -223,6 +223,6 @@ The management repository itself (this `agent-linux/` repo) and all its submodul
 | `agent-linux/{cloudnative,cognition,memory,security,services,system,tests-linux}/` | `AGPL-3.0-or-later OR Apache-2.0` | User-space submodules |
 | `agent-linux/kernel/` | `GPL-2.0-only` | Linux kernel derived code — AGPL v3 and Apache 2.0 are NOT compatible with GPL-2.0-only |
 
-> **Note**: Source files within `agent-linux/{cloudnative,cognition,memory,security,services,system,tests-linux}/` that include kernel module headers (`#include <linux/module.h>`, `MODULE_LICENSE("GPL")`, etc.) MUST use `GPL-2.0-only` in their SPDX tag. See [docs/AirymaxOS/50-engineering-standards/12-license-policy.md](../docs/AirymaxOS/50-engineering-standards/12-license-policy.md) for the full policy.
+> **Note**: Source files within `agent-linux/{cloudnative,cognition,memory,security,services,system,tests-linux}/` that include kernel module headers (`#include <linux/module.h>`, `MODULE_LICENSE("GPL")`, etc.) MUST use `GPL-2.0-only` in their SPDX tag. See [docs/docs-linux/50-engineering-standards/12-license-policy.md](../docs/docs-linux/50-engineering-standards/12-license-policy.md) for the full policy.
 
 Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.

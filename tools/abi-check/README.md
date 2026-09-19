@@ -16,7 +16,7 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 
 | 来源 | 文件 | 角色 |
 |------|------|------|
-| SSoT 文档 | `../docs/AirymaxOS/140-application-development/07-syscall-registry.md` | 唯一权威注册表 |
+| SSoT 文档 | `../docs/docs-linux/140-application-development/07-syscall-registry.md` | 唯一权威注册表 |
 | UAPI 头文件 | `kernel/include/uapi/asm-generic/unistd.h` | 用户空间编号定义 |
 | 内核入口表 | `kernel/arch/x86/entry/syscalls/syscall_64.tbl` | 内核注册编号 |
 
@@ -58,7 +58,7 @@ OS-IRON-001: 用户空间 ABI 永不破坏
 ========================================================================
 
 Sources:
-  SSoT            : ../docs/AirymaxOS/.../07-syscall-registry.md
+  SSoT            : ../docs/docs-linux/.../07-syscall-registry.md
   unistd.h        : kernel/include/uapi/asm-generic/unistd.h
   syscall_64.tbl  : kernel/arch/x86/entry/syscalls/syscall_64.tbl
   baseline        : tools/abi-check/abi_baseline.json

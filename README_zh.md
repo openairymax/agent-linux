@@ -104,7 +104,7 @@ agent-linux 与 `agentrt` 共享相同的 Airymax 设计理念（架构同源）
 
 agentrt 与 agent-linux 通过 **IRON-9 v3 四层共享模型**协作，其中 \[SC] 共享契约层是字节级完全共享的核心。SSoT 物理宿主为 `kernel/include/uapi/linux/airymax/`，由 agent-linux 维护，agentrt 通过 `commons/include/airymax/` 同步引用。
 
-**10 个 \[SC] 核心头文件**（详见 [09-ssot-registry.md](../docs/AirymaxOS/50-engineering-standards/09-ssot-registry.md) OS-IRON-014）：
+**10 个 \[SC] 核心头文件**（详见 [09-ssot-registry.md](../docs/docs-linux/50-engineering-standards/09-ssot-registry.md) OS-IRON-014）：
 
 | #  | 头文件                 | 物理宿主                                           | 职责                                                                                                      |
 | -- | ------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
@@ -131,7 +131,7 @@ agentrt 与 agent-linux 通过 **IRON-9 v3 四层共享模型**协作，其中 \
 | **\[IND] 完全独立层** | 完全独立        | 平台适配层、构建系统、跨平台兼容层                                          |
 | **\[DSL] 降级生存层** | 最小生存子集      | `#ifdef AIRY_SC_FALLBACK` 降级块（capability\_badge=0，跳过 C-S9） |
 
-详见 [120-cross-project-code-sharing.md](../docs/AirymaxOS/50-engineering-standards/120-cross-project-code-sharing.md)。
+详见 [120-cross-project-code-sharing.md](../docs/docs-linux/50-engineering-standards/120-cross-project-code-sharing.md)。
 
 ### 与 openEuler 的关系
 
@@ -208,6 +208,6 @@ git submodule update --remote --checkout
 | `agent-linux/{cloudnative,cognition,memory,security,services,system,tests-linux}/` | `AGPL-3.0-or-later OR Apache-2.0` | 用户态子模块                                                    |
 | `agent-linux/kernel/`                                                              | `GPL-2.0-only`                    | Linux 内核派生代码——AGPL v3 和 Apache 2.0 与 GPL-2.0-only **不兼容** |
 
-> **注意**：`agent-linux/{cloudnative,cognition,memory,security,services,system,tests-linux}/` 中包含内核模块头文件（`#include <linux/module.h>`、`MODULE_LICENSE("GPL")` 等）的源代码文件，其 SPDX 标签**必须**使用 `GPL-2.0-only`。完整策略见 [docs/AirymaxOS/50-engineering-standards/12-license-policy.md](../docs/AirymaxOS/50-engineering-standards/12-license-policy.md)。
+> **注意**：`agent-linux/{cloudnative,cognition,memory,security,services,system,tests-linux}/` 中包含内核模块头文件（`#include <linux/module.h>`、`MODULE_LICENSE("GPL")` 等）的源代码文件，其 SPDX 标签**必须**使用 `GPL-2.0-only`。完整策略见 [docs/docs-linux/50-engineering-standards/12-license-policy.md](../docs/docs-linux/50-engineering-standards/12-license-policy.md)。
 
 Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
