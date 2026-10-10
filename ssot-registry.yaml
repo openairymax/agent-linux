@@ -369,10 +369,10 @@ agentrt_rules:
       - { id: IRON-3, desc: "禁止绕开功能限制的编译/集成", section: "§35.10", status: active }
       - { id: IRON-4, desc: "禁止简化功能", section: "§35.10", status: active }
       - { id: IRON-5, desc: "禁止未实现的功能设计", section: "§35.10", status: active }
-      - { id: IRON-6, desc: "8 子仓 submodule 管理", section: "§36.1", status: active }
+      - { id: IRON-6, desc: "8 架构子仓 + distro 发行版子仓（.gitmodules 共 9 个）submodule 管理", section: "§36.1", status: active }
       - { id: IRON-7, desc: "agentrt_→airymax_ 改名彻底", section: "§36.1", status: active }
       - { id: IRON-8, desc: "0.1.1 后直接 1.0.1", section: "§36.1", status: active }
-      - { id: IRON-9, desc: "同源且部分代码共享（v2 三层模型）", section: "§38.1", status: active }
+      - { id: IRON-9, desc: "同源且部分代码共享（v3 四层模型）", section: "§38.1", status: active }
       - { id: IRON-10, desc: "Agent Runtime Platform Engineering 定位", section: "§38.10", status: active }
 
   # ── 14.2: BAN Prohibition Rules (361, range) ────────────────────────
@@ -641,8 +641,8 @@ technical_points:
     authority_doc: "docs/AirymaxOS/10-architecture/06-iron9-shared-model.md"
     sc_header: "kernel/include/uapi/linux/airymax/uapi_compat.h"
     tier: 1
-    description: "[SC]/[SS]/[IND]/[DSL] 四层模型、10 个 [SC] 头文件清单的唯一定义源"
-    constraint: "[SC] 头文件数量统一为 10 个；禁止 6 个的过时表述"
+    description: "[SC]/[SS]/[IND]/[DSL] 四层模型、[SC] 头文件清单的唯一定义源"
+    constraint: "[SC] 核心契约头 10 个；目录内 .h 总数 12 个（10 核心 + bpf_struct_ops.h + syscall_gen.h）；禁止 6 个的过时表述"
 
   - id: TP-008
     name: "Airymax Unify Design"
