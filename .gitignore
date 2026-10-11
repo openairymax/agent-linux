@@ -30,6 +30,8 @@
 !tools/**
 !build/
 !build/**
+!sdk/
+!sdk/**
 # Python bytecode cache must stay untracked
 tools/__pycache__/
 tools/**/__pycache__/
