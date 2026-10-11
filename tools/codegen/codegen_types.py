@@ -33,6 +33,9 @@ from typing import Callable, TypeAlias
 
 # 2. 公开导出
 __all__ = [
+    "BITFIELD_BYTE_BITS",
+    "BITFIELD_WIDTH_TYPES",
+    "BITFIELD_WORD_TYPES",
     "CAP_EXTENSION_BASE",
     "CAP_ID_COUNT",
     "CAP_ID_MAX_SYMBOL",
@@ -51,6 +54,11 @@ __all__ = [
     "SCHEMA_VERSION",
     "SYMBOL_PREFIX",
     "TOTAL_SLOT_COUNT",
+    "BitfieldBlockSpec",
+    "BitfieldContainer",
+    "BitfieldContract",
+    "BitfieldFieldKind",
+    "BitfieldFieldSpec",
     "CapContract",
     "CapIdSpec",
     "CodegenError",
@@ -64,6 +72,8 @@ __all__ = [
     "SyscallContract",
     "SyscallSpec",
     "TemplateRenderError",
+    "bitfield_mask_literal",
+    "bitfield_value_type",
 ]
 
 # 3. 契约版本与命名空间常量
@@ -311,3 +321,286 @@ class CapContract:
     def symbol_width(self) -> int:
         """enum 对齐宽度（最长符号 + 1）。"""
         return max(len(c.symbol) for c in self.cap_ids) + 1
+
+
+# 9. bitfield 常量（R-02 SSoT，06-codegen-pipeline.md §3）
+BITFIELD_BYTE_BITS = 8
+BITFIELD_WIDTH_TYPES: dict[int, str] = {8: "__u8", 16: "__u16", 32: "__u32", 64: "__u64"}
+BITFIELD_WORD_TYPES: dict[str, int] = {name: bits for bits, name in BITFIELD_WIDTH_TYPES.items()}
+
+
+def bitfield_value_type(width: int) -> str:
+    """按位宽选取最小可容纳的整型类型名（非标准位宽向上取整）。
+
+    Example:
+        >>> bitfield_value_type(16)
+        '__u16'
+        >>> bitfield_value_type(20)
+        '__u32'
+    """
+    for bits in (8, 16, 32, 64):
+        if width <= bits:
+            return BITFIELD_WIDTH_TYPES[bits]
+    raise ContractValidationError(f"bitfield width exceeds 64 bits: {width}")
+
+
+def bitfield_mask_literal(width: int) -> str:
+    """生成位宽对应的无符号掩码字面量（<=32 位用 u 后缀，否则 ULL）。
+
+    Example:
+        >>> bitfield_mask_literal(16)
+        '0xffffu'
+        >>> bitfield_mask_literal(64)
+        '0xffffffffffffffffULL'
+    """
+    suffix = "ULL" if width > 32 else "u"
+    return f"0x{(1 << width) - 1:x}{suffix}"
+
+
+class BitfieldContainer(Enum):
+    """位域块的宿主容器类型（.bf bind 关键字）。"""
+
+    STRUCT = "struct"
+    WORD = "word"
+
+
+class BitfieldFieldKind(Enum):
+    """位域字段种类（对应 .bf 字段关键字）。"""
+
+    FIELD = "field"
+    FIELD_HIGH = "field_high"
+    MASK = "mask"
+    PADDING = "padding"
+
+
+@dataclass(frozen=True)
+class BitfieldFieldSpec:
+    """单个位域字段（.bf field/field_high/mask/padding 行）。"""
+
+    name: str
+    high: int
+    low: int
+    kind: BitfieldFieldKind = BitfieldFieldKind.FIELD
+    comment: str = ""
+
+    def __post_init__(self) -> None:
+        if self.low < 0 or self.high < self.low:
+            raise ContractValidationError(
+                f"invalid bitfield range {self.name or '<padding>'}: {self.high}..{self.low}"
+            )
+
+    @property
+    def width(self) -> int:
+        """字段位宽（high - low + 1）。"""
+        return self.high - self.low + 1
+
+    @property
+    def offset(self) -> int:
+        """字段最低位在块内的偏移。"""
+        return self.low
+
+    @property
+    def is_padding(self) -> bool:
+        """是否为填充位（不生成访问器）。"""
+        return self.kind is BitfieldFieldKind.PADDING
+
+    @property
+    def is_readable(self) -> bool:
+        """是否生成 get 访问器（mask 只读，仍生成 get）。"""
+        return self.kind is not BitfieldFieldKind.PADDING
+
+    @property
+    def is_writable(self) -> bool:
+        """是否生成 set 访问器（mask / padding 不生成 set）。"""
+        return self.kind in (BitfieldFieldKind.FIELD, BitfieldFieldKind.FIELD_HIGH)
+
+    @property
+    def byte_aligned(self) -> bool:
+        """字段是否按字节对齐（struct 容器要求）。"""
+        return self.low % BITFIELD_BYTE_BITS == 0
+
+    @property
+    def value_type(self) -> str:
+        """访问器使用的 C 整型类型名。"""
+        return bitfield_value_type(self.width)
+
+    @property
+    def mask_literal(self) -> str:
+        """字段掩码字面量。"""
+        return bitfield_mask_literal(self.width)
+
+    @property
+    def upper(self) -> str:
+        """字段名大写形式（宏名用）。"""
+        return self.name.upper()
+
+
+def _check_contiguous(block_name: str, prev: BitfieldFieldSpec, cur: BitfieldFieldSpec) -> None:
+    if cur.low != prev.high + 1:
+        raise ContractValidationError(
+            f"block {block_name}: gap or overlap between {prev.name} and {cur.name}"
+        )
+
+
+def _check_padding_alignment(block_name: str, field: BitfieldFieldSpec) -> None:
+    if not field.byte_aligned or field.width % BITFIELD_BYTE_BITS != 0:
+        raise ContractValidationError(
+            f"block {block_name}: padding {field.name or '<anon>'} must be byte aligned"
+        )
+
+
+def _check_accessor_alignment(block_name: str, field: BitfieldFieldSpec) -> None:
+    if not field.byte_aligned or field.width not in BITFIELD_WIDTH_TYPES:
+        raise ContractValidationError(
+            f"block {block_name}: struct field {field.name} must be 8/16/32/64-bit byte aligned"
+        )
+
+
+@dataclass(frozen=True)
+class BitfieldBlockSpec:
+    """单个位域块（.bf block ... { ... }）。"""
+
+    name: str
+    width: int
+    container: BitfieldContainer
+    ctype: str
+    fields: tuple[BitfieldFieldSpec, ...]
+    header: str = ""
+    pivot: str = ""
+
+    def __post_init__(self) -> None:
+        self._validate_identity()
+        self._validate_bind()
+        self._validate_fields()
+
+    def _validate_identity(self) -> None:
+        if self.width <= 0:
+            raise ContractValidationError(f"block {self.name}: non-positive width {self.width}")
+        if not self.ctype:
+            raise ContractValidationError(f"block {self.name}: missing bind target type")
+
+    def _validate_bind(self) -> None:
+        if self.container is BitfieldContainer.STRUCT and not self.header:
+            raise ContractValidationError(f"block {self.name}: struct bind requires a header")
+        if self.container is BitfieldContainer.WORD:
+            self._validate_word_width()
+
+    def _validate_word_width(self) -> None:
+        declared = BITFIELD_WORD_TYPES.get(self.ctype)
+        if declared != self.width:
+            raise ContractValidationError(
+                f"block {self.name}: word width {self.width} != {self.ctype} width {declared}"
+            )
+
+    def _validate_fields(self) -> None:
+        if not self.fields:
+            raise ContractValidationError(f"block {self.name}: no fields declared")
+        ordered = tuple(sorted(self.fields, key=lambda f: f.low))
+        self._validate_coverage(ordered)
+        self._validate_names()
+        self._validate_alignment(ordered)
+        self._validate_pivot()
+
+    def _validate_coverage(self, ordered: tuple[BitfieldFieldSpec, ...]) -> None:
+        if ordered[0].low != 0:
+            raise ContractValidationError(f"block {self.name}: fields must start at bit 0")
+        for prev, cur in zip(ordered, ordered[1:]):
+            _check_contiguous(self.name, prev, cur)
+        if ordered[-1].high != self.width - 1:
+            raise ContractValidationError(
+                f"block {self.name}: fields must cover up to bit {self.width - 1}"
+            )
+
+    def _validate_names(self) -> None:
+        seen: set[str] = set()
+        for field in self.fields:
+            if field.name and field.name in seen:
+                raise ContractValidationError(f"block {self.name}: duplicate field {field.name}")
+            seen.add(field.name)
+
+    def _validate_alignment(self, ordered: tuple[BitfieldFieldSpec, ...]) -> None:
+        if self.container is not BitfieldContainer.STRUCT:
+            return
+        for field in ordered:
+            if field.is_padding:
+                _check_padding_alignment(self.name, field)
+            else:
+                _check_accessor_alignment(self.name, field)
+
+    def _validate_pivot(self) -> None:
+        if self.pivot and self.pivot not in {f.name for f in self.fields}:
+            raise ContractValidationError(
+                f"block {self.name}: pivot {self.pivot} is not a declared field"
+            )
+
+    @property
+    def macro_prefix(self) -> str:
+        """位域操作宏前缀（AIRY_<BLOCK>）。"""
+        return "AIRY_" + self.name.upper()
+
+    @property
+    def function_prefix(self) -> str:
+        """getter/setter 函数名前缀（airy_<block>）。"""
+        return "airy_" + self.name
+
+    @property
+    def accessors(self) -> tuple[BitfieldFieldSpec, ...]:
+        """生成 get 访问器的字段（field/field_high/mask）。"""
+        return tuple(f for f in self.fields if f.is_readable)
+
+    @property
+    def writable_fields(self) -> tuple[BitfieldFieldSpec, ...]:
+        """生成 set 访问器的字段（field/field_high）。"""
+        return tuple(f for f in self.fields if f.is_writable)
+
+    @property
+    def padding_fields(self) -> tuple[BitfieldFieldSpec, ...]:
+        """命名填充字段（用于生成布局断言）。"""
+        return tuple(f for f in self.fields if f.is_padding and f.name)
+
+    @property
+    def include_header(self) -> str:
+        """C include 指令片段（struct 容器为 <header>，word 容器为空）。"""
+        return f"<{self.header}>" if self.header else ""
+
+
+@dataclass(frozen=True)
+class BitfieldContract:
+    """单个 .bf 契约源整体模型（R-02 SSoT）。"""
+
+    blocks: tuple[BitfieldBlockSpec, ...]
+    generator: str = "bitfield_gen.py"
+    generator_version: str = GENERATOR_VERSION
+    schema_version: str = SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        if not self.blocks:
+            raise ContractValidationError("bitfield contract has no blocks")
+        names = [b.name for b in self.blocks]
+        if len(names) != len(set(names)):
+            raise ContractValidationError("duplicate block names in bitfield contract")
+
+    @property
+    def blocks_by_name(self) -> dict[str, BitfieldBlockSpec]:
+        """按名字索引的块映射。"""
+        return {b.name: b for b in self.blocks}
+
+    @property
+    def includes(self) -> tuple[str, ...]:
+        """去重保序的 include 目标列表。"""
+        return tuple(dict.fromkeys(b.include_header for b in self.blocks if b.include_header))
+
+    def layout_signature(self) -> tuple:
+        """跨架构布局签名（供 32/64 位一致性校验比对）。"""
+        return tuple(
+            (
+                b.name,
+                b.width,
+                b.container.value,
+                b.ctype,
+                b.header,
+                b.pivot,
+                tuple((f.name, f.high, f.low, f.kind.value) for f in b.fields),
+            )
+            for b in self.blocks
+        )
