@@ -1,4 +1,4 @@
-<!-- SPDX-License-Identifier: GPL-2.0 -->
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0 -->
 
 # abi-check — agent-linux syscall ABI 稳定性检查工具
 
@@ -136,4 +136,4 @@ python3 tools/abi-check/abi_check.py \
 
 ## 许可证
 
-SPDX-License-Identifier: GPL-2.0
+SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0

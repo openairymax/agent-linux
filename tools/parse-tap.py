@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: GPL-2.0
+# SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 """
 parse-tap.py — 解析 TAP（Test Anything Protocol）输出
 
