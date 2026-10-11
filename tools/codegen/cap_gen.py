@@ -20,14 +20,12 @@ Version:
 
 from __future__ import annotations
 
-import argparse
-import difflib
 import re
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from jinja2 import Environment, FileSystemLoader, TemplateError
+import codegen_io
 
 from codegen_types import (
     CAP_ID_COUNT,
@@ -35,16 +33,9 @@ from codegen_types import (
     CAP_ID_PREFIX,
     CapContract,
     CapIdSpec,
-    CodegenError,
     ContractSourceError,
     ContractValidationError,
-    ExitCode,
-    TemplateRenderError,
 )
-
-GENERATOR = "cap_gen.py"
-SCRIPT_DIR = Path(__file__).resolve().parent
-TEMPLATE_DIR = SCRIPT_DIR / "templates"
 
 # ── 契约源与生成目标（相对 agent-linux/ 仓库根） ──
 CAP_DEF_REL = Path("security") / "include" / "airy_cap_ids.def"
@@ -66,30 +57,8 @@ _CAP_ID_RE = re.compile(
 )
 
 
-def default_repo_root() -> Path:
-    """agent-linux/ 仓库根（tools/codegen/ 上溯两级）。"""
-    return Path(__file__).resolve().parents[2]
-
-
-def make_env() -> Environment:
-    """构造确定性 Jinja2 渲染环境（§8）。"""
-    return Environment(
-        loader=FileSystemLoader(str(TEMPLATE_DIR)),
-        trim_blocks=True,
-        lstrip_blocks=True,
-        keep_trailing_newline=True,
-        autoescape=False,
-    )
-
-
-def _require_file(path: Path, what: str) -> None:
-    if not path.is_file():
-        raise ContractSourceError(f"{what} not found: {path}")
-
-
 def _read_cap_def_lines(def_path: Path) -> list[str]:
-    _require_file(def_path, "capability contract source")
-    return def_path.read_text(encoding="utf-8").splitlines()
+    return codegen_io.read_text(def_path, "capability contract source").splitlines()
 
 
 def _parse_cap_line(raw: str) -> tuple[str, int, str] | None:
@@ -146,7 +115,7 @@ def parse_cap_ids_def(def_path: Path) -> CapContract:
 
 
 def _load_xml_root(path: Path):
-    _require_file(path, "syscall contract source")
+    codegen_io.require_file(path, "syscall contract source")
     try:
         return ET.parse(str(path)).getroot()
     except ET.ParseError as exc:
@@ -204,132 +173,33 @@ def build_context(contract: CapContract) -> dict[str, object]:
     }
 
 
-def _render(env: Environment, template_name: str, context: dict[str, object]) -> str:
-    try:
-        return env.get_template(template_name).render(**context)
-    except TemplateError as exc:
-        raise TemplateRenderError(f"{template_name}: {exc}") from exc
-
-
 def render_outputs(repo_root: Path) -> dict[Path, str]:
     """解析契约源并渲染全部产物，返回 {目标路径: 内容}。"""
     contract = parse_cap_ids_def(repo_root / CAP_DEF_REL)
     validate_capability_references(contract, repo_root / SYSCALL_XML_REL)
-    env = make_env()
+    env = codegen_io.make_env()
     context = build_context(contract)
-    return {repo_root / rel: _render(env, name, context) for name, rel in OUTPUTS}
-
-
-def _unchanged(out_path: Path, content: str) -> bool:
-    return out_path.is_file() and out_path.read_text(encoding="utf-8") == content
-
-
-def _write_if_changed(out_path: Path, content: str) -> None:
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    if _unchanged(out_path, content):
-        return
-    out_path.write_text(content, encoding="utf-8")
-
-
-def write_outputs(rendered: dict[Path, str]) -> None:
-    """将渲染结果写入磁盘（仅在内容变化时重写，保持幂等）。"""
-    for out_path, content in rendered.items():
-        _write_if_changed(out_path, content)
-
-
-def _fail(message: str) -> int:
-    print(f"ERROR: {message}", file=sys.stderr)
-    return int(ExitCode.FAILURE)
+    return {repo_root / rel: codegen_io.render(env, name, context) for name, rel in OUTPUTS}
 
 
 def generate(repo_root: Path) -> int:
-    """生成全部 capability 产物（run_codegen 统一入口）。
-
-    Returns:
-        ExitCode.SUCCESS / ExitCode.FAILURE。
-    """
-    try:
-        rendered = render_outputs(repo_root)
-        write_outputs(rendered)
-    except CodegenError as exc:
-        return _fail(exc.message)
-
-    for out_path in rendered:
-        print(f"Generated: {out_path}")
-    return int(ExitCode.SUCCESS)
-
-
-def _diff_text(committed: str, content: str, out_path: Path):
-    return difflib.unified_diff(
-        committed.splitlines(keepends=True),
-        content.splitlines(keepends=True),
-        fromfile=f"{out_path} (committed)",
-        tofile=f"{out_path} (generated)",
-    )
-
-
-def _check_one(out_path: Path, content: str) -> bool:
-    if not out_path.is_file():
-        print(f"ERROR: generated file missing: {out_path}", file=sys.stderr)
-        return False
-    committed = out_path.read_text(encoding="utf-8")
-    if committed == content:
-        return True
-    print(f"ERROR: generated content differs from committed file: {out_path}", file=sys.stderr)
-    sys.stderr.writelines(_diff_text(committed, content, out_path))
-    return False
-
-
-def _has_drift(rendered: dict[Path, str]) -> bool:
-    return any(not _check_one(out_path, content) for out_path, content in rendered.items())
+    """生成全部 capability 产物（run_codegen 统一入口）。"""
+    return codegen_io.generate(render_outputs, repo_root)
 
 
 def check(repo_root: Path) -> int:
-    """校验生成内容与已提交文件一致（CI 零 diff，§9.3）。
-
-    Returns:
-        ExitCode.SUCCESS / ExitCode.FAILURE。
-    """
-    try:
-        rendered = render_outputs(repo_root)
-    except CodegenError as exc:
-        return _fail(exc.message)
-
-    if _has_drift(rendered):
-        print("       Run 'make cap' to regenerate and commit the result.", file=sys.stderr)
-        return int(ExitCode.FAILURE)
-
-    print(f"OK: cap_gen outputs match committed files ({len(rendered)} files)")
-    return int(ExitCode.SUCCESS)
+    """校验生成内容与已提交文件一致（CI 零 diff，§9.3）。"""
+    return codegen_io.check(render_outputs, repo_root, generator="cap_gen", make_target="cap")
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
+    return codegen_io.main(
+        render_outputs,
         description="airy_cap_ids.def → C security_types.h + Rust/Python bindings",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""\
-示例:
-  %(prog)s                 # 生成全部产物（默认仓库根）
-  %(prog)s --check         # CI 校验：生成内容与已提交文件零 diff
-  %(prog)s --repo-root DIR # 指定 agent-linux 仓库根
-""",
+        generator="cap_gen",
+        make_target="cap",
+        argv=argv,
     )
-    parser.add_argument(
-        "--repo-root",
-        default=str(default_repo_root()),
-        help="agent-linux 仓库根目录（默认: %(default)s）",
-    )
-    parser.add_argument(
-        "--check",
-        action="store_true",
-        help="校验模式：对比生成内容与已提交文件，不一致返回非零退出码",
-    )
-    args = parser.parse_args(argv)
-
-    repo_root = Path(args.repo_root).resolve()
-    if args.check:
-        return check(repo_root)
-    return generate(repo_root)
 
 
 if __name__ == "__main__":
