@@ -22,13 +22,11 @@ Version:
 
 from __future__ import annotations
 
-import argparse
-import difflib
 import re
 import sys
 from pathlib import Path
 
-from jinja2 import Environment, FileSystemLoader, TemplateError
+import codegen_io
 
 from codegen_types import (
     BitfieldBlockSpec,
@@ -36,16 +34,9 @@ from codegen_types import (
     BitfieldContract,
     BitfieldFieldKind,
     BitfieldFieldSpec,
-    CodegenError,
     ContractSourceError,
     ContractValidationError,
-    ExitCode,
-    TemplateRenderError,
 )
-
-GENERATOR = "bitfield_gen.py"
-SCRIPT_DIR = Path(__file__).resolve().parent
-TEMPLATE_DIR = SCRIPT_DIR / "templates"
 
 # ── 契约源与生成目标（相对 agent-linux/ 仓库根） ──
 _BF_DIR = Path("kernel") / "include" / "uapi" / "linux" / "airymax"
@@ -68,32 +59,6 @@ _KIND_BY_KEYWORD: dict[str, BitfieldFieldKind] = {
     "field_high": BitfieldFieldKind.FIELD_HIGH,
     "mask": BitfieldFieldKind.MASK,
 }
-
-
-def default_repo_root() -> Path:
-    """agent-linux/ 仓库根（tools/codegen/ 上溯两级）。"""
-    return Path(__file__).resolve().parents[2]
-
-
-def make_env() -> Environment:
-    """构造确定性 Jinja2 渲染环境（§8）。"""
-    return Environment(
-        loader=FileSystemLoader(str(TEMPLATE_DIR)),
-        trim_blocks=True,
-        lstrip_blocks=True,
-        keep_trailing_newline=True,
-        autoescape=False,
-    )
-
-
-def _require_file(path: Path, what: str) -> None:
-    if not path.is_file():
-        raise ContractSourceError(f"{what} not found: {path}")
-
-
-def _read_text(path: Path, what: str) -> str:
-    _require_file(path, what)
-    return path.read_text(encoding="utf-8")
 
 
 def _strip_comment(raw: str) -> str:
@@ -270,7 +235,7 @@ class _BlockParser:
 
 def parse_bf_contract(bf_path: Path) -> BitfieldContract:
     """解析 .bf 契约源为 BitfieldContract（含逐块语义校验）。"""
-    text = _read_text(bf_path, "bitfield contract source")
+    text = codegen_io.read_text(bf_path, "bitfield contract source")
     blocks = _BlockParser(bf_path).run(_meaningful_lines(text))
     if not blocks:
         raise ContractSourceError(f"no blocks parsed from {bf_path}")
@@ -308,135 +273,42 @@ def _build_context(contract: BitfieldContract, bf_rel: Path, header_rel: Path) -
     }
 
 
-def _render(env: Environment, context: dict[str, object]) -> str:
-    try:
-        return env.get_template(TEMPLATE_NAME).render(**context)
-    except TemplateError as exc:
-        raise TemplateRenderError(f"{TEMPLATE_NAME}: {exc}") from exc
-
-
 def render_outputs(repo_root: Path) -> dict[Path, str]:
     """解析契约源并渲染全部产物，返回 {目标路径: 内容}。"""
     contract32, contract64 = load_contracts(repo_root)
-    env = make_env()
+    env = codegen_io.make_env()
     plan = (
         (contract64, BF64_REL, HDR64_REL),
         (contract32, BF32_REL, HDR32_REL),
     )
     return {
-        repo_root / header_rel: _render(env, _build_context(contract, bf_rel, header_rel))
+        repo_root / header_rel: codegen_io.render(
+            env, TEMPLATE_NAME, _build_context(contract, bf_rel, header_rel)
+        )
         for contract, bf_rel, header_rel in plan
     }
 
 
-def _unchanged(out_path: Path, content: str) -> bool:
-    return out_path.is_file() and out_path.read_text(encoding="utf-8") == content
-
-
-def _write_if_changed(out_path: Path, content: str) -> None:
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    if _unchanged(out_path, content):
-        return
-    out_path.write_text(content, encoding="utf-8")
-
-
-def write_outputs(rendered: dict[Path, str]) -> None:
-    """将渲染结果写入磁盘（仅在内容变化时重写，保持幂等）。"""
-    for out_path, content in rendered.items():
-        _write_if_changed(out_path, content)
-
-
-def _fail(message: str) -> int:
-    print(f"ERROR: {message}", file=sys.stderr)
-    return int(ExitCode.FAILURE)
-
-
 def generate(repo_root: Path) -> int:
-    """生成全部位域访问层产物（run_codegen 统一入口）。
-
-    Returns:
-        ExitCode.SUCCESS / ExitCode.FAILURE。
-    """
-    try:
-        rendered = render_outputs(repo_root)
-        write_outputs(rendered)
-    except CodegenError as exc:
-        return _fail(exc.message)
-
-    for out_path in rendered:
-        print(f"Generated: {out_path}")
-    return int(ExitCode.SUCCESS)
-
-
-def _diff_text(committed: str, content: str, out_path: Path):
-    return difflib.unified_diff(
-        committed.splitlines(keepends=True),
-        content.splitlines(keepends=True),
-        fromfile=f"{out_path} (committed)",
-        tofile=f"{out_path} (generated)",
-    )
-
-
-def _check_one(out_path: Path, content: str) -> bool:
-    if not out_path.is_file():
-        print(f"ERROR: generated file missing: {out_path}", file=sys.stderr)
-        return False
-    committed = out_path.read_text(encoding="utf-8")
-    if committed == content:
-        return True
-    print(f"ERROR: generated content differs from committed file: {out_path}", file=sys.stderr)
-    sys.stderr.writelines(_diff_text(committed, content, out_path))
-    return False
-
-
-def _has_drift(rendered: dict[Path, str]) -> bool:
-    return any(not _check_one(out_path, content) for out_path, content in rendered.items())
+    """生成全部位域访问层产物（run_codegen 统一入口）。"""
+    return codegen_io.generate(render_outputs, repo_root)
 
 
 def check(repo_root: Path) -> int:
-    """校验生成内容与已提交文件一致（CI 零 diff，§9.3）。
-
-    Returns:
-        ExitCode.SUCCESS / ExitCode.FAILURE。
-    """
-    try:
-        rendered = render_outputs(repo_root)
-    except CodegenError as exc:
-        return _fail(exc.message)
-    if _has_drift(rendered):
-        print("       Run 'make bitfield' to regenerate and commit the result.", file=sys.stderr)
-        return int(ExitCode.FAILURE)
-    print(f"OK: bitfield_gen outputs match committed files ({len(rendered)} files)")
-    return int(ExitCode.SUCCESS)
+    """校验生成内容与已提交文件一致（CI 零 diff，§9.3）。"""
+    return codegen_io.check(
+        render_outputs, repo_root, generator="bitfield_gen", make_target="bitfield"
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
+    return codegen_io.main(
+        render_outputs,
         description="structures_{32,64}.bf → C structures_{32,64}_gen.h access layer",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""\
-示例:
-  %(prog)s                 # 生成全部产物（默认仓库根）
-  %(prog)s --check         # CI 校验：生成内容与已提交文件零 diff
-  %(prog)s --repo-root DIR # 指定 agent-linux 仓库根
-""",
+        generator="bitfield_gen",
+        make_target="bitfield",
+        argv=argv,
     )
-    parser.add_argument(
-        "--repo-root",
-        default=str(default_repo_root()),
-        help="agent-linux 仓库根目录（默认: %(default)s）",
-    )
-    parser.add_argument(
-        "--check",
-        action="store_true",
-        help="校验模式：对比生成内容与已提交文件，不一致返回非零退出码",
-    )
-    args = parser.parse_args(argv)
-
-    repo_root = Path(args.repo_root).resolve()
-    if args.check:
-        return check(repo_root)
-    return generate(repo_root)
 
 
 if __name__ == "__main__":
