@@ -2,7 +2,8 @@
 """codegen_types — agent-linux 代码生成管道共享接口与类型。
 
 集中声明契约版本常量、命名空间前缀、槽位与布局常量、生成器入口契约、
-退出码、异常层级，以及 syscall 契约源（R-01 SSoT）的数据模型。四个生成器
+退出码、异常层级，以及 syscall（R-01）/ capability（.def）/ bitfield
+（R-02 .bf）/ IPC 契约源的数据模型。四个生成器
 （cap_gen / bitfield_gen / ipc_gen / syscall_gen）与统一入口 run_codegen
 统一 import 本模块，消除跨模块的类型重复定义。
 
@@ -45,9 +46,19 @@ __all__ = [
     "FUNCTION_PREFIX",
     "GENERATOR_VERSION",
     "INDEX_PREFIX",
+    "IPC_BADGE_PREFIX",
+    "IPC_FIELD_COMMENTS",
+    "IPC_FLAG_PREFIX",
+    "IPC_FLAG_SPECS",
     "IPC_HEADER_ALIGNMENT",
     "IPC_HEADER_SIZE",
+    "IPC_LAYOUT_ASSERTS",
     "IPC_MAGIC",
+    "IPC_MIN_STRUCT_NAME",
+    "IPC_OPCODE_PREFIX",
+    "IPC_OPCODE_SPECS",
+    "IPC_SIZE_ASSERT_MESSAGE",
+    "IPC_STRUCT_NAME",
     "LINUX_BASE",
     "PIPELINE_ORDER",
     "RESERVED_SLOT_COUNT",
@@ -68,6 +79,9 @@ __all__ = [
     "GeneratedDriftError",
     "GeneratorEntry",
     "GeneratorName",
+    "IpcAssertSpec",
+    "IpcFlagSpec",
+    "IpcOpcodeSpec",
     "ReservedRange",
     "SyscallContract",
     "SyscallSpec",
@@ -604,3 +618,122 @@ class BitfieldContract:
             )
             for b in self.blocks
         )
+
+
+# 10. IPC 契约数据模型（A-IPC，ipc.h 的 opcode / flag / 布局断言）
+IPC_OPCODE_PREFIX = "AIRY_IPC_OP_"
+IPC_FLAG_PREFIX = "AIRY_IPC_FLAG_"
+IPC_BADGE_PREFIX = "AIRY_BADGE_"
+IPC_STRUCT_NAME = "airy_ipc_msg_hdr"
+IPC_MIN_STRUCT_NAME = "airy_ipc_msg_hdr_min"
+IPC_SIZE_ASSERT_MESSAGE = "airy_ipc_msg_hdr must be exactly 128 bytes"
+
+
+@dataclass(frozen=True)
+class IpcOpcodeSpec:
+    """单个 IPC opcode（ipc.h 的 AIRY_IPC_OP_* 宏）。"""
+
+    suffix: str
+    value: int
+    comment: str
+
+    def __post_init__(self) -> None:
+        if not self.suffix:
+            raise ContractValidationError("ipc opcode suffix must not be empty")
+        if not 0 < self.value <= 0xFFFF:
+            raise ContractValidationError(f"ipc opcode {self.suffix} out of range: {self.value}")
+        if not self.comment:
+            raise ContractValidationError(f"ipc opcode {self.suffix} has empty comment")
+
+    @property
+    def macro(self) -> str:
+        """C 宏名（AIRY_IPC_OP_<SUFFIX>）。"""
+        return IPC_OPCODE_PREFIX + self.suffix
+
+    @property
+    def value_hex(self) -> str:
+        """四位大写十六进制字面量（0x0001）。"""
+        return f"0x{self.value:04X}"
+
+
+@dataclass(frozen=True)
+class IpcFlagSpec:
+    """单个 IPC flag（ipc.h 的 AIRY_IPC_FLAG_* 宏）。"""
+
+    suffix: str
+    value: int
+    comment: str
+
+    def __post_init__(self) -> None:
+        if not self.suffix:
+            raise ContractValidationError("ipc flag suffix must not be empty")
+        if not 0 < self.value <= 0xFFFF:
+            raise ContractValidationError(f"ipc flag {self.suffix} out of range: {self.value}")
+        if not self.comment:
+            raise ContractValidationError(f"ipc flag {self.suffix} has empty comment")
+
+    @property
+    def macro(self) -> str:
+        """C 宏名（AIRY_IPC_FLAG_<SUFFIX>）。"""
+        return IPC_FLAG_PREFIX + self.suffix
+
+    @property
+    def value_hex(self) -> str:
+        """四位大写十六进制字面量（0xFFE0）。"""
+        return f"0x{self.value:04X}"
+
+
+IPC_OPCODE_SPECS: tuple[IpcOpcodeSpec, ...] = (
+    IpcOpcodeSpec("SEND", 0x0001, "Unicast send"),
+    IpcOpcodeSpec("RECV", 0x0002, "Unicast receive"),
+    IpcOpcodeSpec("SEND_BATCH", 0x0003, "Batch send"),
+    IpcOpcodeSpec("CANCEL", 0x0004, "Cancel pending operation"),
+    IpcOpcodeSpec("FREEZE", 0x0005, "Freeze IPC ring"),
+    IpcOpcodeSpec("CAP_REQUEST", 0x0010, "Capability request (bootstrap)"),
+    IpcOpcodeSpec("CAP_RESPONSE", 0x0011, "Capability response"),
+)
+
+IPC_FLAG_SPECS: tuple[IpcFlagSpec, ...] = (
+    IpcFlagSpec("ZEROCOPY", 0x0001, "Zero-copy path enabled"),
+    IpcFlagSpec("CAP_CARRY", 0x0002, "Carrying a capability"),
+    IpcFlagSpec("ENCRYPT", 0x0004, "Payload is encrypted (reserved, 0.1.1 inactive)"),
+    IpcFlagSpec("COMPRESS", 0x0008, "Payload is compressed (reserved, 0.1.1 inactive)"),
+    IpcFlagSpec("BATCH_TAIL", 0x0010, "Last SQE in a batch"),
+    IpcFlagSpec("RESERVED", 0xFFE0, "Bits 5-15: must be zero (C-S10 check)"),
+)
+
+IPC_FIELD_COMMENTS: dict[str, str] = {
+    "magic": "AIRY_IPC_MAGIC",
+    "opcode": "IPC opcode",
+    "flags": "message flags",
+    "trace_id": "distributed trace ID",
+    "timestamp_ns": "monotonic ns timestamp",
+    "src_task": "source task identifier",
+    "dst_task": "destination task identifier",
+    "capability_badge": "Capability Folding badge (64-bit)",
+    "payload_len": "payload length in bytes",
+    "crc32": "CRC32 of payload",
+    "reserved": "reserved for future use",
+}
+
+
+@dataclass(frozen=True)
+class IpcAssertSpec:
+    """单条 IPC 布局 _Static_assert（被断言字段名 + 断言消息）。"""
+
+    field: str
+    message: str
+
+
+IPC_LAYOUT_ASSERTS: tuple[IpcAssertSpec, ...] = (
+    IpcAssertSpec("magic", "airy_ipc_msg_hdr.magic must be at offset 0"),
+    IpcAssertSpec("opcode", "airy_ipc_msg_hdr.opcode must be at offset 4"),
+    IpcAssertSpec(
+        "capability_badge",
+        "capability_badge must be at offset 40 (8-byte aligned, D-9 fix)",
+    ),
+    IpcAssertSpec("payload_len", "payload_len must be at offset 48"),
+    IpcAssertSpec("crc32", "crc32 must be at offset 52"),
+    IpcAssertSpec("reserved", "reserved must be at offset 56"),
+)
+
