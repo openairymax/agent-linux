@@ -33,7 +33,11 @@ from typing import Callable, TypeAlias
 
 # 2. 公开导出
 __all__ = [
+    "CAP_EXTENSION_BASE",
     "CAP_ID_COUNT",
+    "CAP_ID_MAX_SYMBOL",
+    "CAP_ID_PREFIX",
+    "CAP_SYMBOL_PREFIX",
     "CORE_SYSCALL_COUNT",
     "FUNCTION_PREFIX",
     "GENERATOR_VERSION",
@@ -47,6 +51,8 @@ __all__ = [
     "SCHEMA_VERSION",
     "SYMBOL_PREFIX",
     "TOTAL_SLOT_COUNT",
+    "CapContract",
+    "CapIdSpec",
     "CodegenError",
     "ContractSourceError",
     "ContractValidationError",
@@ -81,7 +87,13 @@ IPC_MAGIC = 0x41524531  # 'ARE1'
 # 6. capability 常量（41 POSIX + 3 Airymax 专属）
 CAP_ID_COUNT = 44
 
-# 7. 生成器入口契约：run_codegen 依此签名调用每个生成器
+# 7. capability 命名空间常量（D-9 前缀转换 + [SC] enum 生成）
+CAP_EXTENSION_BASE = 41
+CAP_ID_PREFIX = "AIRY_"
+CAP_SYMBOL_PREFIX = "AIRY_CAP"
+CAP_ID_MAX_SYMBOL = "AIRY_CAP_ID_MAX"
+
+# 8. 生成器入口契约：run_codegen 依此签名调用每个生成器
 GeneratorEntry: TypeAlias = Callable[[Path], int]
 
 
@@ -225,3 +237,77 @@ class SyscallContract:
     def syscalls_by_number(self) -> dict[int, SyscallSpec]:
         """按内部编号索引的 syscall 映射。"""
         return {sc.number: sc for sc in self.syscalls}
+
+
+@dataclass(frozen=True)
+class CapIdSpec:
+    """单个 capability ID 契约条目（airy_cap_ids.def 的 AIRY_CAP_ID 行）。"""
+
+    symbol: str
+    value: int
+    description: str
+    raw_symbol: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.symbol.startswith(CAP_SYMBOL_PREFIX + "_"):
+            raise ContractValidationError(
+                f"capability symbol lacks {CAP_SYMBOL_PREFIX}_ prefix: {self.symbol}"
+            )
+        if not 0 <= self.value < CAP_ID_COUNT:
+            raise ContractValidationError(f"capability id out of range: {self.value}")
+        if not self.description:
+            raise ContractValidationError(f"capability {self.symbol} has empty description")
+
+    @property
+    def is_extension(self) -> bool:
+        """是否为 Airymax 专属扩展（value >= CAP_EXTENSION_BASE）。"""
+        return self.value >= CAP_EXTENSION_BASE
+
+    @property
+    def variant(self) -> str:
+        """Rust 枚举变体名（去掉 AIRY_CAP_ 前缀后转 PascalCase）。"""
+        stem = self.symbol[len(CAP_SYMBOL_PREFIX) + 1:]
+        return "".join(part.capitalize() for part in stem.split("_"))
+
+
+@dataclass(frozen=True)
+class CapContract:
+    """airy_cap_ids.def 契约源整体模型（Capability ID SSoT）。"""
+
+    cap_ids: tuple[CapIdSpec, ...]
+    generator: str = "cap_gen.py"
+    generator_version: str = GENERATOR_VERSION
+    schema_version: str = SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        if len(self.cap_ids) != CAP_ID_COUNT:
+            raise ContractValidationError(
+                f"capability id count {len(self.cap_ids)} != {CAP_ID_COUNT}"
+            )
+        if sorted(c.value for c in self.cap_ids) != list(range(CAP_ID_COUNT)):
+            raise ContractValidationError("capability ids must be contiguous from 0")
+
+    @property
+    def cap_ids_by_value(self) -> dict[int, CapIdSpec]:
+        """按数值索引的 capability 映射。"""
+        return {c.value: c for c in self.cap_ids}
+
+    @property
+    def posix_caps(self) -> tuple[CapIdSpec, ...]:
+        """POSIX 标准 capability（value 0..CAP_EXTENSION_BASE-1）。"""
+        return tuple(c for c in self.cap_ids if not c.is_extension)
+
+    @property
+    def extension_caps(self) -> tuple[CapIdSpec, ...]:
+        """Airymax 专属 capability（value >= CAP_EXTENSION_BASE）。"""
+        return tuple(c for c in self.cap_ids if c.is_extension)
+
+    @property
+    def symbol_names(self) -> frozenset[str]:
+        """全部 capability C 枚举符号集合（§5.4 跨契约校验用）。"""
+        return frozenset(c.symbol for c in self.cap_ids)
+
+    @property
+    def symbol_width(self) -> int:
+        """enum 对齐宽度（最长符号 + 1）。"""
+        return max(len(c.symbol) for c in self.cap_ids) + 1
