@@ -6,8 +6,8 @@
 #   all      — 按依赖序运行所有生成器（cap → bitfield → ipc → syscall）
 #   cap      — 运行 cap_gen.py 生成 capability ID（C 头 + Rust/Python 绑定）
 #   bitfield — 运行 bitfield_gen.py 生成位域访问层 C 头
-#   ipc      — 运行 ipc_gen.py 生成 A-IPC 消息头绑定（C 头 + Rust/Python）
-#   syscall  — 运行 syscall_gen.py 生成 C UAPI 头文件
+#   ipc      — 运行 ipc_gen.py 生成 A-IPC 消息头绑定（C 头 + Rust/Python/Go/TS）
+#   syscall  — 运行 syscall_gen.py 生成 C UAPI 头 + 多语言 SDK 绑定
 #   check    — 运行所有生成器的 --check 模式 + syscall_64.tbl 段一致性（CI 集成用）
 #   clean    — 清理生成文件
 #
@@ -41,13 +41,21 @@ BITFIELD_FILES := $(STRUCT64_H) $(STRUCT32_H)
 IPC_H       := $(REPO_ROOT)/kernel/include/uapi/linux/airymax/ipc.h
 IPC_RUST    := $(REPO_ROOT)/sdk/rust/airyx/ipc.rs
 IPC_PY      := $(REPO_ROOT)/sdk/python/airyx/ipc.py
-IPC_FILES   := $(IPC_H) $(IPC_RUST) $(IPC_PY)
+IPC_GO      := $(REPO_ROOT)/sdk/go/airyx/ipc.go
+IPC_TS      := $(REPO_ROOT)/sdk/ts/airyx/ipc.ts
+IPC_FILES   := $(IPC_H) $(IPC_RUST) $(IPC_PY) $(IPC_GO) $(IPC_TS)
 
 # --- syscall（syscall_gen.py，依赖序最后）---
-SYSCALL_H   := $(REPO_ROOT)/kernel/include/uapi/linux/airymax/syscall_gen.h
+SYSCALL_H    := $(REPO_ROOT)/kernel/include/uapi/linux/airymax/syscall_gen.h
+SYSCALL_RUST := $(REPO_ROOT)/sdk/rust/airyx/syscalls.rs
+SYSCALL_PY   := $(REPO_ROOT)/sdk/python/airyx/syscalls.py
+SYSCALL_GO   := $(REPO_ROOT)/sdk/go/airyx/syscalls.go
+SYSCALL_TS   := $(REPO_ROOT)/sdk/ts/airyx/syscalls.ts
+SYSCALL_FILES := $(SYSCALL_H) $(SYSCALL_RUST) $(SYSCALL_PY) $(SYSCALL_GO) $(SYSCALL_TS)
 
 # 生成的文件列表（clean 目标使用）
-GENERATED_FILES := $(CAP_FILES) $(BITFIELD_FILES) $(IPC_FILES) $(SYSCALL_H)
+# 注：syscall_gen 另以分段合并方式写 syscall_64.tbl Airymax 段，不在此列（见 check 目标）
+GENERATED_FILES := $(CAP_FILES) $(BITFIELD_FILES) $(IPC_FILES) $(SYSCALL_FILES)
 
 .PHONY: all cap bitfield ipc syscall check clean
 
@@ -65,14 +73,14 @@ bitfield:
 	@echo "  CODEGEN  bitfield_gen.py → structures_{32,64}_gen.h"
 	@$(PYTHON) $(BITFIELD_GEN)
 
-# ipc: 运行 ipc_gen.py 生成 A-IPC 消息头绑定（C 头 + Rust/Python）
+# ipc: 运行 ipc_gen.py 生成 A-IPC 消息头绑定（C 头 + Rust/Python/Go/TS）
 ipc:
-	@echo "  CODEGEN  ipc_gen.py → ipc.h + ipc.{rs,py}"
+	@echo "  CODEGEN  ipc_gen.py → ipc.h + ipc.{rs,py,go,ts}"
 	@$(PYTHON) $(IPC_GEN)
 
-# syscall: 运行 syscall_gen.py 生成 C UAPI 头文件
+# syscall: 运行 syscall_gen.py 生成 C UAPI 头 + 多语言 SDK 绑定
 syscall:
-	@echo "  CODEGEN  syscall_gen.py → syscall_gen.h"
+	@echo "  CODEGEN  syscall_gen.py → syscall_gen.h + syscalls.{rs,py,go,ts}"
 	@$(PYTHON) $(SYSCALL_GEN)
 
 # check: 运行所有生成器的 --check 模式 + syscall_64.tbl 段一致性（CI 集成用）
