@@ -1,7 +1,7 @@
 # ===========================================================================
 # agent-linux (AirymaxOS) Management Repository Makefile
 # ===========================================================================
-# Authority: docs/AirymaxOS/50-engineering-standards/07-maintainers-and-governance.md §2.4.4
+# Authority: docs/docs-linux/50-engineering-standards/07-maintainers-and-governance.md §2.4.4
 # ===========================================================================
 
 .PHONY: codeowners-sync codeowners-check codegen all help
