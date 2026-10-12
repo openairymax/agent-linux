@@ -5,9 +5,11 @@
 以 R-02 位域契约源 structures_64.bf 的 ipc_msg_hdr / cap_badge 块为布局
 SSoT，并以 contracts.md §2（Layout C v4）为语义 SSoT，生成 128 字节定长
 IPC 消息头的多语言绑定：
-  - C:      kernel/include/uapi/linux/airymax/ipc.h
-  - Rust:   sdk/rust/airyx/ipc.rs
-  - Python: sdk/python/airyx/ipc.py
+  - C:          kernel/include/uapi/linux/airymax/ipc.h
+  - Rust:       sdk/rust/airyx/ipc.rs
+  - Python:     sdk/python/airyx/ipc.py
+  - Go:         sdk/go/airyx/ipc.go
+  - TypeScript: sdk/ts/airyx/ipc.ts
 
 magic 值 0x41524531（'ARE1'）由本生成器自动注入，不在契约源重复声明。
 生成前强制校验 .bf 布局与 contracts.md §2 的期望布局（字段偏移/位宽、
@@ -55,6 +57,8 @@ BF64_REL = _UAPI_DIR / "structures_64.bf"
 IPC_H_REL = _UAPI_DIR / "ipc.h"
 IPC_RS_REL = Path("sdk") / "rust" / "airyx" / "ipc.rs"
 IPC_PY_REL = Path("sdk") / "python" / "airyx" / "ipc.py"
+IPC_GO_REL = Path("sdk") / "go" / "airyx" / "ipc.go"
+IPC_TS_REL = Path("sdk") / "ts" / "airyx" / "ipc.ts"
 
 IPC_GUARD = "_UAPI_AIRYMAX_IPC_H"
 SOURCE_NAME = "contracts.md §2"
@@ -68,6 +72,8 @@ OUTPUTS: tuple[tuple[str, Path], ...] = (
     ("ipc.h.j2", IPC_H_REL),
     ("ipc.rs.j2", IPC_RS_REL),
     ("ipc.py.j2", IPC_PY_REL),
+    ("ipc.go.j2", IPC_GO_REL),
+    ("ipc.ts.j2", IPC_TS_REL),
 )
 
 # contracts.md §2 Layout C v4 期望布局（字段名 → (字节偏移, 位宽)）。
@@ -104,6 +110,7 @@ _CTYPE_TO_PY: dict[str, str] = {
     "__u32": "ctypes.c_uint32",
     "__u64": "ctypes.c_uint64",
 }
+_CTYPE_TO_GO: dict[str, str] = {"__u16": "uint16", "__u32": "uint32", "__u64": "uint64"}
 
 
 def _expected_offsets() -> dict[str, int]:
@@ -294,6 +301,92 @@ def _py_field_lines(
     return lines
 
 
+def _camel(name: str) -> str:
+    """把蛇形名（capability_badge）转为 camelCase（Go/TS 标识符惯例）。"""
+    head, *rest = name.split("_")
+    return head + "".join(part.capitalize() for part in rest)
+
+
+def _pascal(name: str) -> str:
+    """把蛇形名（capability_badge）转为 PascalCase（CapabilityBadge）。"""
+    return "".join(part.capitalize() for part in name.split("_"))
+
+
+def _go_ctype(field: BitfieldFieldSpec) -> str:
+    """返回 Go 字段类型（padding 以定长字节数组承载）。"""
+    if field.is_padding:
+        return f"[{field.width // 8}]byte"
+    return _CTYPE_TO_GO[bitfield_value_type(field.width)]
+
+
+def _go_opcode_consts() -> list[dict[str, object]]:
+    return [
+        {"name": "AiryIpcOp" + _pascal(op.suffix), "value": op.value_hex, "comment": op.comment}
+        for op in IPC_OPCODE_SPECS
+    ]
+
+
+def _go_flag_consts() -> list[dict[str, object]]:
+    return [
+        {
+            "name": "AiryIpcFlag" + _pascal(flag.suffix),
+            "value": flag.value_hex,
+            "comment": flag.comment,
+        }
+        for flag in IPC_FLAG_SPECS
+    ]
+
+
+def _go_badge_shift_consts(fields: tuple[BitfieldFieldSpec, ...]) -> list[dict[str, object]]:
+    return [
+        {
+            "name": "AiryBadge" + _pascal(f.name) + "Shift",
+            "value": f.low,
+            "comment": _BADGE_COMMENTS[f.name],
+        }
+        for f in fields
+    ]
+
+
+def _go_badge_mask_consts(fields: tuple[BitfieldFieldSpec, ...]) -> list[dict[str, str]]:
+    return [
+        {
+            "name": "AiryBadge" + _pascal(f.name) + "Mask",
+            "value_hex": f"0x{((1 << f.width) - 1) << f.low:X}",
+            "comment": _BADGE_COMMENTS[f.name],
+        }
+        for f in fields
+    ]
+
+
+def _go_field_lines(fields: tuple[BitfieldFieldSpec, ...]) -> list[str]:
+    entries = [(_pascal(f.name), _go_ctype(f)) for f in fields]
+    width = max(len(name) for name, _ in entries) + 1
+    return ["\t" + name.ljust(width) + go_type for name, go_type in entries]
+
+
+def _ts_field_type(field: BitfieldFieldSpec) -> str:
+    """返回 TS 字段类型（padding→Uint8Array，64 位→bigint，其余→number）。"""
+    if field.is_padding:
+        return "Uint8Array"
+    return "bigint" if field.width == 64 else "number"
+
+
+def _ts_fields(fields: tuple[BitfieldFieldSpec, ...]) -> list[dict[str, str]]:
+    return [{"name": _camel(f.name), "ts_type": _ts_field_type(f)} for f in fields]
+
+
+def _ts_offsets(
+    fields: tuple[BitfieldFieldSpec, ...], offsets: dict[str, int]
+) -> list[dict[str, object]]:
+    return [{"name": _camel(f.name), "offset": offsets[f.name]} for f in fields]
+
+
+def _reserved_bytes(fields: tuple[BitfieldFieldSpec, ...]) -> int:
+    """返回保留填充区的字节数（.bf padding 字段）。"""
+    return next(f.width // 8 for f in fields if f.is_padding)
+
+
 def _size_assert_lines() -> list[str]:
     return [
         f"_Static_assert(sizeof(struct {IPC_STRUCT_NAME}) == {IPC_HDR_SIZE_MACRO},",
@@ -362,6 +455,16 @@ def build_context(contract: BitfieldContract) -> dict[str, object]:
         "fields": _rust_fields(fields),
         "field_lines": _c_field_lines(fields, offsets),
         "py_field_lines": _py_field_lines(fields, offsets),
+        "go_opcodes": _go_opcode_consts(),
+        "go_flags": _go_flag_consts(),
+        "go_badge_shifts": _go_badge_shift_consts(badge_fields),
+        "go_badge_masks": _go_badge_mask_consts(badge_fields),
+        "go_field_lines": _go_field_lines(fields),
+        "ts_fields": _ts_fields(fields),
+        "ts_offsets": _ts_offsets(fields, offsets),
+        "badge_offset": offsets["capability_badge"],
+        "reserved_offset": offsets["reserved"],
+        "reserved_bytes": _reserved_bytes(fields),
         "size_assert_lines": _size_assert_lines(),
         "offset_assert_lines": _offset_assert_lines(offsets),
     }
@@ -392,7 +495,7 @@ def check(repo_root: Path) -> int:
 def main(argv: list[str] | None = None) -> int:
     return codegen_io.main(
         render_outputs,
-        description="structures_64.bf ipc_msg_hdr/cap_badge → C/Rust/Python IPC bindings",
+        description="structures_64.bf ipc_msg_hdr/cap_badge → C/Rust/Python/Go/TypeScript IPC bindings",
         generator="ipc_gen",
         make_target="ipc",
         argv=argv,
