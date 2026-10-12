@@ -1,0 +1,73 @@
+# SPDX-License-Identifier: GPL-2.0-only WITH Linux-syscall-note
+#
+# AirymaxOS reference LSM policy in the Airymax Decision Language (.adl).
+#
+# This is the L-03 compiler's end-to-end example: it is compiled by
+# tools/dsl/dsl_compile.py into pure C decision tables (security_policy_tables.h)
+# and exercised by the pytest suite. Every rule carries real Airy LSM semantics;
+# fault codes come from the supervisor contract (09-kernel-agent-supervisor.md §2)
+# and verdicts from the [SC] four-value set in security_types.h.
+
+version "1.0.1";
+
+# io_uring command admission: reject the reserved malformed opcode and audit
+# commands that request the privileged registered-buffer flag.
+table uring_guard {
+	hook = uring_cmd;
+	input op : u8;
+	input cmd_flags : u32;
+
+	rule 10 {
+		when op == 31;
+		verdict DENY;
+		fault 0x100A;
+	}
+
+	rule 20 {
+		when cmd_flags & 0x40000000;
+		verdict AUDIT;
+	}
+
+	default verdict ALLOW;
+}
+
+# Task creation accounting: deny capability forgeries (badge/type mismatch)
+# and audit anonymous kernel worker allocation.
+table task_guard {
+	hook = task_alloc;
+	input cap_flags : u64;
+	input task_type : u8;
+
+	rule 5 {
+		when cap_flags & 0x0000000000000001;
+		verdict DENY;
+		fault 0x1001;
+	}
+
+	rule 15 {
+		when task_type == 0;
+		verdict AUDIT;
+	}
+
+	default verdict ALLOW;
+}
+
+# File open mediation: deny writes to the protected system class and default
+# to audit so unlabelled paths are observable before enforcement is enabled.
+table file_open_guard {
+	hook = file_open;
+	input path_class : u8;
+	input open_flags : u32;
+
+	rule 30 {
+		when path_class == 2;
+		verdict DENY;
+	}
+
+	rule 40 {
+		when open_flags & 0x00000001;
+		verdict COMPLAIN;
+	}
+
+	default verdict AUDIT;
+}
