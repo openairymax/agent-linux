@@ -9,6 +9,7 @@
 #   ipc      — 运行 ipc_gen.py 生成 A-IPC 消息头绑定（C 头 + Rust/Python/Go/TS）
 #   syscall  — 运行 syscall_gen.py 生成 C UAPI 头 + 多语言 SDK 绑定
 #   check    — 运行所有生成器的 --check 模式 + syscall_64.tbl 段一致性（CI 集成用）
+#   test     — 运行 codegen 单元测试套件（pytest，覆盖 4 生成器 + 管道 + IO 脚手架）
 #   clean    — 清理生成文件
 #
 # Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
@@ -57,7 +58,7 @@ SYSCALL_FILES := $(SYSCALL_H) $(SYSCALL_RUST) $(SYSCALL_PY) $(SYSCALL_GO) $(SYSC
 # 注：syscall_gen 另以分段合并方式写 syscall_64.tbl Airymax 段，不在此列（见 check 目标）
 GENERATED_FILES := $(CAP_FILES) $(BITFIELD_FILES) $(IPC_FILES) $(SYSCALL_FILES)
 
-.PHONY: all cap bitfield ipc syscall check clean
+.PHONY: all cap bitfield ipc syscall check test clean
 
 # all: 按依赖序运行所有生成器（cap_gen → bitfield_gen → ipc_gen → syscall_gen）
 all: cap bitfield ipc syscall
@@ -91,6 +92,11 @@ check:
 	@$(PYTHON) $(IPC_GEN) --check
 	@$(PYTHON) $(SYSCALL_GEN) --check
 	@$(PYTHON) $(SYSCALL_GEN) --check-tbl
+
+# test: 运行 codegen 单元测试套件（pytest，覆盖 4 生成器 + 管道 + IO 脚手架）
+test:
+	@echo "  CODEGEN  running pytest unit tests"
+	@$(PYTHON) -m pytest $(CODEGEN_DIR)tests/ -q
 
 # clean: 清理生成文件
 clean:
