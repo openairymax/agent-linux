@@ -72,7 +72,9 @@ class TestStagesTable:
 class TestDefaultRepoRoot:
     def test_default_repo_root(self, repo_root: Path) -> None:
         assert run_codegen.default_repo_root() == repo_root
-        assert run_codegen.default_repo_root().name == "agent-linux"
+
+    def test_default_repo_root_hosts_codegen(self) -> None:
+        assert (run_codegen.default_repo_root() / "tools" / "codegen").is_dir()
 
 
 class TestInvoke:
