@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 """
-aggregate-subrepo-ci.py — 聚合 8 个子仓的 CI 状态
+aggregate-subrepo-ci.py — 聚合叶子子仓的 CI 状态
 
-被 mgmt-orchestrator.yml 引用。读取 ``git submodule status``，
-对每个子仓调用 GitHub API 查询其 HEAD commit 的 check runs / combined
-status，输出聚合报告。
+被 mgmt-orchestrator.yml 引用。读取 ``git submodule status``，并结合
+``.gitmodules`` 派生的子模块清单，对每个子仓调用 GitHub API 查询其 HEAD
+commit 的 check runs / combined status，输出聚合报告。
 
 退出码：
-    0 — 全部子仓 CI 绿，或无 token（design phase 降级）
-    1 — --fail-on-red 且存在红/未知子仓
+    0 — 无 token（设计期降级）、全部绿，或仅有 unknown（告警不阻断）
+    1 — --fail-on-red 且存在红（red）子仓
     2 — 参数或本地命令错误
+
+说明：叶子子仓尚未全部接入 CI 时其状态为 unknown，属预期情况，
+不阻断管理仓 CI；仅当明确出现 red 时才以 --fail-on-red 阻断。
 """
 
 import argparse
@@ -27,11 +30,35 @@ import urllib.request
 # ─── 子仓配置 ────────────────────────────────────────────────────────
 # .gitmodules 中 url 为相对路径（../kernel.git），无法直接得到 owner。
 # 此处提供默认映射，可用环境变量 GITHUB_OWNER 覆盖 owner。
+# 子模块清单不硬编码，改由 .gitmodules 派生（见 list_submodule_paths）。
 DEFAULT_OWNER = os.environ.get("GITHUB_OWNER", "openairymax")
-EXPECTED_SUBMODULES = [
-    "kernel", "memory", "security", "cognition",
-    "services", "system", "cloudnative", "tests-linux",
-]
+
+
+def list_submodule_paths(root):
+    """从 root/.gitmodules 派生声明的子模块路径清单。
+
+    返回 (paths, 错误信息)。错误信息为 None 时 paths 有效；
+    否则 paths 为空列表并携带原因。
+    """
+    gitmodules = os.path.join(root, ".gitmodules")
+    if not os.path.isfile(gitmodules):
+        return [], ".gitmodules 不存在"
+    try:
+        proc = subprocess.run(
+            ["git", "config", "-f", gitmodules, "--get-regexp",
+             r"^submodule\..*\.path$"],
+            capture_output=True, text=True, timeout=30,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        return [], f"git 不可用或超时：{exc}"
+    if proc.returncode not in (0, 1):
+        return [], proc.stderr.strip() or "git config 读取失败"
+    paths = []
+    for line in proc.stdout.splitlines():
+        fields = line.split(None, 1)
+        if len(fields) == 2 and fields[1].strip():
+            paths.append(fields[1].strip())
+    return paths, None
 
 
 def http_request(method, url, token, body=None):
@@ -136,11 +163,11 @@ def fetch_ci_state(api, owner_repo, sha, token):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="聚合 8 个子仓的 CI 状态"
+        description="聚合叶子子仓的 CI 状态"
     )
     parser.add_argument(
         "--fail-on-red", action="store_true",
-        help="存在红/未知子仓时以退出码 1 终止",
+        help="存在红（red）子仓时以退出码 1 终止；unknown 仅告警",
     )
     parser.add_argument(
         "--root", default=".",
@@ -169,9 +196,17 @@ def main():
         print(f"ERROR: {err}", file=sys.stderr)
         return 2
 
+    expected, gm_err = list_submodule_paths(args.root)
+    if gm_err is not None:
+        print(
+            f"WARN: 无法从 .gitmodules 派生清单（{gm_err}），"
+            "仅报告 git submodule status 中的子模块",
+            file=sys.stderr,
+        )
+
     # 子模块缺失时也输出明确报告
     found_paths = {s[0] for s in subs}
-    for name in EXPECTED_SUBMODULES:
+    for name in expected:
         if name not in found_paths:
             subs.append((name, "?", "-"))
 
@@ -198,8 +233,14 @@ def main():
     print(f"汇总：red={red_count}，unknown={unknown_count}，"
           f"total={len(subs)}")
 
-    if args.fail_on_red and (red_count > 0 or unknown_count > 0):
-        print("FAIL: 存在红/未知子仓（--fail-on-red 已启用）", file=sys.stderr)
+    if unknown_count > 0:
+        print(
+            f"WARN: {unknown_count} 个子仓 CI 状态未知"
+            "（叶子仓未接入 CI 时属预期）",
+            file=sys.stderr,
+        )
+    if args.fail_on_red and red_count > 0:
+        print("FAIL: 存在红（red）子仓（--fail-on-red 已启用）", file=sys.stderr)
         return 1
     print("OK: 聚合完成")
     return 0
