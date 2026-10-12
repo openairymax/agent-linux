@@ -2,8 +2,8 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 
 # Security Policy
 
-> **Security authority**: [`docs/docs-linux/50-engineering-standards/09-ssot-registry.md`](https://github.com/openairymax/docs/blob/main/AirymaxOS/50-engineering-standards/09-ssot-registry.md) (OS-SEC-* rules)
-> **Architecture threat model**: [`docs/docs-linux/10-architecture/07-threat-model.md`](https://github.com/openairymax/docs/blob/main/AirymaxOS/10-architecture/07-threat-model.md)
+> **Security authority**: [`docs/docs-linux/50-engineering-standards/09-ssot-registry.md`](../docs/docs-linux/50-engineering-standards/09-ssot-registry.md) (OS-SEC-* rules)
+> **Architecture threat model**: [`docs/docs-linux/10-architecture/07-threat-model.md`](../docs/docs-linux/10-architecture/07-threat-model.md)
 
 ---
 
@@ -71,7 +71,7 @@ agent-linux adopts seL4-style capability-based security:
 
 ### 3.3 [SC] Shared Contract Layer Integrity
 
-The 10 core header files in `kernel/include/uapi/linux/airymax/` are the single physical source of truth for cross-subsystem contracts. Any change requires:
+The [SC] shared contract layer (12 headers: 10 core + 2 supplementary) in `kernel/include/uapi/linux/airymax/` is the single physical source of truth for cross-subsystem contracts. Any change requires:
 
 1. Dual CI validation (agent-linux + agentrt)
 2. L1 subsystem maintainer review

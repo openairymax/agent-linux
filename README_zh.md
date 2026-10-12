@@ -106,7 +106,7 @@ agent-linux 与 `agentrt` 共享相同的 Airymax 设计理念（架构同源）
 
 agentrt 与 agent-linux 通过 **IRON-9 v3 四层共享模型**协作，其中 \[SC] 共享契约层是字节级完全共享的核心。SSoT 物理宿主为 `kernel/include/uapi/linux/airymax/`，由 agent-linux 维护，agentrt 通过 `commons/include/airymax/` 同步引用。
 
-**10 个 \[SC] 核心头文件**（详见 [09-ssot-registry.md](../docs/docs-linux/50-engineering-standards/09-ssot-registry.md) OS-IRON-014）：
+**12 个 \[SC] 头文件**（10 核心 + 2 补充，详见 [09-ssot-registry.md](../docs/docs-linux/50-engineering-standards/09-ssot-registry.md) OS-IRON-014）：
 
 | #  | 头文件                 | 物理宿主                                           | 职责                                                                                                      |
 | -- | ------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
@@ -116,19 +116,18 @@ agentrt 与 agent-linux 通过 **IRON-9 v3 四层共享模型**协作，其中 \
 | 4  | `sched.h`           | `include/uapi/linux/airymax/sched.h`           | sched\_tac 调度约束 + 任务描述符（magic 0x41475453 'AGTS'）+ vtime 类型                                              |
 | 5  | `memory_types.h`    | `include/uapi/linux/airymax/memory_types.h`    | MemoryRovol L1-L4 数据结构 + GFP 掩码语义                                                                       |
 | 6  | `security_types.h`  | `include/uapi/linux/airymax/security_types.h`  | capability 44 ID（41 POSIX + 3 Airymax 扩展）+ Cupolas blob 布局 + capability 派生模型                            |
-| 7  | `lsm_types.h`       | `include/uapi/linux/airymax/lsm_types.h`       | LSM 钩子 250 ID 枚举 + 策略裁决 4 值枚举                                                                           |
-| 8  | `cognition_types.h` | `include/uapi/linux/airymax/cognition_types.h` | CoreLoopThree 阶段枚举（`AIRY_COG_PERCEPT/THINK/ACT`）+ Thinkdual 模式（`AIRY_THINK_FAST/SLOW`）                  |
-| 9  | `syscalls.h`        | `include/uapi/linux/airymax/syscalls.h`        | 4 syscall 编号（548-551）+ 编号常量                                                                             |
+| 7  | `cognition_types.h` | `include/uapi/linux/airymax/cognition_types.h` | CoreLoopThree 阶段枚举（`AIRY_COG_PERCEPT/THINK/ACT`）+ Thinkdual 模式（`AIRY_THINK_FAST/SLOW`）                  |
+| 8  | `syscalls.h`        | `include/uapi/linux/airymax/syscalls.h`        | syscall 编号体系（v1.0.1：4 核心（548-551）+ 20 预留（552-571）= 24 槽位）                                     |
+| 9  | `syscall_gen.h`     | `include/uapi/linux/airymax/syscall_gen.h`     | `__NR_airy_*` syscall 编号宏与 `airy_sys_*` ABI 声明（由 `syscall.xml` 经 `syscall_gen.py` 生成，禁止手工修改）   |
 | 10 | `uapi_compat.h`     | `include/uapi/linux/airymax/uapi_compat.h`     | Linux kernel-style UAPI 类型桥接（`__u8`/`__u16`/`__u32`/`__u64`）                                            |
-
-**补充共享文件**（非 \[SC] 核心）：`bpf_struct_ops.h`（sched\_tac struct airy\_sched\_ops 状态机定义）\
-**Codegen 产物**（由 `syscall.xml` 自动生成）：`syscall_gen.h`
+| 11 | `lsm_types.h`       | `include/uapi/linux/airymax/lsm_types.h`       | LSM 钩子 250 ID 枚举 + 策略裁决 4 值枚举                                                                           |
+| 12 | `bpf_struct_ops.h`  | `include/uapi/linux/airymax/bpf_struct_ops.h`  | eBPF struct_ops 状态机（可观测性用；非核心架构，H5 约束）                                                          |
 
 **IRON-9 v3 四层共享模型**：
 
 | 层次               | 共享程度        | 内容                                                         |
 | ---------------- | ----------- | ---------------------------------------------------------- |
-| **\[SC] 共享契约层**  | 完全共享代码      | 10 个核心头文件（字节级一致）                                           |
+| **\[SC] 共享契约层**  | 完全共享代码      | 12 个 [SC] 头文件（10 核心 + 2 补充，字节级一致）                                           |
 | **\[SS] 语义同源层**  | 高层 API 语义同源 | 调度/IPC/安全/记忆/认知 API（签名因抽象层级不同独立演进）                         |
 | **\[IND] 完全独立层** | 完全独立        | 平台适配层、构建系统、跨平台兼容层                                          |
 | **\[DSL] 降级生存层** | 最小生存子集      | `#ifdef AIRY_SC_FALLBACK` 降级块（capability\_badge=0，跳过 C-S9） |

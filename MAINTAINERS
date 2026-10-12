@@ -129,7 +129,7 @@ H:	all modules test
 V:	agent-linux 1.0.1 / Linux 6.6
 
 [SC] SHARED CONTRACT LAYER
-(kernel/include/uapi/linux/airymax/ — 10 core headers, OS-IRON-014 single physical host)
+(kernel/include/uapi/linux/airymax/ — 12 [SC] headers (10 core + 2 supplementary), OS-IRON-014 single physical host)
 M:	SPHARX Engineering <eng@spharx.cn>
 R:	Kernel Core Lead <kernel-lead@spharx.cn>
 L:	airymax-dev@spharx.cn
