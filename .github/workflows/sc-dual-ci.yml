@@ -22,6 +22,8 @@ on:
       - 'kernel/include/uapi/linux/airymax/lsm_types.h'
       - 'kernel/include/uapi/linux/airymax/bpf_struct_ops.h'
       - 'kernel/include/uapi/linux/airymax/syscall_gen.h'
+      - 'tools/sc-tri-compile/**'
+      - '.github/workflows/sc-dual-ci.yml'
 
 jobs:
   # ─── Job 1: [SC] 头文件验证（agent-linux 侧） ────────────────────
@@ -104,6 +106,14 @@ jobs:
             echo "FAIL: [SC] header consistency check failed"
             exit 1
           fi
+
+      - name: "[SC] tri-compile & layout check (OS-IRON-014)"
+        run: |
+          # Compile every [SC] header under the three type-bridge paths
+          # (kernel / Linux user / third-party) and assert fixed-width type
+          # sizes and struct field offsets are identical across all three.
+          # Authority: 50-engineering-standards/11-sc-header-type-bridging.md.
+          python3 tools/sc-tri-compile/sc_tri_compile.py --check
 
       - name: Run kernel CI for [SC] changes (deferred to kernel submodule)
         run: |
