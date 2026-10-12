@@ -42,10 +42,15 @@ def default_repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
-def make_env() -> Environment:
-    """构造确定性 Jinja2 渲染环境（06-codegen-pipeline.md §8）。"""
+def make_env(template_dir: Path | None = None) -> Environment:
+    """构造确定性 Jinja2 渲染环境（06-codegen-pipeline.md §8）。
+
+    template_dir 缺省为 tools/codegen/templates；同级的其它工具目录（如
+    tools/dsl）可传入自己的模板目录，复用同一套确定性渲染设置。
+    """
+    loader_root = TEMPLATE_DIR if template_dir is None else template_dir
     return Environment(
-        loader=FileSystemLoader(str(TEMPLATE_DIR)),
+        loader=FileSystemLoader(str(loader_root)),
         trim_blocks=True,
         lstrip_blocks=True,
         keep_trailing_newline=True,

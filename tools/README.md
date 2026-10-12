@@ -38,6 +38,17 @@ tools/
 │   ├── templates/               # Jinja2 output templates
 │   ├── Makefile                 # Local codegen driver
 │   └── requirements.txt         # Python dependencies
+├── dsl/                         # Policy DSL (.adl) compiler (IRON-9 decision tables)
+│   ├── dsl_compile.py           # Entry point (`--check` zero-drift gate)
+│   ├── dsl_types.py             # Tokens/AST/IR/verdicts/compare-ops
+│   ├── dsl_lexer.py             # Lexer (comments, strings, dec/hex, two-char ops)
+│   ├── dsl_parser.py            # Recursive-descent parser → AST
+│   ├── dsl_semantics.py         # AST → IR semantic checks (hooks/types/ranges)
+│   ├── dsl_codegen.py           # IR → pure C decision table header
+│   ├── templates/               # Jinja2 decision-table template
+│   ├── examples/                # .adl contract source + committed generated header
+│   ├── tests/                   # pytest suite (lexer/parser/semantics/codegen/compile)
+│   └── Makefile                 # Local DSL compiler driver
 └── abi-check/                   # Syscall ABI stability checker
     ├── abi_check.py             # ABI checker (stdlib only)
     ├── abi_baseline.json        # ABI baseline snapshot
@@ -58,6 +69,7 @@ tools/
 | `create-agentrt-mirror-pr.py` | Create a mirror PR in the agentrt repository for `[SC]` header changes | `sc-dual-ci.yml` (`sc-trigger-and-await`) |
 | `await-agentrt-ci.py` | Poll the agentrt mirror PR CI status to completion | `sc-dual-ci.yml` (`sc-trigger-and-await`) |
 | `codegen/run_codegen.py` | Contract code generator; `--check` performs a content compare as the zero-drift SSoT gate (IRON-9) | `codegen-verify.yml`, `tools/codegen/Makefile` |
+| `dsl/dsl_compile.py` | Policy DSL (`.adl`) compiler — lexer/parser/semantics/IR → pure C decision table header; `--check` is the zero-drift gate for policy tables (IRON-9, K-1 mechanism/policy split) | `tools/dsl/Makefile`, local contributor runs |
 | `abi-check/abi_check.py` | Syscall ABI stability checker — three-way consistency + baseline immutability (OS-IRON-001) | `ci-kernel.yml` (`kernel-verify`) |
 
 ### CI-Referenced Helper Surface
