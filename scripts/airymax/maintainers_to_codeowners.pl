@@ -3,7 +3,7 @@
 # maintainers_to_codeowners.pl
 # Convert Linux MAINTAINERS format to GitHub CODEOWNERS format
 # ===========================================================================
-# Authority: docs/AirymaxOS/50-engineering-standards/07-maintainers-and-governance.md §2.4.4
+# Authority: docs/docs-linux/50-engineering-standards/07-maintainers-and-governance.md §2.4.4
 # ===========================================================================
 # Usage: maintainers_to_codeowners.pl MAINTAINERS > CODEOWNERS
 # ===========================================================================
@@ -20,7 +20,7 @@ my @current_maintainers = ();
 
 print "# This file is auto-generated from MAINTAINERS by maintainers_to_codeowners.pl\n";
 print "# Do not edit manually. Run 'make codeowners-sync' to regenerate.\n";
-print "# Authority: docs/AirymaxOS/50-engineering-standards/07-maintainers-and-governance.md\n\n";
+print "# Authority: docs/docs-linux/50-engineering-standards/07-maintainers-and-governance.md\n\n";
 
 while (my $line = <$fh>) {
     chomp $line;

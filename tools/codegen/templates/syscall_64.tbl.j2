@@ -8,7 +8,7 @@
 #{{ tbl_cont_indent }}防止未注册编号被误用或越界访问；NAME 列使用 {{ reserved_name_prefix }}N
 #{{ tbl_cont_indent }}（N 为内部编号 {{ reserved_internal_start }}-{{ reserved_internal_end }}），不使用不存在的 airy_sys_reserved_* 符号。
 #
-# 设计文档：docs/AirymaxOS/30-interfaces/01-syscalls.md §2.2
+# 设计文档：docs/docs-linux/30-interfaces/01-syscalls.md §2.2
 # SSoT：include/uapi/linux/airymax/syscalls.h（三方一致性）
 #
 {% for line in syscall_lines %}
