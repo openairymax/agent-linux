@@ -13,7 +13,7 @@ Exit codes:
     1 — one or more unregistered rule IDs found
     2 — YAML parsing or file error
 
-Authority: docs/AirymaxOS/50-engineering-standards/09-ssot-registry.md
+Authority: docs/docs-linux/50-engineering-standards/09-ssot-registry.md
 OS-IRON-015: All rule IDs must be registered; deprecated IDs are retained
              but marked as deprecated.
 """
@@ -21,6 +21,7 @@ OS-IRON-015: All rule IDs must be registered; deprecated IDs are retained
 import re
 import sys
 import os
+import subprocess
 from pathlib import Path
 
 try:
@@ -41,7 +42,7 @@ OS_PATTERN = re.compile(
     r'BAN|ACC|ABI|SEC|ARCH|IFACE|TEST|'
     r'OPS|IPC|CHK-DOC|CHK-CODE|CHK-IRON|DEV|BUILD|DRV|OBS|MM|TST|FMT'
     r')'
-    r'-?\d+(?:[~–\-]\d+)?'
+    r'-?\d+(?:[~–]\d+)?'
     r'(?:-SP\d+|SP\d+|OS\d+)?'
     r'\b'
 )
@@ -51,7 +52,7 @@ AGENTRT_PATTERN = re.compile(
     r'\b(?:'
     r'IRON|BAN|STD|ACC|FOUND|SPLIT|PROD|ARC|LC|PRT|LOG|'
     r'PATH-BAN|L|CROSS|REQ|W|SP'
-    r')-\d+(?:[~–\-]\d+)?'
+    r')-\d+(?:[~–]\d+)?'
     r'(?:-SP\d+|SP\d+|OS\d+)?'
     r'\b'
 )
@@ -178,6 +179,46 @@ def load_ssot(yaml_path):
     return registered
 
 
+def list_markdown_files(docs_root):
+    """枚举待扫描的 .md 文件。
+
+    优先使用 ``git ls-files``（仅被跟踪文件，天然排除子模块内容与未跟踪
+    文件），使本地（子模块已检出）与 CI（子模块为空目录）行为一致；
+    非 git 仓库时回退到递归遍历。
+    """
+    try:
+        proc = subprocess.run(
+            ["git", "-C", docs_root, "ls-files", "-z", "--", "*.md"],
+            capture_output=True,
+            timeout=30,
+        )
+        if proc.returncode == 0:
+            raw = proc.stdout.decode("utf-8", errors="replace")
+            return [os.path.join(docs_root, p) for p in raw.split("\0") if p]
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+    return [str(p) for p in Path(docs_root).rglob("*.md")]
+
+
+def expand_range_token(token):
+    """把形如 ``PREFIX-N~M`` 的区间记号展开为逐个 ID。
+
+    文档中常以区间简写引用连续编号（如 ``OS-IRON-001~016``）。此类记号
+    不是单个注册 ID，需按起始号位数补零展开后逐个比对。非区间记号原样
+    返回单元素列表。
+    """
+    m = re.fullmatch(r'(?P<prefix>.+?)-(?P<start>\d+)[~–](?P<end>\d+)', token)
+    if not m:
+        return [token]
+    prefix = m.group('prefix')
+    start = m.group('start')
+    pad = len(start)
+    lo, hi = int(start), int(m.group('end'))
+    if hi < lo:
+        return [token]
+    return [f'{prefix}-{str(n).zfill(pad)}' for n in range(lo, hi + 1)]
+
+
 def scan_documents(docs_root, registered):
     """Scan all .md files for rule ID usage."""
     used = {}  # id -> [file_paths]
@@ -185,36 +226,36 @@ def scan_documents(docs_root, registered):
     # Files to skip (the SSoT registry itself, YAML files, etc.)
     skip_files = {'09-ssot-registry.md', 'ssot-registry.yaml'}
 
-    for md_path in Path(docs_root).rglob('*.md'):
-        if md_path.name in skip_files:
+    def record(rid, rel_path):
+        for eid in expand_range_token(rid):
+            used.setdefault(eid, []).append(rel_path)
+
+    for md_path in list_markdown_files(docs_root):
+        if os.path.basename(md_path) in skip_files:
             continue
 
         try:
-            text = md_path.read_text(encoding='utf-8', errors='ignore')
+            text = Path(md_path).read_text(encoding='utf-8', errors='ignore')
         except Exception:
             continue
 
-        rel_path = str(md_path.relative_to(docs_root))
+        rel_path = os.path.relpath(md_path, docs_root)
 
         # Find OS-* rule IDs
         for match in OS_PATTERN.finditer(text):
-            rid = match.group().rstrip('.,;:)]}')
-            used.setdefault(rid, []).append(rel_path)
+            record(match.group().rstrip('.,;:)]}'), rel_path)
 
         # Find OS-STD-NNN plain format
         for match in OS_STD_PLAIN_PATTERN.finditer(text):
-            rid = match.group()
-            used.setdefault(rid, []).append(rel_path)
+            record(match.group(), rel_path)
 
         # Find agentrt rule IDs (but not inside OS-* IDs)
-        # We need to avoid matching OS-IRON-001 as IRON-001
+        # 跳过 OS-STD-PROD-031 之类的后缀误匹配：其前一个字符为 '-'
         for match in AGENTRT_PATTERN.finditer(text):
-            rid = match.group().rstrip('.,;:)]}')
-            # Skip if preceded by OS-
             start = match.start()
-            if start >= 3 and text[start-3:start] == 'OS-':
+            if start >= 1 and text[start-1] == '-':
                 continue
-            used.setdefault(rid, []).append(rel_path)
+            record(match.group().rstrip('.,;:)]}'), rel_path)
 
     return used
 
