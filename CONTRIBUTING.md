@@ -1,11 +1,11 @@
+Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
+
 # Contributing to agent-linux (AirymaxOS)
 
-> ** Governance authority**: [`docs/docs-linux/50-engineering-standards/07-maintainers-and-governance.md`](https://github.com/openairymax/docs/blob/main/AirymaxOS/50-engineering-standards/07-maintainers-and-governance.md)
-> ** Development process**: [`docs/docs-linux/50-engineering-standards/05-development-process.md`](https://github.com/openairymax/docs/blob/main/AirymaxOS/50-engineering-standards/05-development-process.md)
-> ** Engineering philosophy**: [`docs/docs-linux/50-engineering-standards/04-engineering-philosophy.md`](https://github.com/openairymax/docs/blob/main/AirymaxOS/50-engineering-standards/04-engineering-philosophy.md)
-> ** SSoT registry**: [`docs/docs-linux/50-engineering-standards/09-ssot-registry.md`](https://github.com/openairymax/docs/blob/main/AirymaxOS/50-engineering-standards/09-ssot-registry.md)
-
-Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
+> **Governance authority**: [`docs/docs-linux/50-engineering-standards/07-maintainers-and-governance.md`](https://github.com/openairymax/docs/blob/main/AirymaxOS/50-engineering-standards/07-maintainers-and-governance.md)
+> **Development process**: [`docs/docs-linux/50-engineering-standards/05-development-process.md`](https://github.com/openairymax/docs/blob/main/AirymaxOS/50-engineering-standards/05-development-process.md)
+> **Engineering philosophy**: [`docs/docs-linux/50-engineering-standards/04-engineering-philosophy.md`](https://github.com/openairymax/docs/blob/main/AirymaxOS/50-engineering-standards/04-engineering-philosophy.md)
+> **SSoT registry**: [`docs/docs-linux/50-engineering-standards/09-ssot-registry.md`](https://github.com/openairymax/docs/blob/main/AirymaxOS/50-engineering-standards/09-ssot-registry.md)
 
 ---
 
@@ -13,27 +13,28 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 
 Before contributing, ensure you understand:
 
-1. **IRON-1~15 Engineering Iron Rules** — defined in [04-engineering-philosophy.md](https://github.com/openairymax/docs/blob/main/AirymaxOS/50-engineering-standards/04-engineering-philosophy.md). These are non-negotiable.
+1. **OS-IRON-001~016 Engineering Iron Rules** — defined in [04-engineering-philosophy.md](https://github.com/openairymax/docs/blob/main/AirymaxOS/50-engineering-standards/04-engineering-philosophy.md). These are non-negotiable.
 2. **OS-IRON-013**: 8 submodule architecture — changes to one submodule must not break others.
 3. **OS-IRON-014**: [SC] shared contract layer — headers in `kernel/include/uapi/linux/airymax/` are the single physical source; changes require dual CI validation.
 4. **SSoT Registry** — all rule IDs (OS-IRON, OS-KER, OS-STD-*) are registered in [`09-ssot-registry.md`](https://github.com/openairymax/docs/blob/main/AirymaxOS/50-engineering-standards/09-ssot-registry.md). Never invent new IDs.
 
 ## 2. Repository Structure
 
-```
+```text
 agent-linux/          # This management repository (main branch only)
-├── kernel/             # submodule → feature/official-hubs-01
-├── services/           # submodule → feature/official-hubs-01
-├── security/           # submodule → feature/official-hubs-01
-├── memory/             # submodule → feature/official-hubs-01
-├── cognition/          # submodule → feature/official-hubs-01
-├── cloudnative/        # submodule → feature/official-hubs-01
-├── system/             # submodule → feature/official-hubs-01
-└── tests-linux/        # submodule → feature/official-hubs-01
+├── kernel/             # submodule → ALK-6.6-dev
+├── memory/             # submodule → dev/hubs-01
+├── security/           # submodule → dev/hubs-01
+├── cognition/          # submodule → dev/hubs-01
+├── services/           # submodule → dev/hubs-01
+├── system/             # submodule → dev/hubs-01
+├── cloudnative/        # submodule → dev/hubs-01
+├── tests-linux/        # submodule → dev/hubs-01
+└── distro/             # submodule → dev/hubs-01
 ```
 
 - **Management repo**: `main` branch only. No feature branches here.
-- **Leaf repos**: Active development on `feature/official-hubs-01`.
+- **Leaf repos**: active development on `ALK-6.6-dev` (kernel) and `dev/hubs-01` (other leaves).
 
 ## 3. DCO (Developer's Certificate of Origin)
 
@@ -47,7 +48,7 @@ git commit -s
 
 This adds:
 
-```
+```text
 Signed-off-by: Your Name <your.email@example.com>
 ```
 
@@ -65,7 +66,7 @@ The `Signed-off-by:` chain from author → subsystem maintainer → top maintain
 
 ### 4.1 Format
 
-```
+```text
 subsystem: short description (≤72 chars)
 
 Detailed explanation of what and why. Wrap at 72 chars.
@@ -88,6 +89,7 @@ Signed-off-by: Your Name <your.email@example.com>
 | `cognition:` | cognition/ submodule |
 | `cloudnative:` | cloudnative/ submodule |
 | `system:` | system/ submodule |
+| `distro:` | distro/ submodule |
 | `tests-linux:` | tests-linux/ submodule |
 | `docs:` | Documentation changes |
 | `ci:` | CI/CD pipeline changes |
@@ -115,9 +117,9 @@ Changes to `kernel/include/uapi/linux/airymax/` ([SC] layer) require:
 
 ### 5.2 Leaf Repositories
 
-- **Development branch**: `feature/official-hubs-01`
-- Create topic branches from `feature/official-hubs-01` for your work.
-- Submit PRs targeting `feature/official-hubs-01`.
+- **Development branch**: `dev/hubs-01` (the `kernel` leaf develops on `ALK-6.6-dev`).
+- Create topic branches from `dev/hubs-01` for your work.
+- Submit PRs targeting `dev/hubs-01`.
 
 ```bash
 # Clone with submodules
@@ -126,12 +128,12 @@ cd agent-linux
 
 # Work in a submodule
 cd kernel
-git checkout feature/official-hubs-01
+git checkout ALK-6.6-dev
 git checkout -b my-feature-branch
 # ... make changes ...
 git commit -s -m "kernel: add airymax_sched_tac policy"
 git push origin my-feature-branch
-# Create PR targeting feature/official-hubs-01
+# Create PR targeting ALK-6.6-dev
 ```
 
 ## 6. Code Style
@@ -162,19 +164,19 @@ git push origin my-feature-branch
 
 ## 8. Review Process
 
-1. Submit PR to the appropriate leaf repository on `feature/official-hubs-01`.
+1. Submit the PR to the appropriate leaf repository on its development branch.
 2. CI pipeline runs (SSoT validation, build, checkpatch, sparse, tests).
 3. Reviewers are automatically assigned via `MAINTAINERS` / `CODEOWNERS`.
 4. At least one maintainer approval is required.
 5. For [SC] changes, L3 top maintainer approval is also required.
-6. Squash-merge to `feature/official-hubs-01`.
+6. Squash-merge to the leaf repository's development branch.
 
 ## 9. SSoT Compliance
 
 All PRs are validated by the SSoT validation CI:
 
 ```bash
-python3 tools/validate-ssot.py docs/AirymaxOS ssot-registry.yaml
+python3 tools/validate-ssot.py . ssot-registry.yaml
 ```
 
 This checks that every `OS-*-NNN` rule ID used in documentation is registered in the SSoT YAML registry (`ssot-registry.yaml` at the management repo root). Unregistered IDs cause CI failure.

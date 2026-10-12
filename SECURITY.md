@@ -1,9 +1,9 @@
+Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
+
 # Security Policy
 
 > **Security authority**: [`docs/docs-linux/50-engineering-standards/09-ssot-registry.md`](https://github.com/openairymax/docs/blob/main/AirymaxOS/50-engineering-standards/09-ssot-registry.md) (OS-SEC-* rules)
 > **Architecture threat model**: [`docs/docs-linux/10-architecture/07-threat-model.md`](https://github.com/openairymax/docs/blob/main/AirymaxOS/10-architecture/07-threat-model.md)
-
-Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 
 ---
 
@@ -30,7 +30,7 @@ Report vulnerabilities privately:
 Include in your report:
 
 - Description of the vulnerability
-- Affected component (kernel / services / security / memory / cognition / cloudnative / system / tests-linux)
+- Affected component (kernel / services / security / memory / cognition / cloudnative / system / distro / tests-linux)
 - Steps to reproduce
 - Impact assessment
 - Suggested fix (if any)
