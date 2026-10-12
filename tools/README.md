@@ -69,7 +69,7 @@ tools/
 | `create-agentrt-mirror-pr.py` | Create a mirror PR in the agentrt repository for `[SC]` header changes | `sc-dual-ci.yml` (`sc-trigger-and-await`) |
 | `await-agentrt-ci.py` | Poll the agentrt mirror PR CI status to completion | `sc-dual-ci.yml` (`sc-trigger-and-await`) |
 | `codegen/run_codegen.py` | Contract code generator; `--check` performs a content compare as the zero-drift SSoT gate (IRON-9) | `codegen-verify.yml`, `tools/codegen/Makefile` |
-| `dsl/dsl_compile.py` | Policy DSL (`.adl`) compiler — lexer/parser/semantics/IR → pure C decision table header; `--check` is the zero-drift gate for policy tables (IRON-9, K-1 mechanism/policy split) | `tools/dsl/Makefile`, local contributor runs |
+| `dsl/dsl_compile.py` | Policy DSL (`.adl`) compiler — lexer/parser/semantics/IR → pure C decision table header; `--check` is the zero-drift gate for policy tables (IRON-9, K-1 mechanism/policy split) | `dsl-verify.yml`, `tools/dsl/Makefile` |
 | `abi-check/abi_check.py` | Syscall ABI stability checker — three-way consistency + baseline immutability (OS-IRON-001) | `ci-kernel.yml` (`kernel-verify`) |
 
 ### CI-Referenced Helper Surface
