@@ -2,10 +2,10 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 
 # Contributing to agent-linux (AirymaxOS)
 
-> **Governance authority**: [`docs/docs-linux/50-engineering-standards/07-maintainers-and-governance.md`](https://github.com/openairymax/docs/blob/main/AirymaxOS/50-engineering-standards/07-maintainers-and-governance.md)
-> **Development process**: [`docs/docs-linux/50-engineering-standards/05-development-process.md`](https://github.com/openairymax/docs/blob/main/AirymaxOS/50-engineering-standards/05-development-process.md)
-> **Engineering philosophy**: [`docs/docs-linux/50-engineering-standards/04-engineering-philosophy.md`](https://github.com/openairymax/docs/blob/main/AirymaxOS/50-engineering-standards/04-engineering-philosophy.md)
-> **SSoT registry**: [`docs/docs-linux/50-engineering-standards/09-ssot-registry.md`](https://github.com/openairymax/docs/blob/main/AirymaxOS/50-engineering-standards/09-ssot-registry.md)
+> **Governance authority**: [`docs/docs-linux/50-engineering-standards/07-maintainers-and-governance.md`](../docs/docs-linux/50-engineering-standards/07-maintainers-and-governance.md)
+> **Development process**: [`docs/docs-linux/50-engineering-standards/05-development-process.md`](../docs/docs-linux/50-engineering-standards/05-development-process.md)
+> **Engineering philosophy**: [`docs/docs-linux/50-engineering-standards/04-engineering-philosophy.md`](../docs/docs-linux/50-engineering-standards/04-engineering-philosophy.md)
+> **SSoT registry**: [`docs/docs-linux/50-engineering-standards/09-ssot-registry.md`](../docs/docs-linux/50-engineering-standards/09-ssot-registry.md)
 
 ---
 
@@ -13,10 +13,10 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 
 Before contributing, ensure you understand:
 
-1. **OS-IRON-001~016 Engineering Iron Rules** — defined in [04-engineering-philosophy.md](https://github.com/openairymax/docs/blob/main/AirymaxOS/50-engineering-standards/04-engineering-philosophy.md). These are non-negotiable.
-2. **OS-IRON-013**: 8 submodule architecture — changes to one submodule must not break others.
-3. **OS-IRON-014**: [SC] shared contract layer — headers in `kernel/include/uapi/linux/airymax/` are the single physical source; changes require dual CI validation.
-4. **SSoT Registry** — all rule IDs (OS-IRON, OS-KER, OS-STD-*) are registered in [`09-ssot-registry.md`](https://github.com/openairymax/docs/blob/main/AirymaxOS/50-engineering-standards/09-ssot-registry.md). Never invent new IDs.
+1. **OS-IRON-001~016 Engineering Iron Rules** — defined in [04-engineering-philosophy.md](../docs/docs-linux/50-engineering-standards/04-engineering-philosophy.md). These are non-negotiable.
+2. **OS-IRON-013**: 8 architecture submodules + distro release submodule (9 total) — changes to one submodule must not break others.
+3. **OS-IRON-014**: [SC] shared contract layer — the 12 [SC] headers (10 core + 2 supplementary) in `kernel/include/uapi/linux/airymax/` are the single physical source; changes require dual CI validation.
+4. **SSoT Registry** — all rule IDs (OS-IRON, OS-KER, OS-STD-*) are registered in [`09-ssot-registry.md`](../docs/docs-linux/50-engineering-standards/09-ssot-registry.md). Never invent new IDs.
 
 ## 2. Repository Structure
 

@@ -158,15 +158,15 @@ The management repository hosts **8 GitHub Actions workflows** (most capped at 2
 | `ci-kernel.yml` | PR / push on `kernel/**` | `kernel-build` + `kernel-verify` | Kbuild matrix (31 configs) + checkpatch / sparse / Coccinelle / KUnit / kselftest |
 | `ci-airy.yml` | PR / push on Airymax paths | `airy-defconfig-verify` + `airy-checkpatch` + `airy-spdx-audit` + `airy-symbol-integrity` | Airymax build on 4 arches + checkpatch `--strict` + SPDX audit + symbol-clash check |
 | `codegen-verify.yml` | PR / push on `tools/codegen/**`, contract sources | `codegen-diff-check` | Codegen SSoT drift gate (`run_codegen.py --check`) |
-| `mgmt-orchestrator.yml` | PR / push on docs, `.gitmodules`, SSoT, governance files | `file-integrity` + `orchestrate-leaf-ci` | Verify 9 submodules, [SC] 10 core headers, governance files; aggregate leaf CI status; markdownlint + copyright header |
+| `mgmt-orchestrator.yml` | PR / push on docs, `.gitmodules`, SSoT, governance files | `file-integrity` + `orchestrate-leaf-ci` | Verify 9 submodules, [SC] 12 shared headers, governance files; aggregate leaf CI status; markdownlint + copyright header |
 | `nightly.yml` | cron `0 2 * * *` / manual | `nightly-test-suite` + `nightly-revert-or-budget` | Formal verification (seL4-style) + 72h soak + chaos; auto-revert or CI budget check |
 | `release.yml` | tag `v*` / manual | `build-and-sign` + `publish-release` | SPDX SBOM + kernel/SDK build + GPG & cosign signing; publish dnf repo, OCI image, GitHub Release |
-| `sc-dual-ci.yml` | PR on [SC] 10 core headers | `sc-validate` + `sc-trigger-and-await` | Validate shared-contract headers, no duplicates; trigger & await agentrt mirror PR CI |
+| `sc-dual-ci.yml` | PR on [SC] 12 shared headers | `sc-validate` + `sc-trigger-and-await` | Validate shared-contract headers, no duplicates; trigger & await agentrt mirror PR CI |
 | `ssot-validate.yml` | PR / push on `**.md`, `ssot-registry.yaml` | `ssot-syntax-and-rules` + `doc-links` | YAML syntax + rule-ID uniqueness; repository-owned markdown link integrity |
 
 ### [SC] Shared Contract Layer
 
-The shared-contract (`[SC]`) layer is the single physical source of truth for kernel↔agentrt ABI. It lives under `kernel/include/uapi/linux/airymax/` (maintained by agent-linux) and is mirrored to `agentrt/commons/include/airymax/` for user-space consumption. It consists of **10 core headers** (per OS-IRON-014):
+The shared-contract (`[SC]`) layer is the single physical source of truth for kernel↔agentrt ABI. It lives under `kernel/include/uapi/linux/airymax/` (maintained by agent-linux) and is mirrored to `agentrt/commons/include/airymax/` for user-space consumption. It consists of **12 shared headers** — **10 core** plus **2 supplementary** (per OS-IRON-014):
 
 | # | Header | Responsibility |
 |---|--------|---------------|
@@ -176,13 +176,12 @@ The shared-contract (`[SC]`) layer is the single physical source of truth for ke
 | 4 | `sched.h` | sched_tac scheduling constraints + task descriptor (magic 0x41475453 'AGTS') + vtime types |
 | 5 | `memory_types.h` | MemoryRovol L1-L4 data structures + GFP mask semantics |
 | 6 | `security_types.h` | capability 44 IDs (41 POSIX + 3 Airymax extensions) + Cupolas blob layout + capability derivation model |
-| 7 | `lsm_types.h` | LSM hook 250 ID enumeration + policy verdict 4-value enum |
-| 8 | `cognition_types.h` | CoreLoopThree phase enum (`AIRY_COG_PERCEPT/THINK/ACT`) + Thinkdual mode (`AIRY_THINK_FAST/SLOW`) |
-| 9 | `syscalls.h` | 4 syscall numbers (548-551) + number constants |
+| 7 | `cognition_types.h` | CoreLoopThree phase enum (`AIRY_COG_PERCEPT/THINK/ACT`) + Thinkdual mode (`AIRY_THINK_FAST/SLOW`) |
+| 8 | `syscalls.h` | Syscall number system (v1.0.1: 4 core (548-551) + 20 reserved (552-571) = 24 slots) |
+| 9 | `syscall_gen.h` | `__NR_airy_*` syscall number macros + `airy_sys_*` ABI declarations, generated from `syscall.xml` by `syscall_gen.py` (do not edit manually) |
 | 10 | `uapi_compat.h` | Linux kernel-style UAPI type bridging (`__u8`/`__u16`/`__u32`/`__u64`) |
-
-**Supplementary shared file** (non-[SC] core): `bpf_struct_ops.h` (sched_tac struct airy_sched_ops state machine definition)
-**Codegen product** (auto-generated from `syscall.xml`): `syscall_gen.h`
+| 11 | `lsm_types.h` | Pure-C LSM type definitions + `DEFINE_LSM(airy)` skeleton + capability cache structures |
+| 12 | `bpf_struct_ops.h` | eBPF struct_ops state machine (observability; non-core, H5 constraint) |
 
 Changes to any `[SC]` header require dual CI validation (agent-linux `sc-dual-ci.yml` + agentrt mirror PR) per **OS-IRON-014**. The IPC ABI uses magic `0x41524531` (`'ARE1'`); the task descriptor magic is `0x41475453` (`'AGTS'`). Kernel-side functions use the `airy_*` prefix.
 
