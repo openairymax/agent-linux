@@ -44,7 +44,10 @@ jobs:
           python-version: '3.12'
 
       - name: Install codegen dependencies
-        run: pip install -r tools/codegen/requirements.txt
+        run: pip install -r tools/codegen/requirements-dev.txt
+
+      - name: Run codegen unit tests (pytest)
+        run: python3 -m pytest tools/codegen/tests/ -q
 
       - name: Verify generated files match contract sources (zero drift)
         run: |
