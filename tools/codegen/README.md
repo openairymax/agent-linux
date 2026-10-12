@@ -10,7 +10,7 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 
 将共享契约层（[SC]）的唯一权威契约源确定性渲染为 C UAPI 头与多语言
 （Rust / Python / Go / TypeScript）SDK 绑定，消除手工样板，并保证契约源与
-生成产物零漂移，对齐 **OS-IRON-9（契约单一事实来源）**。
+生成产物零漂移，对齐跨端共享模型 **IRON-9（同源且部分代码共享）**。
 
 权威设计：《agent-linux 代码生成管道设计》（`06-codegen-pipeline.md`，
 位于 docs-linux 的 `30-interfaces/`）。本目录是其在管理仓内的实现。
