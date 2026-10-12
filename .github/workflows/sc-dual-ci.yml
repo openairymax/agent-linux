@@ -2,7 +2,7 @@
 # agent-linux (AirymaxOS) CI Pipeline
 # [SC] 共享契约层双向 CI（OS-IRON-008）（2 jobs：验证 + 触发 agentrt）
 # ===========================================================================
-# Authority: docs/AirymaxOS/70-build-system/03-ci-cd-pipeline.md
+# Authority: docs/docs-linux/70-build-system/03-ci-cd-pipeline.md
 # Design: L1/L3 审查改为 GitHub 分支保护规则，不在 CI 中执行
 # ===========================================================================
 
@@ -21,10 +21,11 @@ on:
       - 'kernel/include/uapi/linux/airymax/uapi_compat.h'
       - 'kernel/include/uapi/linux/airymax/lsm_types.h'
       - 'kernel/include/uapi/linux/airymax/bpf_struct_ops.h'
+      - 'kernel/include/uapi/linux/airymax/syscall_gen.h'
 
 jobs:
   # ─── Job 1: [SC] 头文件验证（agent-linux 侧） ────────────────────
-  # 合并原 kernel-ci 的 10 头文件验证部分
+  # 合并原 kernel-ci 的 12 头文件验证部分
   sc-validate:
     name: "[SC] Header Validation (agent-linux side)"
     runs-on: ubuntu-latest
@@ -32,12 +33,12 @@ jobs:
       - uses: actions/checkout@v4
         with: { submodules: recursive }
 
-      - name: Verify [SC] 11 shared headers (OS-IRON-014)
+      - name: Verify [SC] 12 shared headers (OS-IRON-014)
         run: |
           set -e
           for h in error.h log_types.h ipc.h sched.h memory_types.h \
-                   security_types.h cognition_types.h syscalls.h uapi_compat.h \
-                   lsm_types.h bpf_struct_ops.h; do
+                   security_types.h cognition_types.h syscalls.h syscall_gen.h \
+                   uapi_compat.h lsm_types.h bpf_struct_ops.h; do
             test -f "kernel/include/uapi/linux/airymax/$h" || { echo "FAIL: $h missing"; exit 1; }
             echo "OK: $h present"
           done
@@ -80,8 +81,8 @@ jobs:
 
           FAIL=0
           for h in error.h log_types.h ipc.h sched.h memory_types.h \
-                   security_types.h cognition_types.h syscalls.h uapi_compat.h \
-                   lsm_types.h bpf_struct_ops.h; do
+                   security_types.h cognition_types.h syscalls.h syscall_gen.h \
+                   uapi_compat.h lsm_types.h bpf_struct_ops.h; do
             kern="kernel/include/uapi/linux/airymax/$h"
             comm="/tmp/agentrt/commons/include/airymax/$h"
 
@@ -124,11 +125,11 @@ jobs:
         env:
           AGENTRT_TOKEN: ${{ secrets.AGENTRT_CI_TOKEN }}
         run: |
-          # 导出 10 头文件变更补丁
+          # 导出 12 头文件变更补丁
           git format-patch origin/${{ github.base_ref }} HEAD -- \
             kernel/include/uapi/linux/airymax/ -o /tmp/patches
           # 在 agentrt 仓创建镜像 PR
-          python3 agent-linux/tools/create-agentrt-mirror-pr.py \
+          python3 tools/create-agentrt-mirror-pr.py \
             --patches /tmp/patches \
             --source-pr ${{ github.event.pull_request.number }} \
             --token "$AGENTRT_TOKEN"
@@ -137,7 +138,7 @@ jobs:
         env:
           AGENTRT_TOKEN: ${{ secrets.AGENTRT_CI_TOKEN }}
         run: |
-          python3 agent-linux/tools/await-agentrt-ci.py \
+          python3 tools/await-agentrt-ci.py \
             --source-pr ${{ github.event.pull_request.number }} \
             --timeout 30m \
             --token "$AGENTRT_TOKEN"

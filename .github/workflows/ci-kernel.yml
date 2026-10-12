@@ -3,7 +3,7 @@
 # kernel 子仓 CI（Kbuild 矩阵 + 静态分析 + 运行时测试）
 # 重组为 2 jobs：kernel-build（编译矩阵）+ kernel-verify（静态分析 + 测试）
 # ===========================================================================
-# Authority: docs/AirymaxOS/70-build-system/03-ci-cd-pipeline.md
+# Authority: docs/docs-linux/70-build-system/03-ci-cd-pipeline.md
 # Constraint: 管理仓每个 workflow 最多 2 条流水线
 # Rules: OS-STD-TOOL-161（矩阵）/ OS-STD-TOOL-160（checkpatch）
 #        OS-STD-TOOL-081-CI（sparse）/ OS-TEST-001~022（KUnit + kselftest）

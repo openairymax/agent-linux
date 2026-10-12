@@ -3,7 +3,7 @@
 # release tag 流水线（L7 发布验证）
 # 重组为 2 jobs：build-and-sign（SBOM + 构建签名）+ publish-release（发布渠道）
 # ===========================================================================
-# Authority: docs/AirymaxOS/70-build-system/03-ci-cd-pipeline.md
+# Authority: docs/docs-linux/70-build-system/03-ci-cd-pipeline.md
 # Constraint: 管理仓每个 workflow 最多 2 条流水线
 # ===========================================================================
 
@@ -31,13 +31,13 @@ jobs:
         run: |
           # 内核态：扫描 vmlinux + 模块符号
           syft kernel/ -o spdx-json > sbom-kernel.spdx.json
-          # 用户态：扫描 8 子仓依赖
+          # 用户态：扫描 7 个子仓依赖
           for repo in memory security cognition services system cloudnative tests-linux; do
             syft "$repo/" -o spdx-json > "sbom-${repo}.spdx.json"
           done
           # 合并为统一 SBOM
-          if [ -f agent-linux/tools/merge-sbom.py ]; then
-            python3 agent-linux/tools/merge-sbom.py \
+          if [ -f tools/merge-sbom.py ]; then
+            python3 tools/merge-sbom.py \
               --output sbom-agent-linux-${{ github.ref_name }}.spdx.json \
               sbom-*.spdx.json
           else

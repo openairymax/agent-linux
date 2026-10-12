@@ -48,10 +48,10 @@ management-level orchestration.
 | `ci-kernel.yml` | `kernel-build` — Kbuild matrix (4 configs × 4 arches × 2 compilers − 1 exclude = 31) with `W=2` zero-warning gate; `kernel-verify` — checkpatch `--strict`, sparse `C=2`, Coccinelle, KUnit on UML, kselftest on QEMU | PR / push on `kernel/**` |
 | `ci-airy.yml` | `airy-defconfig-verify` — `airy_defconfig` build on 4 arches (x86_64/arm64/riscv/loongarch) + Airymax CONFIG gate + `.o` artifact check; `airy-checkpatch` — checkpatch `--strict` on Airymax dirs; `airy-spdx-audit` — SPDX identifier audit (`[SC]` = BSD-3-Clause OR GPL-2.0, else GPL-2.0-only); `airy-symbol-integrity` — `security/airy/` vs `kernel/superv/` symbol-clash check | PR / push on Airymax paths |
 | `codegen-verify.yml` | `codegen-diff-check` — run `tools/codegen/run_codegen.py --check` (content compare, works across submodules) as the zero-drift SSoT gate (IRON-9) | PR / push on `tools/codegen/**`, `sdk/**`, `kernel`, `security` |
-| `mgmt-orchestrator.yml` | `file-integrity` — verify submodule dirs derived from `.gitmodules` (9 entries), `[SC]` 10 core headers, 12 governance files, no `airymaxos-` prefix; `orchestrate-leaf-ci` — aggregate leaf CI statuses, markdownlint repository-owned markdown, copyright header check | PR on `**.md`, `.gitmodules`, `ssot-registry.yaml`, `MAINTAINERS`, `CODEOWNERS`, `tools/**`, `.github/**` / push on `main` |
+| `mgmt-orchestrator.yml` | `file-integrity` — verify submodule dirs derived from `.gitmodules` (9 entries), `[SC]` 12 shared headers, 12 governance files, no `airymaxos-` prefix; `orchestrate-leaf-ci` — aggregate leaf CI statuses, markdownlint repository-owned markdown, copyright header check | PR on `**.md`, `.gitmodules`, `ssot-registry.yaml`, `MAINTAINERS`, `CODEOWNERS`, `tools/**`, `.github/**` / push on `main` |
 | `nightly.yml` | `nightly-test-suite` — seL4-style formal verification, 72h soak test, chaos injection (CPU hotplug / mem hotremove / I/O error / net partition); `nightly-revert-or-budget` — auto-revert on regression via `auto-bisect`, or CI budget check (60 min gate, OS-STD-TEST-011) | cron `0 2 * * *` / `workflow_dispatch` |
 | `release.yml` | `build-and-sign` — SPDX SBOM (syft per submodule + merge), kernel RPM build, GPG + cosign signing, SDK tarball; `publish-release` — publish dnf repo, push OCI image, create GitHub Release with artifacts | tag `v*` / `v*-rc*` / `workflow_dispatch` |
-| `sc-dual-ci.yml` | `sc-validate` — verify `[SC]` 10 core headers exist under `kernel/include/uapi/linux/airymax/`, no physical duplicates (OS-IRON-014); `sc-trigger-and-await` — export header patches, create mirror PR in agentrt repo, poll mirror CI status (30 min timeout) | PR touching any `[SC]` header |
+| `sc-dual-ci.yml` | `sc-validate` — verify `[SC]` 12 shared headers exist under `kernel/include/uapi/linux/airymax/`, no physical duplicates (OS-IRON-014); `sc-trigger-and-await` — export header patches, create mirror PR in agentrt repo, poll mirror CI status (30 min timeout) | PR touching any `[SC]` header |
 | `ssot-validate.yml` | `ssot-syntax-and-rules` — PyYAML syntax check, rule-ID count + uniqueness (OS-IRON-015), `validate-ssot.py` cross-ref; `doc-links` — repository-owned relative-path markdown link integrity | PR on `**.md`, `ssot-registry.yaml`, `tools/validate-ssot.py` / push on `main` |
 
 ## `[SC]` Shared-Contract Headers
@@ -60,12 +60,10 @@ The `sc-dual-ci.yml` and `mgmt-orchestrator.yml` workflows guard the `[SC]` laye
 the single physical source of truth for the kernel↔agentrt ABI, located at
 `kernel/include/uapi/linux/airymax/`:
 
-**10 core [SC] headers** (per OS-IRON-014):
-`error.h`, `log_types.h`, `ipc.h`, `sched.h`, `memory_types.h`, `security_types.h`, `lsm_types.h`, `cognition_types.h`, `syscalls.h`, `uapi_compat.h`
+**12 [SC] headers** (per OS-IRON-014) — 10 core plus 2 supplementary:
+`error.h`, `log_types.h`, `ipc.h`, `sched.h`, `memory_types.h`, `security_types.h`, `cognition_types.h`, `syscalls.h`, `syscall_gen.h`, `uapi_compat.h`, `lsm_types.h`, `bpf_struct_ops.h`
 
-**Supplementary** (non-[SC] core): `bpf_struct_ops.h`, `syscall_gen.h`
-
-Any change to a `[SC]` core header requires dual CI (agent-linux + agentrt
+Any change to a `[SC]` header requires dual CI (agent-linux + agentrt
 mirror) per OS-IRON-014.
 
 ## Issue & PR Templates
