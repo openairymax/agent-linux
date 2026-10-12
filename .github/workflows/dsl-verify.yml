@@ -1,0 +1,54 @@
+# ===========================================================================
+# agent-linux (AirymaxOS) CI Pipeline
+# 策略 DSL 一致性校验：.adl 契约源 → 生成的纯 C 决策表，零漂移（SSoT gate）
+# ===========================================================================
+# Authority: docs/docs-linux/30-interfaces/06-codegen-pipeline.md §7.2 / §9.3
+# Design: K-1 机制/策略分离——策略由 .adl 编译为决策表（tools/dsl）
+#         IRON-9（生成产物禁止手工修改，CI 强制零漂移）
+# ---------------------------------------------------------------------------
+# 说明：tools/dsl 复用 tools/codegen 的确定性渲染环境与共享类型
+# （codegen_io.make_env / codegen_types），二者存在单向依赖。故本 workflow
+# 同时监听 tools/codegen/**，一旦 codegen 侧改动破坏 DSL 校验即可被捕获。
+# 零漂移判定沿用 dsl_compile.py --check（内容比对），与 codegen-verify 一致。
+# ===========================================================================
+
+name: dsl-verify
+on:
+  pull_request:
+    paths:
+      - 'tools/dsl/**'
+      - 'tools/codegen/**'
+  push:
+    branches: [main, develop]
+    paths:
+      - 'tools/dsl/**'
+      - 'tools/codegen/**'
+
+jobs:
+  dsl-verify:
+    name: DSL SSoT Drift Check
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install DSL dependencies
+        run: pip install -r tools/codegen/requirements-dev.txt
+
+      - name: Run DSL unit tests (pytest)
+        run: python3 -m pytest tools/dsl/tests/ -q
+
+      - name: Verify generated headers match contract sources (zero drift)
+        run: |
+          if ! python3 tools/dsl/dsl_compile.py --check; then
+            echo "::error::DSL output differs from committed files."
+            echo "::error::Run 'make -C tools/dsl' locally and commit the results."
+            exit 1
+          fi
+          echo "::notice::DSL output matches committed files (zero drift)."
