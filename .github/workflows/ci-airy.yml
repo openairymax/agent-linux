@@ -1,7 +1,7 @@
 # ===========================================================================
 # agent-linux (AirymaxOS) Airymax-Specific CI Pipeline
 # 专门验证 Airymax 专属代码（security/airy + kernel/superv + corekern 等）
-# Authority: docs/AirymaxOS/70-build-system/03-ci-cd-pipeline.md
+# Authority: docs/docs-linux/70-build-system/03-ci-cd-pipeline.md
 # Rules: OS-STD-TOOL-160（checkpatch）/ OS-STD-TOOL-081-CI（sparse）
 #        IRON-3（所有 Airymax 增强代码必须在新增目录中）
 # ===========================================================================
