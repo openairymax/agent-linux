@@ -22,7 +22,7 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 
 ## 文件
 
-```
+```text
 tools/abi-check/
 ├── abi_check.py        # ABI 检查脚本（Python 3，仅依赖标准库）
 ├── abi_baseline.json   # ABI 基线快照（v1.0.1 权威定义）
@@ -51,7 +51,7 @@ python3 tools/abi-check/abi_check.py
 
 输出示例：
 
-```
+```text
 ========================================================================
 agent-linux ABI Stability Check Report
 OS-IRON-001: 用户空间 ABI 永不破坏

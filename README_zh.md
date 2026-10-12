@@ -1,3 +1,5 @@
+Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
+
 # agent-linux 极境智能体操作系统（AirymaxOS）
 
 > agent-linux（AirymaxOS / 极境智能体操作系统）智能体操作系统管理仓。
@@ -26,7 +28,7 @@ agent-linux 基于三大设计支柱：
 
 ## 仓库结构
 
-```
+```text
 agent-linux/             # 管理仓（本仓库）
 ├── kernel/                # agent-linux 内核叶子仓（submodule）
 ├── services/              # agent-linux 服务态叶子仓（submodule）
@@ -60,7 +62,7 @@ agent-linux/             # 管理仓（本仓库）
 
 ## 架构
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────┐
 │           agent-linux（AirymaxOS / 极境智能体操作系统）              │
 ├─────────────────────────────────────────────────────────────────────┤
@@ -169,7 +171,7 @@ agent-linux 基于 Linux 6.6（openEuler 24.03 LTS 同内核基线），集成�
 ## 分支策略
 
 - **本管理仓** — 仅 `main` 分支，不创建 feature 分支。
-- **叶子仓** — 在 `feature/official-hubs-01` 分支上开发。
+- **叶子仓** — 在 `dev/hubs-01` 分支上开发（`kernel` 叶子仓使用 `ALK-6.6-dev`）。
 
 克隆本仓库（含 submodule）：
 
@@ -205,9 +207,7 @@ git submodule update --remote --checkout
 | 路径                                                                                   | 许可证                               | 原因                                                        |
 | ------------------------------------------------------------------------------------ | --------------------------------- | --------------------------------------------------------- |
 | `agent-linux/`（管理仓）                                                                | `AGPL-3.0-or-later OR Apache-2.0` | 用户态管理代码                                                   |
-| `agent-linux/{cloudnative,cognition,memory,security,services,system,tests-linux}/` | `AGPL-3.0-or-later OR Apache-2.0` | 用户态子模块                                                    |
+| `agent-linux/{cloudnative,cognition,distro,memory,security,services,system,tests-linux}/` | `AGPL-3.0-or-later OR Apache-2.0` | 用户态子模块                                                    |
 | `agent-linux/kernel/`                                                              | `GPL-2.0-only`                    | Linux 内核派生代码——AGPL v3 和 Apache 2.0 与 GPL-2.0-only **不兼容** |
 
-> **注意**：`agent-linux/{cloudnative,cognition,memory,security,services,system,tests-linux}/` 中包含内核模块头文件（`#include <linux/module.h>`、`MODULE_LICENSE("GPL")` 等）的源代码文件，其 SPDX 标签**必须**使用 `GPL-2.0-only`。完整策略见 [docs/docs-linux/50-engineering-standards/12-license-policy.md](../docs/docs-linux/50-engineering-standards/12-license-policy.md)。
-
-Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
+> **注意**：`agent-linux/{cloudnative,cognition,distro,memory,security,services,system,tests-linux}/` 中包含内核模块头文件（`#include <linux/module.h>`、`MODULE_LICENSE("GPL")` 等）的源代码文件，其 SPDX 标签**必须**使用 `GPL-2.0-only`。完整策略见 [docs/docs-linux/50-engineering-standards/12-license-policy.md](../docs/docs-linux/50-engineering-standards/12-license-policy.md)。

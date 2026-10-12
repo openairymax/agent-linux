@@ -1,9 +1,9 @@
+Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
+
 # tools/ — Cross-Submodule CI & Validation Tools
 
 > Cross-submodule tool aggregation for the
 > [agent-linux (AirymaxOS)](https://atomgit.com/openairymax/agent-linux) management repository.
-
-Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 
 ---
 
@@ -17,10 +17,31 @@ verification, build SBOMs, and orchestrate the `[SC]` dual-CI mirror flow.
 
 ## Directory Contents
 
-```
+```text
 tools/
-├── README.md            # This file
-└── validate-ssot.py     # SSoT rule-ID consistency validator (implemented)
+├── README.md                    # This file
+├── validate-ssot.py             # SSoT rule-ID consistency validator
+├── aggregate-subrepo-ci.py      # Leaf-repo CI status aggregator
+├── check-copyright.py           # Copyright/SPDX header gate
+├── kunit-tap-diff.py            # KUnit TAP baseline differ
+├── parse-tap.py                 # kselftest TAP parser
+├── create-agentrt-mirror-pr.py  # agentrt mirror PR creator ([SC] dual CI)
+├── await-agentrt-ci.py          # agentrt mirror CI poller
+├── codegen/                     # Contract code generator (contracts → outputs)
+│   ├── run_codegen.py           # Entry point (`--check` zero-drift gate)
+│   ├── cap_gen.py               # Capability-ID generator
+│   ├── bitfield_gen.py          # Bitfield generator
+│   ├── ipc_gen.py               # IPC contract generator
+│   ├── syscall_gen.py           # Syscall generator
+│   ├── codegen_io.py            # Shared I/O helpers
+│   ├── codegen_types.py         # Shared type definitions
+│   ├── templates/               # Jinja2 output templates
+│   ├── Makefile                 # Local codegen driver
+│   └── requirements.txt         # Python dependencies
+└── abi-check/                   # Syscall ABI stability checker
+    ├── abi_check.py             # ABI checker (stdlib only)
+    ├── abi_baseline.json        # ABI baseline snapshot
+    └── README.md                # Tool-specific documentation
 ```
 
 ## Tool Catalog
@@ -30,19 +51,24 @@ tools/
 | Tool | Description | Used by |
 |------|-------------|---------|
 | `validate-ssot.py` | SSoT rule-ID consistency validator — checks that every `OS-*-NNN` (agent-linux) and `*-NNN` (agentrt) rule ID referenced in documentation is registered in `ssot-registry.yaml`. Authority: OS-IRON-015. | `ssot-validate.yml` (`ssot-syntax-and-rules`), local contributor runs |
+| `aggregate-subrepo-ci.py` | Aggregate the CI status of all leaf repositories, deriving the list from `.gitmodules` (`--fail-on-red`) | `mgmt-orchestrator.yml` (`orchestrate-leaf-ci`) |
+| `check-copyright.py` | Verify that repository-owned `.md` files carry a `Copyright`/`SPDX-License-Identifier` on line 1 (`--root .`) | `mgmt-orchestrator.yml` (`orchestrate-leaf-ci`) |
+| `kunit-tap-diff.py` | Diff KUnit TAP output against a baseline snapshot | `ci-kernel.yml` (`kernel-verify`) |
+| `parse-tap.py` | Parse kselftest TAP output and fail on `not ok` | `ci-kernel.yml` (`kernel-verify`) |
+| `create-agentrt-mirror-pr.py` | Create a mirror PR in the agentrt repository for `[SC]` header changes | `sc-dual-ci.yml` (`sc-trigger-and-await`) |
+| `await-agentrt-ci.py` | Poll the agentrt mirror PR CI status to completion | `sc-dual-ci.yml` (`sc-trigger-and-await`) |
+| `codegen/run_codegen.py` | Contract code generator; `--check` performs a content compare as the zero-drift SSoT gate (IRON-9) | `codegen-verify.yml`, `tools/codegen/Makefile` |
+| `abi-check/abi_check.py` | Syscall ABI stability checker — three-way consistency + baseline immutability (OS-IRON-001) | `ci-kernel.yml` (`kernel-verify`) |
 
 ### CI-Referenced Helper Surface
 
-The management workflows reference the following helper scripts (invoked as
-`agent-linux/tools/<name>.py` or `tools/<name>.py`). They form the CI helper
-surface that contributors implement as the corresponding subsystem matures:
+The management workflows reference the following helper scripts that are not yet
+implemented. They form the remaining CI helper surface, invoked behind an
+existence guard (`if [ -f ... ]`) so the pipelines stay green while the
+corresponding subsystem matures:
 
-| Script | Workflow | Role |
-|--------|----------|------|
-| `aggregate-subrepo-ci.py` | `mgmt-orchestrator.yml` | Aggregate the CI status of all 8 leaf repositories (`--fail-on-red`) |
-| `check-copyright.py` | `mgmt-orchestrator.yml` | Verify the copyright header on line 1 of docs (`--root docs`) |
-| `kunit-tap-diff.py` | `ci-kernel.yml` | Diff KUnit TAP output against a baseline (`--baseline origin/develop`) |
-| `parse-tap.py` | `ci-kernel.yml` | Parse kselftest TAP output and fail on `not ok` (`--input`, `--fail-on-not-ok`) |
+| Script | Workflow | Intended role |
+|--------|----------|---------------|
 | `formal-verify.py` | `nightly.yml` | seL4-style formal verification of a target source file (`--target`) |
 | `soak-runner.py` | `nightly.yml` | Long-running soak test runner (`--duration 72h`, `--workload`) |
 | `chaos-runner.py` | `nightly.yml` | Chaos fault-injection runner (`--profile full`) |
@@ -50,8 +76,6 @@ surface that contributors implement as the corresponding subsystem matures:
 | `create-revert-pr.py` | `nightly.yml` | Create a revert PR for a regression commit (`--regression-commit`) |
 | `ci-budget-check.py` | `nightly.yml` | Check total CI time against the budget gate (`--max-minutes 60`, OS-STD-TEST-011) |
 | `merge-sbom.py` | `release.yml` | Merge per-submodule SPDX SBOM fragments into one (`--output`, inputs) |
-| `create-agentrt-mirror-pr.py` | `sc-dual-ci.yml` | Create a mirror PR in the agentrt repo for `[SC]` header changes (`--patches`, `--source-pr`, `--token`) |
-| `await-agentrt-ci.py` | `sc-dual-ci.yml` | Poll the agentrt mirror PR CI status (`--source-pr`, `--timeout`, `--token`) |
 
 ## Usage
 
@@ -62,7 +86,7 @@ surface that contributors implement as the corresponding subsystem matures:
 pip install pyyaml
 
 # Run validation (from agent-linux management repo root)
-python3 tools/validate-ssot.py docs/AirymaxOS ssot-registry.yaml
+python3 tools/validate-ssot.py . ssot-registry.yaml
 ```
 
 `validate-ssot.py` exit codes:
@@ -90,5 +114,3 @@ rule-ID patterns, including range forms (`OS-TEST-001~012`) and suffix variants
 
 Dual-licensed under **AGPL v3 + Apache 2.0** (SPDX: `AGPL-3.0-or-later OR Apache-2.0`).
 See the repository root [LICENSE](../LICENSE) and [NOTICE](../NOTICE).
-
-Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.

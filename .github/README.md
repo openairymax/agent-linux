@@ -9,23 +9,29 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 
 ## Positioning
 
-This directory holds all repository-level GitHub automation for the agentrt-linux
-management repository. It defines the CI/CD pipelines that validate governance
-files, build the kernel, run nightly verification, publish releases, guard the
-`[SC]` shared-contract layer, and enforce SSoT (Single Source of Truth) consistency.
+This directory holds all repository-level GitHub automation for the agent-linux
+(AirymaxOS) management repository. It defines the CI/CD pipelines that validate
+governance files, build the kernel, run nightly verification, publish releases,
+guard the `[SC]` shared-contract layer, and enforce SSoT (Single Source of
+Truth) consistency.
 
-Each workflow is capped at **2 jobs** (rule: management repo ≤ 2 pipelines per
-workflow). Language-level CI for C / Rust / Go / Python is delegated to each leaf
-repository's own `.github/workflows/`; this repository only performs
+Each workflow stays deliberately small: the kernel and management-orchestration
+pipelines use **2 jobs** (`ci-kernel.yml`: `kernel-build` → `kernel-verify`;
+`mgmt-orchestrator.yml`: `file-integrity` → `orchestrate-leaf-ci`), while
+`ci-airy.yml` fans out into 4 focused jobs and `codegen-verify.yml` is a single
+SSoT drift gate. Language-level CI for C / Rust / Go / Python is delegated to
+each leaf repository's own `.github/workflows/`; this repository only performs
 management-level orchestration.
 
 ## Directory Contents
 
-```
+```text
 .github/
 ├── README.md                    # This file
-├── workflows/                   # 6 GitHub Actions workflows (2 jobs each)
+├── workflows/                   # 8 GitHub Actions workflows
 │   ├── ci-kernel.yml            # Kernel build matrix + static analysis + tests
+│   ├── ci-airy.yml              # Airymax build (4 arches) + checkpatch + SPDX + symbol integrity
+│   ├── codegen-verify.yml       # Codegen SSoT drift gate (contract sources → generated outputs)
 │   ├── mgmt-orchestrator.yml    # Governance file integrity + leaf CI orchestration
 │   ├── nightly.yml              # Nightly test suite + auto-revert/budget check
 │   ├── release.yml              # Build + SBOM + sign + publish release
@@ -35,16 +41,18 @@ management-level orchestration.
 └── PULL_REQUEST_TEMPLATE.md     # Pull request template
 ```
 
-## CI Workflows (6 workflows × 2 jobs)
+## CI Workflows (8 workflows)
 
-| Workflow | Job 1 | Job 2 | Trigger |
-|----------|-------|-------|---------|
-| `ci-kernel.yml` | `kernel-build` — Kbuild matrix (4 configs × 4 arches × 2 compilers − 1 exclude = 31) with `W=2` zero-warning gate | `kernel-verify` — checkpatch `--strict`, sparse `C=2`, Coccinelle, KUnit on UML, kselftest on QEMU | PR / push on `kernel/**` |
-| `mgmt-orchestrator.yml` | `file-integrity` — verify 8 submodule dirs, `.gitmodules` (8 entries), `[SC]` 10 core headers, 13 governance files, no `airymaxos-` prefix | `orchestrate-leaf-ci` — aggregate 8 leaf CI statuses, markdownlint docs, copyright header check | PR / push on docs, `.gitmodules`, `ssot-registry.yaml`, `MAINTAINERS`, `CODEOWNERS` |
-| `nightly.yml` | `nightly-test-suite` — seL4-style formal verification, 72h soak test, chaos injection (CPU hotplug / mem hotremove / I/O error / net partition) | `nightly-revert-or-budget` — auto-revert on regression via `auto-bisect`, or CI budget check (60 min gate, OS-STD-TEST-011) | cron `0 2 * * *` / `workflow_dispatch` |
-| `release.yml` | `build-and-sign` — SPDX SBOM (syft per submodule + merge), kernel RPM build, GPG + cosign signing, SDK tarball | `publish-release` — publish dnf repo, push OCI image, create GitHub Release with artifacts | tag `v*` / `v*-rc*` / `workflow_dispatch` |
-| `sc-dual-ci.yml` | `sc-validate` — verify `[SC]` 10 core headers exist under `kernel/include/uapi/linux/airymax/`, no physical duplicates (OS-IRON-014) | `sc-trigger-and-await` — export header patches, create mirror PR in agentrt repo, poll mirror CI status (30 min timeout) | PR touching any `[SC]` header |
-| `ssot-validate.yml` | `ssot-syntax-and-rules` — PyYAML syntax check, rule-ID count + uniqueness (OS-IRON-015), `validate-ssot.py` cross-ref | `ssot-cross-ref` — trailing-whitespace warning, broken relative-path markdown link detection under `docs/docs-linux/` | PR / push on `ssot-registry.yaml`, `docs/docs-linux/**` |
+| Workflow | Jobs | Trigger |
+|----------|------|---------|
+| `ci-kernel.yml` | `kernel-build` — Kbuild matrix (4 configs × 4 arches × 2 compilers − 1 exclude = 31) with `W=2` zero-warning gate; `kernel-verify` — checkpatch `--strict`, sparse `C=2`, Coccinelle, KUnit on UML, kselftest on QEMU | PR / push on `kernel/**` |
+| `ci-airy.yml` | `airy-defconfig-verify` — `airy_defconfig` build on 4 arches (x86_64/arm64/riscv/loongarch) + Airymax CONFIG gate + `.o` artifact check; `airy-checkpatch` — checkpatch `--strict` on Airymax dirs; `airy-spdx-audit` — SPDX identifier audit (`[SC]` = BSD-3-Clause OR GPL-2.0, else GPL-2.0-only); `airy-symbol-integrity` — `security/airy/` vs `kernel/superv/` symbol-clash check | PR / push on Airymax paths |
+| `codegen-verify.yml` | `codegen-diff-check` — run `tools/codegen/run_codegen.py --check` (content compare, works across submodules) as the zero-drift SSoT gate (IRON-9) | PR / push on `tools/codegen/**`, `sdk/**`, `kernel`, `security` |
+| `mgmt-orchestrator.yml` | `file-integrity` — verify submodule dirs derived from `.gitmodules` (9 entries), `[SC]` 10 core headers, 12 governance files, no `airymaxos-` prefix; `orchestrate-leaf-ci` — aggregate leaf CI statuses, markdownlint repository-owned markdown, copyright header check | PR on `**.md`, `.gitmodules`, `ssot-registry.yaml`, `MAINTAINERS`, `CODEOWNERS`, `tools/**`, `.github/**` / push on `main` |
+| `nightly.yml` | `nightly-test-suite` — seL4-style formal verification, 72h soak test, chaos injection (CPU hotplug / mem hotremove / I/O error / net partition); `nightly-revert-or-budget` — auto-revert on regression via `auto-bisect`, or CI budget check (60 min gate, OS-STD-TEST-011) | cron `0 2 * * *` / `workflow_dispatch` |
+| `release.yml` | `build-and-sign` — SPDX SBOM (syft per submodule + merge), kernel RPM build, GPG + cosign signing, SDK tarball; `publish-release` — publish dnf repo, push OCI image, create GitHub Release with artifacts | tag `v*` / `v*-rc*` / `workflow_dispatch` |
+| `sc-dual-ci.yml` | `sc-validate` — verify `[SC]` 10 core headers exist under `kernel/include/uapi/linux/airymax/`, no physical duplicates (OS-IRON-014); `sc-trigger-and-await` — export header patches, create mirror PR in agentrt repo, poll mirror CI status (30 min timeout) | PR touching any `[SC]` header |
+| `ssot-validate.yml` | `ssot-syntax-and-rules` — PyYAML syntax check, rule-ID count + uniqueness (OS-IRON-015), `validate-ssot.py` cross-ref; `doc-links` — repository-owned relative-path markdown link integrity | PR on `**.md`, `ssot-registry.yaml`, `tools/validate-ssot.py` / push on `main` |
 
 ## `[SC]` Shared-Contract Headers
 
@@ -55,9 +63,10 @@ the single physical source of truth for the kernel↔agentrt ABI, located at
 **10 core [SC] headers** (per OS-IRON-014):
 `error.h`, `log_types.h`, `ipc.h`, `sched.h`, `memory_types.h`, `security_types.h`, `lsm_types.h`, `cognition_types.h`, `syscalls.h`, `uapi_compat.h`
 
-**Supplementary** (non-[SC] core): `bpf_struct_ops.h`
+**Supplementary** (non-[SC] core): `bpf_struct_ops.h`, `syscall_gen.h`
 
-Any change requires dual CI (agent-linux + agentrt mirror) per OS-IRON-014.
+Any change to a `[SC]` core header requires dual CI (agent-linux + agentrt
+mirror) per OS-IRON-014.
 
 ## Issue & PR Templates
 
@@ -72,9 +81,11 @@ Any change requires dual CI (agent-linux + agentrt mirror) per OS-IRON-014.
 - **Add a new workflow** — keep the 2-job cap; reference the authority document
   `docs/docs-linux/70-build-system/03-ci-cd-pipeline.md` in the header comment.
 - **Local SSoT validation** before pushing:
+
   ```bash
-  python3 tools/validate-ssot.py docs/AirymaxOS ssot-registry.yaml
+  python3 tools/validate-ssot.py . ssot-registry.yaml
   ```
+
 - **Branch protection** — L1/L3 review is enforced via GitHub branch protection
   rules (`require_code_owner_reviews` + 2 required reviewers), not via a CI job.
 - **Secrets** — release signing uses `GPG_PRIVATE_KEY`, `GPG_PASSPHRASE`,
