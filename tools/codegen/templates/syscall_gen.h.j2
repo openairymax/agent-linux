@@ -17,6 +17,8 @@
 #define {{ guard }}
 
 #include <linux/airymax/uapi_compat.h>
+#include <linux/airymax/ipc.h>
+#include <linux/airymax/security_types.h>
 
 /* ===== 基址与槽位计数 ===== */
 {% for line in slot_macro_lines %}
