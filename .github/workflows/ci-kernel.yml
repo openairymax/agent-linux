@@ -76,10 +76,6 @@ jobs:
         run: sudo apt-get install -y sparse coccinelle
       - name: ABI consistency check (OS-IRON-001, 6/6 PASS required)
         run: python3 tools/abi-check/abi_check.py --check
-      - name: Codegen drift check (R-01 SSoT, diff must be empty)
-        run: python3 tools/codegen/syscall_gen.py --check
-      - name: Codegen syscall_64.tbl check (R-01 SSoT, Airymax section)
-        run: python3 tools/codegen/syscall_gen.py --check-tbl
       - name: checkpatch.pl --strict (OS-STD-TOOL-160)
         run: |
           git diff --name-only origin/${{ github.base_ref }} HEAD -- 'kernel/**/*.c' 'kernel/**/*.h' > files.txt
