@@ -1,0 +1,56 @@
+# ===========================================================================
+# agent-linux (AirymaxOS) CI Pipeline
+# codegen 一致性校验：契约源 → 生成产物，零漂移（SSoT gate）
+# ===========================================================================
+# Authority: docs-linux/30-interfaces/06-codegen-pipeline.md §7.2 / §9.3
+# Rules: R-01（syscall.xml）/ R-02（structures_*.bf）SSoT
+#        IRON-9（生成产物禁止手工修改，CI 强制零漂移）
+# ---------------------------------------------------------------------------
+# 说明：生成产物位于 kernel 子模块内（kernel/include/uapi/linux/airymax/*、
+# kernel/arch/x86/entry/syscalls/syscall_64.tbl、sdk/**），管理仓根的
+# `git diff --exit-code` 无法观测子模块内部改动。故本 workflow 采用
+# tools/codegen/run_codegen.py --check（内容比对，跨子模块生效）作为
+# 唯一漂移判定，比 §7.2 的 git diff 机制更严格且与子模块布局兼容。
+# ===========================================================================
+
+name: codegen-verify
+on:
+  pull_request:
+    paths:
+      - 'tools/codegen/**'
+      - 'sdk/**'
+      - 'kernel'
+      - 'security'
+  push:
+    branches: [main, develop]
+    paths:
+      - 'tools/codegen/**'
+      - 'sdk/**'
+      - 'kernel'
+      - 'security'
+
+jobs:
+  codegen-diff-check:
+    name: Codegen SSoT Drift Check
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install codegen dependencies
+        run: pip install -r tools/codegen/requirements.txt
+
+      - name: Verify generated files match contract sources (zero drift)
+        run: |
+          if ! python3 tools/codegen/run_codegen.py --check; then
+            echo "::error::codegen output differs from committed files."
+            echo "::error::Run 'make codegen' locally and commit the results."
+            exit 1
+          fi
+          echo "::notice::codegen output matches committed files (zero drift)."
