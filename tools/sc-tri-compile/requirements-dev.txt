@@ -1,0 +1,3 @@
+# tools/sc-tri-compile/requirements-dev.txt — 测试工具链依赖（CI 与本地开发）
+# 运行期零第三方依赖（仅标准库）；此文件仅供 pytest 单元测试使用。
+pytest>=8.0,<9.0

@@ -22,8 +22,12 @@ Linux 用户态、第三方（macOS/Windows 等非 Linux 宿主）三方共同�
 
 ```text
 tools/sc-tri-compile/
-├── sc_tri_compile.py   # 三路编译与布局校验脚本（Python 3，仅依赖标准库）
-└── README.md           # 本文件
+├── sc_tri_compile.py     # 三路编译与布局校验脚本（运行期仅依赖标准库）
+├── requirements-dev.txt  # 测试依赖（pytest）
+├── tests/
+│   ├── conftest.py
+│   └── test_sc_tri_compile.py
+└── README.md             # 本文件
 ```
 
 ## 三路编译模型
@@ -121,16 +125,32 @@ python3 tools/sc-tri-compile/sc_tri_compile.py \
 | 1 | 一个或多个检查失败（编译错误 / 大小或偏移不一致） |
 | 2 | 输入/环境错误（目录未找到、编译器无法执行等） |
 
+## 单元测试
+
+```bash
+python3 -m pytest tools/sc-tri-compile/tests/ -q
+```
+
+测试覆盖常量矩阵（三路编译路径、定宽类型大小、契约结构体布局）、Kbuild
+include 顺序镜像、探针源码生成与解析、一致性判定，以及 CLI 退出码契约。
+真实仓库级三路编译校验需 `gcc` 与完整 kernel 子树，缺失时自动跳过该组用
+例（`pytest.mark.skipif`）。
+
 ## CI 集成
 
-`sc-dual-ci.yml` 的 `sc-validate` job 在 `[SC]` 头文件变更时调用本工具：
+`sc-dual-ci.yml` 的 `sc-validate` job 在 `[SC]` 头文件或本工具变更时先跑单
+元测试，再执行三路编译门禁：
 
 ```yaml
-- name: [SC] tri-compile & layout check (OS-IRON-014)
+- name: "Run sc-tri-compile unit tests (pytest)"
+  run: python3 -m pytest tools/sc-tri-compile/tests/ -q
+- name: "[SC] tri-compile & layout check (OS-IRON-014)"
   run: python3 tools/sc-tri-compile/sc_tri_compile.py --check
 ```
 
-本工具不需要额外 Python 依赖（仅标准库），无需 `pip install` 步骤。
+校验脚本运行期不需要额外 Python 依赖（仅标准库）；仅供测试使用的 pytest
+依赖声明在 `requirements-dev.txt`，CI 通过 `pip install -r
+tools/sc-tri-compile/requirements-dev.txt` 安装。
 
 ## 与设计文档的关系
 
