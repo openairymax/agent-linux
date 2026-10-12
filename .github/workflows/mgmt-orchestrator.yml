@@ -2,22 +2,24 @@
 # agent-linux (AirymaxOS) CI Pipeline
 # 管理仓编排 CI（2 jobs：文件完整性 + 子仓编排）
 # ===========================================================================
-# Authority: docs/AirymaxOS/70-build-system/03-ci-cd-pipeline.md
+# Authority: docs/docs-linux/70-build-system/03-ci-cd-pipeline.md
 # Design: 管理仓只做必要验证（SSoT/file-integrity/submodule-orchestration）
-#         语言级 CI 下沉到各子仓 .github/workflows/
+#         语言级 CI 下沉到各叶子子仓 .github/workflows/
 # ===========================================================================
 
 name: mgmt-orchestrator
 on:
   pull_request:
     paths:
-      - 'docs/**'
+      - '**.md'
       - '.gitmodules'
       - 'ssot-registry.yaml'
       - 'MAINTAINERS'
       - 'CODEOWNERS'
+      - 'tools/**'
+      - '.github/**'
   push:
-    branches: [main, develop]
+    branches: [main]
 
 jobs:
   # ─── Job 1: 治理文件完整性 ─────────────────────────────────────────
@@ -29,28 +31,38 @@ jobs:
       - uses: actions/checkout@v4
         with: { submodules: recursive }
 
-      - name: Verify 8 submodule directories exist
+      # 子模块清单从 .gitmodules 单一来源派生，避免与 9 个叶子仓漂移
+      - name: Verify submodule directories exist
         run: |
           set -e
-          for sub in kernel services security memory cognition cloudnative system tests-linux; do
+          mapfile -t SUBS < <(
+            git config -f .gitmodules --get-regexp '^submodule\..*\.path$' \
+              | awk '{print $2}'
+          )
+          if [ "${#SUBS[@]}" -eq 0 ]; then
+            echo "FAIL: .gitmodules declares no submodules"
+            exit 1
+          fi
+          for sub in "${SUBS[@]}"; do
             if [ ! -d "$sub" ]; then
               echo "FAIL: $sub/ missing"
               exit 1
             fi
             echo "OK: $sub/"
           done
+          echo "OK: all ${#SUBS[@]} submodule directories present"
 
-      - name: Verify .gitmodules references (8 submodules)
+      - name: Verify submodule checkout matches .gitmodules
         run: |
           set -e
-          SUB_COUNT=$(grep -c '\[submodule' .gitmodules)
-          if [ "$SUB_COUNT" -ne 8 ]; then
-            echo "FAIL: expected 8 submodules, found $SUB_COUNT"
+          declared=$(git config -f .gitmodules --get-regexp '^submodule\..*\.path$' | awk '{print $2}' | sort)
+          checked=$(git submodule status | awk '{print $2}' | sort)
+          if [ "$declared" != "$checked" ]; then
+            echo "FAIL: submodule status diverges from .gitmodules"
+            diff <(echo "$declared") <(echo "$checked") || true
             exit 1
           fi
-          for sub in kernel services security memory cognition cloudnative system tests-linux; do
-            grep -q "path = $sub" .gitmodules || { echo "FAIL: $sub not in .gitmodules"; exit 1; }
-          done
+          echo "OK: submodule status consistent with .gitmodules"
 
       - name: Verify [SC] 10 shared headers exist
         run: |
@@ -93,24 +105,17 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: '3.12' }
 
-      - name: Aggregate 8 subrepo CI status
-        run: |
-          python3 agent-linux/tools/aggregate-subrepo-ci.py --fail-on-red || {
-            echo "WARN: some submodule CI not yet configured (expected in 0.1.1 design phase)"
-            exit 0
-          }
+      # 叶子仓未全部接入 CI 时其状态为 unknown，仅告警；red 才阻断
+      - name: Aggregate leaf submodule CI status
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 tools/aggregate-subrepo-ci.py --fail-on-red
 
-      - name: markdownlint (docs only)
+      # 仅校验本仓自有 .md，避免扫入子模块内容
+      - name: markdownlint (repository-owned markdown)
         run: |
           npm install -g markdownlint-cli2
-          markdownlint-cli2 'docs/**/*.md' || {
-            echo "WARN: markdownlint warnings (non-blocking in 0.1.1)"
-            exit 0
-          }
+          markdownlint-cli2 '*.md' '.github/**/*.md' 'tools/**/*.md'
 
       - name: Verify copyright header (line 1)
-        run: |
-          python3 agent-linux/tools/check-copyright.py --root docs || {
-            echo "WARN: copyright header issues (non-blocking in 0.1.1)"
-            exit 0
-          }
+        run: python3 tools/check-copyright.py --root .
