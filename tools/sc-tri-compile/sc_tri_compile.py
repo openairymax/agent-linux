@@ -421,7 +421,7 @@ def print_report(results, header_files, cc, sources, check_mode):
 # ─── Main ──────────────────────────────────────────────────────────────────
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(
         description="agent-linux [SC] tri-compile & layout checker " "(OS-IRON-014)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -451,7 +451,7 @@ def main():
         action="store_true",
         help="CI mode: minimal output, exit code only (0=pass, 1=fail)",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     repo_root = Path(args.repo_root) if args.repo_root else find_repo_root()
     if not repo_root.is_dir():

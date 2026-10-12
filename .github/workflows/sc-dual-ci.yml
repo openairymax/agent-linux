@@ -107,6 +107,17 @@ jobs:
             exit 1
           fi
 
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install sc-tri-compile test dependencies
+        run: pip install -r tools/sc-tri-compile/requirements-dev.txt
+
+      - name: "Run sc-tri-compile unit tests (pytest)"
+        run: python3 -m pytest tools/sc-tri-compile/tests/ -q
+
       - name: "[SC] tri-compile & layout check (OS-IRON-014)"
         run: |
           # Compile every [SC] header under the three type-bridge paths

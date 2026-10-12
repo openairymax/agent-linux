@@ -55,6 +55,8 @@ tools/
 │   └── README.md                # Tool-specific documentation
 └── sc-tri-compile/              # [SC] header tri-compile & layout checker
     ├── sc_tri_compile.py        # Tri-compile + type-size/offset checker (stdlib only)
+    ├── requirements-dev.txt     # Test dependency (pytest)
+    ├── tests/                   # pytest suite (constants/probe/consistency/CLI)
     └── README.md                # Tool-specific documentation
 ```
 
@@ -74,7 +76,7 @@ tools/
 | `codegen/run_codegen.py` | Contract code generator; `--check` performs a content compare as the zero-drift SSoT gate (IRON-9) | `codegen-verify.yml`, `tools/codegen/Makefile` |
 | `dsl/dsl_compile.py` | Policy DSL (`.adl`) compiler — lexer/parser/semantics/IR → pure C decision table header; `--check` is the zero-drift gate for policy tables (IRON-9, K-1 mechanism/policy split) | `dsl-verify.yml`, `tools/dsl/Makefile` |
 | `abi-check/abi_check.py` | Syscall ABI stability checker — three-way consistency + baseline immutability (OS-IRON-001) | `ci-kernel.yml` (`kernel-verify`) |
-| `sc-tri-compile/sc_tri_compile.py` | `[SC]` header tri-compile & layout checker — compiles every `kernel/include/uapi/linux/airymax/*.h` under kernel / Linux-user / third-party paths and asserts fixed-width type sizes and struct field offsets are identical across all three; `--check` is the CI gate (OS-IRON-014) | `sc-dual-ci.yml` (`sc-validate`) |
+| `sc-tri-compile/sc_tri_compile.py` | `[SC]` header tri-compile & layout checker — compiles every `kernel/include/uapi/linux/airymax/*.h` under kernel / Linux-user / third-party paths and asserts fixed-width type sizes and struct field offsets are identical across all three; `--check` is the CI gate (OS-IRON-014); pytest suite in `tests/` | `sc-dual-ci.yml` (`sc-validate`) |
 
 ### CI-Referenced Helper Surface
 
