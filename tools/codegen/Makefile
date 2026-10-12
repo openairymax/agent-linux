@@ -8,7 +8,7 @@
 #   bitfield — 运行 bitfield_gen.py 生成位域访问层 C 头
 #   ipc      — 运行 ipc_gen.py 生成 A-IPC 消息头绑定（C 头 + Rust/Python）
 #   syscall  — 运行 syscall_gen.py 生成 C UAPI 头文件
-#   check    — 运行所有生成器的 --check 模式（CI 集成用）
+#   check    — 运行所有生成器的 --check 模式 + syscall_64.tbl 段一致性（CI 集成用）
 #   clean    — 清理生成文件
 #
 # Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
@@ -75,13 +75,14 @@ syscall:
 	@echo "  CODEGEN  syscall_gen.py → syscall_gen.h"
 	@$(PYTHON) $(SYSCALL_GEN)
 
-# check: 运行所有生成器的 --check 模式（CI 集成用）
+# check: 运行所有生成器的 --check 模式 + syscall_64.tbl 段一致性（CI 集成用）
 check:
 	@echo "  CODEGEN  checking generated files match committed files"
 	@$(PYTHON) $(CAP_GEN) --check
 	@$(PYTHON) $(BITFIELD_GEN) --check
 	@$(PYTHON) $(IPC_GEN) --check
 	@$(PYTHON) $(SYSCALL_GEN) --check
+	@$(PYTHON) $(SYSCALL_GEN) --check-tbl
 
 # clean: 清理生成文件
 clean:

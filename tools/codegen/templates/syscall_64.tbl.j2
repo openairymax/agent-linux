@@ -1,0 +1,19 @@
+#
+# Airymax syscalls ({{ linux_base }}-{{ linux_end }}: {{ core_count }} core + {{ reserved_count }} reserved)
+# v{{ generator_version }}: 统一使用 {{ linux_base }} 起始，避开 x86_64 x32 历史遗留区域（512-{{ x32_end }}）。
+# 确保在 x86_64/arm64/riscv 所有架构上编号一致，实现跨架构二进制兼容。
+#
+# {{ linux_base }}-{{ core_end }}: {{ core_count }} 核心 syscall（capability invocation + {{ control_count }} 控制原语）。
+# {{ reserved_linux_start }}-{{ linux_end }}: {{ reserved_count }} 预留槽，逐行登记为 {{ reserved_stub }}（返回 -ENOSYS），
+#{{ tbl_cont_indent }}防止未注册编号被误用或越界访问；NAME 列使用 {{ reserved_name_prefix }}N
+#{{ tbl_cont_indent }}（N 为内部编号 {{ reserved_internal_start }}-{{ reserved_internal_end }}），不使用不存在的 airy_sys_reserved_* 符号。
+#
+# 设计文档：docs/AirymaxOS/30-interfaces/01-syscalls.md §2.2
+# SSoT：include/uapi/linux/airymax/syscalls.h（三方一致性）
+#
+{% for line in syscall_lines %}
+{{ line }}
+{% endfor %}
+{% for line in reserved_stub_lines %}
+{{ line }}
+{% endfor %}
