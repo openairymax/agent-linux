@@ -6,7 +6,7 @@ abi_check.py — agent-linux syscall ABI stability checker
 Validates syscall number ABI stability (OS-IRON-001: 用户空间 ABI 永不破坏)
 by cross-checking three authoritative sources against a baseline snapshot:
 
-  1. SSoT document  — docs/AirymaxOS/140-application-development/07-syscall-registry.md
+  1. SSoT document  — docs/docs-linux/140-application-development/07-syscall-registry.md
   2. UAPI header     — kernel/include/uapi/asm-generic/unistd.h
   3. Kernel entry tbl — kernel/arch/x86/entry/syscalls/syscall_64.tbl
 
@@ -52,7 +52,7 @@ CORE_SYSCALLS = [
 ]
 
 # Default paths relative to agent-linux repo root
-DEFAULT_SSOT_REL = os.path.join("..", "docs", "AirymaxOS",
+DEFAULT_SSOT_REL = os.path.join("..", "docs", "docs-linux",
                                 "140-application-development",
                                 "07-syscall-registry.md")
 DEFAULT_UNISTD_REL = os.path.join("kernel", "include", "uapi",
@@ -510,7 +510,7 @@ def main():
     parser.add_argument(
         "--ssot-path", default=None,
         help="SSoT document path (default: "
-             "../docs/AirymaxOS/140-application-development/"
+             "../docs/docs-linux/140-application-development/"
              "07-syscall-registry.md)")
     parser.add_argument(
         "--unistd-path", default=None,
