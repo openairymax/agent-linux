@@ -23,6 +23,7 @@
 !SECURITY.md
 !.editorconfig
 !.clang-format
+!.markdownlint-cli2.jsonc
 !scripts/
 !scripts/**
 !ssot-registry.yaml
