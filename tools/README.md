@@ -49,9 +49,12 @@ tools/
 │   ├── examples/                # .adl contract source + committed generated header
 │   ├── tests/                   # pytest suite (lexer/parser/semantics/codegen/compile)
 │   └── Makefile                 # Local DSL compiler driver
-└── abi-check/                   # Syscall ABI stability checker
-    ├── abi_check.py             # ABI checker (stdlib only)
-    ├── abi_baseline.json        # ABI baseline snapshot
+├── abi-check/                   # Syscall ABI stability checker
+│   ├── abi_check.py             # ABI checker (stdlib only)
+│   ├── abi_baseline.json        # ABI baseline snapshot
+│   └── README.md                # Tool-specific documentation
+└── sc-tri-compile/              # [SC] header tri-compile & layout checker
+    ├── sc_tri_compile.py        # Tri-compile + type-size/offset checker (stdlib only)
     └── README.md                # Tool-specific documentation
 ```
 
@@ -71,6 +74,7 @@ tools/
 | `codegen/run_codegen.py` | Contract code generator; `--check` performs a content compare as the zero-drift SSoT gate (IRON-9) | `codegen-verify.yml`, `tools/codegen/Makefile` |
 | `dsl/dsl_compile.py` | Policy DSL (`.adl`) compiler — lexer/parser/semantics/IR → pure C decision table header; `--check` is the zero-drift gate for policy tables (IRON-9, K-1 mechanism/policy split) | `dsl-verify.yml`, `tools/dsl/Makefile` |
 | `abi-check/abi_check.py` | Syscall ABI stability checker — three-way consistency + baseline immutability (OS-IRON-001) | `ci-kernel.yml` (`kernel-verify`) |
+| `sc-tri-compile/sc_tri_compile.py` | `[SC]` header tri-compile & layout checker — compiles every `kernel/include/uapi/linux/airymax/*.h` under kernel / Linux-user / third-party paths and asserts fixed-width type sizes and struct field offsets are identical across all three; `--check` is the CI gate (OS-IRON-014) | `sc-dual-ci.yml` (`sc-validate`) |
 
 ### CI-Referenced Helper Surface
 
