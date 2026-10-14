@@ -54,6 +54,7 @@ __all__ = [
     "IPC_HEADER_SIZE",
     "IPC_LAYOUT_ASSERTS",
     "IPC_MAGIC",
+    "IPC_MAX_PAYLOAD",
     "IPC_MIN_STRUCT_NAME",
     "IPC_OPCODE_PREFIX",
     "IPC_OPCODE_SPECS",
@@ -107,6 +108,7 @@ TOTAL_SLOT_COUNT = 24
 IPC_HEADER_SIZE = 128
 IPC_HEADER_ALIGNMENT = 64
 IPC_MAGIC = 0x41524531  # 'ARE1'
+IPC_MAX_PAYLOAD = 64 * 1024 * 1024  # 64 MiB ceiling, contracts.md §2.2
 
 # 6. capability 常量（41 POSIX + 3 Airymax 专属）
 CAP_ID_COUNT = 44
