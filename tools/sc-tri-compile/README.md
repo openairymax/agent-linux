@@ -9,7 +9,9 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 ## 用途
 
 验证 `[SC]` 共享契约层头文件在三种类型桥接路径下均可编译，且定宽
-类型大小与结构体内存布局在三路下完全一致，对齐
+类型大小与结构体内存布局在三路下完全一致，并对 syscall ABI 的三份权威
+来源（`syscalls.h` ↔ `syscall.xml` ↔ `syscall_gen.h`）做符号名与编号的
+双向一致性校验，对齐
 **OS-IRON-014（[SC] 共享契约头单一权威）** 与
 `docs-linux/50-engineering-standards/11-sc-header-type-bridging.md`。
 
@@ -49,10 +51,15 @@ include 搜索顺序严格镜像 Kbuild：`-Iinclude` 先于 `-Iinclude/uapi`，
 | 1 | 三路编译通过 | `kernel/include/uapi/linux/airymax/` 下全部 `[SC]` 头文件在内核态 / Linux 用户态 / 第三方三路下 `-fsyntax-only -Werror` 零错误 |
 | 2 | 类型大小三路一致 | `__u8/__u16/__u32/__u64/__s8/__s16/__s32/__s64` 在三路下 `sizeof` 一致 |
 | 3 | 字段偏移三路一致 | 契约结构体（`airy_ipc_msg_hdr`、`airy_log_record`、`airy_task_desc`、`bpf_struct_ops_common_val`、`airy_struct_ops_value`）的 `sizeof` 与关键字段 `offsetof` 三路一致 |
+| 4 | syscall ABI 三源一致 | 契约头 `syscalls.h`、R-01 SSoT `syscall.xml`、生成产物 `syscall_gen.h` 三者的核心 syscall 符号名（`AIRY_SYS_*` / `__NR_airy_sys_*` / `AIRY_SYS_IDX_*`）与编号（`548-571` 号段、`RESERVED_*` 边界、槽位算术）双向一致 |
 
 第 2、3 项通过编译并运行一个临时探针程序（probe）采集三路实测值后逐项
 比对；探针编译刻意不加 `-Werror`——内核路径混入 glibc `<stdio.h>` 会
 产生良性重定义告警，但生成的可执行文件正确。
+
+第 4 项为纯文本解析（不依赖 `gcc`）：C 宏正则排除函数式宏与 token 别名，
+XML 结构解析覆盖根元素、`<meta>` 前缀、`<syscall>` 条目与 `<reserved>`
+区间的畸形路径，任一来源漂移即判失败。
 
 ## 使用方法
 
@@ -80,7 +87,7 @@ Compiler:  gcc
 Headers:   14 个 [SC] 头文件
 
 ------------------------------------------------------------------------
-Checks: 3/3 passed, 0 failed
+Checks: 4/4 passed, 0 failed
 ------------------------------------------------------------------------
 
 [+] PASS: 三路编译通过 (内核态 / Linux 用户态 / 第三方)
@@ -91,6 +98,9 @@ Checks: 3/3 passed, 0 failed
 
 [+] PASS: 结构体字段偏移三路一致
       5 个结构体、27 个字段偏移三路一致
+
+[+] PASS: syscall ABI 三源一致 (syscalls.h ↔ syscall.xml ↔ syscall_gen.h)
+      4 个核心 syscall + 20 个预留槽，号段 548-571 符号名与编号三源一致
 
 ------------------------------------------------------------------------
 RESULT: PASS — all [SC] tri-compile checks passed (OS-IRON-014)
@@ -104,7 +114,7 @@ python3 tools/sc-tri-compile/sc_tri_compile.py --check
 # 退出码: 0=通过, 1=失败, 2=输入/环境错误
 ```
 
-`--check` 模式下，通过时输出 `SC TRI-COMPILE: PASS (3/3 checks)`，失败时
+`--check` 模式下，通过时输出 `SC TRI-COMPILE: PASS (4/4 checks)`，失败时
 输出失败项摘要。CI 仅需检查退出码即可。
 
 ### 指定自定义路径 / 编译器
@@ -132,7 +142,8 @@ python3 -m pytest tools/sc-tri-compile/tests/ -q
 ```
 
 测试覆盖常量矩阵（三路编译路径、定宽类型大小、契约结构体布局）、Kbuild
-include 顺序镜像、探针源码生成与解析、一致性判定，以及 CLI 退出码契约。
+include 顺序镜像、探针源码生成与解析、一致性判定、syscall ABI 三源解析
+（C 宏正则、XML 结构）、符号名与编号双向一致校验，以及 CLI 退出码契约。
 真实仓库级三路编译校验需 `gcc` 与完整 kernel 子树，缺失时自动跳过该组用
 例（`pytest.mark.skipif`）。
 
@@ -158,6 +169,10 @@ tools/sc-tri-compile/requirements-dev.txt` 安装。
   （§3.3 二进制布局一致性、§5.1 三路编译矩阵、§5.3 校验清单）。
 - 类型桥接实现：`kernel/include/uapi/linux/airymax/uapi_compat.h`
   （`__KERNEL__` / `__linux__` / `#else` 三分支）。
+- syscall ABI 三源：`kernel/include/uapi/linux/airymax/syscalls.h`（契约头
+  SSoT 形式）、`syscall.xml`（R-01 SSoT）、`syscall_gen.h`（`@generated`
+  生成产物），由 `sc-dual-ci.yml` 的 `sc-validate` job 门禁收口（L-04 /
+  D-04）。
 
 ## 许可证
 
