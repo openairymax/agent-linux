@@ -39,6 +39,7 @@ from codegen_types import (
     IPC_HEADER_SIZE,
     IPC_LAYOUT_ASSERTS,
     IPC_MAGIC,
+    IPC_MAX_PAYLOAD,
     IPC_MIN_STRUCT_NAME,
     IPC_OPCODE_SPECS,
     IPC_SIZE_ASSERT_MESSAGE,
@@ -66,6 +67,7 @@ IPC_BLOCK_NAME = "ipc_msg_hdr"
 BADGE_BLOCK_NAME = "cap_badge"
 IPC_MAGIC_MACRO = "AIRY_IPC_MAGIC"
 IPC_HDR_SIZE_MACRO = "AIRY_IPC_HDR_SIZE"
+IPC_MAX_PAYLOAD_MACRO = "AIRY_IPC_MAX_PAYLOAD"
 MAGIC_LITERAL = f"0x{IPC_MAGIC:08X}"
 
 OUTPUTS: tuple[tuple[str, Path], ...] = (
@@ -190,6 +192,8 @@ def _constant_lines() -> list[str]:
     return [
         "#define " + IPC_MAGIC_MACRO.ljust(23) + " " + f"{MAGIC_LITERAL}u /* 'ARE1' */",
         "#define " + IPC_HDR_SIZE_MACRO.ljust(23) + " " + str(IPC_HEADER_SIZE),
+        "#define " + IPC_MAX_PAYLOAD_MACRO.ljust(23) + " "
+        + f"0x{IPC_MAX_PAYLOAD:08X}u /* 64 MiB payload ceiling */",
     ]
 
 
