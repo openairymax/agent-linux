@@ -1,6 +1,6 @@
 {
   "version": "v1.0.1",
-  "date": "2026-07-22",
+  "date": "2026-10-15",
   "linux_base": 548,
   "syscalls": [
     {
@@ -25,5 +25,5 @@
     }
   ],
   "reserved_range": [552, 571],
-  "nr_syscalls": 552
+  "nr_syscalls": 572
 }

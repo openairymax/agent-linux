@@ -1,0 +1,58 @@
+# ===========================================================================
+# agent-linux (AirymaxOS) CI Pipeline
+# syscall ABI 稳定性校验：四方权威源 + 基线快照一致性（OS-IRON-001）
+# ===========================================================================
+# Authority: docs/docs-linux/140-application-development/07-syscall-registry.md
+# Rules: OS-IRON-001（用户空间 ABI 永不破坏）
+# ---------------------------------------------------------------------------
+# 说明：abi-check 校验 SSoT 注册表 / UAPI unistd.h / 内核入口表
+# syscall_64.tbl / [SC] 契约头 syscalls.h 四方一致，并与 abi_baseline.json
+# 基线快照比对（编号不可变更）。本 workflow 覆盖工具自身单元测试（pytest）
+# 与 CI 模式零漂移校验；任一权威源或工具改动均触发，避免 ABI 只在内核构建
+# 链路（ci-kernel）中被间接覆盖。
+# ===========================================================================
+
+name: abi-verify
+on:
+  pull_request:
+    paths:
+      - 'tools/abi-check/**'
+      - 'kernel/include/uapi/asm-generic/unistd.h'
+      - 'kernel/include/uapi/linux/airymax/syscalls.h'
+      - 'kernel/arch/x86/entry/syscalls/syscall_64.tbl'
+  push:
+    branches: [main, develop]
+    paths:
+      - 'tools/abi-check/**'
+      - 'kernel/include/uapi/asm-generic/unistd.h'
+      - 'kernel/include/uapi/linux/airymax/syscalls.h'
+      - 'kernel/arch/x86/entry/syscalls/syscall_64.tbl'
+
+jobs:
+  abi-verify:
+    name: syscall ABI Stability Check
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install abi-check test dependencies
+        run: pip install -r tools/abi-check/requirements-dev.txt
+
+      - name: Run abi-check unit tests (pytest)
+        run: python3 -m pytest tools/abi-check/tests/ -q
+
+      - name: Verify syscall ABI stability (OS-IRON-001)
+        run: |
+          if ! python3 tools/abi-check/abi_check.py --check; then
+            echo "::error::syscall ABI check failed (OS-IRON-001)."
+            echo "::error::Check the four authoritative sources and abi_baseline.json."
+            exit 1
+          fi
+          echo "::notice::syscall ABI stable across four authoritative sources."
