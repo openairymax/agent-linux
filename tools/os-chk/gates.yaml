@@ -1,0 +1,84 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+#
+# AirymaxOS OS-CHK 门禁注册表
+# Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
+#
+# 权威依据：
+#   docs/docs-linux/50-engineering-standards/05-development-process.md
+#     Part III 规范符合性检查（OS-CHK-* 编号体系、§5.1 检查流水线、§5.3 报告格式）
+#   docs/docs-linux/70-build-system/03-ci-cd-pipeline.md（门禁定义）
+#
+# 铁律：本表只登记「存在真实可执行器」的门禁。执行器为既有 tools/ 下的
+#      检查工具，以子进程方式调用；严禁登记 raise NotImplementedError 之类
+#      的占位项，亦严禁在此重复实现检查逻辑（避免与工具本体漂移）。
+#      需要新增门禁时，先落地其执行器工具，再在此登记。
+#
+# 字段：
+#   id        门禁编号（OS-CHK-* / OS-IRON-* / 工具门禁标识），全局唯一
+#   name      门禁名称（简短，用于报告）
+#   severity  严重级：P0 / P1 / P2（P0 最高）
+#   category  类别：doc / code / iron / build
+#   authority 规则权威出处（文档路径 §章节）
+#   executor.argv  执行器命令行（相对仓库根；argv[0] 需在 PATH 中）
+#   timeout_s 超时秒数（可选，默认 600）
+#
+# 严格 schema：门禁与 executor 层出现未登记字段将被 os_chk.py 判为非法，
+# 以防字段错位（如把 timeout_s 误缩进到 executor 下）被静默忽略。
+#
+# version: 注册表版本，随门禁增删而递增。
+
+version: "1.0.0"
+
+gates:
+  # ── 文档类 ────────────────────────────────────────────────────────────
+  - id: OS-CHK-DOC-01
+    name: Copyright 头部
+    severity: P0
+    category: doc
+    authority: 05-development-process.md §6.1
+    executor:
+      argv: ["python3", "tools/check-copyright.py", "--root", "."]
+
+  # ── [SC] 契约层（DOC-04 头文件清单一致 / IRON-01 共享契约层一致）──────
+  - id: OS-CHK-DOC-04
+    name: "[SC] 头文件清单一致性"
+    severity: P0
+    category: iron
+    authority: 05-development-process.md §6.1 / §6.3
+    executor:
+      argv: ["python3", "tools/sc-tri-compile/sc_tri_compile.py", "--check"]
+
+  # ── 内核 ABI（OS-IRON-001 用户空间 ABI 永不破坏）─────────────────────
+  - id: OS-IRON-001
+    name: syscall ABI 稳定性
+    severity: P0
+    category: iron
+    authority: 07-syscall-registry.md §1（OS-IRON-001）
+    executor:
+      argv: ["python3", "tools/abi-check/abi_check.py", "--check"]
+
+  # ── SSoT 规则 ID 注册一致性（OS-IRON-015）────────────────────────────
+  - id: OS-IRON-015
+    name: SSoT 规则 ID 注册一致性
+    severity: P0
+    category: doc
+    authority: 09-ssot-registry.md（OS-IRON-015）
+    executor:
+      argv: ["python3", "tools/validate-ssot.py", ".", "ssot-registry.yaml"]
+
+  # ── IRON-9 生成产物零漂移（codegen / DSL 决策表）─────────────────────
+  - id: OS-IRON-009-CODEGEN
+    name: codegen 生成产物零漂移
+    severity: P0
+    category: build
+    authority: 30-interfaces/06-codegen-pipeline.md §6.3（IRON-9）
+    executor:
+      argv: ["python3", "tools/codegen/run_codegen.py", "--check"]
+
+  - id: OS-IRON-009-DSL
+    name: 策略 DSL 决策表零漂移
+    severity: P0
+    category: build
+    authority: 30-interfaces/06-codegen-pipeline.md §7.2（IRON-9）
+    executor:
+      argv: ["python3", "tools/dsl/dsl_compile.py", "--check"]

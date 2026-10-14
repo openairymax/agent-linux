@@ -1,0 +1,67 @@
+# ===========================================================================
+# agent-linux (AirymaxOS) CI Pipeline
+# OS-CHK 统一门禁：编排 tools/ 下既有检查工具，按 P0/P1/P2 严重级阻断
+# ===========================================================================
+# Authority: docs/docs-linux/50-engineering-standards/05-development-process.md
+#              Part III（OS-CHK 编号体系 §6 / 检查报告格式 §5.3）
+# Design: tools/os-chk/os_chk.py 只做注册表解析、调度、汇总与门禁判定，
+#         检查本体由既有执行器承担；gates.yaml 为门禁唯一事实源。
+# ---------------------------------------------------------------------------
+# 说明：os_chk.py 会依次调用 abi-check / sc-tri-compile / validate-ssot /
+# codegen / dsl / check-copyright 等既有工具，故本 workflow 除监听
+# tools/os-chk/** 外，同时监听上述执行器与其受检对象的路径，任一改动
+# 破坏门禁即可被捕获。默认 --fail-on P1（P0+P1 阻断），对齐规范。
+# ===========================================================================
+
+name: os-chk-verify
+on:
+  pull_request:
+    paths:
+      - 'tools/os-chk/**'
+      - 'tools/check-copyright.py'
+      - 'tools/validate-ssot.py'
+      - 'tools/sc-tri-compile/**'
+      - 'tools/abi-check/**'
+      - 'tools/codegen/**'
+      - 'tools/dsl/**'
+      - 'ssot-registry.yaml'
+  push:
+    branches: [main, develop]
+    paths:
+      - 'tools/os-chk/**'
+      - 'tools/check-copyright.py'
+      - 'tools/validate-ssot.py'
+      - 'tools/sc-tri-compile/**'
+      - 'tools/abi-check/**'
+      - 'tools/codegen/**'
+      - 'tools/dsl/**'
+      - 'ssot-registry.yaml'
+
+jobs:
+  os-chk-verify:
+    name: OS-CHK Unified Gates
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install OS-CHK dependencies
+        run: pip install -r tools/os-chk/requirements-dev.txt
+
+      - name: Run OS-CHK unit tests (pytest)
+        run: python3 -m pytest tools/os-chk/tests/ -q
+
+      - name: Run OS-CHK unified gates
+        run: |
+          if ! python3 tools/os-chk/os_chk.py --check; then
+            echo "::error::OS-CHK gates failed (P0/P1 blocking)."
+            echo "::error::Run 'python3 tools/os-chk/os_chk.py --verbose' locally."
+            exit 1
+          fi
+          echo "::notice::All OS-CHK gates passed."
