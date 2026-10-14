@@ -4,11 +4,12 @@
 abi_check.py — agent-linux syscall ABI stability checker
 
 Validates syscall number ABI stability (OS-IRON-001: 用户空间 ABI 永不破坏)
-by cross-checking three authoritative sources against a baseline snapshot:
+by cross-checking four authoritative sources against a baseline snapshot:
 
   1. SSoT document  — docs/docs-linux/140-application-development/07-syscall-registry.md
   2. UAPI header     — kernel/include/uapi/asm-generic/unistd.h
   3. Kernel entry tbl — kernel/arch/x86/entry/syscalls/syscall_64.tbl
+  4. [SC] contract hdr — kernel/include/uapi/linux/airymax/syscalls.h
 
 Usage:
     python3 tools/abi-check/abi_check.py [options]
@@ -18,6 +19,7 @@ Options:
     --ssot-path PATH    SSoT document path (default: auto)
     --unistd-path PATH  unistd.h path (default: auto)
     --tbl-path PATH     syscall_64.tbl path (default: auto)
+    --sc-header-path PATH  [SC] contract header path (default: auto)
     --baseline PATH     baseline JSON path (default: tools/abi-check/abi_baseline.json)
     --no-baseline       skip baseline comparison
     --check             CI mode: minimal output, exit code only (0=pass, 1=fail)
@@ -38,11 +40,22 @@ from pathlib import Path
 # ─── Constants ─────────────────────────────────────────────────────────────
 
 EXPECTED_BASE = 548
-EXPECTED_NR_SYSCALLS = 552
+EXPECTED_NR_SYSCALLS = 572
 AIRY_RANGE_START = 548
 AIRY_RANGE_END = 571
 X32_FORBIDDEN_START = 512
 X32_FORBIDDEN_END = 547
+
+# Reserved slot segment (552-571): 20 slots, SLOTS_MAX = 4 core + 20 = 24
+EXPECTED_RESERVED_START = 552
+EXPECTED_RESERVED_END = 571
+EXPECTED_RESERVED_COUNT = 20
+EXPECTED_SLOTS_MAX = 24
+
+# Reserved slot naming: unistd.h / syscall_64.tbl use airy_reserved_<internal>,
+# where <internal> is the slot index counting from AIRY_SYS_CALL (548).
+RESERVED_NAME_PREFIX = "airy_reserved_"
+RESERVED_TBL_ENTRY = "sys_ni_syscall"
 
 CORE_SYSCALLS = [
     ("airy_sys_call", "AIRY_SYS_CALL", 548),
@@ -50,6 +63,12 @@ CORE_SYSCALLS = [
     ("airy_sys_sched_ctl", "AIRY_SYS_SCHED_CTL", 550),
     ("airy_sys_clt_notify", "AIRY_SYS_CLT_NOTIFY", 551),
 ]
+
+# [SC] contract header macros: core (macro -> C name) and reserved markers.
+SC_CORE_MACRO_TO_NAME = {macro: name for name, macro, _num in CORE_SYSCALLS}
+SC_RESERVED_MACROS = ("AIRY_SYS_RESERVED_BASE",
+                      "AIRY_SYS_RESERVED_END",
+                      "AIRY_SYS_SLOTS_MAX")
 
 # Default paths relative to agent-linux repo root
 DEFAULT_SSOT_REL = os.path.join("..", "docs", "docs-linux",
@@ -59,6 +78,8 @@ DEFAULT_UNISTD_REL = os.path.join("kernel", "include", "uapi",
                                   "asm-generic", "unistd.h")
 DEFAULT_TBL_REL = os.path.join("kernel", "arch", "x86", "entry",
                                "syscalls", "syscall_64.tbl")
+DEFAULT_SC_HEADER_REL = os.path.join("kernel", "include", "uapi", "linux",
+                                     "airymax", "syscalls.h")
 DEFAULT_BASELINE_REL = os.path.join("tools", "abi-check", "abi_baseline.json")
 
 
@@ -139,10 +160,10 @@ def parse_ssot(text):
         result["linux_base"] = min(s["linux_number"] for s in result["syscalls"])
 
     # Extract reserved range from section 3.2:
-    #   | 552-571 | `AIRY_SYS_RESERVED_0` ~ `AIRY_SYS_RESERVED_19` | ...
+    #   | 552-571 | `AIRY_SYS_RESERVED_BASE` ~ `AIRY_SYS_RESERVED_END` | ...
     m = re.search(
-        r"\|\s*(\d+)-(\d+)\s*\|\s*`AIRY_SYS_RESERVED_\d+`"
-        r"\s*~\s*`AIRY_SYS_RESERVED_\d+`",
+        r"\|\s*(\d+)-(\d+)\s*\|\s*`AIRY_SYS_RESERVED_\w+`"
+        r"\s*~\s*`AIRY_SYS_RESERVED_\w+`",
         text,
     )
     if m:
@@ -154,11 +175,12 @@ def parse_ssot(text):
 def parse_unistd(text):
     """Parse unistd.h to extract actual syscall number definitions.
 
-    Returns dict: {syscalls, nr_syscalls}
-      syscalls: list of {name, linux_number}  (only airy_sys_* entries)
+    Returns dict: {syscalls, reserved, nr_syscalls}
+      syscalls: list of {name, linux_number}  (airy_sys_* core entries)
+      reserved: list of {name, linux_number}  (airy_reserved_* slot entries)
       nr_syscalls: int or None
     """
-    result = {"syscalls": [], "nr_syscalls": None}
+    result = {"syscalls": [], "reserved": [], "nr_syscalls": None}
 
     # Match: #define __NR_airy_sys_call 548
     for m in re.finditer(
@@ -169,7 +191,16 @@ def parse_unistd(text):
             "linux_number": int(m.group(2)),
         })
 
-    # Match: #define __NR_syscalls 552
+    # Match: #define __NR_airy_reserved_4 552
+    for m in re.finditer(
+        r"#define\s+__NR_(airy_reserved_\d+)\s+(\d+)", text,
+    ):
+        result["reserved"].append({
+            "name": m.group(1),
+            "linux_number": int(m.group(2)),
+        })
+
+    # Match: #define __NR_syscalls 572
     m = re.search(r"#define\s+__NR_syscalls\s+(\d+)", text)
     if m:
         result["nr_syscalls"] = int(m.group(1))
@@ -177,13 +208,34 @@ def parse_unistd(text):
     return result
 
 
+def parse_sc_header(text):
+    """Parse the [SC] shared contract header (kernel/.../airymax/syscalls.h).
+
+    Returns dict: {core_macros, reserved}
+      core_macros: {macro: number}  (4 core AIRY_SYS_* macros)
+      reserved: {AIRY_SYS_RESERVED_BASE / _END / AIRY_SYS_SLOTS_MAX: number}
+    """
+    result = {"core_macros": {}, "reserved": {}}
+
+    for m in re.finditer(r"#define\s+(AIRY_SYS_[A-Z_]+)\s+(\d+)\b", text):
+        macro = m.group(1)
+        num = int(m.group(2))
+        if macro in SC_RESERVED_MACROS:
+            result["reserved"][macro] = num
+        else:
+            result["core_macros"][macro] = num
+
+    return result
+
+
 def parse_syscall_tbl(text):
     """Parse syscall_64.tbl to extract registered syscall entries.
 
-    Returns dict: {syscalls}
-      syscalls: list of {name, linux_number, abi, entry}  (only airy_sys_*)
+    Returns dict: {syscalls, reserved}
+      syscalls: list of {name, linux_number, abi, entry}  (airy_sys_* core)
+      reserved: list of {name, linux_number, abi, entry}  (airy_reserved_* slots)
     """
-    result = {"syscalls": []}
+    result = {"syscalls": [], "reserved": []}
 
     for line in text.splitlines():
         stripped = line.strip()
@@ -194,13 +246,16 @@ def parse_syscall_tbl(text):
         if not m:
             continue
         name = m.group(3)
+        entry = {
+            "name": name,
+            "linux_number": int(m.group(1)),
+            "abi": m.group(2),
+            "entry": m.group(4),
+        }
         if name.startswith("airy_sys_"):
-            result["syscalls"].append({
-                "name": name,
-                "linux_number": int(m.group(1)),
-                "abi": m.group(2),
-                "entry": m.group(4),
-            })
+            result["syscalls"].append(entry)
+        elif name.startswith(RESERVED_NAME_PREFIX):
+            result["reserved"].append(entry)
 
     return result
 
@@ -335,7 +390,7 @@ def check_range_no_conflict(ssot, unistd, tbl):
 
 
 def check_nr_syscalls(unistd):
-    """Check __NR_syscalls value is 552."""
+    """Check __NR_syscalls value is 572 (highest number 571 + 1)."""
     nr = unistd["nr_syscalls"]
     if nr is None:
         return CheckResult(
@@ -373,6 +428,176 @@ def check_x32_forbidden(unistd, tbl):
         "无 512-547 区域的 syscall (x32 禁止区域)", True,
         f"无 airy syscall 落入 x32 禁止区域 "
         f"[{X32_FORBIDDEN_START}, {X32_FORBIDDEN_END}]")
+
+
+def check_sc_header_consistency(sc_header, ssot, unistd, tbl):
+    """Check the [SC] contract header agrees with SSoT / unistd.h / tbl."""
+    failures = []
+
+    # 4 core macros present, equal to expected numbering and to SSoT
+    ssot_map = {s["name"]: s["linux_number"] for s in ssot["syscalls"]}
+    for name, macro, expected in CORE_SYSCALLS:
+        num = sc_header["core_macros"].get(macro)
+        if num is None:
+            failures.append(f"  {macro}: [SC] 契约头中缺失")
+            continue
+        if num != expected:
+            failures.append(f"  {macro} = {num} (期望 {expected})")
+        ssot_num = ssot_map.get(name)
+        if ssot_num is not None and ssot_num != num:
+            failures.append(
+                f"  {macro}: [SC]={num}, SSoT={ssot_num} (不一致)")
+
+    # Reserved marker macros
+    res = sc_header["reserved"]
+    base = res.get("AIRY_SYS_RESERVED_BASE")
+    end = res.get("AIRY_SYS_RESERVED_END")
+    slots = res.get("AIRY_SYS_SLOTS_MAX")
+
+    if base is None:
+        failures.append("  AIRY_SYS_RESERVED_BASE: [SC] 契约头中缺失")
+    elif base != EXPECTED_RESERVED_START:
+        failures.append(
+            f"  AIRY_SYS_RESERVED_BASE = {base} "
+            f"(期望 {EXPECTED_RESERVED_START})")
+    if end is None:
+        failures.append("  AIRY_SYS_RESERVED_END: [SC] 契约头中缺失")
+    elif end != EXPECTED_RESERVED_END:
+        failures.append(
+            f"  AIRY_SYS_RESERVED_END = {end} "
+            f"(期望 {EXPECTED_RESERVED_END})")
+    if slots is None:
+        failures.append("  AIRY_SYS_SLOTS_MAX: [SC] 契约头中缺失")
+    elif slots != EXPECTED_SLOTS_MAX:
+        failures.append(
+            f"  AIRY_SYS_SLOTS_MAX = {slots} "
+            f"(期望 {EXPECTED_SLOTS_MAX})")
+
+    if base is not None and end is not None and slots is not None:
+        derived = end - EXPECTED_BASE + 1
+        if slots != derived:
+            failures.append(
+                f"  AIRY_SYS_SLOTS_MAX={slots} != "
+                f"RESERVED_END-RESERVED_BASE+1 (={derived})")
+
+    # Cross-check reserved markers against SSoT reserved_range
+    ssot_range = ssot["reserved_range"]
+    if base is not None and end is not None:
+        if ssot_range is None:
+            failures.append(
+                "  SSoT 预留段缺失，无法与 [SC] 契约头交叉校验")
+        elif [base, end] != ssot_range:
+            failures.append(
+                f"  预留段: [SC]=[{base}, {end}], SSoT={ssot_range} "
+                f"(不一致)")
+
+    # Cross-check core numbering against unistd.h / tbl
+    unistd_map = {s["name"]: s["linux_number"] for s in unistd["syscalls"]}
+    tbl_map = {s["name"]: s["linux_number"] for s in tbl["syscalls"]}
+    for name, macro, _expected in CORE_SYSCALLS:
+        num = sc_header["core_macros"].get(macro)
+        if num is None:
+            continue
+        for src, src_map in (("unistd.h", unistd_map),
+                             ("syscall_64.tbl", tbl_map)):
+            other = src_map.get(name)
+            if other is not None and other != num:
+                failures.append(
+                    f"  {macro}: [SC]={num}, {src}={other} (不一致)")
+
+    if failures:
+        return CheckResult("[SC] 契约头一致 (syscalls.h)", False,
+                           "\n".join(failures))
+    return CheckResult(
+        "[SC] 契约头一致 (syscalls.h)", True,
+        f"4 核心宏 (548-551) + 预留标记 (BASE={base}, END={end}, "
+        f"SLOTS_MAX={slots}) 与 SSoT/unistd.h/tbl 一致")
+
+
+def check_reserved_slots(unistd, tbl):
+    """Check the 20 reserved slots (552-571) are registered consistently."""
+    failures = []
+
+    expected_nums = list(range(EXPECTED_RESERVED_START,
+                              EXPECTED_RESERVED_END + 1))
+    if len(expected_nums) != EXPECTED_RESERVED_COUNT:
+        return CheckResult(
+            "预留槽登记一致 (552-571)", False,
+            f"  内部常量不一致: 区间槽位数 != {EXPECTED_RESERVED_COUNT}")
+
+    unistd_res = {s["linux_number"]: s["name"] for s in unistd["reserved"]}
+    tbl_res = {s["linux_number"]: s for s in tbl["reserved"]}
+
+    # unistd.h reserved slot coverage + naming
+    missing = [n for n in expected_nums if n not in unistd_res]
+    extra = [n for n in sorted(unistd_res) if n not in expected_nums]
+    if missing:
+        failures.append(f"  unistd.h: 缺失预留槽 {missing}")
+    if extra:
+        failures.append(f"  unistd.h: 越界预留槽 {extra}")
+    for num, name in sorted(unistd_res.items()):
+        expected_name = f"{RESERVED_NAME_PREFIX}{num - EXPECTED_BASE}"
+        if name != expected_name:
+            failures.append(
+                f"  unistd.h: {num} 命名 {name} (期望 {expected_name})")
+
+    # syscall_64.tbl reserved slot coverage + naming + entry point
+    missing = [n for n in expected_nums if n not in tbl_res]
+    extra = [n for n in sorted(tbl_res) if n not in expected_nums]
+    if missing:
+        failures.append(f"  syscall_64.tbl: 缺失预留槽 {missing}")
+    if extra:
+        failures.append(f"  syscall_64.tbl: 越界预留槽 {extra}")
+    for num, entry in sorted(tbl_res.items()):
+        expected_name = f"{RESERVED_NAME_PREFIX}{num - EXPECTED_BASE}"
+        if entry["name"] != expected_name:
+            failures.append(
+                f"  syscall_64.tbl: {num} 命名 {entry['name']} "
+                f"(期望 {expected_name})")
+        if entry["entry"] != RESERVED_TBL_ENTRY:
+            failures.append(
+                f"  syscall_64.tbl: {entry['name']} 入口点 "
+                f"{entry['entry']} (期望 {RESERVED_TBL_ENTRY})")
+
+    if failures:
+        return CheckResult("预留槽登记一致 (552-571)", False,
+                           "\n".join(failures))
+    return CheckResult(
+        "预留槽登记一致 (552-571)", True,
+        f"unistd.h 与 syscall_64.tbl 各登记 {EXPECTED_RESERVED_COUNT} 个"
+        f"预留槽 (552-571)，命名 airy_reserved_<num-548>，"
+        f"入口 sys_ni_syscall")
+
+
+def check_tbl_abi_and_entry(tbl):
+    """Check syscall_64.tbl ABI column and entry naming for airy entries."""
+    failures = []
+
+    for s in tbl["syscalls"]:
+        if s["abi"] != "common":
+            failures.append(
+                f"  {s['name']} ({s['linux_number']}): abi={s['abi']} "
+                f"(期望 common)")
+        expected_entry = f"sys_{s['name']}"
+        if s["entry"] != expected_entry:
+            failures.append(
+                f"  {s['name']}: 入口点 {s['entry']} "
+                f"(期望 {expected_entry})")
+
+    for s in tbl["reserved"]:
+        if s["abi"] != "common":
+            failures.append(
+                f"  {s['name']} ({s['linux_number']}): abi={s['abi']} "
+                f"(期望 common)")
+
+    if failures:
+        return CheckResult("syscall_64.tbl ABI 列与入口点正确", False,
+                           "\n".join(failures))
+    total = len(tbl["syscalls"]) + len(tbl["reserved"])
+    return CheckResult(
+        "syscall_64.tbl ABI 列与入口点正确", True,
+        f"{total} 个 airy 条目 abi 均为 common，核心入口 sys_airy_sys_*，"
+        f"预留入口 sys_ni_syscall")
 
 
 def check_baseline(ssot, unistd, tbl, baseline):
@@ -474,6 +699,10 @@ def print_report(results, ssot, unistd, tbl, baseline, sources, check_mode):
     print(f"  unistd.h:       {len(unistd['syscalls'])}")
     print(f"  syscall_64.tbl: {len(tbl['syscalls'])}")
     print()
+    print("Reserved slots (552-571):")
+    print(f"  unistd.h:       {len(unistd.get('reserved', []))}")
+    print(f"  syscall_64.tbl: {len(tbl.get('reserved', []))}")
+    print()
     print("-" * 72)
     print(f"Checks: {passed}/{total} passed, {failed} failed")
     print("-" * 72)
@@ -521,6 +750,10 @@ def main():
         help="syscall_64.tbl path (default: "
              "kernel/arch/x86/entry/syscalls/syscall_64.tbl)")
     parser.add_argument(
+        "--sc-header-path", default=None,
+        help="[SC] contract header path (default: "
+             "kernel/include/uapi/linux/airymax/syscalls.h)")
+    parser.add_argument(
         "--baseline", default=None,
         help="baseline JSON path (default: "
              "tools/abi-check/abi_baseline.json)")
@@ -545,6 +778,8 @@ def main():
                    else repo_root / DEFAULT_UNISTD_REL)
     tbl_path = (Path(args.tbl_path) if args.tbl_path
                 else repo_root / DEFAULT_TBL_REL)
+    sc_header_path = (Path(args.sc_header_path) if args.sc_header_path
+                      else repo_root / DEFAULT_SC_HEADER_REL)
     baseline_path = (Path(args.baseline) if args.baseline
                      else repo_root / DEFAULT_BASELINE_REL)
 
@@ -552,10 +787,12 @@ def main():
     ssot_text = read_file(ssot_path)
     unistd_text = read_file(unistd_path)
     tbl_text = read_file(tbl_path)
+    sc_header_text = read_file(sc_header_path)
 
     ssot = parse_ssot(ssot_text)
     unistd = parse_unistd(unistd_text)
     tbl = parse_syscall_tbl(tbl_text)
+    sc_header = parse_sc_header(sc_header_text)
 
     baseline = None if args.no_baseline else load_baseline(baseline_path)
 
@@ -566,6 +803,9 @@ def main():
     results.append(check_range_no_conflict(ssot, unistd, tbl))
     results.append(check_nr_syscalls(unistd))
     results.append(check_x32_forbidden(unistd, tbl))
+    results.append(check_sc_header_consistency(sc_header, ssot, unistd, tbl))
+    results.append(check_reserved_slots(unistd, tbl))
+    results.append(check_tbl_abi_and_entry(tbl))
     if baseline is not None:
         results.append(check_baseline(ssot, unistd, tbl, baseline))
 
@@ -574,6 +814,7 @@ def main():
         ("SSoT", str(ssot_path)),
         ("unistd.h", str(unistd_path)),
         ("syscall_64.tbl", str(tbl_path)),
+        ("[SC] syscalls.h", str(sc_header_path)),
         ("baseline", str(baseline_path) if baseline else "(none)"),
     ]
     print_report(results, ssot, unistd, tbl, baseline, sources,

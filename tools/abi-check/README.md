@@ -11,7 +11,7 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 验证 agent-linux 系统调用编号的 ABI 稳定性，对齐
 **OS-IRON-001（用户空间 ABI 永不破坏）**。
 
-工具从三个权威来源提取 syscall 编号并进行三方对比，同时与基线快照
+工具从四个权威来源提取 syscall 编号并进行四方对比，同时与基线快照
 对比确保编号不可变更性：
 
 | 来源 | 文件 | 角色 |
@@ -19,14 +19,19 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 | SSoT 文档 | `../docs/docs-linux/140-application-development/07-syscall-registry.md` | 唯一权威注册表 |
 | UAPI 头文件 | `kernel/include/uapi/asm-generic/unistd.h` | 用户空间编号定义 |
 | 内核入口表 | `kernel/arch/x86/entry/syscalls/syscall_64.tbl` | 内核注册编号 |
+| [SC] 契约头 | `kernel/include/uapi/linux/airymax/syscalls.h` | 共享契约宏定义 |
 
 ## 文件
 
 ```text
 tools/abi-check/
-├── abi_check.py        # ABI 检查脚本（Python 3，仅依赖标准库）
-├── abi_baseline.json   # ABI 基线快照（v1.0.1 权威定义）
-└── README.md           # 本文件
+├── abi_check.py          # ABI 检查脚本（Python 3，仅依赖标准库）
+├── abi_baseline.json     # ABI 基线快照（v1.0.1 权威定义）
+├── requirements-dev.txt  # 测试依赖（pytest）
+├── tests/
+│   ├── conftest.py       # 测试夹具（注入 sys.path）
+│   └── test_abi_check.py # 单元测试
+└── README.md             # 本文件
 ```
 
 ## 检查项
@@ -36,9 +41,12 @@ tools/abi-check/
 | 1 | 三方一致性 | 4 核心 syscall 编号在 SSoT / unistd.h / syscall_64.tbl 三方一致 |
 | 2 | 编号起点 | AIRY_SYS_BASE = 548，所有 airy syscall >= 548 |
 | 3 | 范围无冲突 | 编号唯一且在 548-571 范围内，无重复 |
-| 4 | __NR_syscalls | unistd.h 中 __NR_syscalls = 552 |
+| 4 | __NR_syscalls | unistd.h 中 __NR_syscalls = 572 |
 | 5 | x32 禁止区域 | 无 airy syscall 落入 512-547（x86_64 x32 历史遗留区域） |
-| 6 | 基线一致 | 当前 ABI 与 abi_baseline.json 快照一致（编号不可变更） |
+| 6 | [SC] 契约头一致 | syscalls.h 中 4 核心宏与预留标记（BASE/END/SLOTS_MAX）与 SSoT 及各源一致 |
+| 7 | 预留槽登记一致 | 552-571 共 20 槽在 unistd.h / syscall_64.tbl 均按 `airy_reserved_N` 完整登记 |
+| 8 | tbl ABI 列与入口点 | syscall_64.tbl 中 airy 条目 abi=common，核心入口为 `sys_airy_sys_*` |
+| 9 | 基线一致 | 当前 ABI 与 abi_baseline.json 快照一致（编号不可变更） |
 
 ## 使用方法
 
@@ -61,18 +69,22 @@ Sources:
   SSoT            : ../docs/docs-linux/.../07-syscall-registry.md
   unistd.h        : kernel/include/uapi/asm-generic/unistd.h
   syscall_64.tbl  : kernel/arch/x86/entry/syscalls/syscall_64.tbl
+  [SC] syscalls.h : kernel/include/uapi/linux/airymax/syscalls.h
   baseline        : tools/abi-check/abi_baseline.json
 
 SSoT version:     v1.0.1
 Baseline version: v1.0.1
 
-Checks: 6/6 passed, 0 failed
+Checks: 9/9 passed, 0 failed
 
 [+] PASS: 三方一致性 (SSoT / unistd.h / syscall_64.tbl)
 [+] PASS: 编号起点为 548
 [+] PASS: 编号范围 548-571 内无冲突
 [+] PASS: __NR_syscalls 值正确
 [+] PASS: 无 512-547 区域的 syscall (x32 禁止区域)
+[+] PASS: [SC] 契约头一致 (syscalls.h)
+[+] PASS: 预留槽登记一致 (552-571)
+[+] PASS: syscall_64.tbl ABI 列与入口点正确
 [+] PASS: 编号与基线快照一致
 
 RESULT: PASS — all ABI checks passed (OS-IRON-001)
@@ -99,6 +111,7 @@ python3 tools/abi-check/abi_check.py \
     --ssot-path /path/to/07-syscall-registry.md \
     --unistd-path /path/to/unistd.h \
     --tbl-path /path/to/syscall_64.tbl \
+    --sc-header-path /path/to/syscalls.h \
     --baseline /path/to/abi_baseline.json
 ```
 
@@ -120,8 +133,15 @@ python3 tools/abi-check/abi_check.py \
     python3 tools/abi-check/abi_check.py --check
 ```
 
-`--check` 模式下，通过时输出 `ABI CHECK: PASS (6/6 checks)`，失败时
+`--check` 模式下，通过时输出 `ABI CHECK: PASS (9/9 checks)`，失败时
 输出失败项摘要。CI 仅需检查退出码即可。
+
+### 单元测试
+
+```bash
+pip install -r tools/abi-check/requirements-dev.txt
+python3 -m pytest tools/abi-check/tests/ -q
+```
 
 ## 基线快照管理
 

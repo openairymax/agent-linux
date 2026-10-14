@@ -74,7 +74,7 @@ jobs:
         with: { submodules: recursive }
       - name: Install static analysis tools
         run: sudo apt-get install -y sparse coccinelle
-      - name: ABI consistency check (OS-IRON-001, 6/6 PASS required)
+      - name: ABI consistency check (OS-IRON-001, 9/9 PASS required)
         run: python3 tools/abi-check/abi_check.py --check
       - name: checkpatch.pl --strict (OS-STD-TOOL-160)
         run: |
