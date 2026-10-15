@@ -77,6 +77,11 @@ jobs:
       - name: Install OS-CHK dependencies
         run: |
           pip install -r tools/os-chk/requirements-dev.txt
+          # OS-IRON-009-CODEGEN 与 OS-IRON-009-DSL 分别经 run_codegen.py /
+          # dsl_compile.py 执行；dsl 单向复用 codegen 的确定性渲染环境
+          # （codegen_io → Jinja2），故此处必须装齐 codegen 依赖，否则两门禁
+          # 在 CI 恒为 ERROR（本地因已装 Jinja2 而不可见）。
+          pip install -r tools/codegen/requirements-dev.txt
           pip install -r tools/defconfig-matrix/requirements-dev.txt
           pip install -r tools/btf-integration/requirements-dev.txt
           pip install -r tools/kbuild-version/requirements-dev.txt
