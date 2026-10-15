@@ -1,0 +1,4 @@
+# tools/airy-checkpatch/requirements-dev.txt — 测试依赖
+# 本目录只承载 kernel/scripts/airy_checkpatch_ext.pl 的集成测试，
+# 无 Python 运行时依赖（引擎为 Perl），仅测试框架需要安装。
+pytest>=8.0,<9.0
