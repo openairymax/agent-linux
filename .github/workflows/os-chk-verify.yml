@@ -8,9 +8,11 @@
 #         检查本体由既有执行器承担；gates.yaml 为门禁唯一事实源。
 # ---------------------------------------------------------------------------
 # 说明：os_chk.py 会依次调用 abi-check / sc-tri-compile / validate-ssot /
-# codegen / dsl / check-copyright 等既有工具，故本 workflow 除监听
-# tools/os-chk/** 外，同时监听上述执行器与其受检对象的路径，任一改动
-# 破坏门禁即可被捕获。默认 --fail-on P1（P0+P1 阻断），对齐规范。
+# codegen / dsl / check-copyright / airy-checkpatch 等既有工具，故本
+# workflow 除监听 tools/os-chk/** 外，同时监听上述执行器与其受检对象的
+# 路径，任一改动破坏门禁即可被捕获。默认 --fail-on P1（P0+P1 阻断），
+# 对齐规范。kernel 为本仓 gitlink，其子模块指针变动即触发（OS-TEST-066
+# 的 Perl 引擎位于 kernel/scripts/）。
 # ===========================================================================
 
 name: os-chk-verify
@@ -24,7 +26,9 @@ on:
       - 'tools/abi-check/**'
       - 'tools/codegen/**'
       - 'tools/dsl/**'
+      - 'tools/airy-checkpatch/**'
       - 'ssot-registry.yaml'
+      - 'kernel'
   push:
     branches: [main, develop]
     paths:
@@ -35,7 +39,9 @@ on:
       - 'tools/abi-check/**'
       - 'tools/codegen/**'
       - 'tools/dsl/**'
+      - 'tools/airy-checkpatch/**'
       - 'ssot-registry.yaml'
+      - 'kernel'
 
 jobs:
   os-chk-verify:
@@ -55,7 +61,7 @@ jobs:
         run: pip install -r tools/os-chk/requirements-dev.txt
 
       - name: Run OS-CHK unit tests (pytest)
-        run: python3 -m pytest tools/os-chk/tests/ -q
+        run: python3 -m pytest tools/os-chk/tests/ tools/airy-checkpatch/tests/ -q
 
       - name: Run OS-CHK unified gates
         run: |

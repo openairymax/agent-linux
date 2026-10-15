@@ -54,10 +54,14 @@ tools/
 │   ├── abi_check.py             # ABI checker (stdlib only)
 │   ├── abi_baseline.json        # ABI baseline snapshot
 │   └── README.md                # Tool-specific documentation
-└── sc-tri-compile/              # [SC] header tri-compile & layout checker
-    ├── sc_tri_compile.py        # Tri-compile + type-size/offset checker (stdlib only)
+├── sc-tri-compile/              # [SC] header tri-compile & layout checker
+│   ├── sc_tri_compile.py        # Tri-compile + type-size/offset checker (stdlib only)
+│   ├── requirements-dev.txt     # Test dependency (pytest)
+│   ├── tests/                   # pytest suite (constants/probe/consistency/CLI)
+│   └── README.md                # Tool-specific documentation
+└── airy-checkpatch/             # AirymaxOS custom checkpatch extension rules
     ├── requirements-dev.txt     # Test dependency (pytest)
-    ├── tests/                   # pytest suite (constants/probe/consistency/CLI)
+    ├── tests/                   # pytest suite driving kernel/scripts/airy_checkpatch_ext.pl
     └── README.md                # Tool-specific documentation
 ```
 
@@ -78,6 +82,7 @@ tools/
 | `dsl/dsl_compile.py` | Policy DSL (`.adl`) compiler — lexer/parser/semantics/IR → pure C decision table header; `--check` is the zero-drift gate for policy tables (IRON-9, K-1 mechanism/policy split) | `dsl-verify.yml`, `tools/dsl/Makefile` |
 | `abi-check/abi_check.py` | Syscall ABI stability checker — three-way consistency + baseline immutability (OS-IRON-001) | `ci-kernel.yml` (`kernel-verify`) |
 | `sc-tri-compile/sc_tri_compile.py` | `[SC]` header tri-compile & layout checker — compiles every `kernel/include/uapi/linux/airymax/*.h` under kernel / Linux-user / third-party paths and asserts fixed-width type sizes and struct field offsets are identical across all three; `--check` is the CI gate (OS-IRON-014); pytest suite in `tests/` | `sc-dual-ci.yml` (`sc-validate`) |
+| `airy-checkpatch/` (integration tests) | AirymaxOS custom checkpatch extension rules (`AIRY-CHECKPATCH-001`~`011`: log interface, naming prefixes, concurrency memory order, IPC entry, LSM registration, DMA usage, config black/white lists, file-header convention). Rule logic lives solely in `kernel/scripts/airy_checkpatch_ext.pl`; this directory holds only the pytest integration suite and docs, so the rules never drift across two copies (OS-TEST-066 / OS-KER-120 / OS-STD-STY-007) | `ci-airy.yml` (`airy-static`), `os-chk-verify.yml`, `tools/os-chk/gates.yaml` (OS-TEST-066) |
 
 ### CI-Referenced Helper Surface
 

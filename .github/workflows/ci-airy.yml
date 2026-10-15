@@ -2,7 +2,7 @@
 # agent-linux (AirymaxOS) Airymax-Specific CI Pipeline
 # 专门验证 Airymax 专属代码（security/airy + kernel/superv + corekern 等）
 # 重组为 2 jobs：airy-build（airy_defconfig 4 架构构建 + 配置/产物/符号门禁）
-#                airy-static（checkpatch + SPDX 许可证审计）
+#                airy-static（checkpatch + 定制扩展规则 + SPDX 许可证审计）
 # Authority: docs/docs-linux/70-build-system/03-ci-cd-pipeline.md
 # Constraint: 管理仓每个 workflow 最多 2 条流水线
 # Rules: OS-STD-TOOL-160（checkpatch）/ OS-STD-TOOL-161（矩阵）
@@ -222,6 +222,15 @@ jobs:
             exit 1
           fi
           echo "checkpatch gate passed (ERROR level only; warnings are reported)"
+      - name: Run Airymax custom checkpatch extension rules
+        run: |
+          set -uo pipefail
+          # 上游 checkpatch.pl 之上的 AirymaxOS 子系统架构约束
+          # （AIRY-CHECKPATCH-001~011）。规则逻辑唯一落在
+          # kernel/scripts/airy_checkpatch_ext.pl，与 tools/airy-checkpatch/
+          # 的 pytest 集成套件同源，避免两处漂移（OS-TEST-066 / OS-KER-120）。
+          # 引擎仅在 error 级别非零退出：ERROR 阻断，WARNING 报告。
+          LC_ALL=C perl kernel/scripts/airy_checkpatch_ext.pl
       - name: Verify SPDX identifiers on Airymax-specific files
         shell: bash
         run: |

@@ -27,7 +27,7 @@
 #
 # version: 注册表版本，随门禁增删而递增。
 
-version: "1.0.0"
+version: "1.1.0"
 
 gates:
   # ── 文档类 ────────────────────────────────────────────────────────────
@@ -82,3 +82,13 @@ gates:
     authority: 30-interfaces/06-codegen-pipeline.md §7.2（IRON-9）
     executor:
       argv: ["python3", "tools/dsl/dsl_compile.py", "--check"]
+
+  # ── Airymax 定制 checkpatch 扩展规则（OS-TEST-066 / OS-KER-120）──────
+  - id: OS-TEST-066
+    name: Airymax 定制 checkpatch 扩展规则
+    severity: P0
+    category: code
+    authority: 80-testing/05-static-analysis.md §7.2（OS-TEST-066 / OS-KER-120）
+    timeout_s: 300
+    executor:
+      argv: ["perl", "kernel/scripts/airy_checkpatch_ext.pl"]

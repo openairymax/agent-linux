@@ -66,6 +66,7 @@ tools/os-chk/
 | OS-IRON-015 | SSoT 规则 ID 注册一致性 | `tools/validate-ssot.py` |
 | OS-IRON-009-CODEGEN | codegen 生成产物零漂移 | `tools/codegen/run_codegen.py` |
 | OS-IRON-009-DSL | 策略 DSL 决策表零漂移 | `tools/dsl/dsl_compile.py` |
+| OS-TEST-066 | Airymax 定制 checkpatch 扩展规则 | `kernel/scripts/airy_checkpatch_ext.pl` |
 
 ## 使用方法
 
@@ -81,7 +82,7 @@ python3 tools/os-chk/os_chk.py
 ```text
 ========================================================================
 AirymaxOS OS-CHK 门禁报告
-注册表版本: 1.0.0
+注册表版本: 1.1.0
 ========================================================================
 
 [2026-11-17 09:00:00] [  OK  ] OS-CHK-DOC-01 Copyright 头部: OK: 所有受检 .md 文件的第 1 行均含版权头
@@ -90,9 +91,10 @@ AirymaxOS OS-CHK 门禁报告
 [2026-11-17 09:00:01] [  OK  ] OS-IRON-015 SSoT 规则 ID 注册一致性: RESULT: PASS — all rule IDs registered
 [2026-11-17 09:00:01] [  OK  ] OS-IRON-009-CODEGEN codegen 生成产物零漂移: [codegen] all 4 generators verified successfully
 [2026-11-17 09:00:02] [  OK  ] OS-IRON-009-DSL 策略 DSL 决策表零漂移: OK: dsl_compile outputs match committed files (1 files)
+[2026-11-17 09:00:02] [  OK  ] OS-TEST-066 Airymax 定制 checkpatch 扩展规则: airy_checkpatch_ext: 95 files checked, 0 errors, 0 warnings
 
 ------------------------------------------------------------------------
-RESULT: PASS — 全部 6 条门禁通过（1.3s）
+RESULT: PASS — 全部 7 条门禁通过（1.4s）
 ------------------------------------------------------------------------
 ```
 
@@ -100,7 +102,7 @@ RESULT: PASS — 全部 6 条门禁通过（1.3s）
 
 ```bash
 python3 tools/os-chk/os_chk.py --check
-# 输出: OS-CHK: PASS (6/6 gates, 1.3s)
+# 输出: OS-CHK: PASS (7/7 gates, 1.4s)
 # 退出码: 0=通过, 1=阻断, 2=用法/环境错误
 ```
 
