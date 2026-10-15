@@ -1,0 +1,4 @@
+# tools/release-engineering/requirements-dev.txt — 测试工具链依赖（CI 与本地开发）
+# merge_sbom.py 仅依赖 Python 标准库（json/argparse/datetime/pathlib）；
+# pytest 仅供单元测试使用。
+pytest>=8.0,<9.0

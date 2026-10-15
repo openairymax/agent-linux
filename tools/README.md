@@ -69,11 +69,16 @@ tools/
 │   ├── requirements-dev.txt     # Runtime + test dependency (pyyaml, pytest)
 │   ├── tests/                   # pytest suite (schema/fs/format/configs/ci/kconfig/CLI)
 │   └── README.md                # Tool-specific documentation
-└── btf-integration/             # BTF / eBPF baseline SSoT + static gate
-    ├── btf_integration.py       # Manifest ↔ airy_defconfig ↔ CI cross-checker (`--check` gate)
-    ├── manifest.yaml            # Single source of truth for BPF/BTF/tracing baselines & CI supply
-    ├── requirements-dev.txt     # Runtime + test dependency (pyyaml, pytest)
-    ├── tests/                   # pytest suite (schema/fragments/bpf/btf/tracing/ci/CLI)
+├── btf-integration/             # BTF / eBPF baseline SSoT + static gate
+│   ├── btf_integration.py       # Manifest ↔ airy_defconfig ↔ CI cross-checker (`--check` gate)
+│   ├── manifest.yaml            # Single source of truth for BPF/BTF/tracing baselines & CI supply
+│   ├── requirements-dev.txt     # Runtime + test dependency (pyyaml, pytest)
+│   ├── tests/                   # pytest suite (schema/fragments/bpf/btf/tracing/ci/CLI)
+│   └── README.md                # Tool-specific documentation
+└── release-engineering/         # Release-engineering tool set (SPDX SBOM assembly)
+    ├── merge_sbom.py            # Merge per-submodule SPDX 2.3 JSON fragments into one document
+    ├── requirements-dev.txt     # Test dependency (pytest)
+    ├── tests/                   # pytest suite (merge/dedupe/conflict/determinism/CLI)
     └── README.md                # Tool-specific documentation
 ```
 
@@ -97,6 +102,7 @@ tools/
 | `airy-checkpatch/` (integration tests) | AirymaxOS custom checkpatch extension rules (`AIRY-CHECKPATCH-001`~`011`: log interface, naming prefixes, concurrency memory order, IPC entry, LSM registration, DMA usage, config black/white lists, file-header convention). Rule logic lives solely in `kernel/scripts/airy_checkpatch_ext.pl`; this directory holds only the pytest integration suite and docs, so the rules never drift across two copies (OS-TEST-066 / OS-KER-120 / OS-STD-STY-007) | `ci-airy.yml` (`airy-static`), `os-chk-verify.yml`, `tools/os-chk/gates.yaml` (OS-TEST-066) |
 | `defconfig-matrix/defconfig_matrix.py` | defconfig build-matrix SSoT checker — reads `manifest.yaml` (the only source of truth for architectures, mandatory configs, LSM entry, and the CI matrix) and verifies manifest↔filesystem consistency, `airy_defconfig` header format, mandatory `CONFIG_*` presence, `CONFIG_LSM` entry, CI build-matrix arch equality, CI `required=()` equality, and Kconfig declaration closure; `--check` is the CI gate (OS-BUILD-026 / OS-BUILD-028) | `ci-airy.yml` (`airy-static`), `os-chk-verify.yml`, `tools/os-chk/gates.yaml` (OS-BUILD-MATRIX) |
 | `btf-integration/btf_integration.py` | BTF / eBPF baseline SSoT checker — reads `manifest.yaml` (the only source of truth for the eBPF baseline, the BTF baseline plus its mutex/DWARF prerequisites, the `BPF_EVENTS` tracing chain, the pahole package, the BTF artifact token, and the workflows that must supply them) and verifies manifest schema, build-entry fragment presence, eBPF baseline, BTF baseline, tracing chain, and CI pahole/artifact supply; `--check` is the CI gate (OS-KER-106 / OS-OBS-012) | `ci-airy.yml` (`airy-static`), `os-chk-verify.yml`, `tools/os-chk/gates.yaml` (OS-BUILD-BTF) |
+| `release-engineering/merge_sbom.py` | Merge per-submodule SPDX 2.3 JSON SBOM fragments into one `agent-linux` document — unions `packages`/`files`/`relationships`/`externalDocumentRefs`/`hasExtractedLicensingInfos` by their identity key, fails on conflicting duplicates, pins the document-level fields (`SPDX-2.3` / `CC0-1.0` / `SPDXRef-DOCUMENT`), and derives `created` from `SOURCE_DATE_EPOCH` for byte-deterministic output; `--output` + fragments (`0`/`1`/`2` exit codes) | `release.yml` (`build-and-sign`) |
 
 ### CI-Referenced Helper Surface
 
@@ -113,7 +119,6 @@ corresponding subsystem matures:
 | `auto-bisect.py` | `nightly.yml` | Auto-bisect to locate a regression commit (`--baseline last-green`) |
 | `create-revert-pr.py` | `nightly.yml` | Create a revert PR for a regression commit (`--regression-commit`) |
 | `ci-budget-check.py` | `nightly.yml` | Check total CI time against the budget gate (`--max-minutes 60`, OS-STD-TEST-011) |
-| `merge-sbom.py` | `release.yml` | Merge per-submodule SPDX SBOM fragments into one (`--output`, inputs) |
 
 ## Usage
 
