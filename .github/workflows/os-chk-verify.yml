@@ -9,12 +9,15 @@
 # ---------------------------------------------------------------------------
 # 说明：os_chk.py 会依次调用 abi-check / sc-tri-compile / validate-ssot /
 # codegen / dsl / check-copyright / airy-checkpatch / defconfig-matrix /
-# btf-integration 等既有工具，故本 workflow 除监听 tools/os-chk/** 外，同时监听
-# 上述执行器与其受检对象的路径，任一改动破坏门禁即可被捕获。默认 --fail-on P1
-# （P0+P1 阻断），对齐规范。kernel 为本仓 gitlink，其子模块指针变动即触发
-# （OS-TEST-066 的 Perl 引擎位于 kernel/scripts/；OS-BUILD-MATRIX 的 defconfig
-# 受检对象位于 kernel/arch/*/configs/；OS-BUILD-BTF 的受检片段与其 CI 供给
-# 位于 kernel/arch/*/configs/airy_defconfig 与 .github/workflows/）。
+# btf-integration / release-engineering 等既有工具，故本 workflow 除监听
+# tools/os-chk/** 外，同时监听上述执行器与其受检对象的路径，任一改动破坏门禁
+# 即可被捕获。默认 --fail-on P1（P0+P1 阻断），对齐规范。kernel 为本仓
+# gitlink，其子模块指针变动即触发（OS-TEST-066 的 Perl 引擎位于
+# kernel/scripts/；OS-BUILD-MATRIX 的 defconfig 受检对象位于
+# kernel/arch/*/configs/；OS-BUILD-BTF 的受检片段与其 CI 供给位于
+# kernel/arch/*/configs/airy_defconfig 与 .github/workflows/）。
+# OS-BUILD-RELEASE 的受检对象为 tools/release-engineering/manifest.yaml 与
+# .github/workflows/release.yml，故两者亦纳入监听。
 # ===========================================================================
 
 name: os-chk-verify
@@ -31,6 +34,8 @@ on:
       - 'tools/airy-checkpatch/**'
       - 'tools/defconfig-matrix/**'
       - 'tools/btf-integration/**'
+      - 'tools/release-engineering/**'
+      - '.github/workflows/release.yml'
       - 'ssot-registry.yaml'
       - 'kernel'
   push:
@@ -46,6 +51,8 @@ on:
       - 'tools/airy-checkpatch/**'
       - 'tools/defconfig-matrix/**'
       - 'tools/btf-integration/**'
+      - 'tools/release-engineering/**'
+      - '.github/workflows/release.yml'
       - 'ssot-registry.yaml'
       - 'kernel'
 
@@ -68,9 +75,10 @@ jobs:
           pip install -r tools/os-chk/requirements-dev.txt
           pip install -r tools/defconfig-matrix/requirements-dev.txt
           pip install -r tools/btf-integration/requirements-dev.txt
+          pip install -r tools/release-engineering/requirements-dev.txt
 
       - name: Run OS-CHK unit tests (pytest)
-        run: python3 -m pytest tools/os-chk/tests/ tools/airy-checkpatch/tests/ tools/defconfig-matrix/tests/ tools/btf-integration/tests/ -q
+        run: python3 -m pytest tools/os-chk/tests/ tools/airy-checkpatch/tests/ tools/defconfig-matrix/tests/ tools/btf-integration/tests/ tools/release-engineering/tests/ -q
 
       - name: Run OS-CHK unified gates
         run: |

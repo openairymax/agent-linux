@@ -27,7 +27,7 @@
 #
 # version: 注册表版本，随门禁增删而递增。
 
-version: "1.3.0"
+version: "1.4.0"
 
 gates:
   # ── 文档类 ────────────────────────────────────────────────────────────
@@ -110,3 +110,16 @@ gates:
     authority: 90-observability/02-ebpf-probes.md（OS-KER-106 / OS-OBS-012）
     executor:
       argv: ["python3", "tools/btf-integration/btf_integration.py", "--check"]
+
+  # ── 发布物料清单 ↔ release 流水线一致性（OS-BUILD-RELEASE）─────────────
+  # 受检对象为 tools/release-engineering/manifest.yaml 与
+  # .github/workflows/release.yml：正向要求每条 active 物料的 evidence 被
+  # 流水线真实声明，反向要求流水线声明的每个产物 glob 均已登记，双向缺漏即
+  # 阻断，杜绝「文档写了、流水线没产」与「流水线产了、清单没登记」的漂移。
+  - id: OS-BUILD-RELEASE
+    name: 发布物料清单一致性
+    severity: P0
+    category: build
+    authority: 120-development-process/09-release-process.md §3
+    executor:
+      argv: ["python3", "tools/release-engineering/release_manifest.py", "--check"]
