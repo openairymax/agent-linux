@@ -6,17 +6,11 @@
  *
  * Security types — [SC] shared contract header.
  *
- * POSIX capability 44 IDs (41 standard + 3 Airymax extensions),
- * Airy LSM 7 implemented hooks (uring_cmd/task_alloc/task_free/
- * task_kill/file_open/inode_alloc_security/inode_free_security;
- * Linux 6.6 LSM framework exposes ~250 total slots — see
- * lsm_types.h AIRY_LSM_KERNEL_HOOK_TOTAL),
- * Cupolas 4-value verdict, seL4 CNode 7 derivation operations,
- * and capability type definitions.
+ * POSIX capability 44 IDs, Airy LSM 7 implemented hooks, Cupolas
+ * 4-value verdict, seL4 CNode 7 derivation operations, and capability
+ * type definitions. SSoT (OS-IRON-014) for AIRY_CAP_PERM_* bits.
  *
- * SSoT (OS-IRON-014): this header is the single source of truth for
- * AIRY_CAP_PERM_* permission bits. ipc.h and other consumers must
- * include this header rather than redefining the constants.
+ * Design rationale: docs/AirymaxOS/50-engineering-standards/09-ssot-registry.md
  */
 
 #ifndef _UAPI_AIRYMAX_SECURITY_TYPES_H
