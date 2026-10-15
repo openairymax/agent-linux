@@ -85,6 +85,7 @@ python3 tools/kbuild-version/kbuild_version.py \
 ## 维护清单
 
 **发布新的 AirymaxOS 版本时（对齐 `OS-BUILD-009`）**：依次改动
+
 1. [manifest.yaml](manifest.yaml) 的 `version_tuple`；
 2. [`kernel/Makefile.airymaxos`](../../kernel/Makefile.airymaxos) 的四个变量；
 3. 契约快照 [contract/version_h.airy.txt](contract/version_h.airy.txt)（可先按四元组

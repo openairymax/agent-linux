@@ -10,7 +10,7 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 
 | 工具 | 职责 |
 |------|------|
-| [`merge_sbom.py`](#mergesbompy--spdx-sbom-分片合并) | 把各子仓扫描出的 SPDX 2.3 SBOM 分片合并为单一 `agent-linux` 主体物料清单 |
+| [`merge_sbom.py`](#merge_sbompy--spdx-sbom-分片合并) | 把各子仓扫描出的 SPDX 2.3 SBOM 分片合并为单一 `agent-linux` 主体物料清单 |
 | [`release_manifest.py`](#release_manifestpy--发布物料清单门禁与生成) | 以 `manifest.yaml` 为唯一事实源，校验「物料清单 ↔ release 流水线」双向一致，并生成校验和与 release notes |
 
 两个工具都**只做真实计算**，不做任何占位跳过：冲突即失败，绝不静默丢弃或覆盖。
