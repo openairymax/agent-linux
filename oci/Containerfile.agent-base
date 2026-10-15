@@ -5,18 +5,23 @@
 #   docs/docs-linux/190-distribution/05-reproducible-build.md §8.3（可重现模板）
 #   docs/docs-linux/70-build-system/03-ci-cd-pipeline.md §8.4/§8.5（镜像命名）
 #
+# 基底镜像：openEuler 24.03 LTS SP2 官方基础镜像。与 distro 目标发行版
+#   （distro/kickstart/airymaxos-workstation.ks 的 openEuler-24.03-LTS-SP2）
+#   同源，故 dnf / glibc / ABI 与本发行版一致，系统层可直接在其上叠加。
+#   国内可换成 hub.oepkgs.net/openeuler/openeuler:24.03-lts-sp2。
+#
 # 构建入口（.github/workflows/release.yml 的 "Build OCI base image" 步骤）：
 #   docker build -f oci/Containerfile.agent-base \
-#     --build-arg BASE_IMAGE=ghcr.io/spharx/base:1.0.1 \
 #     --build-arg SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct) \
 #     --build-arg AIRY_VERSION=<X.Y.Z> \
 #     -t ghcr.io/spharx/airymaxos:v<X.Y.Z> .
+#   （BASE_IMAGE 已内建默认值；更换基底时以 --build-arg BASE_IMAGE=... 覆盖）
 #
 # 构建上下文为管理仓根目录：依赖同一次 release 构建产出的
 #   dist/rpm/<arch>/airymaxos-kernel-*.rpm 与 agent-linux-sdk-<ver>.tar.gz
 # ===========================================================================
 
-ARG BASE_IMAGE=ghcr.io/spharx/base:1.0.1
+ARG BASE_IMAGE=docker.io/openeuler/openeuler:24.03-lts-sp2
 FROM ${BASE_IMAGE}
 
 # 确定性构建参数
