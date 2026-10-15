@@ -195,5 +195,14 @@ class TestRenderAndCheck:
     def test_render_is_deterministic(self, repo_root: Path) -> None:
         assert render_outputs(repo_root) == render_outputs(repo_root)
 
+    def test_render_avoids_checkpatch_code_indent(self, repo_root: Path) -> None:
+        for path, content in render_outputs(repo_root).items():
+            for lineno, line in enumerate(content.splitlines(), 1):
+                indent = line[: len(line) - len(line.lstrip(" \t"))]
+                assert "        " not in indent, (
+                    f"{path.name}:{lineno}: 8+ consecutive spaces in the "
+                    "leading indent violate checkpatch CODE_INDENT"
+                )
+
     def test_check_matches_committed(self, repo_root: Path) -> None:
         assert check(repo_root) == int(ExitCode.SUCCESS)
