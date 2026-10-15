@@ -1,0 +1,6 @@
+#define AIRYMAXOS_LTS 0
+#define AIRYMAXOS_MAJOR 0
+#define AIRYMAXOS_MINOR 3
+#define AIRYMAXOS_VERSION(a,b) (((a) << 8) + (b))
+#define AIRYMAXOS_VERSION_CODE 3
+#define AIRYMAXOS_RELEASE ""
