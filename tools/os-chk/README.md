@@ -69,6 +69,7 @@ tools/os-chk/
 | OS-TEST-066 | Airymax 定制 checkpatch 扩展规则 | `kernel/scripts/airy_checkpatch_ext.pl` |
 | OS-BUILD-MATRIX | defconfig 构建矩阵一致性 | `tools/defconfig-matrix/defconfig_matrix.py` |
 | OS-BUILD-BTF | BTF / eBPF 基线一致性 | `tools/btf-integration/btf_integration.py` |
+| OS-BUILD-KBUILD-VERSION | Kbuild 版本注入一致性 | `tools/kbuild-version/kbuild_version.py` |
 | OS-BUILD-RELEASE | 发布物料清单一致性 | `tools/release-engineering/release_manifest.py` |
 
 ## 使用方法
@@ -85,7 +86,7 @@ python3 tools/os-chk/os_chk.py
 ```text
 ========================================================================
 AirymaxOS OS-CHK 门禁报告
-注册表版本: 1.4.0
+注册表版本: 1.5.0
 ========================================================================
 
 [2026-11-17 09:00:00] [  OK  ] OS-CHK-DOC-01 Copyright 头部: OK: 所有受检 .md 文件的第 1 行均含版权头
@@ -97,10 +98,11 @@ AirymaxOS OS-CHK 门禁报告
 [2026-11-17 09:00:02] [  OK  ] OS-TEST-066 Airymax 定制 checkpatch 扩展规则: airy_checkpatch_ext: 95 files checked, 0 errors, 0 warnings
 [2026-11-17 09:00:02] [  OK  ] OS-BUILD-MATRIX defconfig 构建矩阵一致性: DEFCONFIG-MATRIX: PASS (8/8 checks)
 [2026-11-17 09:00:02] [  OK  ] OS-BUILD-BTF BTF / eBPF 基线一致性: BTF-INTEGRATION: PASS (6/6 checks)
+[2026-11-17 09:00:02] [  OK  ] OS-BUILD-KBUILD-VERSION Kbuild 版本注入一致性: KBUILD-VERSION: PASS (7/7 checks)
 [2026-11-17 09:00:02] [  OK  ] OS-BUILD-RELEASE 发布物料清单一致性: RELEASE-MANIFEST: PASS (2/2 checks)
 
 ------------------------------------------------------------------------
-RESULT: PASS — 全部 10 条门禁通过（1.6s）
+RESULT: PASS — 全部 11 条门禁通过（1.6s）
 ------------------------------------------------------------------------
 ```
 
@@ -108,7 +110,7 @@ RESULT: PASS — 全部 10 条门禁通过（1.6s）
 
 ```bash
 python3 tools/os-chk/os_chk.py --check
-# 输出: OS-CHK: PASS (10/10 gates, 1.6s)
+# 输出: OS-CHK: PASS (11/11 gates, 1.6s)
 # 退出码: 0=通过, 1=阻断, 2=用法/环境错误
 ```
 

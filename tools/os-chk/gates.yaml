@@ -27,7 +27,7 @@
 #
 # version: 注册表版本，随门禁增删而递增。
 
-version: "1.4.0"
+version: "1.5.0"
 
 gates:
   # ── 文档类 ────────────────────────────────────────────────────────────
@@ -110,6 +110,19 @@ gates:
     authority: 90-observability/02-ebpf-probes.md（OS-KER-106 / OS-OBS-012）
     executor:
       argv: ["python3", "tools/btf-integration/btf_integration.py", "--check"]
+
+  # ── Kbuild 版本注入一致性（OS-STD-049 / OS-BUILD-010）─────────────────
+  # 受检对象为 kernel/Makefile.airymaxos（版本四元组）、kernel/Makefile
+  # （include 指令与 filechk_version.h 注入宏）与
+  # tools/kbuild-version/contract/version_h.airy.txt（契约快照）：任一漂移即
+  # 阻断，杜绝「版本文件改了、顶层 Makefile 没接线」或「契约快照滞后」。
+  - id: OS-BUILD-KBUILD-VERSION
+    name: Kbuild 版本注入一致性
+    severity: P0
+    category: build
+    authority: 70-build-system/01-kbuild-system.md §5/§5.2（OS-STD-049 / OS-BUILD-010）
+    executor:
+      argv: ["python3", "tools/kbuild-version/kbuild_version.py", "--check"]
 
   # ── 发布物料清单 ↔ release 流水线一致性（OS-BUILD-RELEASE）─────────────
   # 受检对象为 tools/release-engineering/manifest.yaml 与

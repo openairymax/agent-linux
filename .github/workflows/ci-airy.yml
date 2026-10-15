@@ -3,12 +3,14 @@
 # 专门验证 Airymax 专属代码（security/airy + kernel/superv + corekern 等）
 # 重组为 2 jobs：airy-build（airy_defconfig 4 架构构建 + 配置/产物/BTF/符号门禁）
 #                airy-static（checkpatch + 定制扩展规则 + SPDX 许可证审计
-#                             + defconfig 构建矩阵一致性 + BTF 基线一致性）
+#                             + defconfig 构建矩阵一致性 + BTF 基线一致性
+#                             + Kbuild 版本注入一致性）
 # Authority: docs/docs-linux/70-build-system/03-ci-cd-pipeline.md
 # Constraint: 管理仓每个 workflow 最多 2 条流水线
 # Rules: OS-STD-TOOL-160（checkpatch）/ OS-STD-TOOL-161（矩阵）
 #        OS-BUILD-026 / OS-BUILD-028（defconfig 基线 / 每架构 defconfig）
 #        OS-KER-106 / OS-OBS-012（eBPF / BTF 基线，需 pahole 且须断言 BTF 产物）
+#        OS-STD-049 / OS-BUILD-010（版本四元组与 version.h filechk 注入）
 #        IRON-3（所有 Airymax 增强代码必须在新增目录中）
 # ===========================================================================
 
@@ -27,6 +29,7 @@ on:
       - 'kernel'
       - 'tools/defconfig-matrix/**'
       - 'tools/btf-integration/**'
+      - 'tools/kbuild-version/**'
       - '.github/workflows/ci-airy.yml'
   push:
     branches: [main]
@@ -42,6 +45,7 @@ on:
       - 'kernel'
       - 'tools/defconfig-matrix/**'
       - 'tools/btf-integration/**'
+      - 'tools/kbuild-version/**'
       - '.github/workflows/ci-airy.yml'
 
 jobs:
@@ -313,3 +317,12 @@ jobs:
           python3 -c 'import yaml' 2>/dev/null || \
             python3 -m pip install --quiet 'pyyaml>=6.0,<7.0'
           python3 tools/btf-integration/btf_integration.py --check
+      - name: Verify Kbuild version injection (SSoT manifest)
+        run: |
+          set -uo pipefail
+          # manifest.yaml 是版本四元组 / kernel/Makefile.airymaxos / 顶层 Makefile
+          # 的 include 与 filechk_version.h 注入宏 / 契约快照的唯一事实源，
+          # kbuild_version.py --check 对其做 7 项交叉校验（OS-STD-049 / OS-BUILD-010）。
+          python3 -c 'import yaml' 2>/dev/null || \
+            python3 -m pip install --quiet 'pyyaml>=6.0,<7.0'
+          python3 tools/kbuild-version/kbuild_version.py --check
