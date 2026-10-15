@@ -1,0 +1,80 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+#
+# AirymaxOS defconfig 矩阵清单（唯一事实源 / SSoT）
+# Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
+#
+# 权威依据：
+#   docs/docs-linux/70-build-system/02-kconfig-system.md
+#     §7.1 三步法 / §10 规则汇总
+#       OS-BUILD-026（各架构 airy_defconfig 为全配置基线）
+#       OS-BUILD-027（allmodconfig/allnoconfig + KCONFIG_ALLCONFIG 可求解）
+#       OS-BUILD-028（每支持架构必须有 airy_defconfig）
+#       OS-KER-025（obj-$(CONFIG_*) 引用的宏须有 config 声明）
+#   docs/docs-linux/70-build-system/03-ci-cd-pipeline.md（编译验证矩阵）
+#
+# 铁律：本清单是「支持架构 × airy_defconfig 形态 × CI 构建矩阵 × 必备
+#      CONFIG」的唯一事实源。.github/workflows/ci-airy.yml 与 ci-kernel.yml
+#      的构建矩阵、必备 CONFIG 清单必须与本表逐项相等；任何一侧漂移由
+#      tools/defconfig-matrix/defconfig_matrix.py --check 检出。
+#      新增架构时，先在本表登记，再落地 arch/<kdir>/configs/airy_defconfig。
+#
+# 字段：
+#   arch    逻辑架构名（对齐 CI 矩阵 matrix.arch 与 $ARCH）
+#   cross   CROSS_COMPILE 前缀（空串表示本机架构）
+#   kind    airy_defconfig 形态：
+#             fragment — 片段式，首行 SPDX + 若干 Airymax 专属 CONFIG，
+#                        由 scripts/kconfig/merge_config.sh 叠加到架构
+#                        base defconfig（走 §7.1 三步法）
+#             full     — 整包式，完整 .config，可直接供 make 目标使用
+#   build   是否纳入 ci-airy.yml 的构建矩阵（受交叉工具链可用性约束）；
+#           build=true 要求 kind=fragment（CI 固定走 merge_config 三步法）
+#   configs 相对内核源码根的 defconfig 路径（arch/<kdir>/configs/...），
+#           kdir 由该路径第二段推导，不在本表重复登记
+
+version: "1.0.0"
+
+architectures:
+  - arch: x86_64
+    cross: ""
+    kind: fragment
+    build: true
+    configs: arch/x86/configs/airy_defconfig
+  - arch: arm64
+    cross: aarch64-linux-gnu-
+    kind: fragment
+    build: true
+    configs: arch/arm64/configs/airy_defconfig
+  - arch: riscv
+    cross: riscv64-linux-gnu-
+    kind: fragment
+    build: true
+    configs: arch/riscv/configs/airy_defconfig
+  - arch: loongarch
+    cross: loongarch64-linux-gnu-
+    kind: fragment
+    build: true
+    configs: arch/loongarch/configs/airy_defconfig
+  - arch: sw_64
+    # sw_64 复用 openEuler 申威架构（ADR-018），交叉工具链尚未配置
+    # （10-architecture/09-known-caveats.md §后续工作），故登记入清单但
+    # 不纳入构建矩阵；其 airy_defconfig 为整包式（696 行），非片段。
+    cross: ""
+    kind: full
+    build: false
+    configs: arch/sw_64/configs/airy_defconfig
+
+# 必备 CONFIG：每个 airy_defconfig 必须含有的 Airymax 开关，须与
+# ci-airy.yml / ci-kernel.yml 的 required=(...) 清单逐项相等，
+# 并与 kernel/security/airy/Kconfig 的声明一致。
+required_configs:
+  - CONFIG_SECURITY=y
+  - CONFIG_SECURITY_AIRY=y
+  - CONFIG_AIRY_SYSCALL=y
+  - CONFIG_AIRY_COREKERN=y
+  - CONFIG_AIRY_LOG=y
+  - CONFIG_AIRY_IPC=y
+  - CONFIG_AIRY_CAP_TABLE_SIZE=1024
+  - CONFIG_IO_URING=y
+
+# CONFIG_LSM 中必须出现的 LSM 名。
+lsm_entry: airy
