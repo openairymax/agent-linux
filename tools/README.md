@@ -23,7 +23,8 @@ tools/
 ├── validate-ssot.py             # SSoT rule-ID consistency validator
 ├── aggregate-subrepo-ci.py      # Leaf-repo CI status aggregator
 ├── check-copyright.py           # Copyright/SPDX header gate
-├── kunit-tap-diff.py            # KUnit TAP baseline differ
+├── kunit-tap-diff.py            # KUnit KTAP case-count monotonicity gate
+├── kunit-tap-baseline.tap       # Committed KUnit KTAP ratchet baseline (OS-TEST-012)
 ├── parse-tap.py                 # kselftest TAP parser
 ├── create-agentrt-mirror-pr.py  # agentrt mirror PR creator ([SC] dual CI)
 ├── await-agentrt-ci.py          # agentrt mirror CI poller
@@ -69,7 +70,7 @@ tools/
 | `validate-ssot.py` | SSoT rule-ID consistency validator — checks that every `OS-*-NNN` (agent-linux) and `*-NNN` (agentrt) rule ID referenced in documentation is registered in `ssot-registry.yaml`. Authority: OS-IRON-015. | `ssot-validate.yml` (`ssot-syntax-and-rules`), local contributor runs |
 | `aggregate-subrepo-ci.py` | Aggregate the CI status of all leaf repositories, deriving the list from `.gitmodules` (`--fail-on-red`) | `mgmt-orchestrator.yml` (`orchestrate-leaf-ci`) |
 | `check-copyright.py` | Verify that repository-owned `.md` files carry a `Copyright`/`SPDX-License-Identifier` on line 1 (`--root .`) | `mgmt-orchestrator.yml` (`orchestrate-leaf-ci`) |
-| `kunit-tap-diff.py` | Diff KUnit TAP output against a baseline snapshot | `ci-kernel.yml` (`kernel-verify`) |
+| `kunit-tap-diff.py` | KUnit KTAP case-count monotonicity gate — parses nested KTAP (`--raw_output=kunit`) and fails when the leaf-case total regresses, a baseline suite disappears, or a new `not ok` appears; the ratchet lives in `kunit-tap-baseline.tap` and is updated explicitly with `--update` (OS-TEST-012) | `ci-kernel.yml` (`kernel-verify`) |
 | `parse-tap.py` | Parse kselftest TAP output and fail on `not ok` | `ci-kernel.yml` (`kernel-verify`) |
 | `create-agentrt-mirror-pr.py` | Create a mirror PR in the agentrt repository for `[SC]` header changes | `sc-dual-ci.yml` (`sc-trigger-and-await`) |
 | `await-agentrt-ci.py` | Poll the agentrt mirror PR CI status to completion | `sc-dual-ci.yml` (`sc-trigger-and-await`) |
