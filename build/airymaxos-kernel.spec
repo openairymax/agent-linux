@@ -12,6 +12,7 @@
 #   KERNELRELEASE   `make -s kernelrelease` 输出（如 6.6.157）
 #   airy_version    RPM Version（发布 tag 去前导 v，如 0.0.3）
 #   airy_release    RPM Release（默认 1）
+#   cross_compile   交叉工具链前缀（如 aarch64-linux-gnu-；x86_64 传空走原生）
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 # Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
@@ -27,7 +28,7 @@
 # ---- 就地构建所需的最小宏（对齐上游 scripts/package/kernel.spec）---------
 %{!?_arch: %define _arch dummy}
 %{!?make: %define make make}
-%define makeflags %{?_smp_mflags} ARCH=%{ARCH}
+%define makeflags %{?_smp_mflags} ARCH=%{ARCH} CROSS_COMPILE=%{?cross_compile}
 
 # 对齐上游内核 spec 的既定做法：禁用 RPM 自动 debuginfo 抽取，仅保留
 # brp-compress。原因有二：(1) 就地构建下 %{buildsubdir} 不存在，自动抽取
@@ -150,6 +151,6 @@ fi
 /lib/modules/%{KERNELRELEASE}/source
 
 %changelog
-* Wed Oct 15 2025 SPHARX <dev@spharx.com> - 0.0.3-1
+* Thu Oct 15 2026 SPHARX <dev@spharx.com> - 0.0.3-1
 - agent-linux (AirymaxOS) 0.0.3 内核包：vmlinuz + 模块 + 头文件 + 开发包
 - 默认配置对齐 arch/<SRCARCH>/configs/airy_defconfig（含 Airy LSM 与 BTF）
