@@ -2,10 +2,12 @@
 # agent-linux (AirymaxOS) Airymax-Specific CI Pipeline
 # 专门验证 Airymax 专属代码（security/airy + kernel/superv + corekern 等）
 # 重组为 2 jobs：airy-build（airy_defconfig 4 架构构建 + 配置/产物/符号门禁）
-#                airy-static（checkpatch + 定制扩展规则 + SPDX 许可证审计）
+#                airy-static（checkpatch + 定制扩展规则 + SPDX 许可证审计
+#                             + defconfig 构建矩阵一致性）
 # Authority: docs/docs-linux/70-build-system/03-ci-cd-pipeline.md
 # Constraint: 管理仓每个 workflow 最多 2 条流水线
 # Rules: OS-STD-TOOL-160（checkpatch）/ OS-STD-TOOL-161（矩阵）
+#        OS-BUILD-026 / OS-BUILD-028（defconfig 基线 / 每架构 defconfig）
 #        IRON-3（所有 Airymax 增强代码必须在新增目录中）
 # ===========================================================================
 
@@ -22,6 +24,7 @@ on:
       - 'kernel/include/uapi/linux/airymax/**'
       - 'kernel/arch/*/configs/airy_defconfig'
       - 'kernel'
+      - 'tools/defconfig-matrix/**'
       - '.github/workflows/ci-airy.yml'
   push:
     branches: [main]
@@ -35,6 +38,7 @@ on:
       - 'kernel/include/uapi/linux/airymax/**'
       - 'kernel/arch/*/configs/airy_defconfig'
       - 'kernel'
+      - 'tools/defconfig-matrix/**'
       - '.github/workflows/ci-airy.yml'
 
 jobs:
@@ -275,3 +279,13 @@ jobs:
             exit 1
           fi
           echo "SPDX audit passed"
+      - name: Verify defconfig build matrix (SSoT manifest)
+        run: |
+          set -uo pipefail
+          # manifest.yaml 是架构 / 必备 CONFIG / LSM / CI 构建矩阵的唯一事实源，
+          # defconfig_matrix.py --check 对其做 8 项交叉校验：清单↔文件系统双向
+          # 一致、defconfig 头部格式、必备 CONFIG、CONFIG_LSM、CI 矩阵架构同步、
+          # CI required=() 同步、Kconfig 声明闭合（OS-BUILD-026 / OS-BUILD-028）。
+          python3 -c 'import yaml' 2>/dev/null || \
+            python3 -m pip install --quiet 'pyyaml>=6.0,<7.0'
+          python3 tools/defconfig-matrix/defconfig_matrix.py --check
