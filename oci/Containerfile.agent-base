@@ -1,0 +1,57 @@
+# ===========================================================================
+# AirymaxOS Agent 基础镜像（内核层 + SDK 层）
+# ---------------------------------------------------------------------------
+# 权威依据：
+#   docs/docs-linux/190-distribution/05-reproducible-build.md §8.3（可重现模板）
+#   docs/docs-linux/70-build-system/03-ci-cd-pipeline.md §8.4/§8.5（镜像命名）
+#
+# 构建入口（.github/workflows/release.yml 的 "Build OCI base image" 步骤）：
+#   docker build -f oci/Containerfile.agent-base \
+#     --build-arg BASE_IMAGE=ghcr.io/spharx/base:1.0.1 \
+#     --build-arg SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct) \
+#     --build-arg AIRY_VERSION=<X.Y.Z> \
+#     -t ghcr.io/spharx/airymaxos:v<X.Y.Z> .
+#
+# 构建上下文为管理仓根目录：依赖同一次 release 构建产出的
+#   dist/rpm/<arch>/airymaxos-kernel-*.rpm 与 agent-linux-sdk-<ver>.tar.gz
+# ===========================================================================
+
+ARG BASE_IMAGE=ghcr.io/spharx/base:1.0.1
+FROM ${BASE_IMAGE}
+
+# 确定性构建参数
+ARG SOURCE_DATE_EPOCH
+ARG AIRY_VERSION
+ARG TZ=UTC
+ARG LC_ALL=C
+ARG RPM_ARCH=x86_64
+
+ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
+ENV TZ=${TZ}
+ENV LC_ALL=${LC_ALL}
+ENV PATH=/opt/airymaxos/sdk/bin:${PATH}
+
+# ---- 内核层：安装本仓 release 产出的 airymaxos-kernel 主包与模块包 ----
+COPY dist/rpm/${RPM_ARCH}/ /tmp/airymaxos-rpms/
+RUN dnf install -y --setopt=install_weak_deps=False --setopt=tsflags=nodocs \
+        /tmp/airymaxos-rpms/airymaxos-kernel-*.rpm \
+        /tmp/airymaxos-rpms/airymaxos-kernel-modules-*.rpm \
+    && rm -rf /tmp/airymaxos-rpms
+
+# ---- SDK 层：展开同一 release 的 SDK 交付物 ----
+COPY agent-linux-sdk-*.tar.gz /tmp/airymaxos-sdk.tar.gz
+RUN mkdir -p /opt/airymaxos/sdk \
+    && tar -xzf /tmp/airymaxos-sdk.tar.gz -C /opt/airymaxos/sdk \
+    && rm -f /tmp/airymaxos-sdk.tar.gz
+
+WORKDIR /opt/airymaxos
+
+# 归一化文件时间戳，保证层内容可重现
+RUN find / -xdev -exec touch -h -d "@${SOURCE_DATE_EPOCH}" {} + 2>/dev/null || true \
+    && dnf clean all && rm -rf /var/cache/dnf
+
+LABEL org.opencontainers.image.title="AirymaxOS Base" \
+      org.opencontainers.image.description="AirymaxOS kernel + SDK base image" \
+      org.opencontainers.image.source="https://atomgit.com/openairymax/agent-linux" \
+      org.opencontainers.image.version="${AIRY_VERSION}" \
+      org.opencontainers.image.licenses="GPL-2.0-only"
