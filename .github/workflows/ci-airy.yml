@@ -1,13 +1,14 @@
 # ===========================================================================
 # agent-linux (AirymaxOS) Airymax-Specific CI Pipeline
 # 专门验证 Airymax 专属代码（security/airy + kernel/superv + corekern 等）
-# 重组为 2 jobs：airy-build（airy_defconfig 4 架构构建 + 配置/产物/符号门禁）
+# 重组为 2 jobs：airy-build（airy_defconfig 4 架构构建 + 配置/产物/BTF/符号门禁）
 #                airy-static（checkpatch + 定制扩展规则 + SPDX 许可证审计
-#                             + defconfig 构建矩阵一致性）
+#                             + defconfig 构建矩阵一致性 + BTF 基线一致性）
 # Authority: docs/docs-linux/70-build-system/03-ci-cd-pipeline.md
 # Constraint: 管理仓每个 workflow 最多 2 条流水线
 # Rules: OS-STD-TOOL-160（checkpatch）/ OS-STD-TOOL-161（矩阵）
 #        OS-BUILD-026 / OS-BUILD-028（defconfig 基线 / 每架构 defconfig）
+#        OS-KER-106 / OS-OBS-012（eBPF / BTF 基线，需 pahole 且须断言 BTF 产物）
 #        IRON-3（所有 Airymax 增强代码必须在新增目录中）
 # ===========================================================================
 
@@ -25,6 +26,7 @@ on:
       - 'kernel/arch/*/configs/airy_defconfig'
       - 'kernel'
       - 'tools/defconfig-matrix/**'
+      - 'tools/btf-integration/**'
       - '.github/workflows/ci-airy.yml'
   push:
     branches: [main]
@@ -39,6 +41,7 @@ on:
       - 'kernel/arch/*/configs/airy_defconfig'
       - 'kernel'
       - 'tools/defconfig-matrix/**'
+      - 'tools/btf-integration/**'
       - '.github/workflows/ci-airy.yml'
 
 jobs:
@@ -72,7 +75,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y flex bison libelf-dev libssl-dev bc cpio
+          sudo apt-get install -y flex bison libelf-dev libssl-dev bc cpio dwarves
           case "${{ matrix.arch }}" in
             x86_64) ;;
             arm64)     sudo apt-get install -y gcc-aarch64-linux-gnu ;;
@@ -140,6 +143,18 @@ jobs:
           else
             echo "OK: no compiler warnings emitted"
           fi
+      - name: Verify BTF is embedded in vmlinux
+        run: |
+          set -euo pipefail
+          cd kernel
+          # OS-KER-106 / OS-OBS-012：airy_defconfig 开启 CONFIG_DEBUG_INFO_BTF，
+          # Linux 6.6 由 scripts/link-vmlinux.sh 的 gen_btf() 把 BTF 以 .BTF 段
+          # 内嵌进 vmlinux（不产出独立的 vmlinux.btf 文件），故断言段存在。
+          readelf -S vmlinux | grep -q '\.BTF' || {
+            echo "::error::vmlinux 缺少 .BTF 段（CONFIG_DEBUG_INFO_BTF 未生效）"
+            exit 1
+          }
+          echo "OK: vmlinux carries the .BTF section"
       - name: Verify Airymax build artifacts
         run: |
           set -euo pipefail
@@ -289,3 +304,12 @@ jobs:
           python3 -c 'import yaml' 2>/dev/null || \
             python3 -m pip install --quiet 'pyyaml>=6.0,<7.0'
           python3 tools/defconfig-matrix/defconfig_matrix.py --check
+      - name: Verify BTF / eBPF baseline (SSoT manifest)
+        run: |
+          set -uo pipefail
+          # manifest.yaml 是 eBPF 基线 / BTF 基线（含互斥项与 DWARF 形态）/
+          # BPF_EVENTS tracing 链路 / pahole 供给 / BTF 产物断言的唯一事实源，
+          # btf_integration.py --check 对其做 6 项交叉校验（OS-KER-106 / OS-OBS-012）。
+          python3 -c 'import yaml' 2>/dev/null || \
+            python3 -m pip install --quiet 'pyyaml>=6.0,<7.0'
+          python3 tools/btf-integration/btf_integration.py --check

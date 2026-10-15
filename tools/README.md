@@ -63,11 +63,17 @@ tools/
 │   ├── requirements-dev.txt     # Test dependency (pytest)
 │   ├── tests/                   # pytest suite driving kernel/scripts/airy_checkpatch_ext.pl
 │   └── README.md                # Tool-specific documentation
-└── defconfig-matrix/            # defconfig build-matrix SSoT + static gate
-    ├── defconfig_matrix.py      # Manifest ↔ defconfig ↔ CI cross-checker (`--check` gate)
-    ├── manifest.yaml            # Single source of truth for arches/configs/LSM/CI matrix
+├── defconfig-matrix/            # defconfig build-matrix SSoT + static gate
+│   ├── defconfig_matrix.py      # Manifest ↔ defconfig ↔ CI cross-checker (`--check` gate)
+│   ├── manifest.yaml            # Single source of truth for arches/configs/LSM/CI matrix
+│   ├── requirements-dev.txt     # Runtime + test dependency (pyyaml, pytest)
+│   ├── tests/                   # pytest suite (schema/fs/format/configs/ci/kconfig/CLI)
+│   └── README.md                # Tool-specific documentation
+└── btf-integration/             # BTF / eBPF baseline SSoT + static gate
+    ├── btf_integration.py       # Manifest ↔ airy_defconfig ↔ CI cross-checker (`--check` gate)
+    ├── manifest.yaml            # Single source of truth for BPF/BTF/tracing baselines & CI supply
     ├── requirements-dev.txt     # Runtime + test dependency (pyyaml, pytest)
-    ├── tests/                   # pytest suite (schema/fs/format/configs/ci/kconfig/CLI)
+    ├── tests/                   # pytest suite (schema/fragments/bpf/btf/tracing/ci/CLI)
     └── README.md                # Tool-specific documentation
 ```
 
@@ -90,6 +96,7 @@ tools/
 | `sc-tri-compile/sc_tri_compile.py` | `[SC]` header tri-compile & layout checker — compiles every `kernel/include/uapi/linux/airymax/*.h` under kernel / Linux-user / third-party paths and asserts fixed-width type sizes and struct field offsets are identical across all three; `--check` is the CI gate (OS-IRON-014); pytest suite in `tests/` | `sc-dual-ci.yml` (`sc-validate`) |
 | `airy-checkpatch/` (integration tests) | AirymaxOS custom checkpatch extension rules (`AIRY-CHECKPATCH-001`~`011`: log interface, naming prefixes, concurrency memory order, IPC entry, LSM registration, DMA usage, config black/white lists, file-header convention). Rule logic lives solely in `kernel/scripts/airy_checkpatch_ext.pl`; this directory holds only the pytest integration suite and docs, so the rules never drift across two copies (OS-TEST-066 / OS-KER-120 / OS-STD-STY-007) | `ci-airy.yml` (`airy-static`), `os-chk-verify.yml`, `tools/os-chk/gates.yaml` (OS-TEST-066) |
 | `defconfig-matrix/defconfig_matrix.py` | defconfig build-matrix SSoT checker — reads `manifest.yaml` (the only source of truth for architectures, mandatory configs, LSM entry, and the CI matrix) and verifies manifest↔filesystem consistency, `airy_defconfig` header format, mandatory `CONFIG_*` presence, `CONFIG_LSM` entry, CI build-matrix arch equality, CI `required=()` equality, and Kconfig declaration closure; `--check` is the CI gate (OS-BUILD-026 / OS-BUILD-028) | `ci-airy.yml` (`airy-static`), `os-chk-verify.yml`, `tools/os-chk/gates.yaml` (OS-BUILD-MATRIX) |
+| `btf-integration/btf_integration.py` | BTF / eBPF baseline SSoT checker — reads `manifest.yaml` (the only source of truth for the eBPF baseline, the BTF baseline plus its mutex/DWARF prerequisites, the `BPF_EVENTS` tracing chain, the pahole package, the BTF artifact token, and the workflows that must supply them) and verifies manifest schema, build-entry fragment presence, eBPF baseline, BTF baseline, tracing chain, and CI pahole/artifact supply; `--check` is the CI gate (OS-KER-106 / OS-OBS-012) | `ci-airy.yml` (`airy-static`), `os-chk-verify.yml`, `tools/os-chk/gates.yaml` (OS-BUILD-BTF) |
 
 ### CI-Referenced Helper Surface
 
