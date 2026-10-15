@@ -75,10 +75,12 @@ tools/
 │   ├── requirements-dev.txt     # Runtime + test dependency (pyyaml, pytest)
 │   ├── tests/                   # pytest suite (schema/fragments/bpf/btf/tracing/ci/CLI)
 │   └── README.md                # Tool-specific documentation
-└── release-engineering/         # Release-engineering tool set (SPDX SBOM assembly)
+└── release-engineering/         # Release-engineering tool set (SPDX SBOM + release material gate)
     ├── merge_sbom.py            # Merge per-submodule SPDX 2.3 JSON fragments into one document
-    ├── requirements-dev.txt     # Test dependency (pytest)
-    ├── tests/                   # pytest suite (merge/dedupe/conflict/determinism/CLI)
+    ├── release_manifest.py      # Manifest ↔ release.yml bidirectional gate + checksums + notes (`--check` gate)
+    ├── manifest.yaml            # Single source of truth for the 12 release materials + pipeline supply
+    ├── requirements-dev.txt     # Runtime + test dependency (pyyaml, pytest)
+    ├── tests/                   # pytest suite (sbom merge/dedupe/conflict; manifest schema/pipeline/checksums/notes/CLI)
     └── README.md                # Tool-specific documentation
 ```
 
@@ -103,6 +105,7 @@ tools/
 | `defconfig-matrix/defconfig_matrix.py` | defconfig build-matrix SSoT checker — reads `manifest.yaml` (the only source of truth for architectures, mandatory configs, LSM entry, and the CI matrix) and verifies manifest↔filesystem consistency, `airy_defconfig` header format, mandatory `CONFIG_*` presence, `CONFIG_LSM` entry, CI build-matrix arch equality, CI `required=()` equality, and Kconfig declaration closure; `--check` is the CI gate (OS-BUILD-026 / OS-BUILD-028) | `ci-airy.yml` (`airy-static`), `os-chk-verify.yml`, `tools/os-chk/gates.yaml` (OS-BUILD-MATRIX) |
 | `btf-integration/btf_integration.py` | BTF / eBPF baseline SSoT checker — reads `manifest.yaml` (the only source of truth for the eBPF baseline, the BTF baseline plus its mutex/DWARF prerequisites, the `BPF_EVENTS` tracing chain, the pahole package, the BTF artifact token, and the workflows that must supply them) and verifies manifest schema, build-entry fragment presence, eBPF baseline, BTF baseline, tracing chain, and CI pahole/artifact supply; `--check` is the CI gate (OS-KER-106 / OS-OBS-012) | `ci-airy.yml` (`airy-static`), `os-chk-verify.yml`, `tools/os-chk/gates.yaml` (OS-BUILD-BTF) |
 | `release-engineering/merge_sbom.py` | Merge per-submodule SPDX 2.3 JSON SBOM fragments into one `agent-linux` document — unions `packages`/`files`/`relationships`/`externalDocumentRefs`/`hasExtractedLicensingInfos` by their identity key, fails on conflicting duplicates, pins the document-level fields (`SPDX-2.3` / `CC0-1.0` / `SPDXRef-DOCUMENT`), and derives `created` from `SOURCE_DATE_EPOCH` for byte-deterministic output; `--output` + fragments (`0`/`1`/`2` exit codes) | `release.yml` (`build-and-sign`) |
+| `release-engineering/release_manifest.py` | Release-material SSoT checker & generator — reads `manifest.yaml` (the only source of truth for the 12 release materials, their formats/signatures/authorities/delivery state) and verifies manifest schema plus **bidirectional** manifest↔`release.yml` consistency (every `active` material's `evidence` must be declared by the pipeline, and every pipeline artifact glob must be registered); also emits `sha256sum`-compatible checksums (`--checksums`) and the eight-section release notes (`--notes`); `--check` is the CI gate (OS-BUILD-RELEASE) | Local contributor runs; `release.yml` (`build-and-sign`) via checksums/notes |
 
 ### CI-Referenced Helper Surface
 
