@@ -30,6 +30,10 @@ jobs:
   kernel-build:
     name: Kbuild Matrix (28 configs)
     runs-on: ubuntu-latest
+    # OS-STD-TEST-011 硬性约束单 job ≤60 分钟（03-ci-cd-pipeline.md §9.4）。
+    # allmodconfig 的全量模块面（实测约 9.4k 对象）在标准运行器上需要 90 分钟
+    # 以上，按 §9.4「超时子集必须拆分」处理：PR 门禁只保留 allmodconfig 的
+    # Kconfig 求解与内建面（vmlinux）编译，模块面下沉 nightly。
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -107,9 +111,15 @@ jobs:
           else
             make ARCH=${{ matrix.arch }} "${mkargs[@]}" "${{ matrix.config }}"
           fi
-          make ARCH=${{ matrix.arch }} "${mkargs[@]}" -j"$(nproc)" 2>&1 | tee build.log
-          if [ "${{ matrix.config }}" != "allmodconfig" ]; then
-            # 与 03-ci-cd-pipeline.md §3.3 一致：allmodconfig 组合不单独构建 modules。
+          if [ "${{ matrix.config }}" = "allmodconfig" ]; then
+            # allmodconfig 将绝大多数 tristate 项设为 m，全量模块编译在标准运行器
+            # 上超过 OS-STD-TEST-011 的 60 分钟上限。PR 门禁保留 Kconfig 求解与内建
+            # 面（vmlinux）编译，覆盖 #ifdef 错配与内建符号冲突；模块级符号冲突/
+            # 循环依赖按 03-ci-cd-pipeline.md §1.1 的 L5/L6 归属 nightly。
+            make ARCH=${{ matrix.arch }} "${mkargs[@]}" vmlinux -j"$(nproc)" \
+              2>&1 | tee build.log
+          else
+            make ARCH=${{ matrix.arch }} "${mkargs[@]}" -j"$(nproc)" 2>&1 | tee build.log
             make ARCH=${{ matrix.arch }} "${mkargs[@]}" modules -j"$(nproc)" \
               2>&1 | tee -a build.log
           fi
