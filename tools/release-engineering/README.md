@@ -159,6 +159,9 @@ python3 tools/release-engineering/release_manifest.py --check \
 
 - **新增流水线产物**时，须在 `manifest.yaml` 新增对应物料条目并把 `evidence` 指向
   该产物 glob，否则门禁反向检查判「未登记物料」失败。
+- **命名规则（SSoT）**：发布资产（tarball / SBOM / 校验和 / release notes 及其签名）
+  统一用 `agent-linux-<ver>` 前缀（09-release-process.md §3.2）；RPM 包名统一用
+  `airymaxos-*`（§3.3）。二者为「资产名 vs 包名」并存的约定，不得混用。
 - **启用 deferred 物料**时，把 `delivery` 改为 `active`、补 `evidence`、删 `defer_*`。
 - 提交类落款按 [git-commit-message.md](../../../.trae/rules/git-commit-message.md)。
 
@@ -170,6 +173,12 @@ python3 tools/release-engineering/release_manifest.py --check \
   `anchore/sbom-action/download-syft` 安装 `syft`，由 `git log -1 --pretty=%ct`
   计算 `SOURCE_DATE_EPOCH`，随后以新增 step 直接调用 `merge_sbom.py` 合并分片；
   已移除原「`if [ -f tools/merge-sbom.py ]` … `echo "SKIP"`」的存在性守卫桩路径。
+- **管理仓 `release.yml`（物料 8 / 物料 9）**：在制品签名后以新增 step 调用
+  `release_manifest.py --checksums` 产出 `agent-linux-<ver>.sha256sum`、以
+  `--notes` 产出 `agent-linux-<ver>-release-notes.md`，并对二者
+  `gpg --detach-sign --armor`；两份元数据经 `upload-artifact` 上载，并由
+  `action-gh-release` 的 `body_path` 作为 Release 正文（取代 `generate_release_notes`）。
+  因此 `manifest.yaml` 中 `checksums` / `release-notes` 已于 0.0.3 转为 `active`。
 - **管理仓 `os-chk-verify.yml`**：调用 `release_manifest.py --check` 作为发布物料
   一致性门禁（登记于 `tools/os-chk/gates.yaml`）。
 - 遵守管理仓「每 workflow ≤ 2 job」上限：仅新增 step，不新增 job。
