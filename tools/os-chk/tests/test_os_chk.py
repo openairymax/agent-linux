@@ -12,7 +12,6 @@ Version:
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
 import pytest
@@ -20,6 +19,14 @@ import pytest
 import os_chk as oc
 
 # ─── Fixtures / helpers ────────────────────────────────────────────────────
+
+# 执行器驱动 → 脚本扩展名。注册表新增驱动时需在此登记，否则
+# TestShippedRegistry.test_all_executors_exist 会失败，以防执行器指向
+# 不存在的脚本却在本机静默通过。
+EXECUTOR_SUFFIX = {
+    "python3": ".py",
+    "perl": ".pl",
+}
 
 GOOD_REGISTRY = """
 version: "9.9.9"
@@ -430,10 +437,13 @@ class TestShippedRegistry:
             encoding="utf-8")
         _, gates = oc.parse_registry(text)
         for gate in gates:
-            assert gate.argv[0] in ("python3", sys.executable), \
-                f"{gate.id}: 执行器必须由 python3 驱动"
-            script = next((a for a in gate.argv if a.endswith(".py")), None)
-            assert script, f"{gate.id}: 未找到 .py 执行器"
+            driver = gate.argv[0]
+            suffix = EXECUTOR_SUFFIX.get(driver)
+            assert suffix, \
+                f"{gate.id}: 执行器驱动 {driver!r} 未登记（需先扩展 EXECUTOR_SUFFIX）"
+            script = next(
+                (a for a in gate.argv if a.endswith(suffix)), None)
+            assert script, f"{gate.id}: 未找到 {suffix} 执行器"
             assert (repo_root / script).is_file(), \
                 f"{gate.id}: 执行器缺失 {script}"
 
