@@ -1,33 +1,42 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
-"""abi_check 单元测试 — ABI 常量、四方解析器、九项检查与 CLI 退出码契约。
+"""abi_check 单元测试 — ABI 常量、四方解析器、十项检查与 CLI 退出码契约。
 
 覆盖 tools/abi-check/abi_check.py：
 
   * 常量矩阵：编号起点/范围、__NR_syscalls、预留段（552-571，20 槽）、
     SLOTS_MAX=24、x32 禁止区域。
   * 四方解析器：SSoT markdown、unistd.h、syscall_64.tbl、[SC] syscalls.h。
-  * 九项检查：三方一致性、编号起点、范围无冲突、__NR_syscalls、
+  * 十项检查：三方一致性、编号起点、范围无冲突、__NR_syscalls、
     x32 禁止区域、[SC] 契约头一致、预留槽登记、tbl ABI 列与入口点、
-    基线快照一致（失败分支以合成输入构造）。
+    基线快照一致、SSoT 契约快照一致（失败分支以合成输入构造）。
+  * 派生契约快照：导出确定性、快照→SSoT 适配、漂移检出、
+    docs 缺失时的快照回退与 --require-ssot 失败关闭。
   * CLI 退出码契约（0=通过 / 1=失败 / 2=输入或环境错误）与端到端
-    真实仓库校验（四方权威源 + 基线）。
+    真实仓库校验（权威源 + 基线）。
 
 Author:
     SPHARX Ltd. - Airymax Team
 
 Version:
-    1.0.1
+    1.0.2
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 import abi_check as ab
+
+# agent-linux 仓库根（tests/ → abi-check/ → tools/ → repo root），供
+# 采集期 skipif 判断权威 SSoT 是否检出。
+REPO_ROOT = Path(__file__).resolve().parents[3]
 
 # ─── 合成输入构造器 ────────────────────────────────────────────────────────
 
@@ -426,8 +435,14 @@ class TestEndToEnd:
     def test_real_sources_all_checks_pass(self, repo_root: Path) -> None:
         assert (repo_root / "kernel").is_dir(), "kernel submodule missing"
         root = repo_root
-        ssot = ab.parse_ssot(
-            (root / ab.DEFAULT_SSOT_REL).read_text(encoding="utf-8"))
+        ssot_file = root / ab.DEFAULT_SSOT_REL
+        snapshot = ab.load_snapshot(root / ab.DEFAULT_SNAPSHOT_REL)
+        ssot_available = ssot_file.is_file()
+        if ssot_available:
+            ssot = ab.parse_ssot(ssot_file.read_text(encoding="utf-8"))
+        else:
+            assert snapshot is not None, "neither SSoT nor snapshot present"
+            ssot = ab.snapshot_to_ssot(snapshot)
         u = ab.parse_unistd(
             (root / ab.DEFAULT_UNISTD_REL).read_text(encoding="utf-8"))
         tbl = ab.parse_syscall_tbl(
@@ -447,15 +462,16 @@ class TestEndToEnd:
             ab.check_reserved_slots(u, tbl),
             ab.check_tbl_abi_and_entry(tbl),
             ab.check_baseline(ssot, u, tbl, bl),
+            ab.check_snapshot_drift(ssot, snapshot, ssot_available),
         ]
         failed = [r.name for r in results if not r.passed]
         assert not failed, f"ABI 检查失败: {failed}"
-        assert len(results) == 9
+        assert len(results) == 10
 
-    def test_cli_check_mode_passes_9_of_9(self, repo_root: Path) -> None:
+    def test_cli_check_mode_passes_10_of_10(self, repo_root: Path) -> None:
         proc = run_cli(repo_root, "--check")
         assert proc.returncode == 0, proc.stdout + proc.stderr
-        assert "PASS (9/9 checks)" in proc.stdout
+        assert "PASS (10/10 checks)" in proc.stdout
 
     def test_cli_verbose_exit_zero(self, repo_root: Path) -> None:
         proc = run_cli(repo_root)
@@ -477,3 +493,180 @@ class TestEndToEnd:
         proc = run_cli(repo_root, "--unistd-path", str(bad), "--check")
         assert proc.returncode == 1
         assert "FAIL" in proc.stdout
+
+
+# ─── 派生契约快照：导出 / 适配 / 漂移 ──────────────────────────────────────
+
+
+def has_authoritative_ssot(repo_root: Path) -> bool:
+    """真实仓库是否检出权威 SSoT（GitHub 镜像未检出 ../docs）。"""
+    return (repo_root / ab.DEFAULT_SSOT_REL).is_file()
+
+
+def mirror_root(repo_root: Path, tmp_path: Path,
+                with_snapshot: bool = True) -> Path:
+    """构造未检出 ../docs 的镜像仓库根，复现 GitHub 镜像环境。
+
+    仅挂载 ABI 检查宿主所需的最小集合（kernel 子树、脚本、基线、可选
+    快照），刻意不创建 ../docs，以触发契约快照回退路径。
+    """
+    root = tmp_path / "agent-linux"
+    tool = root / "tools" / "abi-check"
+    tool.mkdir(parents=True)
+    (root / "kernel").symlink_to(repo_root / "kernel",
+                                 target_is_directory=True)
+    (tool / "abi_check.py").symlink_to(
+        repo_root / "tools" / "abi-check" / "abi_check.py")
+    (tool / "abi_baseline.json").symlink_to(
+        repo_root / "tools" / "abi-check" / "abi_baseline.json")
+    if with_snapshot:
+        contract = tool / "contract"
+        contract.mkdir()
+        (contract / "syscall_registry.snapshot.json").symlink_to(
+            repo_root / "tools" / "abi-check" / "contract"
+            / "syscall_registry.snapshot.json")
+    return root
+
+
+class TestSnapshot:
+    def test_build_snapshot_shape(self, tmp_path: Path) -> None:
+        ssot_path = tmp_path / "ssot.md"
+        ssot_path.write_text(ssot_text(), encoding="utf-8")
+        ssot = ab.parse_ssot(ssot_text())
+        snap = ab.build_snapshot(ssot, ssot_path, tmp_path, commit="a" * 40)
+        assert snap["schema_version"] == ab.SNAPSHOT_SCHEMA_VERSION
+        assert snap["generated_by"] == ab.SNAPSHOT_GENERATED_BY
+        assert snap["linux_base"] == 548
+        assert snap["reserved_range"] == [552, 571]
+        assert len(snap["syscalls"]) == 4
+        assert snap["source"]["repo"] == "docs-linux"
+        assert snap["source"]["path"] == "ssot.md"
+        assert snap["source"]["commit"] == "a" * 40
+        assert snap["source"]["doc_version"] == "v1.0.1"
+
+    def test_relative_source_path_docs_layout(self, tmp_path: Path) -> None:
+        repo = tmp_path / "agent-linux"
+        ssot = (tmp_path / "docs" / "docs-linux"
+                / "140-application-development" / "07-syscall-registry.md")
+        rel = ab.relative_source_path(ssot, repo)
+        assert rel == ("../docs/docs-linux/140-application-development"
+                       "/07-syscall-registry.md")
+
+    def test_source_sha256_matches_file(self, tmp_path: Path) -> None:
+        content = ssot_text()
+        f = tmp_path / "ssot.md"
+        f.write_text(content, encoding="utf-8")
+        snap = ab.build_snapshot(ab.parse_ssot(content), f, tmp_path)
+        expected = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        assert snap["source"]["sha256"] == expected
+
+    def test_write_snapshot_is_deterministic(self, tmp_path: Path) -> None:
+        src = tmp_path / "ssot.md"
+        src.write_text(ssot_text(), encoding="utf-8")
+        snap = ab.build_snapshot(ab.parse_ssot(ssot_text()), src, tmp_path)
+        a, b = tmp_path / "a.json", tmp_path / "b.json"
+        ab.write_snapshot(a, snap)
+        ab.write_snapshot(b, snap)
+        assert a.read_bytes() == b.read_bytes()
+        assert a.read_bytes().endswith(b"\n")
+
+    def test_snapshot_to_ssot_roundtrip(self, tmp_path: Path) -> None:
+        src = tmp_path / "ssot.md"
+        src.write_text(ssot_text(), encoding="utf-8")
+        ssot = ab.parse_ssot(ssot_text())
+        snap = ab.build_snapshot(ssot, src, tmp_path)
+        assert ab.snapshot_to_ssot(snap) == ssot
+
+    def _snapshot(self, tmp_path: Path):
+        src = tmp_path / "ssot.md"
+        src.write_text(ssot_text(), encoding="utf-8")
+        ssot = ab.parse_ssot(ssot_text())
+        return ssot, ab.build_snapshot(ssot, src, tmp_path)
+
+    def test_drift_identical_passes(self, tmp_path: Path) -> None:
+        ssot, snap = self._snapshot(tmp_path)
+        res = ab.check_snapshot_drift(ssot, snap, authoritative=True)
+        assert res.passed
+
+    def test_drift_number_change_fails(self, tmp_path: Path) -> None:
+        ssot, snap = self._snapshot(tmp_path)
+        snap["syscalls"][0] = dict(snap["syscalls"][0], linux_number=999)
+        res = ab.check_snapshot_drift(ssot, snap, authoritative=True)
+        assert not res.passed
+
+    def test_drift_version_change_fails(self, tmp_path: Path) -> None:
+        ssot, snap = self._snapshot(tmp_path)
+        snap["source"]["doc_version"] = "v9.9.9"
+        res = ab.check_snapshot_drift(ssot, snap, authoritative=True)
+        assert not res.passed
+
+    def test_drift_missing_snapshot_fails(self) -> None:
+        ssot = ab.parse_ssot(ssot_text())
+        res = ab.check_snapshot_drift(ssot, None, authoritative=True)
+        assert not res.passed
+
+    def test_drift_non_authoritative_records_provenance(self,
+                                                        tmp_path: Path) -> None:
+        ssot, snap = self._snapshot(tmp_path)
+        snap["source"]["commit"] = "deadbeef" * 5
+        res = ab.check_snapshot_drift(ssot, snap, authoritative=False)
+        assert res.passed
+        assert "漂移比对不可用" in res.details
+        assert "deadbeefdead" in res.details
+
+
+# ─── 派生契约快照：CLI 行为（镜像回退 / 失败关闭 / 刷新） ──────────────────
+
+
+class TestSnapshotCli:
+    def test_mirror_fallback_passes(self, repo_root: Path,
+                                    tmp_path: Path) -> None:
+        root = mirror_root(repo_root, tmp_path)
+        proc = run_cli(root, "--check")
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        assert "PASS (10/10 checks)" in proc.stdout
+        assert "contract snapshot" in proc.stdout
+
+    def test_mirror_require_ssot_exit_2(self, repo_root: Path,
+                                        tmp_path: Path) -> None:
+        root = mirror_root(repo_root, tmp_path)
+        proc = run_cli(root, "--check", "--require-ssot")
+        assert proc.returncode == 2
+        assert "authoritative SSoT not found" in proc.stderr
+
+    def test_both_sources_missing_exit_2(self, repo_root: Path,
+                                         tmp_path: Path) -> None:
+        root = mirror_root(repo_root, tmp_path, with_snapshot=False)
+        proc = run_cli(root, "--check")
+        assert proc.returncode == 2
+        assert "neither SSoT" in proc.stderr
+
+    def test_mirror_update_snapshot_exit_2(self, repo_root: Path,
+                                           tmp_path: Path) -> None:
+        root = mirror_root(repo_root, tmp_path)
+        proc = run_cli(root, "--update-snapshot")
+        assert proc.returncode == 2
+        assert "--update-snapshot" in proc.stderr
+
+    @pytest.mark.skipif(not has_authoritative_ssot(REPO_ROOT),
+                        reason="GitHub 镜像未检出权威 SSoT（../docs）")
+    def test_update_snapshot_is_reproducible(self, repo_root: Path,
+                                             tmp_path: Path) -> None:
+        a = tmp_path / "a.json"
+        b = tmp_path / "b.json"
+        assert run_cli(repo_root, "--update-snapshot",
+                       "--snapshot-path", str(a)).returncode == 0
+        assert run_cli(repo_root, "--update-snapshot",
+                       "--snapshot-path", str(b)).returncode == 0
+        assert a.read_bytes() == b.read_bytes()
+
+    @pytest.mark.skipif(not has_authoritative_ssot(REPO_ROOT),
+                        reason="GitHub 镜像未检出权威 SSoT（../docs）")
+    def test_update_snapshot_matches_committed(self, repo_root: Path,
+                                               tmp_path: Path) -> None:
+        fresh = tmp_path / "fresh.json"
+        assert run_cli(repo_root, "--update-snapshot",
+                       "--snapshot-path", str(fresh)).returncode == 0
+        committed = (repo_root / ab.DEFAULT_SNAPSHOT_REL).read_text(
+            encoding="utf-8")
+        assert fresh.read_text(encoding="utf-8") == committed

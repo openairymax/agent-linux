@@ -4,12 +4,21 @@
 abi_check.py — agent-linux syscall ABI stability checker
 
 Validates syscall number ABI stability (OS-IRON-001: 用户空间 ABI 永不破坏)
-by cross-checking four authoritative sources against a baseline snapshot:
+by cross-checking sources against a baseline snapshot:
 
   1. SSoT document  — docs/docs-linux/140-application-development/07-syscall-registry.md
+     Derived fallback: tools/abi-check/contract/syscall_registry.snapshot.json
   2. UAPI header     — kernel/include/uapi/asm-generic/unistd.h
   3. Kernel entry tbl — kernel/arch/x86/entry/syscalls/syscall_64.tbl
   4. [SC] contract hdr — kernel/include/uapi/linux/airymax/syscalls.h
+
+The SSoT document is the single authoritative registry, but it lives in the
+docs-linux submodule which is not mirrored publicly (the GitHub mirror only
+carries agent-linux). When the document is present it is used verbatim and a
+drift check verifies the derived contract snapshot still matches it; when it
+is absent the snapshot becomes the SSoT source for this run and the report
+states that origin explicitly (the snapshot never becomes a second authority
+— it is a derived artifact refreshed with --update-snapshot).
 
 Usage:
     python3 tools/abi-check/abi_check.py [options]
@@ -17,11 +26,14 @@ Usage:
 Options:
     --repo-root PATH    agent-linux repo root (default: auto-detect)
     --ssot-path PATH    SSoT document path (default: auto)
+    --snapshot-path PATH  contract snapshot path (default: auto)
     --unistd-path PATH  unistd.h path (default: auto)
     --tbl-path PATH     syscall_64.tbl path (default: auto)
     --sc-header-path PATH  [SC] contract header path (default: auto)
     --baseline PATH     baseline JSON path (default: tools/abi-check/abi_baseline.json)
     --no-baseline       skip baseline comparison
+    --update-snapshot   regenerate the contract snapshot from the SSoT and exit
+    --require-ssot      fail (exit 2) when the SSoT document is unavailable
     --check             CI mode: minimal output, exit code only (0=pass, 1=fail)
 
 Exit codes:
@@ -31,9 +43,11 @@ Exit codes:
 """
 
 import argparse
+import hashlib
 import json
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -81,6 +95,12 @@ DEFAULT_TBL_REL = os.path.join("kernel", "arch", "x86", "entry",
 DEFAULT_SC_HEADER_REL = os.path.join("kernel", "include", "uapi", "linux",
                                      "airymax", "syscalls.h")
 DEFAULT_BASELINE_REL = os.path.join("tools", "abi-check", "abi_baseline.json")
+DEFAULT_SNAPSHOT_REL = os.path.join("tools", "abi-check", "contract",
+                                    "syscall_registry.snapshot.json")
+
+# Derived contract snapshot schema (bump only on incompatible shape changes)
+SNAPSHOT_SCHEMA_VERSION = "1.0.0"
+SNAPSHOT_GENERATED_BY = "tools/abi-check/abi_check.py --update-snapshot"
 
 
 # ─── Helpers ───────────────────────────────────────────────────────────────
@@ -271,6 +291,112 @@ def load_baseline(path):
         print(f"ERROR: invalid JSON in baseline {path}: {exc}",
               file=sys.stderr)
         sys.exit(2)
+
+
+# ─── Derived contract snapshot ─────────────────────────────────────────────
+
+def compute_sha256(path):
+    """Return the SHA-256 hex digest of a file (streamed, UTF-8 agnostic)."""
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def detect_source_commit(path):
+    """Best-effort detection of the git commit owning `path`.
+
+    Returns the commit hash, or None when the path is not inside a git work
+    tree (e.g. the docs submodule is not checked out).
+    """
+    directory = str(Path(path).resolve().parent)
+    try:
+        proc = subprocess.run(
+            ["git", "-C", directory, "rev-parse", "HEAD"],
+            capture_output=True, text=True, check=False)
+    except OSError:
+        return None
+    commit = proc.stdout.strip()
+    return commit if proc.returncode == 0 and commit else None
+
+
+def relative_source_path(ssot_path, repo_root):
+    """Render the SSoT path relative to the repo root, POSIX-separated."""
+    try:
+        rel = os.path.relpath(os.path.abspath(str(ssot_path)),
+                              os.path.abspath(str(repo_root)))
+    except ValueError:
+        rel = str(ssot_path)
+    return rel.replace(os.sep, "/")
+
+
+def build_snapshot(ssot, ssot_path, repo_root, commit=None):
+    """Derive a machine-readable contract snapshot from the authoritative SSoT."""
+    return {
+        "schema_version": SNAPSHOT_SCHEMA_VERSION,
+        "source": {
+            "repo": "docs-linux",
+            "path": relative_source_path(ssot_path, repo_root),
+            "commit": commit or "unknown",
+            "sha256": compute_sha256(ssot_path),
+            "doc_version": ssot.get("version"),
+        },
+        "generated_by": SNAPSHOT_GENERATED_BY,
+        "linux_base": ssot.get("linux_base"),
+        "syscalls": [dict(entry) for entry in ssot.get("syscalls", [])],
+        "reserved_range": (list(ssot["reserved_range"])
+                           if ssot.get("reserved_range") else None),
+    }
+
+
+def write_snapshot(path, snapshot):
+    """Write the snapshot deterministically (stable order, LF, trailing NL)."""
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with open(target, "w", encoding="utf-8", newline="\n") as f:
+        json.dump(snapshot, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+
+
+def load_snapshot(path):
+    """Load the derived contract snapshot. Returns None if absent."""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return None
+    except json.JSONDecodeError as exc:
+        print(f"ERROR: invalid JSON in snapshot {path}: {exc}",
+              file=sys.stderr)
+        sys.exit(2)
+
+
+def snapshot_to_ssot(snapshot):
+    """Adapt a contract snapshot to the in-memory SSoT shape.
+
+    Used only when the authoritative SSoT document is unavailable; the
+    resulting dict is structurally identical to parse_ssot() output so the
+    downstream checks stay source-agnostic.
+    """
+    source = snapshot.get("source", {})
+    return {
+        "version": source.get("doc_version"),
+        "linux_base": snapshot.get("linux_base"),
+        "syscalls": [dict(entry) for entry in snapshot.get("syscalls", [])],
+        "reserved_range": (list(snapshot["reserved_range"])
+                           if snapshot.get("reserved_range") else None),
+    }
+
+
+def describe_snapshot(snapshot):
+    """Render a one-line provenance summary of a contract snapshot."""
+    source = snapshot.get("source", {})
+    commit = str(source.get("commit", "unknown"))
+    digest = str(source.get("sha256", "unknown"))
+    return (f"源 {source.get('repo', '?')}@{commit[:12]}, "
+            f"sha256={digest[:12]}…, "
+            f"doc_version={source.get('doc_version', '?')}")
 
 
 # ─── Check Results ─────────────────────────────────────────────────────────
@@ -658,9 +784,71 @@ def check_baseline(ssot, unistd, tbl, baseline):
         f"({len(bl_map)} syscalls, base={bl_base}, nr={bl_nr})")
 
 
+def check_snapshot_drift(ssot, snapshot, authoritative):
+    """Verify the derived contract snapshot still matches the authoritative SSoT.
+
+    `authoritative` is True when the SSoT document was read from ../docs. If
+    the document is unavailable (mirror environment) the drift comparison
+    cannot be performed; the check then passes but records the snapshot
+    provenance so the report never hides which source was used.
+    """
+    name = "SSoT 契约快照一致"
+    if snapshot is None:
+        return CheckResult(
+            name, False,
+            f"  契约快照缺失: {DEFAULT_SNAPSHOT_REL}\n"
+            f"  运行 --update-snapshot 从权威 SSoT 重新导出")
+
+    provenance = describe_snapshot(snapshot)
+    if not authoritative:
+        return CheckResult(
+            name, True,
+            f"权威 SSoT 文档不可得（镜像未检出 ../docs），"
+            f"漂移比对不可用；本次以派生契约快照为 SSoT 来源。{provenance}")
+
+    snap = snapshot_to_ssot(snapshot)
+    failures = []
+
+    if snap["linux_base"] != ssot["linux_base"]:
+        failures.append(f"  linux_base: 文档={ssot['linux_base']}, "
+                        f"快照={snap['linux_base']}")
+    if snap["reserved_range"] != ssot["reserved_range"]:
+        failures.append(f"  reserved_range: 文档={ssot['reserved_range']}, "
+                        f"快照={snap['reserved_range']}")
+    if snap["version"] != ssot["version"]:
+        failures.append(f"  doc_version: 文档={ssot['version']}, "
+                        f"快照={snap['version']}")
+
+    doc_map = {s["name"]: (s["macro"], s["linux_number"])
+               for s in ssot["syscalls"]}
+    snap_map = {s["name"]: (s["macro"], s["linux_number"])
+                for s in snap["syscalls"]}
+    for entry in sorted(set(doc_map) | set(snap_map)):
+        if entry not in snap_map:
+            failures.append(f"  syscall '{entry}' 在快照中缺失 "
+                            f"(文档={doc_map[entry]})")
+        elif entry not in doc_map:
+            failures.append(f"  syscall '{entry}' 在文档中缺失 "
+                            f"(快照={snap_map[entry]})")
+        elif doc_map[entry] != snap_map[entry]:
+            failures.append(f"  syscall '{entry}': 文档={doc_map[entry]}, "
+                            f"快照={snap_map[entry]}")
+
+    if failures:
+        return CheckResult(
+            name, False,
+            "  契约快照已漂移，运行 --update-snapshot 刷新:\n"
+            + "\n".join(failures))
+    return CheckResult(
+        name, True,
+        f"契约快照与权威 SSoT 完全一致（{len(doc_map)} syscalls）。"
+        f"{provenance}")
+
+
 # ─── Report ────────────────────────────────────────────────────────────────
 
-def print_report(results, ssot, unistd, tbl, baseline, sources, check_mode):
+def print_report(results, ssot, unistd, tbl, baseline, sources, check_mode,
+                 ssot_note=None):
     """Print the ABI check report."""
     total = len(results)
     passed = sum(1 for r in results if r.passed)
@@ -668,6 +856,8 @@ def print_report(results, ssot, unistd, tbl, baseline, sources, check_mode):
 
     if check_mode:
         # CI mode: minimal output
+        if ssot_note:
+            print(ssot_note)
         if failed == 0:
             print(f"ABI CHECK: PASS ({passed}/{total} checks)")
         else:
@@ -690,6 +880,9 @@ def print_report(results, ssot, unistd, tbl, baseline, sources, check_mode):
     for label, path in sources:
         print(f"  {label:16s}: {path}")
     print()
+    if ssot_note:
+        print(ssot_note)
+        print()
     print(f"SSoT version:     {ssot.get('version', '?')}")
     bl_ver = baseline.get("version", "N/A") if baseline else "N/A (无基线)"
     print(f"Baseline version: {bl_ver}")
@@ -758,8 +951,18 @@ def main():
         help="baseline JSON path (default: "
              "tools/abi-check/abi_baseline.json)")
     parser.add_argument(
+        "--snapshot-path", default=None,
+        help="contract snapshot path (default: "
+             "tools/abi-check/contract/syscall_registry.snapshot.json)")
+    parser.add_argument(
         "--no-baseline", action="store_true",
         help="skip baseline comparison")
+    parser.add_argument(
+        "--update-snapshot", action="store_true",
+        help="regenerate the contract snapshot from the SSoT and exit")
+    parser.add_argument(
+        "--require-ssot", action="store_true",
+        help="fail (exit 2) when the SSoT document is unavailable")
     parser.add_argument(
         "--check", action="store_true",
         help="CI mode: minimal output, exit code only (0=pass, 1=fail)")
@@ -774,6 +977,8 @@ def main():
     # Resolve all paths relative to repo root
     ssot_path = (Path(args.ssot_path) if args.ssot_path
                  else repo_root / DEFAULT_SSOT_REL)
+    snapshot_path = (Path(args.snapshot_path) if args.snapshot_path
+                     else repo_root / DEFAULT_SNAPSHOT_REL)
     unistd_path = (Path(args.unistd_path) if args.unistd_path
                    else repo_root / DEFAULT_UNISTD_REL)
     tbl_path = (Path(args.tbl_path) if args.tbl_path
@@ -783,13 +988,52 @@ def main():
     baseline_path = (Path(args.baseline) if args.baseline
                      else repo_root / DEFAULT_BASELINE_REL)
 
-    # Read and parse all sources
-    ssot_text = read_file(ssot_path)
+    # The authoritative SSoT lives in the docs submodule; an explicit
+    # --ssot-path is a hard contract and must exist, while the default path
+    # may legitimately be missing (mirror checkout) and falls back to the
+    # derived contract snapshot.
+    ssot_available = ssot_path.is_file()
+    if args.ssot_path and not ssot_available:
+        print(f"ERROR: file not found: {ssot_path}", file=sys.stderr)
+        sys.exit(2)
+    if not ssot_available and (args.require_ssot or args.update_snapshot):
+        reason = ("--require-ssot" if args.require_ssot
+                  else "--update-snapshot")
+        print(f"ERROR: authoritative SSoT not found: {ssot_path} "
+              f"({reason})", file=sys.stderr)
+        sys.exit(2)
+
+    if args.update_snapshot:
+        ssot = parse_ssot(read_file(ssot_path))
+        snapshot = build_snapshot(ssot, ssot_path, repo_root,
+                                  detect_source_commit(ssot_path))
+        write_snapshot(snapshot_path, snapshot)
+        print(f"snapshot written: {snapshot_path}")
+        print(f"  {describe_snapshot(snapshot)}")
+        print(f"  linux_base={snapshot['linux_base']} "
+              f"syscalls={len(snapshot['syscalls'])} "
+              f"reserved_range={snapshot['reserved_range']}")
+        sys.exit(0)
+
+    snapshot = load_snapshot(snapshot_path)
+    if ssot_available:
+        ssot = parse_ssot(read_file(ssot_path))
+        ssot_note = None
+    elif snapshot is not None:
+        ssot = snapshot_to_ssot(snapshot)
+        ssot_note = ("[INFO] SSoT source: contract snapshot "
+                     "(../docs unavailable) — "
+                     + describe_snapshot(snapshot))
+    else:
+        print(f"ERROR: neither SSoT ({ssot_path}) nor snapshot "
+              f"({snapshot_path}) is available", file=sys.stderr)
+        sys.exit(2)
+
+    # Read and parse the kernel-side sources
     unistd_text = read_file(unistd_path)
     tbl_text = read_file(tbl_path)
     sc_header_text = read_file(sc_header_path)
 
-    ssot = parse_ssot(ssot_text)
     unistd = parse_unistd(unistd_text)
     tbl = parse_syscall_tbl(tbl_text)
     sc_header = parse_sc_header(sc_header_text)
@@ -808,17 +1052,21 @@ def main():
     results.append(check_tbl_abi_and_entry(tbl))
     if baseline is not None:
         results.append(check_baseline(ssot, unistd, tbl, baseline))
+    results.append(check_snapshot_drift(ssot, snapshot, ssot_available))
 
     # Print report
+    ssot_label = str(ssot_path) if ssot_available else (
+        f"{snapshot_path} (../docs unavailable)")
     sources = [
-        ("SSoT", str(ssot_path)),
+        ("SSoT", ssot_label),
+        ("snapshot", str(snapshot_path) if snapshot else "(none)"),
         ("unistd.h", str(unistd_path)),
         ("syscall_64.tbl", str(tbl_path)),
         ("[SC] syscalls.h", str(sc_header_path)),
         ("baseline", str(baseline_path) if baseline else "(none)"),
     ]
     print_report(results, ssot, unistd, tbl, baseline, sources,
-                 args.check)
+                 args.check, ssot_note)
 
     # Exit code: 0=pass, 1=fail
     failed = sum(1 for r in results if not r.passed)
