@@ -53,7 +53,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y flex bison libelf-dev libssl-dev bc cpio
+          sudo apt-get install -y flex bison libelf-dev libssl-dev bc cpio dwarves
           if [ "${{ matrix.compiler }}" = "clang" ]; then
             sudo apt-get install -y clang lld llvm
           else
@@ -143,7 +143,7 @@ jobs:
           set -euo pipefail
           sudo apt-get update -qq
           sudo apt-get install -y flex bison libelf-dev libssl-dev bc cpio \
-            sparse coccinelle rsync zstd file kmod iproute2 kbd
+            sparse coccinelle rsync zstd file kmod iproute2 kbd dwarves
           # virtme-ng 在 QEMU 中启动刚构建的内核；qemu 与 busybox 只在
           # Recommends 中，必须显式安装，否则 vng 无法构建 guest 根环境。
           sudo apt-get install -y virtme-ng qemu-system-x86 busybox-static
@@ -257,6 +257,13 @@ jobs:
             echo "OK: no compiler warnings emitted"
           fi
           test -f arch/x86/boot/bzImage
+          # OS-OBS-012：Linux 6.6 的 BTF 由 gen_btf() 以 .BTF 段内嵌进 vmlinux
+          # （scripts/link-vmlinux.sh），不产出独立的 vmlinux.btf 文件，故断言段存在。
+          readelf -S vmlinux | grep -q '\.BTF' || {
+            echo "::error::vmlinux 缺少 .BTF 段（CONFIG_DEBUG_INFO_BTF 未生效）"
+            exit 1
+          }
+          echo "OK: vmlinux carries the .BTF section"
           echo "bzImage ready for the runtime test stages"
       - name: sparse make C=2 W=2 on Airymax objects (OS-STD-TOOL-081-CI)
         working-directory: kernel

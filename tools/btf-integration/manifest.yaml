@@ -1,0 +1,78 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+#
+# AirymaxOS BTF / eBPF 基线清单（唯一事实源 / SSoT）
+# Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
+#
+# 权威依据：
+#   docs/docs-linux/90-observability/02-ebpf-probes.md
+#     OS-KER-106（defconfig 必须开启 CONFIG_BPF / CONFIG_BPF_SYSCALL /
+#                 CONFIG_BPF_JIT / CONFIG_BPF_EVENTS / CONFIG_DEBUG_INFO_BTF）
+#     OS-OBS-011（eBPF 为 L2 层强制基线）
+#     OS-OBS-012（必须开启 CONFIG_DEBUG_INFO_BTF，并在构建产物中提供
+#                 vmlinux 的 BTF；BPF 程序须基于 BTF 重定位 / CO-RE）
+#   kernel/lib/Kconfig.debug
+#     DEBUG_INFO_BTF `depends on !DEBUG_INFO_SPLIT && !DEBUG_INFO_REDUCED`；
+#     且 DEBUG_INFO 为无 prompt 的隐藏 bool，只由 DWARF choice 项 select，
+#     二者缺其一，olddefconfig 都会丢弃 DEBUG_INFO_BTF。
+#   kernel/kernel/trace/Kconfig
+#     BPF_EVENTS 位于 `if FTRACE` 区块内，且 `depends on BPF_SYSCALL`、
+#     `depends on (KPROBE_EVENTS || UPROBE_EVENTS) && PERF_EVENTS`。
+#   kernel/scripts/link-vmlinux.sh
+#     Linux 6.6 的 BTF 由 gen_btf() 以 .BTF 段内嵌进 vmlinux，不产出独立的
+#     vmlinux.btf 文件；故 CI 断言的是 vmlinux 中的 .BTF 段。
+#
+# 铁律：本清单是「受检架构 × eBPF 基线 × BTF 基线 × tracing 链路 × CI 供给」
+#      的唯一事实源。受检架构不在本表重复登记，统一复用
+#      tools/defconfig-matrix/manifest.yaml 中 build=true 的条目，避免第二
+#      事实源与重复实现。任何一侧漂移均由
+#      tools/btf-integration/btf_integration.py --check 检出。
+#
+# 字段：
+#   defconfig_matrix_manifest  受检架构来源（defconfig 矩阵清单相对路径）；
+#                              取其 build=true 条目的 configs 作为受检片段
+#   bpf_configs                eBPF 基线（OS-KER-106），须逐项出现在每个片段
+#   btf_configs                BTF 基线（OS-OBS-012），须逐项出现在每个片段
+#   btf_mutex_unset            与 DEBUG_INFO_BTF 互斥、必须显式关闭的配置键
+#                              （本工具自动展开为 '# <key> is not set'）
+#   debug_info_choice          DWARF/DEBUG_INFO 形态候选集合；每个片段至少
+#                              命中其一，否则 DEBUG_INFO=n 会令 BTF 被丢弃
+#   tracing_chain              BPF_EVENTS 的前置链路（FTRACE + KPROBES）
+#   pahole_package             生成 BTF 所需的构建期工具包（提供 pahole）
+#   btf_artifacts              CI 必须断言的构建产物中 BTF 标识
+#   ci_workflows               受检 CI 工作流（须同时提供工具包与断言产物）
+
+version: "1.0.0"
+
+defconfig_matrix_manifest: tools/defconfig-matrix/manifest.yaml
+
+bpf_configs:
+  - CONFIG_BPF=y
+  - CONFIG_BPF_SYSCALL=y
+  - CONFIG_BPF_JIT=y
+  - CONFIG_BPF_EVENTS=y
+
+btf_configs:
+  - CONFIG_DEBUG_INFO_BTF=y
+
+btf_mutex_unset:
+  - CONFIG_DEBUG_INFO_REDUCED
+  - CONFIG_DEBUG_INFO_SPLIT
+
+debug_info_choice:
+  - CONFIG_DEBUG_INFO_DWARF4=y
+  - CONFIG_DEBUG_INFO_DWARF5=y
+  - CONFIG_DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT=y
+
+tracing_chain:
+  - CONFIG_FTRACE=y
+  - CONFIG_KPROBES=y
+
+# Debian/Ubuntu 的 dwarves 包提供 pahole；link-vmlinux.sh 的 gen_btf()
+# 在 CONFIG_DEBUG_INFO_BTF=y 时要求 pahole 可用，否则构建直接失败。
+pahole_package: dwarves
+
+btf_artifacts:
+  - .BTF
+
+ci_workflows:
+  - .github/workflows/ci-kernel.yml
