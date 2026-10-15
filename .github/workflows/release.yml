@@ -1,9 +1,11 @@
 # ===========================================================================
 # agent-linux (AirymaxOS) CI Pipeline
 # release tag 流水线（L7 发布验证）
-# 重组为 2 jobs：build-and-sign（SBOM + 构建签名）+ publish-release（发布渠道）
+# 重组为 2 jobs：build-and-sign（SBOM + 4 架构内核 RPM + 制品签名）
+#              publish-release（RPM 仓库 / OCI 镜像 / GitHub Release）
 # ===========================================================================
 # Authority: docs/docs-linux/70-build-system/03-ci-cd-pipeline.md
+#            docs/docs-linux/120-development-process/09-release-process.md
 # Constraint: 管理仓每个 workflow 最多 2 条流水线
 # ===========================================================================
 
@@ -11,31 +13,61 @@ name: release
 on:
   push:
     tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+'        # 稳定版 v0.2.8
-      - 'v[0-9]+.[0-9]+.[0-9]+-rc[0-9]+' # 候选版 v0.2.8-rc1
+      - 'v[0-9]+.[0-9]+.[0-9]+'          # 稳定版 v0.0.3
+      - 'v[0-9]+.[0-9]+.[0-9]+-rc[0-9]+' # 候选版 v0.0.3-rc1
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag'
+        description: 'Release tag (如 v0.0.3)'
         required: true
+
+permissions:
+  contents: read
+
+env:
+  # 发布 tag 的唯一来源：tag 推送事件取 ref_name，手动触发取 inputs.tag
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  # OCI 镜像名（SSoT: docs/docs-linux/70-build-system/03-ci-cd-pipeline.md §8.4/§8.5）
+  OCI_IMAGE: ghcr.io/spharx/airymaxos
 
 jobs:
   build-and-sign:
     name: Build + SBOM + Sign (L7)
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 240
+    outputs:
+      tag: ${{ steps.ver.outputs.tag }}
+      ver: ${{ steps.ver.outputs.ver }}
     steps:
       - uses: actions/checkout@v4
         with: { submodules: recursive }
+
+      - name: Derive release version
+        id: ver
+        run: |
+          set -euo pipefail
+          tag="${RELEASE_TAG}"
+          case "$tag" in v*) ;; *) tag="v${tag}" ;; esac
+          ver="${tag#v}"
+          if ! printf '%s' "$ver" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]+)?$'; then
+            echo "::error::非法的发布 tag: ${tag}"
+            exit 1
+          fi
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "ver=${ver}" >> "$GITHUB_OUTPUT"
+
       - name: Install syft
         uses: anchore/sbom-action/download-syft@v0
+
       - name: Compute SOURCE_DATE_EPOCH
         id: epoch
         run: echo "value=$(git log -1 --pretty=%ct)" >> "$GITHUB_OUTPUT"
+
       - name: Generate + merge SPDX SBOM
         env:
           SOURCE_DATE_EPOCH: ${{ steps.epoch.outputs.value }}
         run: |
+          set -euo pipefail
           # 内核态：扫描 kernel 子仓
           syft kernel -o spdx-json=sbom-kernel.spdx.json
           # 用户态：SBOM 方案 §2.4 登记的 7 个用户态子仓
@@ -44,75 +76,195 @@ jobs:
           done
           # 合并为统一 SBOM（真实合并器，无桩路径）
           python3 tools/release-engineering/merge_sbom.py \
-            --name "agent-linux-${{ github.ref_name }}" \
-            --namespace "https://airymaxos.com/spdx/agent-linux-${{ github.ref_name }}" \
-            --output "sbom-agent-linux-${{ github.ref_name }}.spdx.json" \
+            --name "agent-linux-${{ steps.ver.outputs.ver }}" \
+            --namespace "https://airymaxos.com/spdx/agent-linux-${{ steps.ver.outputs.ver }}" \
+            --output "sbom-agent-linux-${{ steps.ver.outputs.ver }}.spdx.json" \
             sbom-kernel.spdx.json sbom-memory.spdx.json \
             sbom-security.spdx.json sbom-cognition.spdx.json \
             sbom-services.spdx.json sbom-system.spdx.json \
             sbom-cloudnative.spdx.json sbom-tests-linux.spdx.json
-      - name: Build kernel image + modules
-        working-directory: kernel
+
+      - name: Install kernel build dependencies and cross toolchains
         run: |
-          make ARCH=x86_64 -j$(nproc) binrpm-pkg
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y flex bison libelf-dev libssl-dev bc cpio \
+            dwarves rsync rpm
+          sudo apt-get install -y gcc-aarch64-linux-gnu gcc-riscv64-linux-gnu \
+            gcc-13-loongarch64-linux-gnu
+          # noble 仅提供带版本号的 loongarch64 交叉 gcc，补齐 CROSS_COMPILE 期望的无版本号驱动名
+          sudo ln -sf "$(command -v loongarch64-linux-gnu-gcc-13)" \
+            /usr/local/bin/loongarch64-linux-gnu-gcc
+
+      # 4 架构内核 RPM：单 job 内顺序构建（管理仓 2 job 铁律，不得引入 matrix job）。
+      # 内核为 in-tree 构建，切换架构前必须 mrproper，否则混架构对象文件会致构建失败。
+      # target 名由 arch/<kdir>/Makefile 覆写的 UTS_MACHINE 决定，恰等于 RPM arch 名。
+      - name: Build kernel RPM (4 architectures)
+        run: |
+          set -euo pipefail
+          spec="$GITHUB_WORKSPACE/build/airymaxos-kernel.spec"
+          while IFS='|' read -r arch kdir target cross; do
+            [ -n "$arch" ] || continue
+            echo "::group::kernel RPM ${arch} (target ${target}-linux)"
+            cd "$GITHUB_WORKSPACE/kernel"
+            make ARCH="$arch" CROSS_COMPILE="$cross" mrproper
+            make ARCH="$arch" CROSS_COMPILE="$cross" defconfig
+            ./scripts/kconfig/merge_config.sh -m .config \
+              "arch/${kdir}/configs/airy_defconfig"
+            make ARCH="$arch" CROSS_COMPILE="$cross" olddefconfig
+            krel="$(make ARCH="$arch" CROSS_COMPILE="$cross" -s kernelrelease)"
+            rm -rf rpmbuild
+            mkdir -p rpmbuild/BUILD rpmbuild/RPMS rpmbuild/SOURCES \
+              rpmbuild/SPECS rpmbuild/SRPMS
+            rpmbuild -bb "$spec" \
+              --define="_topdir $PWD/rpmbuild" \
+              --define="_smp_mflags -j$(nproc)" \
+              --define="ARCH ${arch}" \
+              --define="SRCARCH ${kdir}" \
+              --define="KERNELRELEASE ${krel}" \
+              --define="airy_version ${{ steps.ver.outputs.ver }}" \
+              --define="airy_release 1" \
+              --define="cross_compile ${cross}" \
+              --target "${target}-linux" \
+              --build-in-place --noprep --nodeps
+            cd "$GITHUB_WORKSPACE"
+            mkdir -p "dist/rpm/${target}"
+            cp "kernel/rpmbuild/RPMS/${target}"/*.rpm "dist/rpm/${target}/"
+            ls -l "dist/rpm/${target}"
+            echo "::endgroup::"
+          done <<'MATRIX'
+          x86_64|x86|x86_64|
+          arm64|arm64|aarch64|aarch64-linux-gnu-
+          riscv|riscv|riscv64|riscv64-linux-gnu-
+          loongarch|loongarch|loongarch64|loongarch64-linux-gnu-
+          MATRIX
+
+      - name: Verify kernel RPM metadata
+        run: |
+          set -euo pipefail
+          total=$(find dist/rpm -name '*.rpm' | wc -l)
+          echo "内核 RPM 总数: ${total}"
+          [ "$total" -ge 4 ] || { echo "::error::内核 RPM 数量不足（期望 4 架构各主包）"; exit 1; }
+          for rpm in dist/rpm/*/*.rpm; do
+            printf '%s -> %s/%s\n' \
+              "$rpm" \
+              "$(rpm -qp --queryformat '%{NAME}' "$rpm")" \
+              "$(rpm -qp --queryformat '%{ARCH}' "$rpm")"
+          done
+
       - name: Import GPG signing key
         uses: crazy-max/ghaction-import-gpg@v6
         with:
           gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
           passphrase: ${{ secrets.GPG_PASSPHRASE }}
-      - name: Sign kernel image + modules (GPG)
+
+      - name: Build SDK tarball
         run: |
-          gpg --batch --yes --detach-sign --armor \
-            -o agent-linux-kernel-${{ github.ref_name }}.rpm.asc \
-            agent-linux-kernel-${{ github.ref_name }}.rpm
-      - name: Sign OCI image (cosign)
+          set -euo pipefail
+          tar czf "agent-linux-sdk-${{ steps.ver.outputs.ver }}.tar.gz" sdk/
+
+      - name: Build OCI base image
         env:
-          COSIGN_KEY: ${{ secrets.COSIGN_KEY }}
-          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+          SOURCE_DATE_EPOCH: ${{ steps.epoch.outputs.value }}
         run: |
-          cosign sign --key env://COSIGN_KEY \
-            ghcr.io/spharx/agent-linux:${{ github.ref_name }}
-      - name: Build SDK tarball + sign
+          set -euo pipefail
+          tag="${{ steps.ver.outputs.tag }}"
+          docker build -f oci/Containerfile.agent-base \
+            --build-arg "SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}" \
+            --build-arg "AIRY_VERSION=${{ steps.ver.outputs.ver }}" \
+            --build-arg "RPM_ARCH=x86_64" \
+            --build-arg "TZ=UTC" --build-arg "LC_ALL=C" \
+            -t "${OCI_IMAGE}:${tag}" .
+          docker save "${OCI_IMAGE}:${tag}" -o "oci-image-${tag}.tar"
+
+      - name: Sign release artifacts (GPG)
         run: |
-          tar czf agent-linux-sdk-${{ github.ref_name }}.tar.gz sdk/
-          gpg --batch --yes --detach-sign --armor \
-            -o agent-linux-sdk-${{ github.ref_name }}.tar.gz.asc \
-            agent-linux-sdk-${{ github.ref_name }}.tar.gz
+          set -euo pipefail
+          mapfile -t files < <(find dist/rpm -name '*.rpm')
+          files+=("agent-linux-sdk-${{ steps.ver.outputs.ver }}.tar.gz")
+          for f in "${files[@]}"; do
+            gpg --batch --yes --detach-sign --armor -o "${f}.asc" "$f"
+          done
+          ls -l dist/rpm/*/
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: release-artifacts-${{ github.ref_name }}
+          name: release-artifacts-${{ steps.ver.outputs.ver }}
+          if-no-files-found: error
           path: |
-            sbom-agent-linux-${{ github.ref_name }}.spdx.json
-            agent-linux-kernel-*.rpm
-            agent-linux-kernel-*.rpm.asc
-            agent-linux-sdk-*.tar.gz
-            agent-linux-sdk-*.tar.gz.asc
+            dist/rpm/**/*.rpm
+            dist/rpm/**/*.rpm.asc
+            sbom-agent-linux-${{ steps.ver.outputs.ver }}.spdx.json
+            agent-linux-sdk-${{ steps.ver.outputs.ver }}.tar.gz
+            agent-linux-sdk-${{ steps.ver.outputs.ver }}.tar.gz.asc
+            oci-image-${{ steps.ver.outputs.tag }}.tar
 
   publish-release:
     name: Publish + GitHub Release (L7)
     runs-on: ubuntu-latest
     needs: build-and-sign
+    permissions:
+      contents: write
+      packages: write
     steps:
       - uses: actions/checkout@v4
+
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
-          name: release-artifacts-${{ github.ref_name }}
-      - name: Publish dnf repo
+          name: release-artifacts-${{ needs.build-and-sign.outputs.ver }}
+
+      - name: Build dnf repository
         run: |
-          createrepo agent-linux-repo/${{ github.ref_name }}/
-          rsync -avz agent-linux-repo/ ${{ secrets.DNF_REPO_HOST }}:/var/www/agent-linux-repo/
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y createrepo-c
+          ver="${{ needs.build-and-sign.outputs.ver }}"
+          repo="rpm-repo/stable/${ver}"
+          for archdir in dist/rpm/*/; do
+            arch="$(basename "$archdir")"
+            mkdir -p "${repo}/${arch}"
+            cp "${archdir}"*.rpm "${repo}/${arch}/"
+            cp "${archdir}"*.rpm.asc "${repo}/${arch}/"
+            createrepo_c --update "${repo}/${arch}"
+          done
+          find rpm-repo -type f | sort
+
+      - name: Publish dnf repository
+        env:
+          DNF_REPO_HOST: ${{ secrets.DNF_REPO_HOST }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DNF_REPO_HOST}" ]; then
+            echo "::warning::未配置 DNF_REPO_HOST，跳过 RPM 仓库上传"
+            exit 0
+          fi
+          rsync -avz rpm-repo/ "${DNF_REPO_HOST}:/var/www/rpm-repo/"
+
+      - uses: sigstore/cosign-installer@v3
+
       - name: Publish OCI image
+        env:
+          COSIGN_KEY: ${{ secrets.COSIGN_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
         run: |
-          docker build -t ghcr.io/spharx/agent-linux:${{ github.ref_name }} .
-          docker push ghcr.io/spharx/agent-linux:${{ github.ref_name }}
+          set -euo pipefail
+          tag="${{ needs.build-and-sign.outputs.tag }}"
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+            docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker load -i "oci-image-${tag}.tar"
+          docker push "${OCI_IMAGE}:${tag}"
+          # cosign 必须在 push 之后签名，签名对象是已推送镜像的 digest
+          cosign sign --yes --key env://COSIGN_KEY "${OCI_IMAGE}:${tag}"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.build-and-sign.outputs.tag }}
           files: |
-            agent-linux-kernel-*.rpm
-            agent-linux-kernel-*.rpm.asc
+            dist/rpm/**/*.rpm
+            dist/rpm/**/*.rpm.asc
             agent-linux-sdk-*.tar.gz
             agent-linux-sdk-*.tar.gz.asc
             sbom-agent-linux-*.spdx.json
