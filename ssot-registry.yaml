@@ -11,8 +11,8 @@
 #   - individual: non-contiguous IDs listed individually
 # ===========================================================================
 
-version: "0.2.8"
-last_updated: "2026-07-15"
+version: "0.2.9"
+last_updated: "2026-10-15"
 
 # ===========================================================================
 # Part 1: agent-linux (OS-*) Rules — Chapters 2-13
@@ -234,13 +234,14 @@ agentrt_linux_rules:
     ranges:
       - { start: OS-IFACE-001, end: OS-IFACE-010, count: 10, section: "30-interfaces" }
 
-  # ── Chapter 12: OS-TEST Test Engineering (22, range) ───────────────
+  # ── Chapter 12: OS-TEST Test Engineering (30, range) ───────────────
   - prefix: OS-TEST
-    authority: "80-testing/01-kunit-framework.md + 02-kselftest.md"
+    authority: "80-testing/01-kunit-framework.md + 02-kselftest.md + 05-static-analysis.md"
     chapter: "Ch 12"
     registration: range
     ranges:
-      - { start: OS-TEST-001, end: OS-TEST-022, count: 22, section: "80-testing" }
+      - { start: OS-TEST-001, end: OS-TEST-022, count: 22, section: "80-testing/01-kunit-framework.md + 02-kselftest.md" }
+      - { start: OS-TEST-060, end: OS-TEST-067, count: 8, section: "80-testing/05-static-analysis.md" }
 
   # ── Chapter 13.1: OS-OPS Operations Engineering (2 ranges) ─────────
   - prefix: OS-OPS
