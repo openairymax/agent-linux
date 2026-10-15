@@ -40,7 +40,10 @@ jobs:
       ver: ${{ steps.ver.outputs.ver }}
     steps:
       - uses: actions/checkout@v4
-        with: { submodules: recursive }
+        with:
+          # release notes 需完整提交历史与 tag 才能派生「上一版本..本版本」区间（§3.7）
+          fetch-depth: 0
+          submodules: recursive
 
       - name: Derive release version
         id: ver
@@ -187,6 +190,35 @@ jobs:
           done
           ls -l dist/rpm/*/
 
+      # 物料 8/9（09-release-process.md §3.1）：以 tools/release-engineering 的
+      # 确定性实现产出校验和文件与结构化 release notes，并即时 GPG 签名。
+      # 命名规则：发布资产用 agent-linux-<ver>（§3.2），RPM 包名用 airymaxos-*（§3.3）。
+      - name: Generate + sign checksums and release notes
+        run: |
+          set -euo pipefail
+          ver="${{ steps.ver.outputs.ver }}"
+          tag="${{ steps.ver.outputs.tag }}"
+          mapfile -t assets < <(
+            find dist/rpm -type f \( -name '*.rpm' -o -name '*.rpm.asc' \) | sort
+            printf '%s\n' \
+              "sbom-agent-linux-${ver}.spdx.json" \
+              "agent-linux-sdk-${ver}.tar.gz" \
+              "agent-linux-sdk-${ver}.tar.gz.asc" \
+              "oci-image-${tag}.tar"
+          )
+          python3 tools/release-engineering/release_manifest.py --checksums \
+            --output "agent-linux-${ver}.sha256sum" "${assets[@]}"
+          prev="$(git describe --tags --abbrev=0 "${tag}^" 2>/dev/null || true)"
+          python3 tools/release-engineering/release_manifest.py --notes \
+            --version "${ver}" --rev-range "${prev:+${prev}..}HEAD" \
+            --checksums-file "agent-linux-${ver}.sha256sum" \
+            --output "agent-linux-${ver}-release-notes.md"
+          for f in "agent-linux-${ver}.sha256sum" \
+                   "agent-linux-${ver}-release-notes.md"; do
+            gpg --batch --yes --detach-sign --armor -o "${f}.asc" "$f"
+          done
+          ls -l "agent-linux-${ver}".sha256sum* "agent-linux-${ver}-release-notes.md"*
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -199,6 +231,10 @@ jobs:
             agent-linux-sdk-${{ steps.ver.outputs.ver }}.tar.gz
             agent-linux-sdk-${{ steps.ver.outputs.ver }}.tar.gz.asc
             oci-image-${{ steps.ver.outputs.tag }}.tar
+            agent-linux-${{ steps.ver.outputs.ver }}.sha256sum
+            agent-linux-${{ steps.ver.outputs.ver }}.sha256sum.asc
+            agent-linux-${{ steps.ver.outputs.ver }}-release-notes.md
+            agent-linux-${{ steps.ver.outputs.ver }}-release-notes.md.asc
 
   publish-release:
     name: Publish + GitHub Release (L7)
@@ -262,10 +298,15 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.build-and-sign.outputs.tag }}
+          # release notes 由确定性生成器产出并 GPG 签名，不再使用自动生成
+          body_path: agent-linux-${{ needs.build-and-sign.outputs.ver }}-release-notes.md
           files: |
             dist/rpm/**/*.rpm
             dist/rpm/**/*.rpm.asc
             agent-linux-sdk-*.tar.gz
             agent-linux-sdk-*.tar.gz.asc
             sbom-agent-linux-*.spdx.json
-          generate_release_notes: true
+            agent-linux-*.sha256sum
+            agent-linux-*.sha256sum.asc
+            agent-linux-*-release-notes.md
+            agent-linux-*-release-notes.md.asc

@@ -22,6 +22,13 @@
 #     0.0.3 的目标是「初步实现可安装、可运行、可进 UKUI 的 AirymaxOS」，
 #     故仅交付内核 RPM / SBOM / SDK / OCI 四条主线物料，其余按版本补齐。
 #
+# 命名规则（SSoT）：
+#   * 发布资产（源码/SDK tarball、SBOM、校验和、release notes 及其签名）统一用
+#     agent-linux-<MAJOR.MINOR.PATCH> 前缀——依据 09-release-process.md §3.2。
+#   * RPM 包名统一用 airymaxos-*——依据 09-release-process.md §3.3 与
+#     docs-linux/190-distribution 相关章节。
+#   * 二者是「资产名 vs 包名」两套并存约定，不得互相混用。
+#
 # 字段：
 #   id            物料唯一标识（小写连字符）
 #   name          中文名称（对齐 §3.1 物料清单）
@@ -35,7 +42,7 @@
 #   defer_reason  deferred 必填：暂缓交付的原因
 #   defer_target  deferred 必填：补齐目标版本
 
-version: "1.0.0"
+version: "1.1.0"
 
 materials:
   # ── §3.1 物料 1：源码 tarball ──────────────────────────────────────────
@@ -122,12 +129,10 @@ materials:
     format: Markdown
     signature: gpg
     authority: docs/docs-linux/120-development-process/09-release-process.md §3.1 物料8 / §3.7
-    delivery: deferred
-    defer_reason: >-
-      当前 release notes 由 GitHub generate_release_notes 自动生成，未作为受 GPG
-      签名的独立物料落盘；本目录 release_manifest.py --notes 已具备结构化生成能力，
-      待接入 release.yml 后转为 active
-    defer_target: "0.0.4"
+    delivery: active
+    evidence:
+      - agent-linux-*-release-notes.md
+      - agent-linux-*-release-notes.md.asc
 
   # ── §3.1 物料 9：校验和文件 ───────────────────────────────────────────
   - id: checksums
@@ -135,11 +140,10 @@ materials:
     format: .sha256sum
     signature: gpg
     authority: docs/docs-linux/120-development-process/09-release-process.md §3.1 物料9 / §3.2
-    delivery: deferred
-    defer_reason: >-
-      release.yml 尚未产出统一的 .sha256sum 校验和文件；release_manifest.py
-      --checksums 已具备确定性生成能力，待接入流水线后转为 active
-    defer_target: "0.0.4"
+    delivery: active
+    evidence:
+      - agent-linux-*.sha256sum
+      - agent-linux-*.sha256sum.asc
 
   # ── §3.1 物料 10：公钥 ────────────────────────────────────────────────
   - id: gpg-public-key
