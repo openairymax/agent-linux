@@ -1,0 +1,192 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+#
+# AirymaxOS 发布物料清单（唯一事实源 / SSoT）
+# Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
+#
+# 权威依据：
+#   docs/docs-linux/120-development-process/09-release-process.md
+#     §3.1 物料清单总览（12 项）/ §3.2 源码 tarball 与校验和 / §3.7 release notes
+#   docs/docs-linux/70-build-system/03-ci-cd-pipeline.md
+#     §SDK tarball（Agent SDK 交付）/ §8.4·§8.5 OCI 镜像
+#   docs/docs-linux/190-distribution/06-sbom-generation.md
+#     §2 SBOM 文档格式（SPDX 2.3 JSON —— SBOM 格式的权威出处）
+#
+# 铁律：
+#   * 本表是发布物料清单的唯一事实源。每条 active 物料的 evidence（产物 glob
+#     列表）必须与 .github/workflows/release.yml 的「上传制品 + 发布附件」声明
+#     集合逐项相等——正向保证清单登记物料都被真实产出，反向保证流水线不产出
+#     未登记的物料。任一侧漂移由 release_manifest.py --check 检出。
+#   * 严禁桩实现：--check 读取真实 release.yml 与本表做交叉比对，不重复实现
+#     流水线逻辑，亦不做任何占位跳过。
+#   * deferred 物料必须登记 defer_reason 与 defer_target，不得静默缺项；
+#     0.0.3 的目标是「初步实现可安装、可运行、可进 UKUI 的 AirymaxOS」，
+#     故仅交付内核 RPM / SBOM / SDK / OCI 四条主线物料，其余按版本补齐。
+#
+# 字段：
+#   id            物料唯一标识（小写连字符）
+#   name          中文名称（对齐 §3.1 物料清单）
+#   format        交付格式（扩展名或格式描述）
+#   signature     签名方式（gpg / cosign / none）
+#   authority     权威出处（docs 相对路径 + 章节）
+#   delivery      交付状态：
+#                   active   — 0.0.3 由 release.yml 真实产出并纳入签名发布
+#                   deferred — 0.0.3 暂不交付，须登记 defer_reason/defer_target
+#   evidence      active 必填：release.yml 中对应的产物 glob 列表（含签名件）
+#   defer_reason  deferred 必填：暂缓交付的原因
+#   defer_target  deferred 必填：补齐目标版本
+
+version: "1.0.0"
+
+materials:
+  # ── §3.1 物料 1：源码 tarball ──────────────────────────────────────────
+  - id: source-tarball
+    name: 源码 tarball
+    format: .tar.xz
+    signature: gpg
+    authority: docs/docs-linux/120-development-process/09-release-process.md §3.1 物料1 / §3.2
+    delivery: deferred
+    defer_reason: >-
+      release.yml 尚未以 git archive 生成源码 tarball；0.0.3 聚焦内核 RPM 与
+      SBOM 主线，源码 tarball 待发布物料清单门禁全绿后补齐
+    defer_target: "0.0.4"
+
+  # ── §3.1 物料 2：内核 RPM（4 架构）─────────────────────────────────────
+  - id: kernel-rpm
+    name: 内核 RPM（4 架构）
+    format: .rpm
+    signature: gpg
+    authority: docs/docs-linux/120-development-process/09-release-process.md §3.1 物料2 / §3.3 包1
+    delivery: active
+    evidence:
+      - dist/rpm/**/*.rpm
+      - dist/rpm/**/*.rpm.asc
+
+  # ── §3.1 物料 3：12 daemon RPM（2 架构）───────────────────────────────
+  - id: daemon-rpm
+    name: 12 daemon RPM（2 架构）
+    format: .rpm
+    signature: gpg
+    authority: docs/docs-linux/120-development-process/09-release-process.md §3.1 物料3 / §3.3 包2-13
+    delivery: deferred
+    defer_reason: >-
+      用户态 12 个 daemon 的 RPM 打包链（services/system 子仓 spec）尚未落地；
+      0.0.3 仅交付内核 RPM，用户态 daemon 随系统集成版本补齐
+    defer_target: "0.0.4"
+
+  # ── §3.1 物料 4：devstation RPM ───────────────────────────────────────
+  - id: devstation-rpm
+    name: devstation RPM
+    format: .rpm
+    signature: gpg
+    authority: docs/docs-linux/120-development-process/09-release-process.md §3.1 物料4 / §3.3 包14
+    delivery: deferred
+    defer_reason: devstation（开发工具 + SDK + 文档）产物形态待定，0.0.3 先交付 SDK tarball 供开发者集成
+    defer_target: "0.0.4"
+
+  # ── §3.1 物料 5：SBOM ─────────────────────────────────────────────────
+  # 注：§3.1/§3.4 记作 CycloneDX 1.5 JSON，而 SBOM 格式的权威出处
+  #     06-sbom-generation.md §2 与实际实现均为 SPDX 2.3 JSON；此处以权威
+  #     出处为准，格式漂移已记录待 docs SSoT 委员会裁定（文档冲突，非本表缺陷）。
+  - id: sbom
+    name: SBOM
+    format: SPDX 2.3 JSON
+    signature: gpg
+    authority: docs/docs-linux/190-distribution/06-sbom-generation.md §2
+    delivery: active
+    evidence:
+      - sbom-agent-linux-*.spdx.json
+
+  # ── §3.1 物料 6：airy_defconfig 快照 ──────────────────────────────────
+  - id: airy-defconfig
+    name: airy_defconfig 快照
+    format: text
+    signature: gpg
+    authority: docs/docs-linux/120-development-process/09-release-process.md §3.1 物料6 / §3.5
+    delivery: deferred
+    defer_reason: airy_defconfig 已随内核 RPM 打包（可自源码树获取），独立快照产物待发布链补齐
+    defer_target: "0.0.4"
+
+  # ── §3.1 物料 7：文档快照 ─────────────────────────────────────────────
+  - id: docs-snapshot
+    name: 文档快照
+    format: .tar.xz
+    signature: gpg
+    authority: docs/docs-linux/120-development-process/09-release-process.md §3.1 物料7 / §3.6
+    delivery: deferred
+    defer_reason: 文档快照需从 docs 分支导出，跨仓归档流程待建立；0.0.3 不阻塞 OS 交付
+    defer_target: "0.0.4"
+
+  # ── §3.1 物料 8：release notes ────────────────────────────────────────
+  - id: release-notes
+    name: release notes
+    format: Markdown
+    signature: gpg
+    authority: docs/docs-linux/120-development-process/09-release-process.md §3.1 物料8 / §3.7
+    delivery: deferred
+    defer_reason: >-
+      当前 release notes 由 GitHub generate_release_notes 自动生成，未作为受 GPG
+      签名的独立物料落盘；本目录 release_manifest.py --notes 已具备结构化生成能力，
+      待接入 release.yml 后转为 active
+    defer_target: "0.0.4"
+
+  # ── §3.1 物料 9：校验和文件 ───────────────────────────────────────────
+  - id: checksums
+    name: 校验和文件
+    format: .sha256sum
+    signature: gpg
+    authority: docs/docs-linux/120-development-process/09-release-process.md §3.1 物料9 / §3.2
+    delivery: deferred
+    defer_reason: >-
+      release.yml 尚未产出统一的 .sha256sum 校验和文件；release_manifest.py
+      --checksums 已具备确定性生成能力，待接入流水线后转为 active
+    defer_target: "0.0.4"
+
+  # ── §3.1 物料 10：公钥 ────────────────────────────────────────────────
+  - id: gpg-public-key
+    name: 公钥
+    format: .asc
+    signature: none
+    authority: docs/docs-linux/120-development-process/09-release-process.md §3.1 物料10
+    delivery: deferred
+    defer_reason: 公钥分发（AtomGit releases + keys.openpgp.org）属发布运维流程，待签名密钥体系上线
+    defer_target: "0.0.4"
+
+  # ── §3.1 物料 11：签核记录 ────────────────────────────────────────────
+  - id: signoff-record
+    name: 签核记录
+    format: Markdown
+    signature: gpg
+    authority: docs/docs-linux/120-development-process/09-release-process.md §3.1 物料11 / §2
+    delivery: deferred
+    defer_reason: 签核记录落于 agent-linux-mgmt 仓，0.0.3 尚未启用该记录流程
+    defer_target: "0.0.4"
+
+  # ── §3.1 物料 12：ABI 报告 ────────────────────────────────────────────
+  - id: abi-report
+    name: ABI 报告
+    format: Markdown
+    signature: gpg
+    authority: docs/docs-linux/120-development-process/09-release-process.md §3.1 物料12
+    delivery: deferred
+    defer_reason: ABI 报告依赖 tools/abi-check 的基线比对结果归档流程，待其接入发布链
+    defer_target: "0.0.4"
+
+  # ── 补充物料：release.yml 真实产出但 §3.1 未单列（权威出处另见下）──────
+  - id: sdk-tarball
+    name: Agent SDK tarball
+    format: .tar.gz
+    signature: gpg
+    authority: docs/docs-linux/70-build-system/03-ci-cd-pipeline.md §SDK tarball
+    delivery: active
+    evidence:
+      - agent-linux-sdk-*.tar.gz
+      - agent-linux-sdk-*.tar.gz.asc
+
+  - id: oci-image
+    name: OCI 基础镜像
+    format: .tar（docker save）
+    signature: cosign
+    authority: docs/docs-linux/70-build-system/03-ci-cd-pipeline.md §8.4 / §8.5
+    delivery: active
+    evidence:
+      - oci-image-*.tar
