@@ -1,0 +1,43 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+#
+# AirymaxOS Kbuild 版本注入清单（唯一事实源 / SSoT）
+# Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
+#
+# 权威依据：
+#   docs/docs-linux/70-build-system/01-kbuild-system.md
+#     §5    filechk 版本注入与 Makefile.airymaxos
+#     §5.2  Makefile.airymaxos 供应商版本注入（include 指令与注入宏清单）
+#     OS-STD-049    Makefile.airymaxos 只放版本四元组，特性开关走 Kconfig
+#     OS-BUILD-009  四元组变更须经发布管理评审并同步 kernel 子仓发行说明
+#     OS-BUILD-010  version.h 必须经 filechk 生成，禁止裸 echo 覆盖
+#   docs/docs-linux/160-compatibility/03-upstream-tracking.md §8
+#     内核发布串 <kernel_version>-airymax.<airy_release>[.<patch>]
+#
+# 铁律：本清单是「版本四元组 × kernel/Makefile.airymaxos × 顶层 Makefile 的
+#       include × filechk_version.h 注入宏 × 契约快照」的唯一事实源。四元组只
+#       在本表登记一次，工具的期望值全部由它推导，避免第二事实源与重复实现。
+#       任何一侧漂移均由
+#       tools/kbuild-version/kbuild_version.py --check 检出。
+#
+# 字段：
+#   version             本清单的 schema 版本
+#   airymaxos_makefile  供应商版本文件（相对仓库根；承载四元组）
+#   top_makefile        内核顶层 Makefile（引入版本文件并注入宏）
+#   contract            契约快照（期待被注入的 AIRYMAXOS_* 宏块）
+#   version_tuple       版本四元组（AirymaxOS 版本，各段 0..255）
+#     lts               长期支持系列号
+#     major             主版本号
+#     minor             次版本号
+#     release           发布后缀（默认空串；随固定发布可写非空，如 "rc1"）
+
+version: "1.0.0"
+
+airymaxos_makefile: kernel/Makefile.airymaxos
+top_makefile: kernel/Makefile
+contract: tools/kbuild-version/contract/version_h.airy.txt
+
+version_tuple:
+  lts: 0
+  major: 0
+  minor: 3
+  release: ""
