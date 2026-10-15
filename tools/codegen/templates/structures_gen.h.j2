@@ -39,8 +39,9 @@ static inline {{ field.value_type }} {{ block.function_prefix }}_get_{{ field.na
 {% if field.is_writable %}
 static inline void {{ block.function_prefix }}_set_{{ field.name }}(struct {{ block.ctype }} *p, {{ field.value_type }} v)
 {
+{% set cont = 17 + field.name | length + field.value_type | length %}
 	p->{{ field.name }} = ({{ field.value_type }})((p->{{ field.name }} & ~{{ block.macro_prefix }}_{{ field.upper }}_MASK) |
-	                  (v & {{ block.macro_prefix }}_{{ field.upper }}_MASK));
+{{ '\t' * (cont // 8) }}{{ ' ' * (cont % 8) }}(v & {{ block.macro_prefix }}_{{ field.upper }}_MASK));
 }
 {% endif %}
 {% else %}
