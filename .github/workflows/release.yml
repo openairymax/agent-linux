@@ -27,22 +27,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { submodules: recursive }
-      - name: Generate SPDX SBOM
+      - name: Install syft
+        uses: anchore/sbom-action/download-syft@v0
+      - name: Compute SOURCE_DATE_EPOCH
+        id: epoch
+        run: echo "value=$(git log -1 --pretty=%ct)" >> "$GITHUB_OUTPUT"
+      - name: Generate + merge SPDX SBOM
+        env:
+          SOURCE_DATE_EPOCH: ${{ steps.epoch.outputs.value }}
         run: |
-          # 内核态：扫描 vmlinux + 模块符号
-          syft kernel/ -o spdx-json > sbom-kernel.spdx.json
-          # 用户态：扫描 7 个子仓依赖
+          # 内核态：扫描 kernel 子仓
+          syft kernel -o spdx-json=sbom-kernel.spdx.json
+          # 用户态：SBOM 方案 §2.4 登记的 7 个用户态子仓
           for repo in memory security cognition services system cloudnative tests-linux; do
-            syft "$repo/" -o spdx-json > "sbom-${repo}.spdx.json"
+            syft "$repo" -o spdx-json="sbom-${repo}.spdx.json"
           done
-          # 合并为统一 SBOM
-          if [ -f tools/merge-sbom.py ]; then
-            python3 tools/merge-sbom.py \
-              --output sbom-agent-linux-${{ github.ref_name }}.spdx.json \
-              sbom-*.spdx.json
-          else
-            echo "SKIP: merge-sbom.py not yet implemented"
-          fi
+          # 合并为统一 SBOM（真实合并器，无桩路径）
+          python3 tools/release-engineering/merge_sbom.py \
+            --name "agent-linux-${{ github.ref_name }}" \
+            --namespace "https://airymaxos.com/spdx/agent-linux-${{ github.ref_name }}" \
+            --output "sbom-agent-linux-${{ github.ref_name }}.spdx.json" \
+            sbom-kernel.spdx.json sbom-memory.spdx.json \
+            sbom-security.spdx.json sbom-cognition.spdx.json \
+            sbom-services.spdx.json sbom-system.spdx.json \
+            sbom-cloudnative.spdx.json sbom-tests-linux.spdx.json
       - name: Build kernel image + modules
         working-directory: kernel
         run: |
