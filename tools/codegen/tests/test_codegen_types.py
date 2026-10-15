@@ -32,6 +32,8 @@ from codegen_types import (
     IPC_LAYOUT_ASSERTS,
     IPC_MAGIC,
     IPC_OPCODE_SPECS,
+    IPC_RING_DEF_ENTRIES,
+    IPC_RING_MAX_ENTRIES,
     LINUX_BASE,
     PIPELINE_ORDER,
     RESERVED_SLOT_COUNT,
@@ -86,6 +88,11 @@ class TestContractConstants:
         assert IPC_HEADER_SIZE == 128
         assert IPC_HEADER_ALIGNMENT == 64
         assert IPC_MAGIC == 0x41524531
+
+    def test_ipc_ring_capacity_constants(self) -> None:
+        assert IPC_RING_DEF_ENTRIES == 256
+        assert IPC_RING_MAX_ENTRIES == 32768
+        assert IPC_RING_DEF_ENTRIES <= IPC_RING_MAX_ENTRIES
 
     def test_capability_constants(self) -> None:
         assert CAP_ID_COUNT == 44
