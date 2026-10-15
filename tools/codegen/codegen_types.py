@@ -58,6 +58,8 @@ __all__ = [
     "IPC_MIN_STRUCT_NAME",
     "IPC_OPCODE_PREFIX",
     "IPC_OPCODE_SPECS",
+    "IPC_RING_DEF_ENTRIES",
+    "IPC_RING_MAX_ENTRIES",
     "IPC_SIZE_ASSERT_MESSAGE",
     "IPC_STRUCT_NAME",
     "LINUX_BASE",
@@ -109,6 +111,10 @@ IPC_HEADER_SIZE = 128
 IPC_HEADER_ALIGNMENT = 64
 IPC_MAGIC = 0x41524531  # 'ARE1'
 IPC_MAX_PAYLOAD = 64 * 1024 * 1024  # 64 MiB ceiling, contracts.md §2.2
+
+# 5b. IPC ring 容量常量（[SC] SSoT: 120-cross-project-code-sharing.md §2.9）
+IPC_RING_DEF_ENTRIES = 256  # default ring slots, must be a power of two
+IPC_RING_MAX_ENTRIES = 32768  # hard upper bound enforced by airy_ipc_ring_init()
 
 # 6. capability 常量（41 POSIX + 3 Airymax 专属）
 CAP_ID_COUNT = 44

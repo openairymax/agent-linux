@@ -29,6 +29,8 @@ from codegen_types import (
     IPC_MAGIC,
     IPC_MAX_PAYLOAD,
     IPC_OPCODE_SPECS,
+    IPC_RING_DEF_ENTRIES,
+    IPC_RING_MAX_ENTRIES,
     IPC_STRUCT_NAME,
     BitfieldBlockSpec,
     BitfieldContainer,
@@ -116,12 +118,18 @@ class TestNameHelpers:
 class TestConstantAndMacroLines:
     def test_constant_lines(self) -> None:
         lines = ipc_gen._constant_lines()
-        assert len(lines) == 3
+        assert len(lines) == 7
         assert "AIRY_IPC_MAGIC" in lines[0]
         assert "0x41524531u" in lines[0]
         assert str(IPC_HEADER_SIZE) in lines[1]
         assert "AIRY_IPC_MAX_PAYLOAD" in lines[2]
         assert f"0x{IPC_MAX_PAYLOAD:08X}u" in lines[2]
+        assert lines[3] == ""
+        assert lines[4] == "/* Ring capacity constants */"
+        assert "AIRY_IPC_RING_DEF_ENTRIES" in lines[5]
+        assert str(IPC_RING_DEF_ENTRIES) in lines[5]
+        assert "AIRY_IPC_RING_MAX_ENTRIES" in lines[6]
+        assert str(IPC_RING_MAX_ENTRIES) in lines[6]
 
     def test_opcode_lines(self) -> None:
         lines = ipc_gen._opcode_lines()
