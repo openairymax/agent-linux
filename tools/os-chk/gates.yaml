@@ -27,7 +27,7 @@
 #
 # version: 注册表版本，随门禁增删而递增。
 
-version: "1.2.0"
+version: "1.3.0"
 
 gates:
   # ── 文档类 ────────────────────────────────────────────────────────────
@@ -101,3 +101,12 @@ gates:
     authority: 70-build-system/02-kconfig-system.md §10（OS-BUILD-026/028）
     executor:
       argv: ["python3", "tools/defconfig-matrix/defconfig_matrix.py", "--check"]
+
+  # ── BTF / eBPF 基线一致性（OS-KER-106 / OS-OBS-012）───────────────────
+  - id: OS-BUILD-BTF
+    name: BTF / eBPF 基线一致性
+    severity: P0
+    category: build
+    authority: 90-observability/02-ebpf-probes.md（OS-KER-106 / OS-OBS-012）
+    executor:
+      argv: ["python3", "tools/btf-integration/btf_integration.py", "--check"]
