@@ -114,4 +114,5 @@ ok 10 airy_eventfd_fault_ring
     ok 2 airy_eventfd_register_repeat_bad_fd_test
     ok 3 airy_eventfd_signal_unregistered_test
     ok 4 airy_eventfd_unregister_idle_test
+    ok 5 airy_eventfd_signal_ring_full_test
 ok 11 airy_eventfd_register
