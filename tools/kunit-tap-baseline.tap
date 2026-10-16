@@ -27,6 +27,10 @@ ok 1 airy_invoke_syscall_548
     ok 5 airy_clt_notify_reject_test
     ok 6 airy_clt_notify_last_agent_test
     ok 7 airy_clt_query_reject_test
+    ok 8 airy_clt_serve_phase_test
+    ok 9 airy_clt_serve_reserved_test
+    ok 10 airy_clt_serve_identity_test
+    ok 11 airy_clt_serve_priority_test
 ok 2 airy_clt_syscall_551
     # Subtest: stc_dispatch_p1_1
     ok 1 policy_to_linux_maps_all_policies_test
