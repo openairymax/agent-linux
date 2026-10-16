@@ -10,6 +10,8 @@
     ok 9 airy_invoke_op_valid_reject_test
     ok 10 airy_invoke_dispatch_entry_test
     ok 11 airy_invoke_dispatch_order_test
+    ok 12 airy_badge_install_reject_test
+    ok 13 airy_badge_install_ok_test
 ok 1 airy_invoke_syscall_548
     # Subtest: stc_dispatch_p1_1
     ok 1 policy_to_linux_maps_all_policies_test
