@@ -181,3 +181,9 @@ ok 17 airy_eventfd_fault_ring
     ok 4 airy_eventfd_unregister_idle_test
     ok 5 airy_eventfd_signal_ring_full_test
 ok 18 airy_eventfd_register
+    # Subtest: airy_probe_presence
+    ok 1 probe_absent
+    ok 2 probe_ready
+    ok 3 probe_idem
+    ok 4 probe_cycle
+ok 19 airy_probe_presence
