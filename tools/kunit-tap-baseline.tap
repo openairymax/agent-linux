@@ -88,6 +88,14 @@ ok 6 airy_ipc_ring
     ok 8 payload_without_buf_test
     ok 9 null_hdr_returns_einval_test
 ok 7 airy_ipc_crc32_c_s12
+    # Subtest: airy_ipc_trace
+    ok 1 predicates_track_registration_test
+    ok 2 send_emit_reports_header_and_arguments_test
+    ok 3 send_emit_normalises_unknown_dst_test
+    ok 4 recv_emit_reports_header_and_arguments_test
+    ok 5 recv_emit_normalises_unknown_src_test
+    ok 6 emit_without_consumer_is_silent_test
+ok 8 airy_ipc_trace
     # Subtest: airy_fastpath_bench
     ok 1 badge_hit_test
     ok 2 badge_miss_test
@@ -96,12 +104,32 @@ ok 7 airy_ipc_crc32_c_s12
     ok 5 ring_post_test
     ok 6 ring_consume_test
     ok 7 slowpath_sim_test
-ok 8 airy_fastpath_bench
+ok 9 airy_fastpath_bench
+    # Subtest: airy_task_lifecycle
+    ok 1 desc_init_sets_contract_defaults_test
+    ok 2 desc_init_rejects_corrupt_magic_test
+    ok 3 spawn_to_running_emits_one_event_per_edge_test
+    ok 4 blocked_round_trip_test
+    ok 5 illegal_edges_are_rejected_silently_test
+    ok 6 dead_is_terminal_until_reaped_test
+    ok 7 reason_bounds_are_enforced_test
+    ok 8 state_names_cover_all_states_test
+ok 10 airy_task_lifecycle
+    # Subtest: airy_log_ring
+    ok 1 init_shapes_capacity_after_header_test
+    ok 2 append_writes_emit_without_overrun_test
+    ok 3 full_ring_overrun_advances_tail_test
+    ok 4 payload_is_clipped_to_slot_test
+    ok 5 frozen_ring_rejects_without_emitting_test
+    ok 6 reserve_commit_publishes_without_event_test
+    ok 7 entry_guards_test
+    ok 8 destroy_releases_backing_store_test
+ok 11 airy_log_ring
     # Subtest: airy_ipc_capability_p1_5
     ok 1 cap_slot_alignment_test
     ok 2 agent_caps_array_alignment_test
     ok 3 airy_aligned_macro_test
-ok 9 airy_ipc_capability_p1_5
+ok 12 airy_ipc_capability_p1_5
     # Subtest: airy_lsm_p1_4
     ok 1 badge_ok_valid_returns_zero_test
     ok 2 badge_ok_perm_missing_returns_error_test
@@ -112,20 +140,20 @@ ok 9 airy_ipc_capability_p1_5
     ok 7 task_kill_unregistered_agent_skipped_test
     ok 8 file_open_without_perm_denied_test
     ok 9 file_open_with_perm_allowed_test
-ok 10 airy_lsm_p1_4
+ok 13 airy_lsm_p1_4
     # Subtest: airy_cap_derive_p1_10
     ok 1 copy_cannot_mint_derive_perm_test
     ok 2 copy_new_perms_zero_clones_source_test
     ok 3 copy_subset_perms_monotonic_test
     ok 4 copy_preserves_epoch_and_randtag_test
-ok 11 airy_cap_derive_p1_10
+ok 14 airy_cap_derive_p1_10
     # Subtest: airy_contract_snapshot
     ok 1 airy_contract_accept_test
     ok 2 airy_contract_abi_version_test
     ok 3 airy_contract_ipc_cmd_budget_test
     ok 4 airy_contract_badge_tiling_test
     ok 5 airy_contract_blob_capacity_test
-ok 12 airy_contract_snapshot
+ok 15 airy_contract_snapshot
     # Subtest: airy_eventfd_fault_ring
     ok 1 airy_fev_post_null_test
     ok 2 airy_fev_fetch_null_test
@@ -135,11 +163,11 @@ ok 12 airy_contract_snapshot
     ok 6 airy_fev_wrap_order_test
     ok 7 airy_fev_capacity_test
     ok 8 airy_fev_reset_lost_test
-ok 13 airy_eventfd_fault_ring
+ok 16 airy_eventfd_fault_ring
     # Subtest: airy_eventfd_register
     ok 1 airy_eventfd_register_bad_fd_test
     ok 2 airy_eventfd_register_repeat_bad_fd_test
     ok 3 airy_eventfd_signal_unregistered_test
     ok 4 airy_eventfd_unregister_idle_test
     ok 5 airy_eventfd_signal_ring_full_test
-ok 14 airy_eventfd_register
+ok 17 airy_eventfd_register
