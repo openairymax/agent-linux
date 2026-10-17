@@ -11,6 +11,7 @@ by cross-checking sources against a baseline snapshot:
   2. UAPI header     — kernel/include/uapi/asm-generic/unistd.h
   3. Kernel entry tbl — kernel/arch/x86/entry/syscalls/syscall_64.tbl
   4. [SC] contract hdr — kernel/include/uapi/linux/airymax/syscalls.h
+  5. sw_64 entry tbl  — kernel/arch/sw_64/kernel/syscalls/syscall.tbl
 
 The SSoT document is the single authoritative registry, but it lives in the
 docs-linux submodule which is not mirrored publicly (the GitHub mirror only
@@ -29,6 +30,7 @@ Options:
     --snapshot-path PATH  contract snapshot path (default: auto)
     --unistd-path PATH  unistd.h path (default: auto)
     --tbl-path PATH     syscall_64.tbl path (default: auto)
+    --sw64-tbl-path PATH  sw_64 syscall.tbl path (default: auto)
     --sc-header-path PATH  [SC] contract header path (default: auto)
     --baseline PATH     baseline JSON path (default: tools/abi-check/abi_baseline.json)
     --no-baseline       skip baseline comparison
@@ -92,6 +94,8 @@ DEFAULT_UNISTD_REL = os.path.join("kernel", "include", "uapi",
                                   "asm-generic", "unistd.h")
 DEFAULT_TBL_REL = os.path.join("kernel", "arch", "x86", "entry",
                                "syscalls", "syscall_64.tbl")
+DEFAULT_SW64_TBL_REL = os.path.join("kernel", "arch", "sw_64", "kernel",
+                                    "syscalls", "syscall.tbl")
 DEFAULT_SC_HEADER_REL = os.path.join("kernel", "include", "uapi", "linux",
                                      "airymax", "syscalls.h")
 DEFAULT_BASELINE_REL = os.path.join("tools", "abi-check", "abi_baseline.json")
@@ -640,50 +644,47 @@ def check_sc_header_consistency(sc_header, ssot, unistd, tbl):
         f"SLOTS_MAX={slots}) 与 SSoT/unistd.h/tbl 一致")
 
 
-def check_reserved_slots(unistd, tbl):
-    """Check the 20 reserved slots (552-571) are registered consistently."""
-    failures = []
+def reserved_slot_issues(reserved, label):
+    """Diagnose reserved slot coverage, naming and entry point."""
+    issues = []
+    seen = {}
+    for s in reserved:
+        num = s["linux_number"]
+        if num in seen:
+            issues.append(
+                f"  {label}: {num} 重复登记 "
+                f"({seen[num]['name']} / {s['name']})")
+            continue
+        seen[num] = s
 
     expected_nums = list(range(EXPECTED_RESERVED_START,
                               EXPECTED_RESERVED_END + 1))
-    if len(expected_nums) != EXPECTED_RESERVED_COUNT:
-        return CheckResult(
-            "预留槽登记一致 (552-571)", False,
-            f"  内部常量不一致: 区间槽位数 != {EXPECTED_RESERVED_COUNT}")
-
-    unistd_res = {s["linux_number"]: s["name"] for s in unistd["reserved"]}
-    tbl_res = {s["linux_number"]: s for s in tbl["reserved"]}
-
-    # unistd.h reserved slot coverage + naming
-    missing = [n for n in expected_nums if n not in unistd_res]
-    extra = [n for n in sorted(unistd_res) if n not in expected_nums]
+    missing = [n for n in expected_nums if n not in seen]
+    extra = [n for n in sorted(seen) if n not in expected_nums]
     if missing:
-        failures.append(f"  unistd.h: 缺失预留槽 {missing}")
+        issues.append(f"  {label}: 缺失预留槽 {missing}")
     if extra:
-        failures.append(f"  unistd.h: 越界预留槽 {extra}")
-    for num, name in sorted(unistd_res.items()):
-        expected_name = f"{RESERVED_NAME_PREFIX}{num - EXPECTED_BASE}"
-        if name != expected_name:
-            failures.append(
-                f"  unistd.h: {num} 命名 {name} (期望 {expected_name})")
+        issues.append(f"  {label}: 越界预留槽 {extra}")
 
-    # syscall_64.tbl reserved slot coverage + naming + entry point
-    missing = [n for n in expected_nums if n not in tbl_res]
-    extra = [n for n in sorted(tbl_res) if n not in expected_nums]
-    if missing:
-        failures.append(f"  syscall_64.tbl: 缺失预留槽 {missing}")
-    if extra:
-        failures.append(f"  syscall_64.tbl: 越界预留槽 {extra}")
-    for num, entry in sorted(tbl_res.items()):
+    for num in sorted(seen):
+        s = seen[num]
         expected_name = f"{RESERVED_NAME_PREFIX}{num - EXPECTED_BASE}"
-        if entry["name"] != expected_name:
-            failures.append(
-                f"  syscall_64.tbl: {num} 命名 {entry['name']} "
+        if s["name"] != expected_name:
+            issues.append(
+                f"  {label}: {num} 命名 {s['name']} "
                 f"(期望 {expected_name})")
-        if entry["entry"] != RESERVED_TBL_ENTRY:
-            failures.append(
-                f"  syscall_64.tbl: {entry['name']} 入口点 "
-                f"{entry['entry']} (期望 {RESERVED_TBL_ENTRY})")
+        entry = s.get("entry")
+        if entry is not None and entry != RESERVED_TBL_ENTRY:
+            issues.append(
+                f"  {label}: {num} 入口点 {entry} "
+                f"(期望 {RESERVED_TBL_ENTRY})")
+    return issues
+
+
+def check_reserved_slots(unistd, tbl):
+    """Check the 20 reserved slots (552-571) are registered consistently."""
+    failures = reserved_slot_issues(unistd["reserved"], "unistd.h")
+    failures += reserved_slot_issues(tbl["reserved"], "syscall_64.tbl")
 
     if failures:
         return CheckResult("预留槽登记一致 (552-571)", False,
@@ -695,26 +696,33 @@ def check_reserved_slots(unistd, tbl):
         f"入口 sys_ni_syscall")
 
 
-def check_tbl_abi_and_entry(tbl):
-    """Check syscall_64.tbl ABI column and entry naming for airy entries."""
-    failures = []
+def tbl_entry_issues(syscalls, reserved, label):
+    """Diagnose ABI column and entry point naming of airy tbl entries."""
+    issues = []
 
-    for s in tbl["syscalls"]:
+    for s in syscalls:
         if s["abi"] != "common":
-            failures.append(
-                f"  {s['name']} ({s['linux_number']}): abi={s['abi']} "
-                f"(期望 common)")
+            issues.append(
+                f"  {label}: {s['name']} ({s['linux_number']}) "
+                f"abi={s['abi']} (期望 common)")
         expected_entry = f"sys_{s['name']}"
         if s["entry"] != expected_entry:
-            failures.append(
-                f"  {s['name']}: 入口点 {s['entry']} "
+            issues.append(
+                f"  {label}: {s['name']} 入口点 {s['entry']} "
                 f"(期望 {expected_entry})")
 
-    for s in tbl["reserved"]:
+    for s in reserved:
         if s["abi"] != "common":
-            failures.append(
-                f"  {s['name']} ({s['linux_number']}): abi={s['abi']} "
-                f"(期望 common)")
+            issues.append(
+                f"  {label}: {s['name']} ({s['linux_number']}) "
+                f"abi={s['abi']} (期望 common)")
+    return issues
+
+
+def check_tbl_abi_and_entry(tbl):
+    """Check syscall_64.tbl ABI column and entry naming for airy entries."""
+    failures = tbl_entry_issues(tbl["syscalls"], tbl["reserved"],
+                                "syscall_64.tbl")
 
     if failures:
         return CheckResult("syscall_64.tbl ABI 列与入口点正确", False,
@@ -724,6 +732,43 @@ def check_tbl_abi_and_entry(tbl):
         "syscall_64.tbl ABI 列与入口点正确", True,
         f"{total} 个 airy 条目 abi 均为 common，核心入口 sys_airy_sys_*，"
         f"预留入口 sys_ni_syscall")
+
+
+def check_sw64_tbl(ssot, sw_tbl):
+    """Check sw_64's positional table carries the same 548-571 block.
+
+    sw_64 expands systbls.S straight from syscall.tbl, so a missing or
+    misnumbered entry shifts every following slot; static checking is the
+    only automated guard on hosts without a sw_64 cross toolchain.
+    """
+    failures = []
+    sw_map = {s["name"]: s["linux_number"] for s in sw_tbl["syscalls"]}
+    ssot_map = {s["name"]: s["linux_number"] for s in ssot["syscalls"]}
+
+    for name, _macro, expected in CORE_SYSCALLS:
+        num = sw_map.get(name)
+        if num is None:
+            failures.append(f"  {name}: 在 sw_64 syscall.tbl 中缺失")
+        elif num != expected:
+            failures.append(f"  {name}: sw_64={num} (期望 {expected})")
+        elif ssot_map.get(name) != num:
+            failures.append(
+                f"  {name}: sw_64={num}, SSoT={ssot_map.get(name)} "
+                f"(不一致)")
+
+    failures += reserved_slot_issues(sw_tbl["reserved"],
+                                     "sw_64 syscall.tbl")
+    failures += tbl_entry_issues(sw_tbl["syscalls"], sw_tbl["reserved"],
+                                 "sw_64 syscall.tbl")
+
+    if failures:
+        return CheckResult("sw_64 号段 548-571 落位一致", False,
+                           "\n".join(failures))
+    total = len(sw_tbl["syscalls"]) + len(sw_tbl["reserved"])
+    return CheckResult(
+        "sw_64 号段 548-571 落位一致", True,
+        f"{total} 个条目与 SSoT 同号，核心入口 sys_airy_sys_*，"
+        f"预留入口 sys_ni_syscall，abi 均为 common")
 
 
 def check_baseline(ssot, unistd, tbl, baseline):
@@ -847,8 +892,8 @@ def check_snapshot_drift(ssot, snapshot, authoritative):
 
 # ─── Report ────────────────────────────────────────────────────────────────
 
-def print_report(results, ssot, unistd, tbl, baseline, sources, check_mode,
-                 ssot_note=None):
+def print_report(results, ssot, unistd, tbl, sw_tbl, baseline, sources,
+                 check_mode, ssot_note=None):
     """Print the ABI check report."""
     total = len(results)
     passed = sum(1 for r in results if r.passed)
@@ -891,10 +936,12 @@ def print_report(results, ssot, unistd, tbl, baseline, sources, check_mode,
     print(f"  SSoT:           {len(ssot['syscalls'])}")
     print(f"  unistd.h:       {len(unistd['syscalls'])}")
     print(f"  syscall_64.tbl: {len(tbl['syscalls'])}")
+    print(f"  sw_64 tbl:      {len(sw_tbl['syscalls'])}")
     print()
     print("Reserved slots (552-571):")
     print(f"  unistd.h:       {len(unistd.get('reserved', []))}")
     print(f"  syscall_64.tbl: {len(tbl.get('reserved', []))}")
+    print(f"  sw_64 tbl:      {len(sw_tbl.get('reserved', []))}")
     print()
     print("-" * 72)
     print(f"Checks: {passed}/{total} passed, {failed} failed")
@@ -943,6 +990,10 @@ def main():
         help="syscall_64.tbl path (default: "
              "kernel/arch/x86/entry/syscalls/syscall_64.tbl)")
     parser.add_argument(
+        "--sw64-tbl-path", default=None,
+        help="sw_64 syscall.tbl path (default: "
+             "kernel/arch/sw_64/kernel/syscalls/syscall.tbl)")
+    parser.add_argument(
         "--sc-header-path", default=None,
         help="[SC] contract header path (default: "
              "kernel/include/uapi/linux/airymax/syscalls.h)")
@@ -983,6 +1034,8 @@ def main():
                    else repo_root / DEFAULT_UNISTD_REL)
     tbl_path = (Path(args.tbl_path) if args.tbl_path
                 else repo_root / DEFAULT_TBL_REL)
+    sw64_tbl_path = (Path(args.sw64_tbl_path) if args.sw64_tbl_path
+                     else repo_root / DEFAULT_SW64_TBL_REL)
     sc_header_path = (Path(args.sc_header_path) if args.sc_header_path
                       else repo_root / DEFAULT_SC_HEADER_REL)
     baseline_path = (Path(args.baseline) if args.baseline
@@ -1032,10 +1085,12 @@ def main():
     # Read and parse the kernel-side sources
     unistd_text = read_file(unistd_path)
     tbl_text = read_file(tbl_path)
+    sw64_text = read_file(sw64_tbl_path)
     sc_header_text = read_file(sc_header_path)
 
     unistd = parse_unistd(unistd_text)
     tbl = parse_syscall_tbl(tbl_text)
+    sw_tbl = parse_syscall_tbl(sw64_text)
     sc_header = parse_sc_header(sc_header_text)
 
     baseline = None if args.no_baseline else load_baseline(baseline_path)
@@ -1050,6 +1105,7 @@ def main():
     results.append(check_sc_header_consistency(sc_header, ssot, unistd, tbl))
     results.append(check_reserved_slots(unistd, tbl))
     results.append(check_tbl_abi_and_entry(tbl))
+    results.append(check_sw64_tbl(ssot, sw_tbl))
     if baseline is not None:
         results.append(check_baseline(ssot, unistd, tbl, baseline))
     results.append(check_snapshot_drift(ssot, snapshot, ssot_available))
@@ -1062,10 +1118,11 @@ def main():
         ("snapshot", str(snapshot_path) if snapshot else "(none)"),
         ("unistd.h", str(unistd_path)),
         ("syscall_64.tbl", str(tbl_path)),
+        ("sw_64 syscall.tbl", str(sw64_tbl_path)),
         ("[SC] syscalls.h", str(sc_header_path)),
         ("baseline", str(baseline_path) if baseline else "(none)"),
     ]
-    print_report(results, ssot, unistd, tbl, baseline, sources,
+    print_report(results, ssot, unistd, tbl, sw_tbl, baseline, sources,
                  args.check, ssot_note)
 
     # Exit code: 0=pass, 1=fail
