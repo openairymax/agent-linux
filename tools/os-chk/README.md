@@ -91,7 +91,7 @@ AirymaxOS OS-CHK 门禁报告
 
 [2026-11-17 09:00:00] [  OK  ] OS-CHK-DOC-01 Copyright 头部: OK: 所有受检 .md 文件的第 1 行均含版权头
 [2026-11-17 09:00:00] [  OK  ] OS-CHK-DOC-04 [SC] 头文件清单一致性: SC TRI-COMPILE: PASS (4/4 checks)
-[2026-11-17 09:00:01] [  OK  ] OS-IRON-001 syscall ABI 稳定性: ABI CHECK: PASS (11/11 checks)
+[2026-11-17 09:00:01] [  OK  ] OS-IRON-001 syscall ABI 稳定性: ABI CHECK: PASS (12/12 checks)
 [2026-11-17 09:00:01] [  OK  ] OS-IRON-015 SSoT 规则 ID 注册一致性: RESULT: PASS — all rule IDs registered
 [2026-11-17 09:00:01] [  OK  ] OS-IRON-009-CODEGEN codegen 生成产物零漂移: [codegen] all 4 generators verified successfully
 [2026-11-17 09:00:02] [  OK  ] OS-IRON-009-DSL 策略 DSL 决策表零漂移: OK: dsl_compile outputs match committed files (1 files)
