@@ -1,24 +1,28 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 """
-sc_tri_compile.py — [SC] header three-way compile & layout checker
+sc_tri_compile.py — [SC] header multi-path compile & layout checker
 
 Validates that every [SC] shared contract header under
-kernel/include/uapi/linux/airymax/ compiles in all three type-bridge paths
-and that the fixed-width types and struct layouts are identical across those
+kernel/include/uapi/linux/airymax/ compiles in all type-bridge paths and
+that the fixed-width types and struct layouts are identical across those
 paths (OS-IRON-014, 50-engineering-standards/11-sc-header-type-bridging.md).
 It also verifies that the syscall ABI is bidirectionally consistent between
-the [SC] contract header, the R-01 SSoT and its generated projection.
+the [SC] contract header, the R-01 SSoT and its generated projection, and
+that the [DSL] degraded build keeps the two-branch contract.
 
-Compile paths (design §5.1):
-  1. kernel-space      gcc -std=gnu11 -D__KERNEL__ -D__linux__
-  2. linux-user-space  gcc -std=gnu11 -D__linux__
-  3. third-party       gcc -std=c99   -U__linux__
+Compile paths (design §5.1; [DSL] §2.2 for the dsl-* paths):
+  1. kernel-space         gcc -std=gnu11 -D__KERNEL__ -D__linux__
+  2. linux-user-space     gcc -std=gnu11 -D__linux__
+  3. third-party          gcc -std=c99   -U__linux__
+  4. dsl-kernel-space     #1 + -DAIRY_SC_FALLBACK -Wno-error=cpp
+  5. dsl-linux-user-space #2 + -DAIRY_SC_FALLBACK -Wno-error=cpp
 
 Checks (design §5.3):
-  * three-way compile — every header compiles under all three paths
+  * five-way compile — every header compiles under all five paths
   * type-size consistency — __u8/__u16/__u32/__u64/__s8/... identical
   * field-offset consistency — struct sizes and field offsets identical
+  * [DSL] contract — dsl-* paths bridge exactly two branches
   * syscall ABI consistency — syscalls.h ↔ syscall.xml ↔ syscall_gen.h
     core symbol names and numbering agree in both directions (L-04 / D-04)
 
@@ -57,10 +61,23 @@ from xml.etree import ElementTree
 # ─── Constants ─────────────────────────────────────────────────────────────
 
 # Type-bridge compile paths: (label, compiler flags). Design §5.1.
+# The dsl-* paths pin the [DSL] degraded contract (AIRY_SC_FALLBACK) to the
+# two branches §2.2 guarantees: __KERNEL__ and __linux__. Because every [SC]
+# header intentionally emits #warning in degraded mode ([DSL] §2.1), those
+# paths demote only the cpp diagnostic to keep -Werror for real errors.
+DSL_PREFIX = "dsl-"
+DSL_WARN_FLAG = "-Wno-error=cpp"
+DSL_BRANCHES = 2  # [DSL] §2.2: __KERNEL__ / __linux__ only
+KERNEL_FLAGS = ["-std=gnu11", "-D__KERNEL__", "-D__linux__"]
+LINUX_FLAGS = ["-std=gnu11", "-D__linux__"]
+THIRD_FLAGS = ["-std=c99", "-U__linux__"]
+DSL_FLAGS = ["-DAIRY_SC_FALLBACK", DSL_WARN_FLAG]
 COMPILE_PATHS = [
-    ("kernel-space", ["-std=gnu11", "-D__KERNEL__", "-D__linux__"]),
-    ("linux-user-space", ["-std=gnu11", "-D__linux__"]),
-    ("third-party", ["-std=c99", "-U__linux__"]),
+    ("kernel-space", KERNEL_FLAGS),
+    ("linux-user-space", LINUX_FLAGS),
+    ("third-party", THIRD_FLAGS),
+    ("dsl-kernel-space", [*KERNEL_FLAGS, *DSL_FLAGS]),
+    ("dsl-linux-user-space", [*LINUX_FLAGS, *DSL_FLAGS]),
 ]
 
 # Kbuild-faithful include search order. Mirrors the kernel Makefile order
@@ -474,24 +491,34 @@ def tri_compile_check(cc, include_flags, header_files):
                 failures.append(f"  [{label}] {header.name}: {first_error(err)}")
 
     total = len(header_files) * len(COMPILE_PATHS)
+    name = "五路编译通过 (常规三路 + [DSL] 降级两路)"
     if failures:
-        return CheckResult(
-            "三路编译通过 (内核态 / Linux 用户态 / 第三方)",
-            False,
-            "\n".join(failures),
-        )
+        return CheckResult(name, False, "\n".join(failures))
     return CheckResult(
-        "三路编译通过 (内核态 / Linux 用户态 / 第三方)",
+        name,
         True,
-        f"{len(header_files)} 个头文件 × {len(COMPILE_PATHS)} 路径 " f"= {total} 次编译全部通过",
+        f"{len(header_files)} 个头文件 × {len(COMPILE_PATHS)} 路径 "
+        f"= {total} 次编译全部通过",
     )
 
 
 def build_probe_source():
-    """Generate a C program printing type sizes and struct layouts."""
+    """Generate a C program printing type sizes, layouts and DSL markers."""
     lines = ["#include <stdio.h>"]
     lines += [f"#include <linux/airymax/{h}>" for h in PROBE_HEADERS]
-    lines += ["", "int main(void)", "{"]
+    lines += [
+        "",
+        "#ifdef AIRY_SC_FALLBACK",
+        'AIRY_COMPILE_ASSERT(AIRY_DSL_UAPI_BRANCHES == 2, "two branches");',
+        "#define AIRY_PROBE_BRANCHES AIRY_DSL_UAPI_BRANCHES",
+        "#else",
+        "#define AIRY_PROBE_BRANCHES (-1)",
+        "#endif",
+        "",
+        "int main(void)",
+        "{",
+        '\tprintf("D branches %d\\n", AIRY_PROBE_BRANCHES);',
+    ]
     for tname in TYPE_SIZES:
         lines.append(f'\tprintf("T {tname} %zu\\n", sizeof({tname}));')
     for struct, _size, fields in LAYOUT:
@@ -512,7 +539,7 @@ def parse_probe(stdout):
         if not parts:
             continue
         kind = parts[0]
-        if kind in ("T", "S") and len(parts) == 3:
+        if kind in ("T", "S", "D") and len(parts) == 3:
             values[(kind, parts[1], "")] = int(parts[2])
         elif kind == "O" and len(parts) == 4:
             values[(kind, parts[1], parts[2])] = int(parts[3])
@@ -520,7 +547,7 @@ def parse_probe(stdout):
 
 
 def collect_probe(cc, include_flags, workdir):
-    """Compile and run the layout probe under all three paths.
+    """Compile and run the layout probe under every compile path.
 
     Returns (per_path, failures): per_path maps the path label to its parsed
     values; failures lists paths whose probe failed to compile or run.
@@ -559,8 +586,8 @@ def check_consistency(item, expected, per_path, key, failures):
 
 
 def type_size_check(per_path, probe_failures):
-    """Check fixed-width type sizes are identical across the three paths."""
-    name = "类型大小三路一致 (__u8..__s64)"
+    """Check fixed-width type sizes are identical across all compile paths."""
+    name = "类型大小五路一致 (__u8..__s64)"
     if probe_failures:
         return CheckResult(name, False, "\n".join(probe_failures))
     failures = []
@@ -568,12 +595,12 @@ def type_size_check(per_path, probe_failures):
         check_consistency(tname, expected, per_path, ("T", tname, ""), failures)
     if failures:
         return CheckResult(name, False, "\n".join(failures))
-    return CheckResult(name, True, f"{len(TYPE_SIZES)} 个定宽类型三路大小一致")
+    return CheckResult(name, True, f"{len(TYPE_SIZES)} 个定宽类型各路径大小一致")
 
 
 def layout_check(per_path, probe_failures):
     """Check struct sizes and field offsets are identical across paths."""
-    name = "结构体字段偏移三路一致"
+    name = "结构体字段偏移五路一致"
     if probe_failures:
         return CheckResult(name, False, "\n".join(probe_failures))
     failures = []
@@ -594,7 +621,45 @@ def layout_check(per_path, probe_failures):
     return CheckResult(
         name,
         True,
-        f"{len(LAYOUT)} 个结构体、{field_count} 个字段偏移三路一致",
+        f"{len(LAYOUT)} 个结构体、{field_count} 个字段偏移各路径一致",
+    )
+
+
+def fallback_check(per_path):
+    """Verify the [DSL] degraded contract on the dsl-* compile paths.
+
+    Each dsl-* path must define AIRY_SC_FALLBACK and have its probe report
+    the two-branch count from [DSL] §2.2; every regular path must report
+    that the degraded layer stayed inactive.
+    """
+    name = "[DSL] 降级路径契约 (__KERNEL__ / __linux__ 两路)"
+    dsl_labels = [
+        label for label, _flags in COMPILE_PATHS if label.startswith(DSL_PREFIX)
+    ]
+    if not dsl_labels:
+        return CheckResult(name, False, "  COMPILE_PATHS 未包含 [DSL] 降级路径")
+
+    flags_by_label = dict(COMPILE_PATHS)
+    failures = []
+    for label in dsl_labels:
+        if "-DAIRY_SC_FALLBACK" not in flags_by_label[label]:
+            failures.append(f"  [{label}] 缺少 -DAIRY_SC_FALLBACK")
+        branches = per_path.get(label, {}).get(("D", "branches", ""))
+        if branches != DSL_BRANCHES:
+            failures.append(
+                f"  [{label}] AIRY_DSL_UAPI_BRANCHES={branches}, "
+                f"期望 {DSL_BRANCHES}"
+            )
+    for label in (lbl for lbl, _flags in COMPILE_PATHS if lbl not in dsl_labels):
+        branches = per_path.get(label, {}).get(("D", "branches", ""))
+        if branches != -1:
+            failures.append(f"  [{label}] 降级层意外激活 (branches={branches})")
+    if failures:
+        return CheckResult(name, False, "\n".join(failures))
+    return CheckResult(
+        name,
+        True,
+        f"{len(dsl_labels)} 条降级路径均桥接到 {DSL_BRANCHES} 路",
     )
 
 
@@ -732,7 +797,7 @@ def print_report(results, header_files, cc, sources, check_mode):
 
     print("=" * 72)
     print("agent-linux [SC] Tri-Compile & Layout Check Report")
-    print("OS-IRON-014: [SC] 共享契约头三路编译与二进制布局一致")
+    print("OS-IRON-014: [SC] 共享契约头多路编译与二进制布局一致")
     print("=" * 72)
     print()
     print("Sources:")
@@ -830,6 +895,7 @@ def main(argv=None):
         per_path, probe_failures = collect_probe(cc, include_flags, workdir)
     results.append(type_size_check(per_path, probe_failures))
     results.append(layout_check(per_path, probe_failures))
+    results.append(fallback_check(per_path))
 
     syscall_sources, syscall_failures = load_syscall_sources(headers_dir)
     results.append(syscall_abi_check(syscall_sources, syscall_failures))

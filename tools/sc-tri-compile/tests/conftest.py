@@ -3,13 +3,13 @@
 
 把 tools/sc-tri-compile 注入 sys.path，使测试可 `import sc_tri_compile`
 （该脚本无包前缀，直接以绝对导入加载）。同时提供 agent-linux 仓库根夹具，
-供三路编译与布局校验读取真实 [SC] 契约头。
+供多路编译与布局校验读取真实 [SC] 契约头。
 
 Author:
     SPHARX Ltd. - Airymax Team
 
 Version:
-    1.0.1
+    1.1.0
 """
 
 from __future__ import annotations
