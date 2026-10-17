@@ -4,7 +4,8 @@
 
 覆盖 tools/sc-tri-compile/sc_tri_compile.py：常量矩阵（常规三路 + [DSL]
 降级两路编译路径、定宽类型大小、契约结构体布局）、Kbuild include 顺序镜像、
-探针源码生成与解析、一致性判定、[DSL] 两路桥接契约、syscall ABI 三源
+探针源码生成与解析、一致性判定、[DSL] 两路桥接契约、[DSL] 降级错误码表
+（38 POSIX 别名 → 7 核心码）、syscall ABI 三源
 （syscalls.h ↔ syscall.xml ↔ syscall_gen.h）符号名与编号双向一致性，以及
 CLI 退出码契约（0=通过 / 1=失败 / 2=输入或环境错误）。真实仓库级校验需
 gcc 与完整 kernel 子树，缺失时自动跳过。
@@ -235,6 +236,137 @@ class TestFallbackCheck:
     def test_fails_without_dsl_paths(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(sc, "COMPILE_PATHS", [("kernel-space", [])])
         result = sc.fallback_check({})
+        assert not result.passed
+        assert "未包含" in result.details
+
+
+class TestDslErrTable:
+    @staticmethod
+    def _header(aliases: dict[str, str] | None = None) -> str:
+        table = sc.DSL_ERR_ALIASES if aliases is None else aliases
+        body = "\n".join(f"\t#define {alias} {core}" for alias, core in table.items())
+        return (
+            f"{sc.DSL_ERROR_BLOCK_OPEN}\n{body}\n{sc.DSL_ERROR_BLOCK_CLOSE}\n"
+        )
+
+    @staticmethod
+    def _per_path(leak: str | None = None) -> dict[str, dict]:
+        dsl = {("D", "errs", ""): 1}
+        dsl.update({("E", name, ""): value for name, value in sc.DSL_ERR_CORE.items()})
+        dsl.update(
+            {
+                ("E", alias, ""): sc.DSL_ERR_CORE[core]
+                for alias, core in sc.DSL_ERR_ALIASES.items()
+            }
+        )
+        regular = {("D", "errs", ""): 0}
+        per_path = {
+            "kernel-space": dict(regular),
+            "linux-user-space": dict(regular),
+            "third-party": dict(regular),
+            "dsl-kernel-space": dict(dsl),
+            "dsl-linux-user-space": dict(dsl),
+        }
+        if leak is not None:
+            per_path[leak] = dict(dsl)
+        return per_path
+
+    def test_table_shape(self) -> None:
+        assert len(sc.DSL_ERR_ALIASES) == 38
+        assert len(sc.DSL_ERR_CORE) == 7
+        assert set(sc.DSL_ERR_ALIASES.values()) <= set(sc.DSL_ERR_CORE)
+        assert len(set(sc.DSL_ERR_ALIASES.values())) == 7
+
+    def test_core_magnitudes_are_posix(self) -> None:
+        assert sc.DSL_ERR_CORE == {
+            "AIRY_EEXIST": 2,
+            "AIRY_EINVAL": 5,
+            "AIRY_ENOMEM": 9,
+            "AIRY_ENOTSUP": 11,
+            "AIRY_EBUSY": 16,
+            "AIRY_ECANCELED": 19,
+            "AIRY_EAGAIN": 35,
+        }
+
+    def test_probe_source_emits_err_line_and_values(self) -> None:
+        source = sc.build_probe_source()
+        assert 'printf("D errs 1\\n");' in source
+        assert 'printf("D errs 0\\n");' in source
+        for name in (*sc.DSL_ERR_CORE, *sc.DSL_ERR_ALIASES):
+            assert f'printf("E {name} %d\\n", {name});' in source
+
+    def test_parse_probe_accepts_err_kind(self) -> None:
+        assert sc.parse_probe("E AIRY_EINVAL 5\nD errs 1\n") == {
+            ("E", "AIRY_EINVAL", ""): 5,
+            ("D", "errs", ""): 1,
+        }
+
+    def test_scan_extracts_aliases_inside_block(self) -> None:
+        assert sc.scan_dsl_alias(self._header()) == sc.DSL_ERR_ALIASES
+
+    def test_scan_ignores_outside_block(self) -> None:
+        text = "#define AIRY_DSL_E2BIG AIRY_EINVAL\n"
+        text += self._header({"AIRY_DSL_ECHILD": "AIRY_EINVAL"})
+        assert sc.scan_dsl_alias(text) == {"AIRY_DSL_ECHILD": "AIRY_EINVAL"}
+
+    def test_scan_returns_empty_without_block(self) -> None:
+        assert sc.scan_dsl_alias("#define AIRY_EINVAL 5\n") == {}
+
+    def test_passes_on_contracted_paths(self) -> None:
+        result = sc.dsl_err_check(self._per_path(), self._header())
+        assert result.passed
+        assert "38 个别名" in result.details
+
+    def test_fails_on_missing_alias(self) -> None:
+        aliases = dict(sc.DSL_ERR_ALIASES)
+        del aliases["AIRY_DSL_ESTALE"]
+        result = sc.dsl_err_check(self._per_path(), self._header(aliases))
+        assert not result.passed
+        assert "缺失 AIRY_DSL_ESTALE" in result.details
+
+    def test_fails_on_extra_alias(self) -> None:
+        aliases = dict(sc.DSL_ERR_ALIASES)
+        aliases["AIRY_DSL_ENOANO"] = "AIRY_EINVAL"
+        result = sc.dsl_err_check(self._per_path(), self._header(aliases))
+        assert not result.passed
+        assert "多出 AIRY_DSL_ENOANO" in result.details
+
+    def test_fails_on_wrong_core_name(self) -> None:
+        aliases = dict(sc.DSL_ERR_ALIASES)
+        aliases["AIRY_DSL_EROFS"] = "AIRY_EINVAL"
+        result = sc.dsl_err_check(self._per_path(), self._header(aliases))
+        assert not result.passed
+        assert "AIRY_DSL_EROFS 映射 AIRY_EINVAL, 期望 AIRY_EBUSY" in result.details
+
+    def test_fails_on_value_drift(self) -> None:
+        per_path = self._per_path()
+        per_path["dsl-kernel-space"][("E", "AIRY_DSL_EROFS", "")] = 5
+        result = sc.dsl_err_check(per_path, self._header())
+        assert not result.passed
+        assert "AIRY_DSL_EROFS 期望 16 (AIRY_EBUSY), 实测 5" in result.details
+
+    def test_fails_on_core_drift(self) -> None:
+        per_path = self._per_path()
+        per_path["dsl-linux-user-space"][("E", "AIRY_EAGAIN", "")] = 11
+        result = sc.dsl_err_check(per_path, self._header())
+        assert not result.passed
+        assert "AIRY_EAGAIN 期望 35, 实测 11" in result.details
+
+    def test_fails_when_dsl_block_inactive(self) -> None:
+        per_path = self._per_path()
+        per_path["dsl-kernel-space"][("D", "errs", "")] = 0
+        result = sc.dsl_err_check(per_path, self._header())
+        assert not result.passed
+        assert "[dsl-kernel-space] [DSL] 错误码块未激活" in result.details
+
+    def test_fails_when_regular_path_leaks(self) -> None:
+        result = sc.dsl_err_check(self._per_path(leak="third-party"), self._header())
+        assert not result.passed
+        assert "[third-party] 常规构建泄漏" in result.details
+
+    def test_fails_without_dsl_paths(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(sc, "COMPILE_PATHS", [("kernel-space", [])])
+        result = sc.dsl_err_check({}, self._header())
         assert not result.passed
         assert "未包含" in result.details
 
@@ -489,6 +621,15 @@ class TestRealRepository:
         assert sc.layout_check(per_path, probe_failures).passed
         assert sc.fallback_check(per_path).passed
 
+    def test_dsl_err_table_check_passes(self, repo_root: Path, tmp_path: Path) -> None:
+        per_path, probe_failures = sc.collect_probe(_GCC, self._include_flags(repo_root), tmp_path)
+        assert probe_failures == []
+        header = (repo_root / sc.DEFAULT_HEADERS_REL / sc.DSL_ERROR_HEADER).read_text(
+            encoding="utf-8"
+        )
+        result = sc.dsl_err_check(per_path, header)
+        assert result.passed, result.details
+
 
 class TestMainCli:
     def test_main_pass_exits_zero(self, repo_root: Path, capsys: pytest.CaptureFixture) -> None:
@@ -505,13 +646,13 @@ class TestMainCli:
         assert exc.value.code == 0
         assert "SC TRI-COMPILE: PASS" in capsys.readouterr().out
 
-    def test_main_reports_five_checks(
+    def test_main_reports_six_checks(
         self, repo_root: Path, capsys: pytest.CaptureFixture
     ) -> None:
         with pytest.raises(SystemExit) as exc:
             sc.main(["--repo-root", str(repo_root), "--check"])
         assert exc.value.code == 0
-        assert "PASS (5/5 checks)" in capsys.readouterr().out
+        assert "PASS (6/6 checks)" in capsys.readouterr().out
 
     def test_main_missing_repo_root_exits_two(
         self, tmp_path: Path, capsys: pytest.CaptureFixture
