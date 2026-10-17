@@ -174,6 +174,7 @@ LAYOUT = [
 # not be included alongside them.
 PROBE_HEADERS = [
     "uapi_compat.h",
+    "error.h",
     "ipc.h",
     "log_types.h",
     "sched.h",
@@ -200,6 +201,73 @@ GENERATED_IDX_PREFIX = "AIRY_SYS_IDX_"
 
 SYSCALL_ABI_CHECK_NAME = (
     "syscall ABI 三源一致 (syscalls.h ↔ syscall.xml ↔ syscall_gen.h)"
+)
+
+# [DSL] degraded error table (08-sc-error-contract.md §5, [DSL] §2.1). The
+# seven core codes keep their [SC] magnitudes; the 38 POSIX codes absent from
+# the core set collapse onto them. The mapping is normative: a drifted alias
+# silently changes errno semantics in a degraded build, so both the alias set
+# and every resolved value are pinned here.
+DSL_ERROR_HEADER = "error.h"
+DSL_ERROR_BLOCK_OPEN = "#ifdef AIRY_SC_FALLBACK"
+DSL_ERROR_BLOCK_CLOSE = "#endif /* AIRY_SC_FALLBACK */"
+
+DSL_ERR_CORE = {
+    "AIRY_EEXIST": 2,
+    "AIRY_EINVAL": 5,
+    "AIRY_ENOMEM": 9,
+    "AIRY_ENOTSUP": 11,
+    "AIRY_EBUSY": 16,
+    "AIRY_ECANCELED": 19,
+    "AIRY_EAGAIN": 35,
+}
+
+DSL_ERR_ALIASES = {
+    "AIRY_DSL_E2BIG": "AIRY_EINVAL",
+    "AIRY_DSL_ECHILD": "AIRY_EINVAL",
+    "AIRY_DSL_EDEADLK": "AIRY_EBUSY",
+    "AIRY_DSL_EDOM": "AIRY_EINVAL",
+    "AIRY_DSL_EEXIST_S": "AIRY_EEXIST",
+    "AIRY_DSL_EFBIG": "AIRY_EINVAL",
+    "AIRY_DSL_EILSEQ": "AIRY_EINVAL",
+    "AIRY_DSL_EINPROGRESS": "AIRY_EAGAIN",
+    "AIRY_DSL_EISCONN": "AIRY_EBUSY",
+    "AIRY_DSL_ELOOP": "AIRY_EINVAL",
+    "AIRY_DSL_EMFILE": "AIRY_ENOMEM",
+    "AIRY_DSL_EMLINK": "AIRY_ENOMEM",
+    "AIRY_DSL_ENAMETOOLONG": "AIRY_EINVAL",
+    "AIRY_DSL_ENFILE": "AIRY_ENOMEM",
+    "AIRY_DSL_ENODEV": "AIRY_EINVAL",
+    "AIRY_DSL_ENOEXEC": "AIRY_EINVAL",
+    "AIRY_DSL_ENOLCK": "AIRY_ENOMEM",
+    "AIRY_DSL_ENOMSG": "AIRY_ECANCELED",
+    "AIRY_DSL_ENOTBLK": "AIRY_EINVAL",
+    "AIRY_DSL_ENOTCONN": "AIRY_ECANCELED",
+    "AIRY_DSL_ENOTDIR": "AIRY_EINVAL",
+    "AIRY_DSL_ENOTEMPTY": "AIRY_EBUSY",
+    "AIRY_DSL_ENOTSOCK": "AIRY_EINVAL",
+    "AIRY_DSL_ENXIO": "AIRY_EINVAL",
+    "AIRY_DSL_EOPNOTSUPP": "AIRY_ENOTSUP",
+    "AIRY_DSL_EOVERFLOW": "AIRY_EINVAL",
+    "AIRY_DSL_EPIPE": "AIRY_ECANCELED",
+    "AIRY_DSL_EPROTO": "AIRY_EINVAL",
+    "AIRY_DSL_EROFS": "AIRY_EBUSY",
+    "AIRY_DSL_ESPIPE": "AIRY_EINVAL",
+    "AIRY_DSL_ESRCH": "AIRY_EINVAL",
+    "AIRY_DSL_ETIMEDOUT": "AIRY_ECANCELED",
+    "AIRY_DSL_ETXTBSY": "AIRY_EBUSY",
+    "AIRY_DSL_EWOULDBLOCK": "AIRY_EAGAIN",
+    "AIRY_DSL_EXDEV": "AIRY_EINVAL",
+    "AIRY_DSL_ENODATA": "AIRY_ECANCELED",
+    "AIRY_DSL_ENOSR": "AIRY_ENOMEM",
+    "AIRY_DSL_ESTALE": "AIRY_ECANCELED",
+}
+
+DSL_ERR_CHECK_NAME = "[DSL] 降级错误码表 (38 POSIX 码 → 7 核心码)"
+
+# Object-like alias inside the [DSL] error block: `#define AIRY_DSL_E* <core>`.
+_DSL_ALIAS_RE = re.compile(
+    r"^\s*#\s*define\s+(AIRY_DSL_E\w*)\s+(AIRY_E\w*)\s*$", re.MULTILINE
 )
 
 # Object-like numeric #define. Function-like macros and token aliases are
@@ -519,6 +587,17 @@ def build_probe_source():
         "{",
         '\tprintf("D branches %d\\n", AIRY_PROBE_BRANCHES);',
     ]
+    lines += [
+        "#ifdef AIRY_SC_FALLBACK",
+        '\tprintf("D errs 1\\n");',
+    ]
+    for name in (*DSL_ERR_CORE, *DSL_ERR_ALIASES):
+        lines.append(f'\tprintf("E {name} %d\\n", {name});')
+    lines += [
+        "#else",
+        '\tprintf("D errs 0\\n");',
+        "#endif",
+    ]
     for tname in TYPE_SIZES:
         lines.append(f'\tprintf("T {tname} %zu\\n", sizeof({tname}));')
     for struct, _size, fields in LAYOUT:
@@ -539,7 +618,7 @@ def parse_probe(stdout):
         if not parts:
             continue
         kind = parts[0]
-        if kind in ("T", "S", "D") and len(parts) == 3:
+        if kind in ("T", "S", "D", "E") and len(parts) == 3:
             values[(kind, parts[1], "")] = int(parts[2])
         elif kind == "O" and len(parts) == 4:
             values[(kind, parts[1], parts[2])] = int(parts[3])
@@ -660,6 +739,82 @@ def fallback_check(per_path):
         name,
         True,
         f"{len(dsl_labels)} 条降级路径均桥接到 {DSL_BRANCHES} 路",
+    )
+
+
+def scan_dsl_alias(header_text):
+    """Return {alias: core} declared inside error.h's [DSL] error block."""
+    start = header_text.find(DSL_ERROR_BLOCK_OPEN)
+    end = header_text.rfind(DSL_ERROR_BLOCK_CLOSE)
+    if start < 0 or end < start:
+        return {}
+    return dict(_DSL_ALIAS_RE.findall(header_text[start:end]))
+
+
+def _dsl_delta(declared):
+    """Return failures for aliases missing, extra, or mapped elsewhere."""
+    failures = _report_set_delta(
+        f"{DSL_ERROR_HEADER} [DSL] 别名", set(declared), set(DSL_ERR_ALIASES)
+    )
+    for alias, core in sorted(declared.items()):
+        want = DSL_ERR_ALIASES.get(alias)
+        if want is not None and core != want:
+            failures.append(f"  {DSL_ERROR_HEADER}: {alias} 映射 {core}, 期望 {want}")
+    return failures
+
+
+def _dsl_drift(label, values):
+    """Return failures where one path's probed magnitudes deviate."""
+    failures = []
+    if values.get(("D", "errs", "")) != 1:
+        failures.append(f"  [{label}] [DSL] 错误码块未激活")
+    for core, want in DSL_ERR_CORE.items():
+        got = values.get(("E", core, ""))
+        if got != want:
+            failures.append(f"  [{label}] {core} 期望 {want}, 实测 {got}")
+    for alias, core in DSL_ERR_ALIASES.items():
+        got = values.get(("E", alias, ""))
+        want = DSL_ERR_CORE[core]
+        if got != want:
+            failures.append(f"  [{label}] {alias} 期望 {want} ({core}), 实测 {got}")
+    return failures
+
+
+def _dsl_leak(per_path, dsl_labels):
+    """Return failures when a regular path activates the [DSL] block."""
+    return [
+        f"  [{label}] 常规构建泄漏 [DSL] 错误码别名"
+        for label, _flags in COMPILE_PATHS
+        if label not in dsl_labels
+        and per_path.get(label, {}).get(("D", "errs", "")) != 0
+    ]
+
+
+def dsl_err_check(per_path, header_text):
+    """Verify the 38-code [DSL] error table against its declared contract.
+
+    The alias set in error.h must match the normative table exactly, every
+    alias must resolve to the pinned core magnitude on both dsl-* paths, and
+    no alias may leak into a regular build.
+    """
+    dsl_labels = [
+        label for label, _flags in COMPILE_PATHS if label.startswith(DSL_PREFIX)
+    ]
+    if not dsl_labels:
+        return CheckResult(DSL_ERR_CHECK_NAME, False, "  COMPILE_PATHS 未包含 [DSL] 降级路径")
+
+    failures = _dsl_delta(scan_dsl_alias(header_text))
+    for label in dsl_labels:
+        failures += _dsl_drift(label, per_path.get(label, {}))
+    failures += _dsl_leak(per_path, dsl_labels)
+
+    if failures:
+        return CheckResult(DSL_ERR_CHECK_NAME, False, "\n".join(failures))
+    return CheckResult(
+        DSL_ERR_CHECK_NAME,
+        True,
+        f"{len(DSL_ERR_ALIASES)} 个别名映射到 {len(DSL_ERR_CORE)} 个核心码，"
+        f"{len(dsl_labels)} 条降级路径数值一致",
     )
 
 
@@ -896,6 +1051,8 @@ def main(argv=None):
     results.append(type_size_check(per_path, probe_failures))
     results.append(layout_check(per_path, probe_failures))
     results.append(fallback_check(per_path))
+    err_header = (headers_dir / DSL_ERROR_HEADER).read_text(encoding="utf-8")
+    results.append(dsl_err_check(per_path, err_header))
 
     syscall_sources, syscall_failures = load_syscall_sources(headers_dir)
     results.append(syscall_abi_check(syscall_sources, syscall_failures))
