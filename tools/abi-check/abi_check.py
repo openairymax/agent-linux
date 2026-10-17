@@ -12,6 +12,8 @@ by cross-checking sources against a baseline snapshot:
   3. Kernel entry tbl — kernel/arch/x86/entry/syscalls/syscall_64.tbl
   4. [SC] contract hdr — kernel/include/uapi/linux/airymax/syscalls.h
   5. sw_64 entry tbl  — kernel/arch/sw_64/kernel/syscalls/syscall.tbl
+  6. asm-generic wire — arch/{riscv,loongarch} UAPI include + table form
+                        (+ include/linux/syscalls.h bare prototypes)
 
 The SSoT document is the single authoritative registry, but it lives in the
 docs-linux submodule which is not mirrored publicly (the GitHub mirror only
@@ -102,6 +104,28 @@ DEFAULT_BASELINE_REL = os.path.join("tools", "abi-check", "abi_baseline.json")
 DEFAULT_SNAPSHOT_REL = os.path.join("tools", "abi-check", "contract",
                                     "syscall_registry.snapshot.json")
 
+# asm-generic architectures share the UAPI numbering, so their tables pick up
+# slots 548-571 without naming Airymax. Pin the include chain and expansion
+# forms: a silent change binds those numbers to the wrong handler.
+DEFAULT_RISCV_UAPI_REL = os.path.join("kernel", "arch", "riscv", "include",
+                                     "uapi", "asm", "unistd.h")
+DEFAULT_RISCV_TBL_REL = os.path.join("kernel", "arch", "riscv", "kernel",
+                                    "syscall_table.c")
+DEFAULT_LOONG_UAPI_REL = os.path.join("kernel", "arch", "loongarch", "include",
+                                      "uapi", "asm", "unistd.h")
+DEFAULT_LOONG_TBL_REL = os.path.join("kernel", "arch", "loongarch", "kernel",
+                                     "syscall.c")
+DEFAULT_SYS_H_REL = os.path.join("kernel", "include", "linux", "syscalls.h")
+
+GENERIC_UAPI_INCLUDE = "#include <asm-generic/unistd.h>"
+RISCV_TBL_INCLUDE = "#include <asm/unistd.h>"
+RISCV_EXPAND_RE = re.compile(
+    r"#define __SYSCALL\(nr, call\)\s+\[nr\] = __riscv_##call,")
+RISCV_TABLE_DECL = "void * const sys_call_table[__NR_syscalls]"
+LOONG_EXPAND_RE = re.compile(
+    r"#define __SYSCALL\(nr, call\)\s+\[nr\] = \(call\),")
+LOONG_TABLE_DECL = "void *sys_call_table[__NR_syscalls]"
+
 # Derived contract snapshot schema (bump only on incompatible shape changes)
 SNAPSHOT_SCHEMA_VERSION = "1.0.0"
 SNAPSHOT_GENERATED_BY = "tools/abi-check/abi_check.py --update-snapshot"
@@ -128,6 +152,14 @@ def read_file(path):
     except OSError as exc:
         print(f"ERROR: cannot read {path}: {exc}", file=sys.stderr)
         sys.exit(2)
+
+
+def read_if_exists(path):
+    """Read an optional source file; return None when it is unavailable."""
+    try:
+        return Path(path).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
 
 
 # ─── Parsers ───────────────────────────────────────────────────────────────
@@ -771,6 +803,79 @@ def check_sw64_tbl(ssot, sw_tbl):
         f"预留入口 sys_ni_syscall，abi 均为 common")
 
 
+def check_arch_wire(repo_root):
+    """Verify asm-generic architectures keep the Airymax block wired.
+
+    riscv and loongarch inherit slots 548-571 from the shared UAPI header, so
+    nothing in their tables names Airymax explicitly. That makes the wiring
+    easy to break without any arch build noticing: dropping the asm-generic
+    include, reshaping the __SYSCALL expansion, or losing the riscv wrapper
+    prefix would bind an Airymax number to the wrong handler. Pin the exact
+    include chain and expansion forms here.
+    """
+    name = "riscv/loongarch 通用表接线"
+    sources = (
+        ("riscv uapi unistd.h", DEFAULT_RISCV_UAPI_REL),
+        ("riscv syscall_table.c", DEFAULT_RISCV_TBL_REL),
+        ("loongarch uapi unistd.h", DEFAULT_LOONG_UAPI_REL),
+        ("loongarch syscall.c", DEFAULT_LOONG_TBL_REL),
+        ("include/linux/syscalls.h", DEFAULT_SYS_H_REL),
+    )
+
+    texts = {}
+    failures = []
+    for label, rel in sources:
+        text = read_if_exists(repo_root / rel)
+        if text is None:
+            failures.append(f"  缺失: {label} ({rel})")
+        texts[label] = text
+    if failures:
+        return CheckResult(name, False, "\n".join(failures))
+
+    riscv_uapi = texts["riscv uapi unistd.h"]
+    riscv_tbl = texts["riscv syscall_table.c"]
+    loong_uapi = texts["loongarch uapi unistd.h"]
+    loong_tbl = texts["loongarch syscall.c"]
+    sys_h = texts["include/linux/syscalls.h"]
+
+    if GENERIC_UAPI_INCLUDE not in riscv_uapi:
+        failures.append("  riscv uapi unistd.h 未包含 "
+                        "<asm-generic/unistd.h>")
+    if GENERIC_UAPI_INCLUDE not in loong_uapi:
+        failures.append("  loongarch uapi unistd.h 未包含 "
+                        "<asm-generic/unistd.h>")
+
+    if not RISCV_EXPAND_RE.search(riscv_tbl):
+        failures.append("  riscv syscall_table.c 未以 "
+                        "[nr] = __riscv_##call, 展开")
+    includes = riscv_tbl.count(RISCV_TBL_INCLUDE)
+    if includes != 2:
+        failures.append(f"  riscv syscall_table.c 包含 <asm/unistd.h> "
+                        f"{includes} 次 (期望 2: 原型 + 表项)")
+    if RISCV_TABLE_DECL not in riscv_tbl:
+        failures.append("  riscv syscall_table.c 缺 "
+                        "void * const sys_call_table[__NR_syscalls]")
+
+    if not LOONG_EXPAND_RE.search(loong_tbl):
+        failures.append("  loongarch syscall.c 未以 [nr] = (call), 展开")
+    if LOONG_TABLE_DECL not in loong_tbl:
+        failures.append("  loongarch syscall.c 缺 "
+                        "void *sys_call_table[__NR_syscalls]")
+
+    for cname, _macro, _num in CORE_SYSCALLS:
+        if f"asmlinkage long sys_{cname}(" not in sys_h:
+            failures.append(f"  include/linux/syscalls.h 缺 sys_{cname} "
+                            f"裸原型")
+
+    if failures:
+        return CheckResult(name, False, "\n".join(failures))
+    return CheckResult(
+        name, True,
+        "riscv/loongarch 均包含 <asm-generic/unistd.h>；riscv 以 "
+        "__riscv_##call 展开 (两次 include, __NR_syscalls 定界)；"
+        "loongarch 以裸符号展开；4 个 sys_airy_sys_* 裸原型齐备")
+
+
 def check_baseline(ssot, unistd, tbl, baseline):
     """Check current ABI matches baseline snapshot (immutability)."""
     failures = []
@@ -1106,6 +1211,7 @@ def main():
     results.append(check_reserved_slots(unistd, tbl))
     results.append(check_tbl_abi_and_entry(tbl))
     results.append(check_sw64_tbl(ssot, sw_tbl))
+    results.append(check_arch_wire(repo_root))
     if baseline is not None:
         results.append(check_baseline(ssot, unistd, tbl, baseline))
     results.append(check_snapshot_drift(ssot, snapshot, ssot_available))
@@ -1120,6 +1226,8 @@ def main():
         ("syscall_64.tbl", str(tbl_path)),
         ("sw_64 syscall.tbl", str(sw64_tbl_path)),
         ("[SC] syscalls.h", str(sc_header_path)),
+        ("riscv table", str(repo_root / DEFAULT_RISCV_TBL_REL)),
+        ("loongarch table", str(repo_root / DEFAULT_LOONG_TBL_REL)),
         ("baseline", str(baseline_path) if baseline else "(none)"),
     ]
     print_report(results, ssot, unistd, tbl, sw_tbl, baseline, sources,
