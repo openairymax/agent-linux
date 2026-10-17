@@ -118,11 +118,12 @@ jobs:
       - name: "Run sc-tri-compile unit tests (pytest)"
         run: python3 -m pytest tools/sc-tri-compile/tests/ -q
 
-      - name: "[SC] tri-compile & layout check (OS-IRON-014)"
+      - name: "[SC] multi-path compile & layout check (OS-IRON-014)"
         run: |
-          # Compile every [SC] header under the three type-bridge paths
-          # (kernel / Linux user / third-party) and assert fixed-width type
-          # sizes and struct field offsets are identical across all three.
+          # Compile every [SC] header under three regular type-bridge paths
+          # (kernel / Linux user / third-party) plus two [DSL] degraded paths
+          # (AIRY_SC_FALLBACK), then assert fixed-width type sizes, struct
+          # field offsets, and the two-branch degraded contract.
           # Authority: 50-engineering-standards/11-sc-header-type-bridging.md.
           python3 tools/sc-tri-compile/sc_tri_compile.py --check
 
