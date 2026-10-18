@@ -106,9 +106,16 @@ class TestRenderProgram:
         )
         assert "#ifndef AIRY_GENERATED_POLICY_POLICY_H" in header
         assert "#ifndef AIRY_POLICY_MECHANISM_DEFINED" in header
+        assert "#include <airymax/airy_policy.h>" in header
         assert "#define AIRY_POLICY_URING_GUARD_ROW_COUNT 2" in header
         assert "static inline __u8 airy_policy_uring_guard_eval(const __u64 *fields)" in header
         assert header.rstrip().endswith("#endif /* AIRY_GENERATED_POLICY_POLICY_H */")
+
+    def test_unused_macro_outside_mechanism_guard(self) -> None:
+        header = render_program(_program_ir())
+        assert header.index("#define AIRY_POLICY_UNUSED") < header.index(
+            "#ifndef AIRY_POLICY_MECHANISM_DEFINED"
+        )
 
     def test_render_is_deterministic(self) -> None:
         assert render_program(_program_ir()) == render_program(_program_ir())

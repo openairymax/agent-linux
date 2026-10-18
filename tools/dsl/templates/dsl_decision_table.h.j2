@@ -12,6 +12,11 @@
  * enum airy_verdict defined in <linux/airymax/security_types.h>; this header
  * MUST NOT redefine AIRY_VERDICT_* (single-definition rule, OS-IRON-014).
  *
+ * Inside the kernel the mechanism types come from <airymax/airy_policy.h>, so
+ * the runtime and the generated tables share one definition. User space keeps
+ * a private copy of the same layout below, which lets the toolchain tests
+ * compile without kernel headers.
+ *
  * DSL contract version: {{ dsl_version }}
  * Tables: {{ tables | length }}
  */
@@ -22,10 +27,20 @@
 #ifdef __KERNEL__
 #include <linux/types.h>
 #include <linux/stddef.h>
+#include <airymax/airy_policy.h>
 #else
 #include <linux/types.h>
 #include <stdbool.h>
 #include <stddef.h>
+#endif
+
+/* Silence -Wunused-const-variable for the static data below. */
+#ifndef AIRY_POLICY_UNUSED
+#ifdef __GNUC__
+#define AIRY_POLICY_UNUSED __attribute__((unused))
+#else
+#define AIRY_POLICY_UNUSED
+#endif
 #endif
 
 /*
@@ -33,7 +48,8 @@
  * The block below defines the on-image data model and the predicate helpers.
  * It is emitted exactly once per translation unit: when several generated
  * policy headers are aggregated, the AIRY_POLICY_MECHANISM_DEFINED guard
- * keeps the first definition and suppresses the duplicates.
+ * keeps the first definition and suppresses the duplicates. A kernel build
+ * already got the block from <airymax/airy_policy.h> and skips it here.
  */
 #ifndef AIRY_POLICY_MECHANISM_DEFINED
 #define AIRY_POLICY_MECHANISM_DEFINED
@@ -70,15 +86,6 @@ struct airy_policy_table {
 	const char *const *field_names;
 	__u8 default_verdict;
 };
-
-/* Silence -Wunused-const-variable for the static data below. */
-#ifndef AIRY_POLICY_UNUSED
-#ifdef __GNUC__
-#define AIRY_POLICY_UNUSED __attribute__((unused))
-#else
-#define AIRY_POLICY_UNUSED
-#endif
-#endif
 
 /* Evaluate one predicate; MASK means "all bits in value are set in lhs". */
 static inline bool airy_policy_cmp(__u64 lhs, __u8 op, __u64 rhs)
