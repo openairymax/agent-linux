@@ -39,6 +39,7 @@ from dataclasses import dataclass
 from datetime import date as _date
 from typing import Any, Final
 
+from osaccrt_codec import as_text, check_keys, read_obj
 from osaccrt_model import (
     EXP_ID_RE,
     SHA256_RE,
@@ -70,7 +71,7 @@ STEP_LAYOUT: Final[dict[Step, str]] = {
     Step.ARCHIVE: "chain.sha256",
 }
 
-_MAN_KEYS: Final[frozenset[str]] = frozenset(
+_MAN_REQ: Final[frozenset[str]] = frozenset(
     {
         "exp_id",
         "date",
@@ -80,9 +81,6 @@ _MAN_KEYS: Final[frozenset[str]] = frozenset(
         "evidences",
         "verdict",
         "prev_chain_head",
-        "waiver_sig",
-        "blocked_reason",
-        "supersedes",
     }
 )
 _MAN_OPT: Final[frozenset[str]] = frozenset(
@@ -179,15 +177,15 @@ def dump(manifest: Manifest) -> str:
 
 def load(text: str) -> Manifest:
     """从 manifest.json 文本还原清单，拒绝未知或缺失字段。"""
-    raw = _json_obj(text)
-    _check_keys(raw)
+    raw = read_obj(text, "manifest")
+    check_keys(raw, _MAN_REQ, _MAN_OPT, "manifest")
     return Manifest(
-        date=_str(raw["date"], "date"),
-        host=_str(raw["host"], "host"),
-        image_sha256=_str(raw["image_sha256"], "image_sha256"),
+        date=as_text(raw["date"], "date"),
+        host=as_text(raw["host"], "host"),
+        image_sha256=as_text(raw["image_sha256"], "image_sha256"),
         result=_result(raw),
-        prev_chain_head=_str(raw["prev_chain_head"], "prev_chain_head"),
-        supersedes=_str(raw.get("supersedes", ""), "supersedes"),
+        prev_chain_head=as_text(raw["prev_chain_head"], "prev_chain_head"),
+        supersedes=as_text(raw.get("supersedes", ""), "supersedes"),
     )
 
 
@@ -295,37 +293,16 @@ def _add_optional(data: dict[str, Any], manifest: Manifest) -> None:
         data["supersedes"] = manifest.supersedes
 
 
-def _json_obj(text: str) -> dict[str, Any]:
-    """解析 JSON 对象，语法或形状错误一律转换为 ValueError。"""
-    try:
-        raw = json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"manifest is not valid JSON: {exc}") from exc
-    if not isinstance(raw, dict):
-        raise ValueError("manifest must be a JSON object")
-    return raw
-
-
-def _check_keys(raw: dict[str, Any]) -> None:
-    """拒绝未知字段与缺失的必填字段。"""
-    keys = set(raw)
-    unknown = keys - _MAN_KEYS
-    if unknown:
-        raise ValueError(f"unknown manifest fields: {sorted(unknown)}")
-    missing = (_MAN_KEYS - _MAN_OPT) - keys
-    if missing:
-        raise ValueError(f"missing manifest fields: {sorted(missing)}")
-
-
 def _result(raw: dict[str, Any]) -> ExpResult:
     """还原结果对象，字段级校验交给模型构造器。"""
     return ExpResult(
-        exp_id=_str(raw["exp_id"], "exp_id"),
+        exp_id=as_text(raw["exp_id"], "exp_id"),
         thresholds=_thresholds(raw["thresholds"]),
         evidences=_evidences(raw["evidences"]),
         verdict=_verdict(raw["verdict"]),
         waiver_sig=_waiver(raw.get("waiver_sig")),
-        blocked_reason=_str(raw.get("blocked_reason", ""), "blocked_reason"),
+        blocked_reason=as_text(raw.get("blocked_reason", ""),
+                               "blocked_reason"),
     )
 
 
@@ -340,7 +317,7 @@ def _threshold(item: Any) -> Threshold:
     """还原单条阈值。"""
     if not isinstance(item, dict):
         raise ValueError("thresholds must contain objects")
-    return Threshold(*(_str(item.get(name), name) for name in _TH_KEYS))
+    return Threshold(*(as_text(item.get(name), name) for name in _TH_KEYS))
 
 
 def _evidences(items: Any) -> list[Evidence]:
@@ -355,8 +332,8 @@ def _evidence(item: Any) -> Evidence:
     if not isinstance(item, dict):
         raise ValueError("evidences must contain objects")
     return Evidence(
-        path=_str(item.get("path"), "path"),
-        sha256=_str(item.get("sha256"), "sha256"),
+        path=as_text(item.get("path"), "path"),
+        sha256=as_text(item.get("sha256"), "sha256"),
         step=_step(item.get("step")),
     )
 
@@ -364,7 +341,7 @@ def _evidence(item: Any) -> Evidence:
 def _step(value: Any) -> Step:
     """还原步骤枚举。"""
     try:
-        return Step(_str(value, "step"))
+        return Step(as_text(value, "step"))
     except ValueError as exc:
         raise ValueError(f"invalid evidence step: {value!r}") from exc
 
@@ -374,7 +351,7 @@ def _verdict(value: Any) -> Verdict | None:
     if value is None:
         return None
     try:
-        return Verdict(_str(value, "verdict"))
+        return Verdict(as_text(value, "verdict"))
     except ValueError as exc:
         raise ValueError(f"invalid verdict: {value!r}") from exc
 
@@ -385,11 +362,5 @@ def _waiver(value: Any) -> tuple[str, str] | None:
         return None
     if not isinstance(value, (list, tuple)) or len(value) != 2:
         raise ValueError("waiver_sig must be a two-element array")
-    return (_str(value[0], "waiver_sig"), _str(value[1], "waiver_sig"))
-
-
-def _str(value: Any, name: str) -> str:
-    """要求字段为字符串。"""
-    if not isinstance(value, str):
-        raise ValueError(f"{name} must be a string")
-    return value
+    return (as_text(value[0], "waiver_sig"),
+            as_text(value[1], "waiver_sig"))
