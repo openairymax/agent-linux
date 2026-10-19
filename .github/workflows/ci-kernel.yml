@@ -18,12 +18,14 @@ on:
     paths:
       - 'kernel'
       - 'kernel/**'
+      - 'tools/ci-matrix/**'
       - '.github/workflows/ci-kernel.yml'
   push:
     branches: [main]
     paths:
       - 'kernel'
       - 'kernel/**'
+      - 'tools/ci-matrix/**'
       - '.github/workflows/ci-kernel.yml'
 
 jobs:
@@ -153,10 +155,13 @@ jobs:
           set -euo pipefail
           sudo apt-get update -qq
           sudo apt-get install -y flex bison libelf-dev libssl-dev bc cpio \
-            sparse coccinelle rsync zstd file kmod iproute2 kbd dwarves
+            sparse coccinelle rsync zstd file kmod iproute2 kbd dwarves \
+            python3-yaml
           # virtme-ng 在 QEMU 中启动刚构建的内核；qemu 与 busybox 只在
           # Recommends 中，必须显式安装，否则 vng 无法构建 guest 根环境。
           sudo apt-get install -y virtme-ng qemu-system-x86 busybox-static
+      - name: CI matrix consistency check (OS-STD-TOOL-161)
+        run: python3 tools/ci-matrix/ci_matrix.py --check
       - name: ABI consistency check (OS-IRON-001)
         run: python3 tools/abi-check/abi_check.py --check
       - name: Codegen zero-drift check

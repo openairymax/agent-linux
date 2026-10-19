@@ -1,0 +1,77 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+#
+# AirymaxOS CI 编译矩阵清单（唯一事实源 / SSoT）
+# Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
+#
+# 权威依据：
+#   docs/docs-linux/70-build-system/03-ci-cd-pipeline.md
+#     §3.1 矩阵定义（OS-STD-TOOL-161）
+#     §3.2 矩阵生成与调度
+#     §9.4 超时预算（OS-STD-TEST-011，单 job ≤60 分钟）
+#     §10.1 CI 失败分类（PR 标签）
+#
+# 铁律：本清单是「编译配置 × 架构 × 编译器 × 排除项 × 调度约束」的唯一
+#      事实源。.github/workflows/ci-kernel.yml 的 matrix 段必须与本表逐项
+#      相等；架构维度不在此重复定义，统一取自 tools/defconfig-matrix/
+#      manifest.yaml 中 build=true 的条目。任何一侧漂移由
+#      tools/ci-matrix/ci_matrix.py --check 检出。
+#
+# 字段：
+#   arch_manifest   架构维度的事实源（相对仓库根）
+#   matrix.workflow 承载编译矩阵的 workflow（相对仓库根）
+#   matrix.job      承载矩阵的 job 名
+#   matrix.configs  Kbuild 配置目标（§3.1）
+#   matrix.compilers 编译器维度（§3.1）
+#   matrix.exclude  不适用的组合；每个条目是维度子集，必须命中真实组合
+#   matrix.expected_cells 展开后的格数（§3.1：28）
+#   matrix.fail_fast / max_parallel 调度策略（§3.2）
+#   budget.timeout_minutes 矩阵 job 的超时预算（§9.4）
+#   budget.max_jobs_per_workflow 管理仓每 workflow 的 job 上限
+#   gates.required_tokens 编译门禁必须出现的语义片段（§3.3）
+#   failures.label 编译类失败的 PR 标签（§10.1）
+#   failures.reasons 失败归因表：cross_arch/compiler/other 为固定键，
+#                    命中配置名时优先使用同名键
+
+version: "1.0.0"
+
+arch_manifest: tools/defconfig-matrix/manifest.yaml
+
+matrix:
+  workflow: .github/workflows/ci-kernel.yml
+  job: kernel-build
+  configs:
+    - defconfig
+    - allnoconfig
+    - allmodconfig
+    - airy_defconfig
+  compilers:
+    - gcc
+    - clang
+  exclude:
+    # 上游 clang 尚不支持 loongarch，该架构的 4 个配置组合整体排除。
+    - arch: loongarch
+      compiler: clang
+  expected_cells: 28
+  fail_fast: false
+  max_parallel: 8
+
+budget:
+  timeout_minutes: 60
+  max_jobs_per_workflow: 2
+
+gates:
+  required_tokens:
+    - 'grep -E "error:"'
+    - 'security/airy/'
+    - 'kernel/(superv|syscalls|corekern|log|ipc)/'
+
+failures:
+  label: ci-fail-compile
+  reasons:
+    defconfig: 默认路径损坏（defconfig 构建失败）
+    allnoconfig: Kconfig 依赖闭包不成立（allnoconfig 构建失败）
+    allmodconfig: 符号冲突或循环依赖（allmodconfig 构建失败）
+    airy_defconfig: Airymax 专属配置闭包不完整
+    cross_arch: 架构抽象缺失（非 x86_64 失败而同配置 x86_64 通过）
+    compiler: 编译器可移植性（clang 失败而 gcc 通过）
+    other: 编译错误

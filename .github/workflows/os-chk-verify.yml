@@ -35,6 +35,7 @@ on:
       - 'tools/dsl/**'
       - 'tools/airy-checkpatch/**'
       - 'tools/defconfig-matrix/**'
+      - 'tools/ci-matrix/**'
       - 'tools/btf-integration/**'
       - 'tools/kbuild-version/**'
       - 'tools/release-engineering/**'
@@ -53,6 +54,7 @@ on:
       - 'tools/dsl/**'
       - 'tools/airy-checkpatch/**'
       - 'tools/defconfig-matrix/**'
+      - 'tools/ci-matrix/**'
       - 'tools/btf-integration/**'
       - 'tools/kbuild-version/**'
       - 'tools/release-engineering/**'
@@ -83,12 +85,13 @@ jobs:
           # 在 CI 恒为 ERROR（本地因已装 Jinja2 而不可见）。
           pip install -r tools/codegen/requirements-dev.txt
           pip install -r tools/defconfig-matrix/requirements-dev.txt
+          pip install -r tools/ci-matrix/requirements-dev.txt
           pip install -r tools/btf-integration/requirements-dev.txt
           pip install -r tools/kbuild-version/requirements-dev.txt
           pip install -r tools/release-engineering/requirements-dev.txt
 
       - name: Run OS-CHK unit tests (pytest)
-        run: python3 -m pytest tools/os-chk/tests/ tools/airy-checkpatch/tests/ tools/defconfig-matrix/tests/ tools/btf-integration/tests/ tools/kbuild-version/tests/ tools/release-engineering/tests/ -q
+        run: python3 -m pytest tools/os-chk/tests/ tools/airy-checkpatch/tests/ tools/defconfig-matrix/tests/ tools/ci-matrix/tests/ tools/btf-integration/tests/ tools/kbuild-version/tests/ tools/release-engineering/tests/ -q
 
       - name: Run OS-CHK unified gates
         run: |

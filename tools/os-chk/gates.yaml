@@ -27,7 +27,7 @@
 #
 # version: 注册表版本，随门禁增删而递增。
 
-version: "1.5.0"
+version: "1.6.0"
 
 gates:
   # ── 文档类 ────────────────────────────────────────────────────────────
@@ -101,6 +101,18 @@ gates:
     authority: 70-build-system/02-kconfig-system.md §10（OS-BUILD-026/028）
     executor:
       argv: ["python3", "tools/defconfig-matrix/defconfig_matrix.py", "--check"]
+
+  # ── CI 编译矩阵一致性（OS-STD-TOOL-161 / OS-STD-TEST-011）─────────────
+  # 受检对象为 tools/ci-matrix/manifest.yaml 与 .github/workflows/ci-kernel.yml
+  # 的 kernel-build job：矩阵维度、排除项、格数、调度约束、超时预算与
+  # 编译门禁 token 任一漂移即阻断，杜绝「清单写了 28 格、流水线只跑 20 格」。
+  - id: OS-BUILD-CI-MATRIX
+    name: CI 编译矩阵一致性
+    severity: P0
+    category: build
+    authority: 70-build-system/03-ci-cd-pipeline.md §3（OS-STD-TOOL-161 / OS-STD-TEST-011）
+    executor:
+      argv: ["python3", "tools/ci-matrix/ci_matrix.py", "--check"]
 
   # ── BTF / eBPF 基线一致性（OS-KER-106 / OS-OBS-012）───────────────────
   - id: OS-BUILD-BTF
