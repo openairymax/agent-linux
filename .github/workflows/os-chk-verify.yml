@@ -22,6 +22,9 @@
 # .github/workflows/release.yml，故两者亦纳入监听。
 # OS-BUILD-NIGHTLY 的受检对象为 tools/nightly/manifest.yaml 与
 # .github/workflows/nightly.yml，故两者亦纳入监听。
+# OS-BUILD-REPO-SCAFFOLD 的受检对象为 tools/repo-scaffold/manifest.yaml、
+# .gitmodules 与八子仓检出目录，故 tools/repo-scaffold/** 与 .gitmodules
+# 亦纳入监听。
 # ===========================================================================
 
 name: os-chk-verify
@@ -44,6 +47,8 @@ on:
       - '.github/workflows/release.yml'
       - 'tools/nightly/**'
       - '.github/workflows/nightly.yml'
+      - 'tools/repo-scaffold/**'
+      - '.gitmodules'
       - 'ssot-registry.yaml'
       - 'kernel'
   push:
@@ -65,6 +70,8 @@ on:
       - '.github/workflows/release.yml'
       - 'tools/nightly/**'
       - '.github/workflows/nightly.yml'
+      - 'tools/repo-scaffold/**'
+      - '.gitmodules'
       - 'ssot-registry.yaml'
       - 'kernel'
 
@@ -96,6 +103,7 @@ jobs:
           pip install -r tools/kbuild-version/requirements-dev.txt
           pip install -r tools/release-engineering/requirements-dev.txt
           pip install -r tools/nightly/requirements-dev.txt
+          pip install -r tools/repo-scaffold/requirements-dev.txt
 
       - name: Run OS-CHK unit tests (pytest)
         run: |
@@ -103,7 +111,8 @@ jobs:
             tools/os-chk/tests/ tools/airy-checkpatch/tests/ \
             tools/defconfig-matrix/tests/ tools/ci-matrix/tests/ \
             tools/btf-integration/tests/ tools/kbuild-version/tests/ \
-            tools/release-engineering/tests/ tools/nightly/tests/ -q
+            tools/release-engineering/tests/ tools/nightly/tests/ \
+            tools/repo-scaffold/tests/ -q
 
       - name: Run OS-CHK unified gates
         run: |
