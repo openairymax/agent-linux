@@ -1,0 +1,116 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
+#
+# OS-ACC-RT 阈值表：逐条抄录 docs-linux/00-requirements/
+# 03-non-functional-requirements.md 的原文数值。
+#
+# 只收录实验矩阵 E1~E7 引用的 NFR 条目；未引用的 NFR 不在此表，
+# 避免出现没有实验承担的死阈值。修改本表必须同步更新
+# tests/test_osaccrt_spec.py 的原文对照用例。
+#
+# limit 为比较表达式，unit 为计量单位，key 即取证产物名。
+
+schema = 1
+
+# NFR-P-001 调度延迟：P99 < 100ms，P99.9 < 200ms，实时反馈 < 10ms。
+[[threshold]]
+key = "sched.p99"
+source = "NFR-P-001"
+limit = "< 100"
+unit = "ms"
+
+[[threshold]]
+key = "sched.p999"
+source = "NFR-P-001"
+limit = "< 200"
+unit = "ms"
+
+[[threshold]]
+key = "sched.rt"
+source = "NFR-P-001"
+limit = "< 10"
+unit = "ms"
+
+# NFR-P-002 IPC：吞吐 > 100K msg/s，消息延迟 < 10us。
+[[threshold]]
+key = "ipc.throughput"
+source = "NFR-P-002"
+limit = "> 100000"
+unit = "msg/s"
+
+[[threshold]]
+key = "ipc.latency"
+source = "NFR-P-002"
+limit = "< 10"
+unit = "us"
+
+# NFR-P-004 Token 能效：KV-cache 命中率 > 90%，批处理效率 > 85%。
+[[threshold]]
+key = "token.kv_hit"
+source = "NFR-P-004"
+limit = "> 90"
+unit = "%"
+
+[[threshold]]
+key = "token.batch"
+source = "NFR-P-004"
+limit = "> 85"
+unit = "%"
+
+# NFR-P-005 冷启动：全系统 < 30s，边缘 < 10s，关键服务 < 5s。
+[[threshold]]
+key = "boot.cold"
+source = "NFR-P-005"
+limit = "< 30"
+unit = "s"
+
+[[threshold]]
+key = "boot.edge"
+source = "NFR-P-005"
+limit = "< 10"
+unit = "s"
+
+[[threshold]]
+key = "boot.service"
+source = "NFR-P-005"
+limit = "< 5"
+unit = "s"
+
+# NFR-P-006 内存占用：全系统 < 512MB，边缘 < 256MB。
+[[threshold]]
+key = "mem.total"
+source = "NFR-P-006"
+limit = "< 512"
+unit = "MB"
+
+[[threshold]]
+key = "mem.edge"
+source = "NFR-P-006"
+limit = "< 256"
+unit = "MB"
+
+# NFR-S-001 capability：未授权访问 100% 拒绝。
+[[threshold]]
+key = "sec.capability"
+source = "NFR-S-001"
+limit = "= 100"
+unit = "%"
+
+# NFR-R-001 长稳：无故障、无泄漏，MTTR < 5min。
+[[threshold]]
+key = "soak.fault"
+source = "NFR-R-001"
+limit = "= 0"
+unit = "count"
+
+[[threshold]]
+key = "soak.leak"
+source = "NFR-R-001"
+limit = "= 0"
+unit = "count"
+
+[[threshold]]
+key = "soak.mttr"
+source = "NFR-R-001"
+limit = "< 5"
+unit = "min"
