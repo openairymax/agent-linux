@@ -251,6 +251,26 @@ class TestWarningSemantics:
         assert warnings == 1
         assert proc.returncode == 0
 
+    def test_consumed_cap_check_is_silent(self, perl, kernel_root, tmp_path):
+        path = c_file(tmp_path, "cap_ok.c",
+                      "static int airy_probe(u32 id)", "{",
+                      "\tint ret = airy_cap_check(id, AIRY_CAP_PERM_SEND);",
+                      "", "\tif (airy_cap_check(id, AIRY_CAP_PERM_KILL))",
+                      "\t\treturn -EPERM;", "\treturn ret;", "}")
+        proc = run_engine(perl, kernel_root, str(path))
+        assert "AIRY-CHECKPATCH-005" not in reported_ids(proc)
+        assert proc.returncode == 0
+
+    def test_multiline_macro_cap_check_is_silent(self, perl, kernel_root,
+                                                 tmp_path):
+        path = c_file(tmp_path, "cap_macro.c",
+                      "static void airy_probe(void)", "{",
+                      "\tKUNIT_EXPECT_EQ(test, -EPERM,",
+                      "\t\t\tairy_cap_check(id, AIRY_CAP_PERM_KILL));", "}")
+        proc = run_engine(perl, kernel_root, str(path))
+        assert "AIRY-CHECKPATCH-005" not in reported_ids(proc)
+        assert proc.returncode == 0
+
 
 class TestConfigBlacklist:
     def test_bpf_lsm_is_forbidden(self, perl, kernel_root, tmp_path):
