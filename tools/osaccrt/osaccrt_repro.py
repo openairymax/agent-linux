@@ -37,7 +37,7 @@ from pathlib import Path
 from typing import Final
 
 from osaccrt_evidence import Manifest, dump
-from osaccrt_model import Threshold, need_relpath, need_text
+from osaccrt_model import Threshold, need_line, need_relpath
 from osaccrt_store import MANIFEST
 
 __all__ = ["emit", "render"]
@@ -220,7 +220,5 @@ def _digest(text: str) -> str:
 
 def _line(value: str, name: str) -> str:
     """校验注释与命令为单行可见文本，杜绝折行与注入。"""
-    need_text(value, name)
-    if any(ord(char) < 0x20 or ord(char) == 0x7F for char in value):
-        raise ValueError(f"{name} must be a single visible line")
+    need_line(value, name)
     return value

@@ -43,7 +43,9 @@ __all__ = [
     "Step",
     "Threshold",
     "Verdict",
+    "need_line",
     "need_relpath",
+    "need_signers",
     "need_text",
 ]
 
@@ -98,7 +100,9 @@ class Evidence:
     def __post_init__(self) -> None:
         need_relpath(self.path)
         if not SHA256_RE.fullmatch(self.sha256):
-            raise ValueError(f"sha256 must be 64 lowercase hex: {self.path!r}")
+            raise ValueError(
+                f"sha256 must be 64 lowercase hex: {self.path!r}"
+            )
         if not isinstance(self.step, Step):
             raise ValueError(f"step must be Step, got {type(self.step).__name__}")
 
@@ -154,6 +158,26 @@ def need_text(value: str, name: str) -> None:
         raise ValueError(f"{name} must not be padded: {value!r}")
 
 
+def need_line(value: str, name: str) -> None:
+    """校验单行可见文本，杜绝控制字符破坏台账与复现脚本。"""
+    need_text(value, name)
+    if any(ord(char) < 0x20 or ord(char) == 0x7F for char in value):
+        raise ValueError(f"{name} must be a single visible line")
+
+
+def need_signers(sig: tuple[str, str]) -> None:
+    """校验双签为两个互异的邮箱地址。"""
+    if not isinstance(sig, (tuple, list)) or len(sig) != 2:
+        raise ValueError("waiver_sig must be two signers")
+    first, second = sig
+    for signer in (first, second):
+        need_text(signer, "waiver_sig")
+        if "@" not in signer:
+            raise ValueError(f"waiver_sig must be an email: {signer!r}")
+    if first == second:
+        raise ValueError("waiver_sig requires two distinct signers")
+
+
 def need_relpath(path: str) -> None:
     """校验证据路径为包内相对路径，禁止绝对路径与向上逃逸。"""
     need_text(path, "path")
@@ -191,13 +215,7 @@ def _need_waiver(result: ExpResult) -> None:
         return
     if sig is None:
         raise ValueError("WAIVED requires waiver_sig")
-    first, second = sig
-    for signer in (first, second):
-        need_text(signer, "waiver_sig")
-        if "@" not in signer:
-            raise ValueError(f"waiver_sig must be an email: {signer!r}")
-    if first == second:
-        raise ValueError("waiver_sig requires two distinct signers")
+    need_signers(sig)
 
 
 def _need_blocked(result: ExpResult) -> None:
