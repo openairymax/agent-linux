@@ -161,25 +161,31 @@ class JobState(str, Enum):
 
 @dataclass(frozen=True)
 class TapSummary:
-    """TAP 结果汇总（字段语义与 tools/parse-tap.py 返回值一致）。"""
+    """TAP 结果汇总。
+
+    plan_total / ok_count / not_ok_count 与 tools/parse-tap.py 的返回值
+    语义一致；skip_count 是携带 ``# SKIP`` 指令的用例数，按
+    OS-TEST-021 单独计数，不并入 ok_count。
+    """
 
     plan_total: int
     ok_count: int
     not_ok_count: int
+    skip_count: int = 0
 
     def __post_init__(self) -> None:
-        for name in ("plan_total", "ok_count", "not_ok_count"):
+        for name in ("plan_total", "ok_count", "not_ok_count", "skip_count"):
             _need_nonneg(getattr(self, name), name)
-        if self.ok_count + self.not_ok_count > self.plan_total:
+        if self.executed > self.plan_total:
             raise ValueError(
-                "ok_count + not_ok_count exceeds plan_total: "
-                f"{self.ok_count} + {self.not_ok_count} > {self.plan_total}"
+                "executed exceeds plan_total: "
+                f"{self.executed} > {self.plan_total}"
             )
 
     @property
     def executed(self) -> int:
-        """已上报结果的用例数。"""
-        return self.ok_count + self.not_ok_count
+        """已上报结果的用例数（含跳过）。"""
+        return self.ok_count + self.not_ok_count + self.skip_count
 
     @property
     def missing(self) -> int:
