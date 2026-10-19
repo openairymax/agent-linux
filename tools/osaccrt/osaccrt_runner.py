@@ -6,6 +6,11 @@
 ``step-04-verdict.json``，最后以当前链头封口。任何步骤都不允许旁路
 读写证据目录，落盘与封口全部经由 `Store`。
 
+复核步以 `Review` 回调注入：裁决之后、封口之前，回调拿到已判定结果
+并返回 `Ruling`；执行器只校验结论不丢原有证据、复核记录只落在
+``step-05-review.json``，随后按复核结论封口。只含准备步的计划用于
+实机缺失的诚实降级，此时不落判定文件，由复核步直接给出 BLOCKED。
+
 断点续跑以证据文件是否存在为准：已封口包直接复用结论；未封口包按
 已有证据跳过对应步骤；采集步若只落下部分产物则拒绝续跑，避免两次
 运行的数据混入同一证据包。证据包目录名即实验编号，跨日期全局唯一。
@@ -32,9 +37,10 @@ Version:
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 from typing import Final
@@ -54,12 +60,13 @@ from osaccrt_model import (
 )
 from osaccrt_store import Store
 
-__all__ = ["ExpPlan", "Outcome", "Runner", "StepFn"]
+__all__ = ["ExpPlan", "Outcome", "Review", "Ruling", "Runner", "StepFn"]
 
 StepFn = Callable[[Path], Mapping[str, bytes]]
 
 _ORDER: Final[tuple[Step, ...]] = (Step.PREPARE, Step.RUN, Step.CAPTURE)
 _CAPTURE: Final[str] = CAPTURE_ROOT + "/"
+_REVIEW: Final[str] = STEP_LAYOUT[Step.REVIEW]
 _VERDICT: Final[str] = STEP_LAYOUT[Step.VERDICT]
 _V_KEYS: Final[frozenset[str]] = frozenset(
     {"exp_id", "keys", "missing", "verdict"}
@@ -68,7 +75,7 @@ _V_KEYS: Final[frozenset[str]] = frozenset(
 
 @dataclass(frozen=True)
 class ExpPlan:
-    """单实验执行计划：实验编号、阈值表与有序三步执行函数。"""
+    """单实验执行计划：实验编号、阈值表与有序步骤函数。"""
 
     exp_id: str
     thresholds: tuple[Threshold, ...]
@@ -77,6 +84,17 @@ class ExpPlan:
     def __post_init__(self) -> None:
         ExpResult(self.exp_id, self.thresholds)
         _need_steps(self.steps)
+
+
+@dataclass(frozen=True)
+class Ruling:
+    """复核结论：更新后的结果与需要落盘的复核记录。"""
+
+    result: ExpResult
+    records: Mapping[str, bytes] = field(default_factory=dict)
+
+
+Review = Callable[[ExpResult], Ruling]
 
 
 @dataclass(frozen=True)
@@ -104,10 +122,13 @@ class Runner:
         self.day = day or date.today().isoformat()
         check_date(self.day)
 
-    def run(self, plan: ExpPlan) -> Outcome:
+    def run(self, plan: ExpPlan,
+            review: Review | None = None) -> Outcome:
         """执行单个实验；已封口则复用结论，未封口则续跑缺口步骤。"""
         if not isinstance(plan, ExpPlan):
             raise TypeError("plan must be ExpPlan")
+        if not _complete(plan) and review is None:
+            raise ValueError("partial plan requires a review")
         sealed = self.store.find(plan.exp_id)
         if sealed is not None:
             return self._reuse(plan, sealed)
@@ -115,17 +136,47 @@ class Runner:
         pack, resumed = self._pack_dir(plan.exp_id)
         for step, fn in plan.steps:
             self._step(plan, step, fn, result, pack)
-        verdict = self._decide(result, pack)
+        if _complete(plan):
+            self._decide(result, pack)
+        if review is not None:
+            result = self._review(plan, result, review, pack)
         man = Manifest(self.day, self.host, self.image_sha256, result,
                        prev_chain_head=self.store.head())
         chain = self.store.seal(man).read_text(encoding="ascii").strip()
-        return Outcome(plan.exp_id, verdict, chain, resumed)
+        return Outcome(plan.exp_id, _ruled(result), chain, resumed)
 
-    def run_all(self, plans: Sequence[ExpPlan]) -> tuple[Outcome, ...]:
+    def run_all(self, plans: Sequence[ExpPlan],
+                review: Review | None = None) -> tuple[Outcome, ...]:
         """按序执行一组实验；编号重复时在任何取证前拒绝。"""
         items = tuple(plans)
         _need_unique(items)
-        return tuple(self.run(plan) for plan in items)
+        return tuple(self.run(plan, review) for plan in items)
+
+    def _review(self, plan: ExpPlan, result: ExpResult, review: Review,
+                pack: Path) -> ExpResult:
+        """执行复核步：校验结论不丢证据，再把复核记录落盘。"""
+        if not callable(review):
+            raise TypeError("review must be callable")
+        ruling = review(result)
+        if not isinstance(ruling, Ruling):
+            raise TypeError("review must return Ruling")
+        _need_ruling(plan, result, ruling.result)
+        return self._records(plan, ruling, pack)
+
+    def _records(self, plan: ExpPlan, ruling: Ruling,
+                 pack: Path) -> ExpResult:
+        """复核记录只能写在复核步位置；已存在则要求内容一致。"""
+        if not isinstance(ruling.records, Mapping):
+            raise TypeError("review records must be a mapping")
+        result = ruling.result
+        for path, data in ruling.records.items():
+            if path != _REVIEW:
+                raise ValueError(f"review record must be {_REVIEW}: {path!r}")
+            if not isinstance(data, bytes):
+                raise TypeError("review record data must be bytes")
+            digest = _same(self.store, self.day, plan.exp_id, pack, path, data)
+            result.evidences.append(Evidence(path, digest, Step.REVIEW))
+        return result
 
     def _pack_dir(self, exp_id: str) -> tuple[Path, bool]:
         """定位或新建证据包，返回目录与调用前是否已存在。"""
@@ -256,6 +307,22 @@ class Runner:
         return Outcome(plan.exp_id, verdict, man.chain_head, True)
 
 
+def _same(store: Store, day: str, exp_id: str, pack: Path,
+          path: str, data: bytes) -> str:
+    """复核记录已存在时要求内容一致，否则原子落盘并返回摘要。"""
+    if (pack / path).exists():
+        digest = store.digest(day, exp_id, path)
+        if digest != _sha(data):
+            raise ValueError(f"review record mismatch: {path}")
+        return digest
+    return store.write(day, exp_id, path, data)
+
+
+def _sha(data: bytes) -> str:
+    """复核记录的规范摘要，用于判断重跑是否产出同一份记录。"""
+    return hashlib.sha256(data).hexdigest()
+
+
 def _files(root: Path) -> list[Path]:
     """列出采集目录下的普通文件；链接与特殊文件一律拒绝。"""
     files: list[Path] = []
@@ -333,12 +400,40 @@ def _to_verdict(value: object) -> Verdict:
 
 
 def _need_steps(items: tuple[tuple[Step, StepFn], ...]) -> None:
-    """执行步骤必须恰为准备、执行、取证三步且顺序固定。"""
-    if not isinstance(items, tuple) or len(items) != len(_ORDER):
-        raise ValueError("steps must be PREPARE, RUN, CAPTURE in order")
+    """执行步骤必须是准备、执行、取证的有序前缀，且至少含准备步。"""
+    if not isinstance(items, tuple) or not 0 < len(items) <= len(_ORDER):
+        raise ValueError("steps must run PREPARE, RUN, CAPTURE in order")
     for (step, fn), want in zip(items, _ORDER):
         if step is not want or not callable(fn):
-            raise ValueError("steps must be PREPARE, RUN, CAPTURE in order")
+            raise ValueError("steps must run PREPARE, RUN, CAPTURE in order")
+
+
+def _complete(plan: ExpPlan) -> bool:
+    """三步是否齐全；只含准备步的计划留给复核步裁定 BLOCKED。"""
+    return len(plan.steps) == len(_ORDER)
+
+
+def _need_ruling(plan: ExpPlan, before: ExpResult,
+                 after: ExpResult) -> None:
+    """复核只能追加证据，不得改编号、改阈值或丢弃已取证条目。"""
+    if not isinstance(after, ExpResult):
+        raise TypeError("ruling result must be ExpResult")
+    if after.exp_id != plan.exp_id:
+        raise ValueError(f"ruling changed exp_id: {after.exp_id}")
+    if after.thresholds != plan.thresholds:
+        raise ValueError("ruling changed the threshold table")
+    if after.verdict is None:
+        raise ValueError("ruling must decide a verdict")
+    kept = tuple(after.evidences[:len(before.evidences)])
+    if kept != tuple(before.evidences):
+        raise ValueError("ruling must keep collected evidence")
+
+
+def _ruled(result: ExpResult) -> Verdict:
+    """返回最终判定；未判定说明流程缺陷，直接拒绝封口。"""
+    if result.verdict is None:
+        raise ValueError(f"experiment is not ruled: {result.exp_id}")
+    return result.verdict
 
 
 def _need_unique(plans: tuple[ExpPlan, ...]) -> None:
