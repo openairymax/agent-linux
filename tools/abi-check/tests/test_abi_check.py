@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
-"""abi_check 单元测试 — ABI 常量、四方解析器、十项检查与 CLI 退出码契约。
+"""abi_check 单元测试 — ABI 常量、多方解析器、十二项检查与 CLI 退出码契约。
 
 覆盖 tools/abi-check/abi_check.py：
 
   * 常量矩阵：编号起点/范围、__NR_syscalls、预留段（552-571，20 槽）、
     SLOTS_MAX=24、x32 禁止区域。
-  * 四方解析器：SSoT markdown、unistd.h、syscall_64.tbl、[SC] syscalls.h。
-  * 十项检查：三方一致性、编号起点、范围无冲突、__NR_syscalls、
+  * 多方解析器：SSoT markdown、unistd.h、syscall_64.tbl、[SC] syscalls.h、
+    sw_64 syscall.tbl。
+  * 十二项检查：三方一致性、编号起点、范围无冲突、__NR_syscalls、
     x32 禁止区域、[SC] 契约头一致、预留槽登记、tbl ABI 列与入口点、
-    基线快照一致、SSoT 契约快照一致（失败分支以合成输入构造）。
+    sw_64 号段落位、riscv/loongarch 通用表接线、基线快照一致、
+    SSoT 契约快照一致（失败分支以合成输入构造）。
   * 派生契约快照：导出确定性、快照→SSoT 适配、漂移检出、
     docs 缺失时的快照回退与 --require-ssot 失败关闭。
   * CLI 退出码契约（0=通过 / 1=失败 / 2=输入或环境错误）与端到端
@@ -19,13 +21,14 @@ Author:
     SPHARX Ltd. - Airymax Team
 
 Version:
-    1.0.2
+    1.0.3
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -37,6 +40,9 @@ import abi_check as ab
 # agent-linux 仓库根（tests/ → abi-check/ → tools/ → repo root），供
 # 采集期 skipif 判断权威 SSoT 是否检出。
 REPO_ROOT = Path(__file__).resolve().parents[3]
+
+# --check 模式摘要行；检查项数量随工具演进，断言必须解析而非硬编码。
+CHECK_SUMMARY_RE = re.compile(r"ABI CHECK: PASS \((\d+)/(\d+) checks\)")
 
 # ─── 合成输入构造器 ────────────────────────────────────────────────────────
 
@@ -431,6 +437,15 @@ def run_cli(repo_root: Path, *extra: str) -> subprocess.CompletedProcess:
     )
 
 
+def assert_check_pass(proc: subprocess.CompletedProcess) -> None:
+    """断言 --check 退出 0 且摘要行自洽（passed == total > 0）。"""
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    match = CHECK_SUMMARY_RE.search(proc.stdout)
+    assert match, proc.stdout + proc.stderr
+    passed, total = (int(group) for group in match.groups())
+    assert passed == total > 0, proc.stdout
+
+
 class TestEndToEnd:
     def test_real_sources_all_checks_pass(self, repo_root: Path) -> None:
         assert (repo_root / "kernel").is_dir(), "kernel submodule missing"
@@ -447,6 +462,8 @@ class TestEndToEnd:
             (root / ab.DEFAULT_UNISTD_REL).read_text(encoding="utf-8"))
         tbl = ab.parse_syscall_tbl(
             (root / ab.DEFAULT_TBL_REL).read_text(encoding="utf-8"))
+        sw_tbl = ab.parse_syscall_tbl(
+            (root / ab.DEFAULT_SW64_TBL_REL).read_text(encoding="utf-8"))
         sc = ab.parse_sc_header(
             (root / ab.DEFAULT_SC_HEADER_REL).read_text(encoding="utf-8"))
         bl = json.loads(
@@ -461,17 +478,17 @@ class TestEndToEnd:
             ab.check_sc_header_consistency(sc, ssot, u, tbl),
             ab.check_reserved_slots(u, tbl),
             ab.check_tbl_abi_and_entry(tbl),
+            ab.check_sw64_tbl(ssot, sw_tbl),
+            ab.check_arch_wire(root),
             ab.check_baseline(ssot, u, tbl, bl),
             ab.check_snapshot_drift(ssot, snapshot, ssot_available),
         ]
         failed = [r.name for r in results if not r.passed]
         assert not failed, f"ABI 检查失败: {failed}"
-        assert len(results) == 10
+        assert len(results) == 12
 
-    def test_cli_check_mode_passes_10_of_10(self, repo_root: Path) -> None:
-        proc = run_cli(repo_root, "--check")
-        assert proc.returncode == 0, proc.stdout + proc.stderr
-        assert "PASS (10/10 checks)" in proc.stdout
+    def test_cli_check_mode_passes_all_checks(self, repo_root: Path) -> None:
+        assert_check_pass(run_cli(repo_root, "--check"))
 
     def test_cli_verbose_exit_zero(self, repo_root: Path) -> None:
         proc = run_cli(repo_root)
@@ -528,6 +545,16 @@ def mirror_root(repo_root: Path, tmp_path: Path,
     return root
 
 
+def run_git(repo: Path, *args: str) -> str:
+    """在临时仓库内执行 git 命令，返回 stdout 去尾空白。"""
+    proc = subprocess.run(
+        ["git", "-C", str(repo),
+         "-c", "user.name=abi-test",
+         "-c", "user.email=abi-test@example.invalid", *args],
+        capture_output=True, text=True, check=True)
+    return proc.stdout.strip()
+
+
 class TestSnapshot:
     def test_build_snapshot_shape(self, tmp_path: Path) -> None:
         ssot_path = tmp_path / "ssot.md"
@@ -569,6 +596,22 @@ class TestSnapshot:
         ab.write_snapshot(b, snap)
         assert a.read_bytes() == b.read_bytes()
         assert a.read_bytes().endswith(b"\n")
+
+    def test_source_commit_tracks_file_history(self, tmp_path: Path) -> None:
+        """溯源 commit 取文件自身最后修改提交，不随无关提交漂移。"""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        run_git(repo, "init", "-q")
+        ssot = repo / "07-syscall-registry.md"
+        ssot.write_text("v1\n", encoding="utf-8")
+        run_git(repo, "add", "--", ssot.name)
+        run_git(repo, "commit", "-q", "-m", "ssot")
+        owner = run_git(repo, "rev-parse", "HEAD")
+        (repo / "unrelated.md").write_text("x\n", encoding="utf-8")
+        run_git(repo, "add", "--", "unrelated.md")
+        run_git(repo, "commit", "-q", "-m", "unrelated")
+        assert run_git(repo, "rev-parse", "HEAD") != owner
+        assert ab.detect_source_commit(ssot) == owner
 
     def test_snapshot_to_ssot_roundtrip(self, tmp_path: Path) -> None:
         src = tmp_path / "ssot.md"
@@ -623,8 +666,7 @@ class TestSnapshotCli:
                                     tmp_path: Path) -> None:
         root = mirror_root(repo_root, tmp_path)
         proc = run_cli(root, "--check")
-        assert proc.returncode == 0, proc.stdout + proc.stderr
-        assert "PASS (10/10 checks)" in proc.stdout
+        assert_check_pass(proc)
         assert "contract snapshot" in proc.stdout
 
     def test_mirror_require_ssot_exit_2(self, repo_root: Path,

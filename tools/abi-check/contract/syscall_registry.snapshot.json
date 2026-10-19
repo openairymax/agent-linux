@@ -3,8 +3,8 @@
   "source": {
     "repo": "docs-linux",
     "path": "../docs/docs-linux/140-application-development/07-syscall-registry.md",
-    "commit": "08a96147e7e30b25e28bfbfdbbec06ff7922886e",
-    "sha256": "76148af4ce37e3ba655bcb7761644183450fc0048aaf174050121ec17355d42e",
+    "commit": "40f8ce71793b03841bb2a0e7651dda650d12a018",
+    "sha256": "2d1568e5894b82fecedb56ce8a73b4ccac4ba9cfdcb2b59d8cfd8a616c87be19",
     "doc_version": "v1.0.1"
   },
   "generated_by": "tools/abi-check/abi_check.py --update-snapshot",
