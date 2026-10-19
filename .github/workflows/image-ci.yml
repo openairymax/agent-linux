@@ -1,0 +1,232 @@
+# ===========================================================================
+# AirymaxOS 镜像流水线（L1 组装 + L2/L3 装机验收）
+# ===========================================================================
+# Authority: docs/docs-linux/70-build-system/03-ci-cd-pipeline.md
+#            docs/docs-closed/agent-linux-dev/0.0.3-验收发行方案.md §3/§4/§8
+# Gate:      distro/ci/run-image-ci.sh --skip-install（assemble）
+#            distro/scripts/install-test.sh（accept）
+#
+# 约束：
+#   * 仅 workflow_dispatch：不进入 PR 门禁，不阻断日常提交（§3.6）。
+#   * 管理仓每 workflow 最多 2 job；本流水线固定 assemble + accept。
+#   * 60 分钟预算（OS-STD-TEST-011）只约束 PR 门禁；本流水线按 release.yml
+#     先例申请 240 分钟发布级例外，两个 job 分别为 180 / 120 分钟。
+#   * 源码以只读方式挂载进构建容器，产物只落 $RUNNER_TEMP/out，不违反
+#     「严禁在 airymaxhub 源码区内构建」。
+#   * ISO 基线固定为 openEuler 24.03-LTS-SP2 netinst，容器镜像取官方
+#     docker_img tar；URL 与 sha256 同时写死，禁止浮动 latest。
+#   * acceptance=true 组装验收 ISO（自动登录 + 会话内冒烟），accept 断言
+#     AIRYMAX-SMOKE-PASS；false 时断言产品 ISO 的 AIRYMAX-DESKTOP-READY。
+# ===========================================================================
+
+name: image-ci
+
+on:
+  workflow_dispatch:
+    inputs:
+      acceptance:
+        description: '组装验收 ISO（B 轮：自动登录 + 会话内冒烟）'
+        type: boolean
+        default: false
+
+concurrency:
+  group: image-ci
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  OE_ISO_NAME: openEuler-24.03-LTS-SP2-netinst-x86_64-dvd.iso
+  OE_ISO_URL: https://repo.openeuler.org/openEuler-24.03-LTS-SP2/ISO/x86_64/openEuler-24.03-LTS-SP2-netinst-x86_64-dvd.iso
+  OE_ISO_SHA256: 291c1a2ad7ceb74e2b5308ca58f8aaa0206a0520c39145792af08f8adbbb6199
+  OE_IMG_NAME: openEuler-docker.x86_64.tar.xz
+  OE_IMG_URL: https://repo.openeuler.org/openEuler-24.03-LTS-SP2/docker_img/x86_64/openEuler-docker.x86_64.tar.xz
+  OE_IMG_SHA256: c152f7cf7e6966dcf5819890db5f277a303d462c2982e423d5935b33a47d6a05
+
+jobs:
+  # ─── Job 1: RPM + 内核 + ISO 组装（源码只读，产物出源码区） ─────────────
+  assemble:
+    name: Assemble ISO (L1)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Free runner disk
+        run: |
+          set -euo pipefail
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost \
+            /usr/local/.ghcup /usr/share/swift
+          df -h /
+
+      - name: Fetch fixed openEuler media
+        run: |
+          set -euo pipefail
+          media="$RUNNER_TEMP/media"
+          mkdir -p "$media"
+          curl -fsSL --retry 3 --retry-delay 5 \
+            -o "$media/$OE_ISO_NAME" "$OE_ISO_URL"
+          curl -fsSL --retry 3 --retry-delay 5 \
+            -o "$media/$OE_IMG_NAME" "$OE_IMG_URL"
+          printf '%s  %s\n' "$OE_ISO_SHA256" "$media/$OE_ISO_NAME" | sha256sum -c -
+          printf '%s  %s\n' "$OE_IMG_SHA256" "$media/$OE_IMG_NAME" | sha256sum -c -
+
+      - name: Load build container image
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/media/docker-load.log"
+          docker load --input "$RUNNER_TEMP/media/$OE_IMG_NAME" | tee "$log"
+          img="$(sed -n 's/^Loaded image: //p' "$log" | tail -n 1)"
+          [ -n "$img" ] || { echo '::error::无法解析 openEuler 镜像名'; exit 1; }
+          docker run --rm "$img" grep -qi '^ID="\?openeuler"' /etc/os-release || {
+            echo "::error::容器镜像不是 openEuler: $img"; exit 1; }
+          printf 'AIRYMAX_BUILD_IMAGE=%s\n' "$img" >> "$GITHUB_ENV"
+
+      - name: Build desktop ISO in container
+        env:
+          ACCEPTANCE: ${{ inputs.acceptance }}
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/out"
+          mkdir -p "$out"
+          docker run --rm --privileged \
+            -e ACCEPTANCE="$ACCEPTANCE" \
+            -e OE_ISO_NAME="$OE_ISO_NAME" \
+            -v "$GITHUB_WORKSPACE:/src:ro" \
+            -v "$out:/out" \
+            -v "$RUNNER_TEMP/media:/media:ro" \
+            -w /src \
+            "$AIRYMAX_BUILD_IMAGE" bash -c '
+              set -euo pipefail
+              dnf -y install rpm-build lorax createrepo_c xorriso isomd5sum \
+                gcc gcc-c++ make flex bison bc dwarves cpio openssl-devel \
+                elfutils-libelf-devel zlib-devel git python3 perl tar gzip \
+                findutils diffutils which util-linux ca-certificates
+              git config --global --add safe.directory "*"
+              args=(--out /out --iso-base "/media/$OE_ISO_NAME" \
+                    --profile desktop --arch x86_64 --skip-install)
+              if [ "$ACCEPTANCE" = true ]; then
+                args+=(--acceptance)
+              fi
+              distro/ci/run-image-ci.sh "${args[@]}"
+            '
+
+      - name: Verify assembly manifest
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/out"
+          man="$out/image-ci-manifest.txt"
+          [ -f "$man" ] || { echo '::error::缺少镜像清单'; exit 1; }
+          cat "$man"
+          for stage in rpm kernel iso; do
+            grep -qx "stage ${stage}=pass" "$man" || {
+              echo "::error::组装段未通过: ${stage}"; exit 1; }
+          done
+          grep -qx 'result=pass' "$man" || { echo '::error::镜像组装失败'; exit 1; }
+          line="$(grep -m1 '^iso ' "$man" || true)"
+          [ -n "$line" ] || { echo '::error::清单缺少 ISO 记录'; exit 1; }
+          read -r _ sum name <<<"$line"
+          iso="$out/desktop/iso/$name"
+          [ -f "$iso" ] || { echo "::error::ISO 不存在: $iso"; exit 1; }
+          got="$(sha256sum "$iso" | cut -d' ' -f1)"
+          [ "$got" = "$sum" ] || { echo '::error::ISO 与清单摘要不一致'; exit 1; }
+          [ -f "$iso.sha256" ] || { echo '::error::缺少 ISO 校验和文件'; exit 1; }
+
+      - name: Upload image artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: airymaxos-image
+          path: |
+            ${{ runner.temp }}/out/desktop/iso/*.iso
+            ${{ runner.temp }}/out/desktop/iso/*.sha256
+            ${{ runner.temp }}/out/desktop/iso/iso-manifest.txt
+            ${{ runner.temp }}/out/image-ci-manifest.txt
+            ${{ runner.temp }}/out/acceptance/*.ks
+            ${{ runner.temp }}/out/logs/*
+          retention-days: 7
+          if-no-files-found: warn
+          compression-level: 0
+
+  # ─── Job 2: 装机 + BIOS/UEFI 冷启动 + 桌面就绪断言 ─────────────────────
+  accept:
+    name: Install + Cold Boot (L2/L3)
+    runs-on: ubuntu-24.04
+    needs: assemble
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout distro submodule
+        run: git submodule update --init distro
+
+      - name: Install QEMU and UEFI firmware
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            qemu-system-x86 qemu-utils ovmf
+
+      - name: Enable KVM
+        run: |
+          if [ -e /dev/kvm ]; then
+            sudo chmod 666 /dev/kvm
+            echo 'KVM 已启用'
+          else
+            echo '::warning::/dev/kvm 不可用，回退 TCG（耗时显著上升）'
+          fi
+
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: airymaxos-image
+          path: ${{ runner.temp }}/image
+
+      - name: Verify ISO checksum
+        run: |
+          set -euo pipefail
+          iso="$(find "$RUNNER_TEMP/image" -name '*.iso' -type f | head -n 1)"
+          [ -n "$iso" ] || { echo '::error::artifact 中缺少 ISO'; exit 1; }
+          [ -f "$iso.sha256" ] || { echo '::error::缺少 ISO 校验和'; exit 1; }
+          ( cd "$(dirname "$iso")" && sha256sum -c "$(basename "$iso").sha256" )
+          printf 'AIRYMAX_ISO=%s\n' "$iso" >> "$GITHUB_ENV"
+
+      - name: Install and cold boot (BIOS + UEFI)
+        env:
+          ACCEPTANCE: ${{ inputs.acceptance }}
+        run: |
+          set -euo pipefail
+          marker=AIRYMAX-DESKTOP-READY
+          if [ "$ACCEPTANCE" = true ]; then
+            marker=AIRYMAX-SMOKE-PASS
+          fi
+          out="$RUNNER_TEMP/install"
+          mkdir -p "$out"
+          distro/scripts/install-test.sh --iso "$AIRYMAX_ISO" --out "$out" \
+            --runs 1 --firmware both --boot-marker "$marker" | tee "$out/tap.txt"
+
+      - name: Annotate boot failures
+        if: failure()
+        run: |
+          pattern='Kernel panic|Failed to start|Welcome to emergency mode|dracut-initqueue.*timeout|AIRYMAX-DESKTOP-FAIL|AIRYMAX-SMOKE-FAIL'
+          for log in "$RUNNER_TEMP"/install/run-*/boot.log; do
+            [ -f "$log" ] || continue
+            grep -nE "$pattern" "$log" | head -n 5 | while IFS= read -r hit; do
+              echo "::error file=${log}::${hit}"
+            done || true
+          done
+
+      - name: Upload acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: airymaxos-acceptance
+          path: |
+            ${{ runner.temp }}/install/tap.txt
+            ${{ runner.temp }}/install/install-manifest.txt
+            ${{ runner.temp }}/install/run-*/*.log
+          retention-days: 7
+          if-no-files-found: warn
