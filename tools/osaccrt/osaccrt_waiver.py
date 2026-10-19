@@ -37,6 +37,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Final
 
+from osaccrt_codec import as_text, check_keys, read_obj
 from osaccrt_evidence import STEP_LAYOUT, Manifest
 from osaccrt_model import (
     ExpResult,
@@ -114,12 +115,12 @@ def record(waiver: Waiver) -> bytes:
 
 def load(raw: str | bytes) -> Waiver:
     """从复核记录还原豁免结论，拒绝未知或缺失字段。"""
-    data = _json(raw)
-    _check_keys(data)
+    data = read_obj(raw, "review")
+    check_keys(data, _REQ, {_EVID}, "review")
     return Waiver(
         _basis(data["basis"]),
-        _text(data["reason"], "reason"),
-        _text(data.get(_EVID, ""), _EVID),
+        as_text(data["reason"], "reason"),
+        as_text(data.get(_EVID, ""), _EVID),
         _signers(data["signers"]),
     )
 
@@ -163,39 +164,10 @@ def _need_pack(result: ExpResult, waiver: Waiver) -> None:
         raise ValueError(f"waiver evidence not in pack: {waiver.evidence!r}")
 
 
-def _json(raw: str | bytes) -> dict[str, Any]:
-    """解析复核记录，语法或形状错误一律转换为 ValueError。"""
-    if isinstance(raw, bytes):
-        try:
-            raw = raw.decode("utf-8")
-        except UnicodeDecodeError as exc:
-            raise ValueError(f"review is not UTF-8: {exc}") from exc
-    if not isinstance(raw, str):
-        raise TypeError("review must be str or bytes")
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"review is not valid JSON: {exc}") from exc
-    if not isinstance(data, dict):
-        raise ValueError("review must be a JSON object")
-    return data
-
-
-def _check_keys(data: dict[str, Any]) -> None:
-    """拒绝未知字段与缺失的必填字段。"""
-    keys = set(data)
-    unknown = keys - (_REQ | {_EVID})
-    if unknown:
-        raise ValueError(f"unknown review fields: {sorted(unknown)}")
-    missing = _REQ - keys
-    if missing:
-        raise ValueError(f"missing review fields: {sorted(missing)}")
-
-
 def _basis(value: Any) -> Basis:
     """还原豁免依据枚举。"""
     try:
-        return Basis(_text(value, "basis"))
+        return Basis(as_text(value, "basis"))
     except ValueError as exc:
         raise ValueError(f"invalid waiver basis: {value!r}") from exc
 
@@ -204,11 +176,4 @@ def _signers(value: Any) -> tuple[str, str]:
     """还原双签邮箱对。"""
     if not isinstance(value, (list, tuple)) or len(value) != 2:
         raise ValueError("review signers must be a two-element array")
-    return (_text(value[0], "signers"), _text(value[1], "signers"))
-
-
-def _text(value: Any, name: str) -> str:
-    """要求字段为字符串。"""
-    if not isinstance(value, str):
-        raise ValueError(f"{name} must be a string")
-    return value
+    return (as_text(value[0], "signers"), as_text(value[1], "signers"))
