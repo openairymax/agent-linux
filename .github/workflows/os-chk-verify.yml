@@ -20,6 +20,8 @@
 # kernel/Makefile 亦位于该 gitlink 内）。
 # OS-BUILD-RELEASE 的受检对象为 tools/release-engineering/manifest.yaml 与
 # .github/workflows/release.yml，故两者亦纳入监听。
+# OS-BUILD-NIGHTLY 的受检对象为 tools/nightly/manifest.yaml 与
+# .github/workflows/nightly.yml，故两者亦纳入监听。
 # ===========================================================================
 
 name: os-chk-verify
@@ -40,6 +42,8 @@ on:
       - 'tools/kbuild-version/**'
       - 'tools/release-engineering/**'
       - '.github/workflows/release.yml'
+      - 'tools/nightly/**'
+      - '.github/workflows/nightly.yml'
       - 'ssot-registry.yaml'
       - 'kernel'
   push:
@@ -59,6 +63,8 @@ on:
       - 'tools/kbuild-version/**'
       - 'tools/release-engineering/**'
       - '.github/workflows/release.yml'
+      - 'tools/nightly/**'
+      - '.github/workflows/nightly.yml'
       - 'ssot-registry.yaml'
       - 'kernel'
 
@@ -89,9 +95,15 @@ jobs:
           pip install -r tools/btf-integration/requirements-dev.txt
           pip install -r tools/kbuild-version/requirements-dev.txt
           pip install -r tools/release-engineering/requirements-dev.txt
+          pip install -r tools/nightly/requirements-dev.txt
 
       - name: Run OS-CHK unit tests (pytest)
-        run: python3 -m pytest tools/os-chk/tests/ tools/airy-checkpatch/tests/ tools/defconfig-matrix/tests/ tools/ci-matrix/tests/ tools/btf-integration/tests/ tools/kbuild-version/tests/ tools/release-engineering/tests/ -q
+        run: |
+          python3 -m pytest \
+            tools/os-chk/tests/ tools/airy-checkpatch/tests/ \
+            tools/defconfig-matrix/tests/ tools/ci-matrix/tests/ \
+            tools/btf-integration/tests/ tools/kbuild-version/tests/ \
+            tools/release-engineering/tests/ tools/nightly/tests/ -q
 
       - name: Run OS-CHK unified gates
         run: |
