@@ -1,67 +1,89 @@
 # ===========================================================================
-# agent-linux (AirymaxOS) CI Pipeline
-# 每夜构建（2 jobs：测试套件 + 回滚/预算）
+# AirymaxOS nightly pipeline
 # ===========================================================================
 # Authority: docs/docs-linux/70-build-system/03-ci-cd-pipeline.md
-# Design: 合并 formal-verification + soak-test + chaos-test 为单一 job
-#         合并 auto-revert-on-regression + ci-budget 为单一 job
+#            docs/docs-linux/120-development-process/08-ci-cd-pipeline.md
+# Contract:  tools/nightly/manifest.yaml   （结构、预算与 helper 契约的 SSoT）
+# Gate:      python3 tools/nightly/nightly.py --check
+#
+# 约束：
+#   * nightly 结果不阻断 PR（§6.1），因此禁止 pull_request / push 触发。
+#   * 全局单实例：同一时刻只允许一次 nightly；不取消进行中的运行（§9.2）。
+#   * 托管 runner 单 job 硬上限 6 小时，超时预算不得超过 360 分钟。
+#   * formal-verify / soak-runner / chaos-runner / auto-bisect /
+#     create-revert-pr / ci-budget-check 尚未落地，清单登记为 deferred；
+#     脚本一旦存在，manifests 与守卫必须同步转为 available，否则 gate 失败。
 # ===========================================================================
 
 name: nightly
+
 on:
   schedule:
     - cron: '0 2 * * *'
   workflow_dispatch:
 
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
 jobs:
-  # ─── Job 1: 每夜测试套件 ───────────────────────────────────────────
-  # 合并原 formal-verification + soak-test + chaos-test
+  # ─── Job 1: 契约自校验 + 每夜测试套件 ──────────────────────────────
   nightly-test-suite:
     name: Nightly Test Suite (Formal + Soak + Chaos)
     runs-on: ubuntu-latest
-    timeout-minutes: 4320   # 72h max
+    timeout-minutes: 360   # 托管 runner 单 job 硬上限（6 小时）
     steps:
       - uses: actions/checkout@v4
         with: { submodules: recursive }
 
+      - name: Validate nightly contract
+        run: |
+          python3 -m pip install --quiet pyyaml
+          python3 tools/nightly/nightly.py --check
+
       - name: Formal verification (seL4-style)
         run: |
           if [ -f tools/formal-verify.py ]; then
-            python3 tools/formal-verify.py --target kernel/sched/core.c || \
-              echo "WARN: formal verification incomplete (expected in 0.1.1 design phase)"
-            python3 tools/formal-verify.py --target drivers/airymax/ipc/airy_ipc.c || \
-              echo "WARN: formal verification incomplete (expected in 0.1.1 design phase)"
-            python3 tools/formal-verify.py --target mm/share_pool.c || \
-              echo "WARN: formal verification incomplete (expected in 0.1.1 design phase)"
+            for target in kernel/sched/core.c \
+                          drivers/airymax/ipc/airy_ipc.c \
+                          mm/share_pool.c; do
+              python3 tools/formal-verify.py --target "$target"
+            done
           else
-            echo "SKIP: formal-verify.py not yet implemented (1.0.1+ verification path)"
+            echo "SKIP: formal-verify.py not yet implemented"
           fi
 
+      # 72h soak 需要 self-hosted runner（托管 runner 上限 6 小时），
+      # soak-runner.py 落地时须同步调整 runner 与清单。
       - name: 72h soak test (memory leak / refcount drift)
         run: |
           if [ -f tools/soak-runner.py ]; then
-            python3 tools/soak-runner.py --duration 72h --workload agent-busy-loop || \
-              echo "WARN: soak test skipped (no kernel binary in 0.1.1 design phase)"
+            python3 tools/soak-runner.py --duration 72h --workload \
+              agent-busy-loop
           else
             echo "SKIP: soak-runner.py not yet implemented"
           fi
 
-      - name: Chaos injection (CPU hotplug / mem hotremove / I/O error / net partition)
+      - name: Chaos injection (hotplug / hotremove / I/O / net partition)
         run: |
           if [ -f tools/chaos-runner.py ]; then
-            python3 tools/chaos-runner.py --profile full || \
-              echo "WARN: chaos test skipped (no kernel binary in 0.1.1 design phase)"
+            python3 tools/chaos-runner.py --profile full
           else
             echo "SKIP: chaos-runner.py not yet implemented"
           fi
 
   # ─── Job 2: 回滚或预算检查 ─────────────────────────────────────────
-  # 合并原 auto-revert-on-regression + ci-budget
   nightly-revert-or-budget:
     name: Auto-Revert or CI Budget Check
     runs-on: ubuntu-latest
     needs: nightly-test-suite
     if: always()
+    timeout-minutes: 30
+    env:
+      COMMIT: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
 
@@ -69,14 +91,12 @@ jobs:
         if: needs.nightly-test-suite.result == 'failure'
         run: |
           if [ -f tools/auto-bisect.py ]; then
-            python3 tools/auto-bisect.py --baseline last-green || \
-              echo "WARN: auto-bisect skipped (no commits to bisect in 0.1.1 design phase)"
+            python3 tools/auto-bisect.py --baseline last-green
           else
             echo "SKIP: auto-bisect.py not yet implemented"
           fi
           if [ -f tools/create-revert-pr.py ]; then
-            python3 tools/create-revert-pr.py --regression-commit $COMMIT || \
-              echo "WARN: create-revert-pr skipped"
+            python3 tools/create-revert-pr.py --regression-commit $COMMIT
           else
             echo "SKIP: create-revert-pr.py not yet implemented"
           fi
@@ -85,8 +105,7 @@ jobs:
         if: always()
         run: |
           if [ -f tools/ci-budget-check.py ]; then
-            python3 tools/ci-budget-check.py --max-minutes 60 || \
-              echo "WARN: CI budget check skipped (no actual CI runs in 0.1.1 design phase)"
+            python3 tools/ci-budget-check.py --max-minutes 60
           else
             echo "SKIP: ci-budget-check.py not yet implemented"
           fi
