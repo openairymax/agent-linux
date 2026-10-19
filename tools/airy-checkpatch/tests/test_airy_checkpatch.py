@@ -163,6 +163,16 @@ class TestCodeRules:
         assert "AIRY-CHECKPATCH-001" not in reported_ids(proc)
         assert proc.returncode == 1
 
+    def test_printk_inside_static_airy_function(self, perl, kernel_root,
+                                                tmp_path):
+        path = c_file(tmp_path, "static_airy.c",
+                      "static void airy_probe(void)", "{",
+                      "\tif (1) {", '\t\tprintk("hi\\n");', "\t}", "}")
+        proc = run_engine(perl, kernel_root, str(path))
+        assert "AIRY-CHECKPATCH-006" in reported_ids(proc)
+        assert "AIRY-CHECKPATCH-001" not in reported_ids(proc)
+        assert proc.returncode == 1
+
     def test_function_without_airy_prefix(self, perl, kernel_root, tmp_path):
         path = c_file(tmp_path, "naming.c",
                       "void badname(void)", "{", "}")
