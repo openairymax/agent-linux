@@ -121,6 +121,19 @@ class Store:
             _write_seal(pack, man, sealed)
         return pack / CHAIN
 
+    def pack(self, date: str, exp_id: str) -> Path:
+        """证据包目录路径；只做命名校验，不保证目录存在。"""
+        return self._pack(date, exp_id)
+
+    def find(self, exp_id: str) -> Manifest | None:
+        """按实验编号查找已封口包；编号全局唯一，未封口包不可见。"""
+        _check_id(exp_id)
+        with self._locked():
+            for item in self._walk():
+                if item.manifest.exp_id == exp_id:
+                    return item.manifest
+        return None
+
     def load(self, date: str, exp_id: str) -> Manifest:
         """读取并复核已封口证据包；链摘要不符即拒绝。"""
         return _sealed(self._pack(date, exp_id)).manifest
