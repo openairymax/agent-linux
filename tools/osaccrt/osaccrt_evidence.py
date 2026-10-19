@@ -193,7 +193,9 @@ def load(text: str) -> Manifest:
 
 def _link(head: str, exp_id: str, item: Evidence) -> str:
     """把一条证据接到链上；字段以换行分隔，杜绝歧义拼接。"""
-    payload = f"{head}\n{exp_id}\n{item.step.value}\n{item.path}\n{item.sha256}\n"
+    payload = "\n".join((
+        head, exp_id, item.step.value, item.path, item.sha256, ""
+    ))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
@@ -258,7 +260,9 @@ def _check_slot(item: Evidence) -> None:
             return
     elif item.path == base:
         return
-    raise ValueError(f"{item.step.value} evidence must live at {base}: {item.path!r}")
+    raise ValueError(
+        f"{item.step.value} evidence must live at {base}: {item.path!r}"
+    )
 
 
 def _th_dict(item: Threshold) -> dict[str, str]:

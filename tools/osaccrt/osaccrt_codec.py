@@ -25,6 +25,7 @@ Version:
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from typing import Any, Final
 
 __all__ = ["as_text", "as_texts", "check_keys", "read_obj"]
@@ -44,17 +45,17 @@ def read_obj(raw: str | bytes, what: str) -> dict[str, Any]:
     return data
 
 
-def check_keys(data: dict[str, Any], req: frozenset[str],
+def check_keys(data: Mapping[str, Any], req: frozenset[str],
                opt: frozenset[str] = _EMPTY,
                what: str = "record") -> None:
     """拒绝未知字段与缺失的必填字段。"""
     keys = set(data)
     unknown = keys - (req | opt)
     if unknown:
-        raise ValueError(f"unknown {what} fields: {sorted(unknown)}")
+        raise ValueError(f"{what} has unknown fields: {sorted(unknown)}")
     missing = req - keys
     if missing:
-        raise ValueError(f"missing {what} fields: {sorted(missing)}")
+        raise ValueError(f"{what} is missing fields: {sorted(missing)}")
 
 
 def as_text(value: Any, name: str) -> str:

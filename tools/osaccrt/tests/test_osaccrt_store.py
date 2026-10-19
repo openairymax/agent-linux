@@ -104,7 +104,12 @@ def test_write_requires_created_pack(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(
     "relpath",
-    ["manifest.json", "step-03-artifacts", "step-01-prepare.json/x", "../run.log"],
+    [
+        "manifest.json",
+        "step-03-artifacts",
+        "step-01-prepare.json/x",
+        "../run.log",
+    ],
 )
 def test_write_rejects_bad_slot(tmp_path: Path, relpath: str) -> None:
     """证据只能落在六步约定的文件或采集目录内。"""

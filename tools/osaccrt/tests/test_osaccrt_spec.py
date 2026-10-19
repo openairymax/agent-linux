@@ -63,7 +63,10 @@ def test_default_matches_nfr() -> None:
     sources = {item.source for item in table.thresholds}
     assert sources == set(EXPECTED)
     for source, rows in EXPECTED.items():
-        got = tuple((item.key, item.limit, item.unit) for item in table.for_source(source))
+        got = tuple(
+            (item.key, item.limit, item.unit)
+            for item in table.for_source(source)
+        )
         assert got == rows
 
 

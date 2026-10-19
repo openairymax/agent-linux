@@ -22,7 +22,9 @@ def make_th() -> om.Threshold:
     return om.Threshold("boot.time", "OS-ACC-BOOT-010", "60", "s")
 
 
-def make_result(evidences: tuple[om.Evidence, ...] = (RUN_EV,)) -> om.ExpResult:
+def make_result(
+    evidences: tuple[om.Evidence, ...] = (RUN_EV,)
+) -> om.ExpResult:
     """构造携带默认运行证据的实验结果。"""
     exp = om.ExpResult("exp-001", (make_th(),))
     exp.evidences.extend(evidences)
@@ -73,7 +75,8 @@ def test_chain_binds_order() -> None:
 
 def test_chain_binds_experiment() -> None:
     """跨实验拼接同组证据会改变链头。"""
-    assert oe.chain_head("exp-001", (RUN_EV,)) != oe.chain_head("exp-002", (RUN_EV,))
+    head = oe.chain_head("exp-001", (RUN_EV,))
+    assert head != oe.chain_head("exp-002", (RUN_EV,))
 
 
 def test_chain_binds_prev_head() -> None:
@@ -135,7 +138,8 @@ def test_dump_load_roundtrip_blocked() -> None:
     exp = make_result()
     exp.verdict = om.Verdict.BLOCKED
     exp.blocked_reason = "no sw_64 bare metal"
-    assert oe.load(oe.dump(make_manifest(result=exp))) == make_manifest(result=exp)
+    text = oe.dump(make_manifest(result=exp))
+    assert oe.load(text) == make_manifest(result=exp)
 
 
 def test_dump_is_canonical() -> None:
@@ -207,7 +211,9 @@ def test_manifest_rejects_misfiled_evidence() -> None:
 
 def test_manifest_accepts_capture_child() -> None:
     """采集产物必须位于 step-03-artifacts 目录内。"""
-    item = om.Evidence("step-03-artifacts/report.json", DIGEST_A, om.Step.CAPTURE)
+    item = om.Evidence(
+        "step-03-artifacts/report.json", DIGEST_A, om.Step.CAPTURE
+    )
     assert make_manifest(result=make_result((item,))).exp_id == "exp-001"
 
 
@@ -234,7 +240,8 @@ def test_manifest_rejects_duplicate_path() -> None:
 
 def test_load_rejects_bad_verdict() -> None:
     """判定值必须属于四态或 null。"""
-    text = oe.dump(make_manifest()).replace('"verdict": null', '"verdict": "OK"')
+    text = oe.dump(make_manifest())
+    text = text.replace('"verdict": null', '"verdict": "OK"')
     with pytest.raises(ValueError, match="verdict"):
         oe.load(text)
 
