@@ -1,62 +1,91 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
-"""
-kbuild_version.py — AirymaxOS Kbuild 版本注入一致性检查器
+"""AirymaxOS Kbuild 版本注入一致性检查器。
 
 以 tools/kbuild-version/manifest.yaml 为唯一事实源（SSoT），静态校验
 「版本四元组 × kernel/Makefile.airymaxos × 顶层 Makefile 的 include ×
-filechk_version.h 注入宏 × 契约快照」五者彼此一致，把散落在版本文件、顶层
-Makefile 与生成契约中的隐含约束收敛到一处清单，并检出任何一侧的漂移。
+filechk_version.h 注入宏 × 契约快照」五者彼此一致，把散落在版本文件、
+顶层 Makefile 与生成契约中的隐含约束收敛到一处清单，并检出任何一侧
+的漂移。
 
 设计原则（与项目铁律一致）：
-  * 清单是唯一事实源；四元组只在本表登记一次，工具的期望值全部由它推导，
-    避免第二事实源。
-  * 严禁桩实现：所有检查均读取真实文件内容，给出可复现的判定与证据。
+
+* 清单是唯一事实源；四元组只在本表登记一次，工具的期望值全部由它推导，
+  避免第二事实源。
+* 严禁桩实现：所有检查均读取真实文件内容，给出可复现的判定与证据。
 
 检查项：
-  1. 清单 schema 合法（必填字段、四元组取值域、路径形态）
-  2. 版本文件存在（清单 airymaxos_makefile ↔ 内核树）
-  3. 四元组取值与清单一致
-  4. 版本文件仅含版本四元组（OS-STD-049）
-  5. 顶层 Makefile 经 include 引入版本文件（OS-BUILD-010）
-  6. filechk_version.h 注入全部 AIRYMAXOS_* 宏（OS-BUILD-010）
-  7. 契约快照与四元组一致
-  8. 真实 version.h 与契约一致（给出 --version-h 时追加）
+
+1. 清单 schema 合法（必填字段、四元组取值域、路径形态）
+2. 版本文件存在（清单 airymaxos_makefile ↔ 内核树）
+3. 四元组取值与清单一致
+4. 版本文件仅含版本四元组（OS-STD-049）
+5. 顶层 Makefile 经 include 引入版本文件（OS-BUILD-010）
+6. filechk_version.h 注入全部 AIRYMAXOS_* 宏（OS-BUILD-010）
+7. 契约快照与四元组一致
+8. 真实 version.h 与契约一致（给出 --version-h 时追加）
 
 权威依据：
-  docs/docs-linux/70-build-system/01-kbuild-system.md
-    §5    filechk 版本注入与 Makefile.airymaxos
-    §5.2  Makefile.airymaxos 供应商版本注入（include 指令与注入宏清单）
-    OS-STD-049    Makefile.airymaxos 只放版本四元组，特性开关走 Kconfig
-    OS-BUILD-009  四元组变更须经发布管理评审并同步 kernel 子仓发行说明
-    OS-BUILD-010  version.h 必须经 filechk 生成，禁止裸 echo 覆盖
-  docs/docs-linux/160-compatibility/03-upstream-tracking.md §8
-    内核发布串 <kernel_version>-airymax.<airy_release>[.<patch>]
 
-Usage:
-    python3 tools/kbuild-version/kbuild_version.py [options]
+* docs/docs-linux/70-build-system/01-kbuild-system.md §5
+* OS-STD-049 / OS-BUILD-009 / OS-BUILD-010
+* docs/docs-linux/160-compatibility/03-upstream-tracking.md §8
 
-Options:
-    --repo-root PATH    仓库根（默认：自动探测）
-    --manifest PATH     版本清单（默认：tools/kbuild-version/manifest.yaml）
-    --version-h PATH    真实生成的 version.h；给出时追加第 8 项契约比对
-    --check             CI 模式：精简输出，仅退出码
+Example:
+    $ python3 tools/kbuild-version/kbuild_version.py --check
+    KBUILD-VERSION: PASS (7/7 checks)
+
+    $ python3 tools/kbuild-version/kbuild_version.py
+    ...（逐项报告）...
+    RESULT: PASS — 全部 7 项检查通过
 
 Exit codes:
     0 — 全部检查通过
     1 — 一项或多项检查失败
     2 — 用法/环境错误（清单缺失、YAML 非法、内核源码目录缺失等）
+
+Author:
+    SPHARX Ltd. - Airymax Team
+
+Version:
+    1.1.0
 """
+
+from __future__ import annotations
 
 import argparse
 import re
 import sys
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Sequence, Tuple, TypeAlias
 
 try:
     import yaml
 except ImportError:  # pragma: no cover - 环境缺失时在入口统一报错
     yaml = None
+
+__all__ = [
+    "CheckResult",
+    "ManifestError",
+    "build_checks",
+    "check_contract",
+    "check_include",
+    "check_macros",
+    "check_schema",
+    "check_tuple",
+    "check_vars",
+    "check_version_h",
+    "check_vfile",
+    "expect_vars",
+    "filechk_block",
+    "find_repo_root",
+    "load_manifest",
+    "main",
+    "parse_vars",
+    "print_report",
+    "render_contract",
+]
 
 # ─── Constants ─────────────────────────────────────────────────────────────
 
@@ -69,6 +98,12 @@ EXIT_USAGE = 2
 
 # 版本文件存在性门禁的检查名（schema/清单失败时复用同一名字报告阻塞原因）。
 GUARD_NAME = "版本文件存在（清单 airymaxos_makefile ↔ 内核树）"
+
+SCHEMA_NAME = "清单 schema 合法"
+INCLUDE_NAME = "顶层 Makefile 引入版本文件 (OS-BUILD-010)"
+MACRO_NAME = "filechk 注入全部 AIRYMAXOS_* 宏 (OS-BUILD-010)"
+CONTRACT_NAME = "契约快照与四元组一致"
+VERSION_H_NAME = "真实 version.h 与契约一致 (OS-BUILD-010)"
 
 MANIFEST_KEYS = frozenset(
     {"version", "airymaxos_makefile", "top_makefile", "contract",
@@ -95,17 +130,26 @@ FILECHK_NAME = "filechk_version.h"
 ASSIGN_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\s*[:+?]?=\s*(.*)$")
 AIRYMAXOS_DEFINE_PREFIX = "#define AIRYMAXOS_"
 
+TupleMap: TypeAlias = Dict[str, Any]
+Assigns: TypeAlias = List[Tuple[str, str]]
+
 
 # ─── Data model ────────────────────────────────────────────────────────────
 
 
+@dataclass(frozen=True)
 class CheckResult:
-    """单项检查结果。"""
+    """单项检查结果。
 
-    def __init__(self, name, passed, details=""):
-        self.name = name
-        self.passed = passed
-        self.details = details
+    Attributes:
+        name: 检查项名称，用于报告输出。
+        passed: 是否通过。
+        details: 失败时的可读证据；通过时为空串。
+    """
+
+    name: str
+    passed: bool
+    details: str = ""
 
 
 class ManifestError(Exception):
@@ -115,45 +159,75 @@ class ManifestError(Exception):
 # ─── Helpers ───────────────────────────────────────────────────────────────
 
 
-def find_repo_root():
+def find_repo_root() -> Path:
     """从脚本位置自动探测 agent-linux 仓库根。
 
     脚本位于 <repo_root>/tools/kbuild-version/kbuild_version.py。
+
+    Returns:
+        仓库根目录的绝对路径。
     """
     return Path(__file__).resolve().parent.parent.parent
 
 
-def load_manifest(path):
-    """读取并解析清单；缺失或 YAML 非法时抛 ManifestError。"""
+def load_manifest(path: str | Path) -> TupleMap:
+    """读取并解析清单。
+
+    Args:
+        path: 清单文件路径。
+
+    Returns:
+        清单映射。
+
+    Raises:
+        ManifestError: 文件缺失、不可读、YAML 非法或顶层非映射。
+    """
     if yaml is None:
-        raise ManifestError("PyYAML 不可用：请安装 pyyaml（见 requirements-dev.txt）")
+        raise ManifestError(
+            "PyYAML 不可用：请安装 pyyaml（见 requirements-dev.txt）")
     try:
         with open(path, "r", encoding="utf-8") as fh:
             data = yaml.safe_load(fh)
-    except FileNotFoundError:
-        raise ManifestError(f"清单文件不存在：{path}")
+    except FileNotFoundError as exc:
+        raise ManifestError(f"清单文件不存在：{path}") from exc
+    except OSError as exc:
+        raise ManifestError(f"清单文件不可读：{path}: {exc}") from exc
     except yaml.YAMLError as exc:
-        raise ManifestError(f"清单 YAML 解析失败：{exc}")
+        raise ManifestError(f"清单 YAML 解析失败：{exc}") from exc
     if not isinstance(data, dict):
         raise ManifestError("清单顶层必须是映射（mapping）")
     return data
 
 
-def parse_assignments(text):
-    """返回 Makefile 顶层赋值行 [(var, value), ...]，跳过注释与空行。"""
-    assignments = []
+def parse_vars(text: str) -> Assigns:
+    """解析 Makefile 顶层赋值行。
+
+    Args:
+        text: Makefile 文本。
+
+    Returns:
+        [(变量名, 字面值), ...]，跳过注释与空行，保持出现顺序。
+    """
+    assigns: Assigns = []
     for raw in text.splitlines():
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
         match = ASSIGN_RE.match(line)
         if match:
-            assignments.append((match.group(1), match.group(2).strip()))
-    return assignments
+            assigns.append((match.group(1), match.group(2).strip()))
+    return assigns
 
 
-def expected_assignments(tuple_map):
-    """由四元组推导版本文件中每个变量应有的字面值。"""
+def expect_vars(tuple_map: TupleMap) -> Dict[str, str]:
+    """由四元组推导版本文件中每个变量应有的字面值。
+
+    Args:
+        tuple_map: 版本四元组映射。
+
+    Returns:
+        变量名到期望字面值的映射（release 带双引号）。
+    """
     return {
         "AIRYMAXOS_LTS": str(tuple_map["lts"]),
         "AIRYMAXOS_MAJOR": str(tuple_map["major"]),
@@ -162,8 +236,15 @@ def expected_assignments(tuple_map):
     }
 
 
-def render_contract(tuple_map):
-    """由四元组渲染契约快照（期待被注入的 AIRYMAXOS_* 宏块）。"""
+def render_contract(tuple_map: TupleMap) -> str:
+    """由四元组渲染契约快照。
+
+    Args:
+        tuple_map: 版本四元组映射。
+
+    Returns:
+        期待被注入的 AIRYMAXOS_* 宏块文本（以换行结尾）。
+    """
     major = tuple_map["major"]
     minor = tuple_map["minor"]
     lines = [
@@ -177,8 +258,15 @@ def render_contract(tuple_map):
     return "\n".join(lines) + "\n"
 
 
-def extract_filechk_block(text):
-    """截取顶层 Makefile 中 define filechk_version.h ... endef 的块。"""
+def filechk_block(text: str) -> Optional[str]:
+    """截取顶层 Makefile 中的 filechk 注入块。
+
+    Args:
+        text: 顶层 Makefile 文本。
+
+    Returns:
+        `define filechk_version.h ... endef` 块；不存在或不闭合时为 None。
+    """
     lines = text.splitlines()
     start = next((i for i, line in enumerate(lines)
                   if line.strip().startswith(f"define {FILECHK_NAME}")), None)
@@ -189,21 +277,29 @@ def extract_filechk_block(text):
     return None if end is None else "\n".join(lines[start:end + 1])
 
 
-def _significant_lines(text):
-    """返回去除空行/首尾空白后的行列表，用于内容比对。"""
+def _norm_lines(text: str) -> List[str]:
+    """返回去除空行与首尾空白的行列表，用于内容比对。"""
     normalized = text.replace("\r\n", "\n").replace("\r", "\n")
     return [line.strip() for line in normalized.splitlines() if line.strip()]
 
 
-def _mismatch_detail(expected, actual):
-    """生成「期望 vs 实为」的可读差异，用于失败报告。"""
-    return (f"期望:\n{expected}\n实为:\n{actual}")
+def _mismatch(expected: str, actual: str) -> str:
+    """生成「期望 vs 实为」的可读差异。"""
+    return f"期望:\n{expected}\n实为:\n{actual}"
+
+
+def _read_text(path: Path) -> Optional[str]:
+    """读取 UTF-8 文本；文件缺失或不可读时返回 None。"""
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return None
 
 
 # ─── Checks ────────────────────────────────────────────────────────────────
 
 
-def _tuple_problems(tuple_map):
+def _tuple_problems(tuple_map: Any) -> List[str]:
     """校验四元组字段与取值域（0..255，适配 ((a) << 8) + (b) 打包）。"""
     if not isinstance(tuple_map, dict):
         return ["version_tuple 必须是映射（mapping）"]
@@ -221,8 +317,15 @@ def _tuple_problems(tuple_map):
     return problems
 
 
-def check_manifest_schema(manifest):
-    """校验清单 schema：必填字段、四元组取值域、路径形态。"""
+def check_schema(manifest: TupleMap) -> CheckResult:
+    """校验清单 schema：必填字段、四元组取值域、路径形态。
+
+    Args:
+        manifest: 清单映射。
+
+    Returns:
+        检查结果。
+    """
     problems = []
 
     unknown = set(manifest) - MANIFEST_KEYS
@@ -240,97 +343,162 @@ def check_manifest_schema(manifest):
         if isinstance(value, str) and value and not value.endswith(suffix):
             problems.append(f"{key} 形态非法（应以 {suffix} 结尾）")
 
-    return CheckResult("清单 schema 合法", not problems, "\n".join(problems))
+    return CheckResult(SCHEMA_NAME, not problems, "\n".join(problems))
 
 
-def check_version_file_present(manifest, repo_root):
-    """清单登记的版本文件在内核树中真实存在。"""
+def check_vfile(manifest: TupleMap, repo_root: Path) -> CheckResult:
+    """确认清单登记的版本文件在内核树中真实存在。
+
+    Args:
+        manifest: 清单映射。
+        repo_root: 仓库根目录。
+
+    Returns:
+        检查结果。
+    """
     rel = manifest["airymaxos_makefile"]
     ok = (repo_root / rel).is_file()
     return CheckResult(GUARD_NAME, ok, "" if ok else f"版本文件缺失: {rel}")
 
 
-def check_tuple_matches(assignments, manifest):
-    """版本文件中的四元组取值与清单一致。"""
-    actual = dict(assignments)
-    expected = expected_assignments(manifest["version_tuple"])
+def check_tuple(assigns: Assigns, manifest: TupleMap) -> CheckResult:
+    """校验版本文件中的四元组取值与清单一致。
+
+    Args:
+        assigns: 版本文件的变量赋值列表。
+        manifest: 清单映射。
+
+    Returns:
+        检查结果。
+    """
+    actual = dict(assigns)
+    expected = expect_vars(manifest["version_tuple"])
     problems = [
         f"{name} 期望 {want}，实为 {actual.get(name, '<缺失>')}"
         for name, want in expected.items()
         if actual.get(name) != want
     ]
-    return CheckResult("四元组取值与清单一致", not problems, "\n".join(problems))
+    return CheckResult("四元组取值与清单一致", not problems,
+                       "\n".join(problems))
 
 
-def check_only_version_vars(assignments):
-    """版本文件只允许出现版本四元组变量（OS-STD-049）。"""
-    extra = sorted({name for name, _ in assignments} - set(VERSION_VARS))
+def check_vars(assigns: Assigns) -> CheckResult:
+    """校验版本文件只出现版本四元组变量（OS-STD-049）。
+
+    Args:
+        assigns: 版本文件的变量赋值列表。
+
+    Returns:
+        检查结果。
+    """
+    extra = sorted({name for name, _ in assigns} - set(VERSION_VARS))
     problems = [f"存在四元组以外的变量赋值: {name}" for name in extra]
     return CheckResult("版本文件仅含版本四元组 (OS-STD-049)",
                        not problems, "\n".join(problems))
 
 
-def check_include_directive(manifest, repo_root):
-    """顶层 Makefile 经 include 引入版本文件（OS-BUILD-010）。"""
+def check_include(manifest: TupleMap, repo_root: Path) -> CheckResult:
+    """校验顶层 Makefile 经 include 引入版本文件（OS-BUILD-010）。
+
+    Args:
+        manifest: 清单映射。
+        repo_root: 仓库根目录。
+
+    Returns:
+        检查结果；顶层 Makefile 缺失时判失败而不是抛异常。
+    """
     rel = manifest["top_makefile"]
-    path = repo_root / rel
-    if not path.is_file():
-        return CheckResult("顶层 Makefile 引入版本文件 (OS-BUILD-010)",
-                           False, f"顶层 Makefile 缺失: {rel}")
-    ok = INCLUDE_DIRECTIVE in path.read_text(encoding="utf-8")
-    return CheckResult("顶层 Makefile 引入版本文件 (OS-BUILD-010)", ok,
+    text = _read_text(repo_root / rel)
+    if text is None:
+        return CheckResult(INCLUDE_NAME, False, f"顶层 Makefile 缺失: {rel}")
+    ok = INCLUDE_DIRECTIVE in text
+    return CheckResult(INCLUDE_NAME, ok,
                        "" if ok else f"{rel} 缺少指令: {INCLUDE_DIRECTIVE}")
 
 
-def check_filechk_macros(manifest, repo_root):
-    """filechk_version.h 注入全部 AIRYMAXOS_* 宏（OS-BUILD-010）。"""
-    path = repo_root / manifest["top_makefile"]
-    block = extract_filechk_block(path.read_text(encoding="utf-8"))
+def check_macros(manifest: TupleMap, repo_root: Path) -> CheckResult:
+    """校验 filechk_version.h 注入全部 AIRYMAXOS_* 宏（OS-BUILD-010）。
+
+    Args:
+        manifest: 清单映射。
+        repo_root: 仓库根目录。
+
+    Returns:
+        检查结果；顶层 Makefile 缺失时判失败而不是抛异常。
+    """
+    rel = manifest["top_makefile"]
+    text = _read_text(repo_root / rel)
+    if text is None:
+        return CheckResult(MACRO_NAME, False, f"顶层 Makefile 缺失: {rel}")
+    block = filechk_block(text)
     if block is None:
-        return CheckResult("filechk 注入全部 AIRYMAXOS_* 宏 (OS-BUILD-010)",
-                           False, f"未找到 define {FILECHK_NAME} 块")
+        return CheckResult(MACRO_NAME, False,
+                           f"未找到 define {FILECHK_NAME} 块")
     cleaned = block.replace("\\#", "#")
     missing = [name for name in INJECTED_MACROS
                if not re.search(r"#define\s+" + name + r"\b", cleaned)]
     problems = [f"filechk_version.h 未注入宏: {name}" for name in missing]
-    return CheckResult("filechk 注入全部 AIRYMAXOS_* 宏 (OS-BUILD-010)",
-                       not problems, "\n".join(problems))
+    return CheckResult(MACRO_NAME, not problems, "\n".join(problems))
 
 
-def check_contract(manifest, repo_root):
-    """契约快照与清单四元组渲染结果一致。"""
+def check_contract(manifest: TupleMap, repo_root: Path) -> CheckResult:
+    """校验契约快照与清单四元组渲染结果一致。
+
+    Args:
+        manifest: 清单映射。
+        repo_root: 仓库根目录。
+
+    Returns:
+        检查结果。
+    """
     rel = manifest["contract"]
-    path = repo_root / rel
-    if not path.is_file():
-        return CheckResult("契约快照与四元组一致", False, f"契约文件缺失: {rel}")
-    actual = _significant_lines(path.read_text(encoding="utf-8"))
-    expected = _significant_lines(render_contract(manifest["version_tuple"]))
+    text = _read_text(repo_root / rel)
+    if text is None:
+        return CheckResult(CONTRACT_NAME, False, f"契约文件缺失: {rel}")
+    actual = _norm_lines(text)
+    expected = _norm_lines(render_contract(manifest["version_tuple"]))
     ok = actual == expected
-    return CheckResult("契约快照与四元组一致", ok,
-                       "" if ok else _mismatch_detail("\n".join(expected),
-                                                      "\n".join(actual)))
+    return CheckResult(CONTRACT_NAME, ok,
+                       "" if ok else _mismatch("\n".join(expected),
+                                               "\n".join(actual)))
 
 
-def check_real_version_h(manifest, version_h):
-    """真实生成的 version.h 中的 AIRYMAXOS_* 宏块与契约一致（OS-BUILD-010）。"""
-    name = "真实 version.h 与契约一致 (OS-BUILD-010)"
+def check_version_h(manifest: TupleMap, version_h: str | Path) -> CheckResult:
+    """校验真实生成的 version.h 中的 AIRYMAXOS_* 宏块与契约一致。
+
+    Args:
+        manifest: 清单映射。
+        version_h: 真实生成的 version.h 路径。
+
+    Returns:
+        检查结果。
+    """
     path = Path(version_h)
-    if not path.is_file():
-        return CheckResult(name, False, f"version.h 不存在: {version_h}")
-    actual = _significant_lines(path.read_text(encoding="utf-8"))
-    actual = [line for line in actual if line.startswith(AIRYMAXOS_DEFINE_PREFIX)]
-    expected = _significant_lines(render_contract(manifest["version_tuple"]))
+    text = _read_text(path)
+    if text is None:
+        return CheckResult(VERSION_H_NAME, False,
+                           f"version.h 不存在: {version_h}")
+    actual = [line for line in _norm_lines(text)
+              if line.startswith(AIRYMAXOS_DEFINE_PREFIX)]
+    expected = _norm_lines(render_contract(manifest["version_tuple"]))
     ok = actual == expected
-    return CheckResult(name, ok,
-                       "" if ok else _mismatch_detail("\n".join(expected),
-                                                      "\n".join(actual)))
+    return CheckResult(VERSION_H_NAME, ok,
+                       "" if ok else _mismatch("\n".join(expected),
+                                               "\n".join(actual)))
 
 
 # ─── Report ────────────────────────────────────────────────────────────────
 
 
-def print_report(results, manifest, check_mode):
-    """打印检查报告。"""
+def print_report(results: Sequence[CheckResult], manifest: TupleMap,
+                 check_mode: bool) -> None:
+    """打印检查报告。
+
+    Args:
+        results: 检查结果序列。
+        manifest: 清单映射，用于输出清单版本。
+        check_mode: 为 True 时只输出单行汇总，供 CI 消费。
+    """
     total = len(results)
     passed = sum(1 for r in results if r.passed)
     failed = total - passed
@@ -372,31 +540,46 @@ def print_report(results, manifest, check_mode):
 # ─── Main ──────────────────────────────────────────────────────────────────
 
 
-def build_checks(manifest, repo_root, version_h=None):
-    """按清单 schema 与版本文件存在性决定是否继续执行内容类检查。"""
-    schema = check_manifest_schema(manifest)
+def build_checks(manifest: TupleMap, repo_root: Path,
+                 version_h: Optional[str] = None) -> List[CheckResult]:
+    """按清单 schema 与版本文件存在性决定是否继续执行内容类检查。
+
+    Args:
+        manifest: 清单映射。
+        repo_root: 仓库根目录。
+        version_h: 真实 version.h 路径；给出时追加第 8 项契约比对。
+
+    Returns:
+        检查结果列表；schema 或版本文件门禁失败时提前短路。
+    """
+    schema = check_schema(manifest)
     if not schema.passed:
         return [schema]
-    guard = check_version_file_present(manifest, repo_root)
+    guard = check_vfile(manifest, repo_root)
     if not guard.passed:
         return [schema, guard]
-    text = (repo_root / manifest["airymaxos_makefile"]).read_text(encoding="utf-8")
-    assignments = parse_assignments(text)
+    text = _read_text(repo_root / manifest["airymaxos_makefile"]) or ""
+    assigns = parse_vars(text)
     results = [
         schema,
         guard,
-        check_tuple_matches(assignments, manifest),
-        check_only_version_vars(assignments),
-        check_include_directive(manifest, repo_root),
-        check_filechk_macros(manifest, repo_root),
+        check_tuple(assigns, manifest),
+        check_vars(assigns),
+        check_include(manifest, repo_root),
+        check_macros(manifest, repo_root),
         check_contract(manifest, repo_root),
     ]
     if version_h is not None:
-        results.append(check_real_version_h(manifest, version_h))
+        results.append(check_version_h(manifest, version_h))
     return results
 
 
-def main(argv=None):
+def main(argv: Optional[Sequence[str]] = None) -> None:
+    """命令行入口。
+
+    Args:
+        argv: 参数列表；None 时取 sys.argv[1:]。
+    """
     parser = argparse.ArgumentParser(
         description="AirymaxOS Kbuild 版本注入一致性检查器 "
                     "(OS-STD-049, OS-BUILD-010)",
