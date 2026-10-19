@@ -346,10 +346,11 @@ def detect_source_commit(path):
     Returns the commit hash, or None when the path is not inside a git work
     tree (e.g. the docs submodule is not checked out).
     """
-    directory = str(Path(path).resolve().parent)
+    target = Path(path).resolve()
     try:
         proc = subprocess.run(
-            ["git", "-C", directory, "rev-parse", "HEAD"],
+            ["git", "-C", str(target.parent), "log", "-1", "--format=%H",
+             "--", target.name],
             capture_output=True, text=True, check=False)
     except OSError:
         return None

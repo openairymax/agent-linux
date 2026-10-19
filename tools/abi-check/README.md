@@ -11,7 +11,7 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 验证 agent-linux 系统调用编号的 ABI 稳定性，对齐
 **OS-IRON-001（用户空间 ABI 永不破坏）**。
 
-工具从四个权威来源提取 syscall 编号并进行四方对比，同时与基线快照
+工具从六个权威来源提取 syscall 编号并进行交叉对比，同时与基线快照
 对比确保编号不可变更性：
 
 | 来源 | 文件 | 角色 |
@@ -19,6 +19,8 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 | SSoT 文档 | `../docs/docs-linux/140-application-development/07-syscall-registry.md` | 唯一权威注册表 |
 | UAPI 头文件 | `kernel/include/uapi/asm-generic/unistd.h` | 用户空间编号定义 |
 | 内核入口表 | `kernel/arch/x86/entry/syscalls/syscall_64.tbl` | 内核注册编号 |
+| sw_64 入口表 | `kernel/arch/sw_64/kernel/syscalls/syscall.tbl` | sw_64 位置展开 |
+| 通用表接线 | `arch/{riscv,loongarch}` UAPI include + 表展开形式 | asm-generic 继承校验 |
 | [SC] 契约头 | `kernel/include/uapi/linux/airymax/syscalls.h` | 共享契约宏定义 |
 | 派生契约快照 | `tools/abi-check/contract/syscall_registry.snapshot.json` | SSoT 缺失时的只读回退源 |
 
@@ -54,8 +56,10 @@ tools/abi-check/
 | 6 | [SC] 契约头一致 | syscalls.h 中 4 核心宏与预留标记（BASE/END/SLOTS_MAX）与 SSoT 及各源一致 |
 | 7 | 预留槽登记一致 | 552-571 共 20 槽在 unistd.h / syscall_64.tbl 均按 `airy_reserved_N` 完整登记 |
 | 8 | tbl ABI 列与入口点 | syscall_64.tbl 中 airy 条目 abi=common，核心入口为 `sys_airy_sys_*` |
-| 9 | 基线一致 | 当前 ABI 与 abi_baseline.json 快照一致（编号不可变更） |
-| 10 | SSoT 契约快照一致 | 派生契约快照与权威 SSoT 的契约内容一致；SSoT 缺失时以快照运行并标注溯源 |
+| 9 | sw_64 号段落位 | sw_64 `syscall.tbl` 中 548-571 与 SSoT 同号，核心入口与预留入口正确 |
+| 10 | 通用表接线 | riscv/loongarch 保留 `<asm-generic/unistd.h>` include 链与表展开形式，`syscalls.h` 裸原型齐备 |
+| 11 | 基线一致 | 当前 ABI 与 abi_baseline.json 快照一致（编号不可变更） |
+| 12 | SSoT 契约快照一致 | 派生契约快照与权威 SSoT 的契约内容一致；SSoT 缺失时以快照运行并标注溯源 |
 
 ## 使用方法
 
@@ -79,13 +83,16 @@ Sources:
   snapshot        : tools/abi-check/contract/syscall_registry.snapshot.json
   unistd.h        : kernel/include/uapi/asm-generic/unistd.h
   syscall_64.tbl  : kernel/arch/x86/entry/syscalls/syscall_64.tbl
+  sw_64 syscall.tbl: kernel/arch/sw_64/kernel/syscalls/syscall.tbl
   [SC] syscalls.h : kernel/include/uapi/linux/airymax/syscalls.h
+  riscv table     : kernel/arch/riscv/kernel/syscall_table.c
+  loongarch table : kernel/arch/loongarch/kernel/syscall.c
   baseline        : tools/abi-check/abi_baseline.json
 
 SSoT version:     v1.0.1
 Baseline version: v1.0.1
 
-Checks: 10/10 passed, 0 failed
+Checks: 12/12 passed, 0 failed
 
 [+] PASS: 三方一致性 (SSoT / unistd.h / syscall_64.tbl)
 [+] PASS: 编号起点为 548
@@ -95,6 +102,8 @@ Checks: 10/10 passed, 0 failed
 [+] PASS: [SC] 契约头一致 (syscalls.h)
 [+] PASS: 预留槽登记一致 (552-571)
 [+] PASS: syscall_64.tbl ABI 列与入口点正确
+[+] PASS: sw_64 号段 548-571 落位一致
+[+] PASS: riscv/loongarch 通用表接线
 [+] PASS: 编号与基线快照一致
 [+] PASS: SSoT 契约快照一致
 
@@ -112,8 +121,8 @@ python3 tools/abi-check/abi_check.py --check
 标注回退来源：
 
 ```text
-[INFO] SSoT source: contract snapshot (../docs unavailable) — 源 docs-linux@08a96147e7e3, sha256=76148af4ce37…, doc_version=v1.0.1
-ABI CHECK: PASS (10/10 checks)
+[INFO] SSoT source: contract snapshot (../docs unavailable) — 源 docs-linux@<commit>, sha256=<hash>…, doc_version=v1.0.1
+ABI CHECK: PASS (12/12 checks)
 ```
 
 ### 跳过基线检查
@@ -131,6 +140,7 @@ python3 tools/abi-check/abi_check.py \
     --snapshot-path /path/to/syscall_registry.snapshot.json \
     --unistd-path /path/to/unistd.h \
     --tbl-path /path/to/syscall_64.tbl \
+    --sw64-tbl-path /path/to/syscall.tbl \
     --sc-header-path /path/to/syscalls.h \
     --baseline /path/to/abi_baseline.json
 ```
@@ -160,7 +170,7 @@ python3 tools/abi-check/abi_check.py --check --require-ssot
     python3 tools/abi-check/abi_check.py --check
 ```
 
-`--check` 模式下，通过时输出 `ABI CHECK: PASS (10/10 checks)`，失败时
+`--check` 模式下，通过时输出 `ABI CHECK: PASS (12/12 checks)`，失败时
 输出失败项摘要。CI 仅需检查退出码即可。
 
 ### 单元测试
@@ -192,14 +202,14 @@ python3 -m pytest tools/abi-check/tests/ -q
 # 从权威 SSoT 重新导出快照（含源仓 commit 与 sha256 溯源）
 python3 tools/abi-check/abi_check.py --update-snapshot
 
-# 重新运行检查；第 10 项会做漂移比对，不一致即失败
+# 重新运行检查；第 12 项会做漂移比对，不一致即失败
 python3 tools/abi-check/abi_check.py --check
 ```
 
 规则：
 
 - 快照只能由 `--update-snapshot` 生成，禁止手工编辑。
-- 权威 SSoT 可得的 CI 环境中，第 10 项检查会比对派生快照与文档的契约
+- 权威 SSoT 可得的 CI 环境中，第 12 项检查会比对派生快照与文档的契约
   内容（linux_base / reserved_range / doc_version / syscall 宏与编号映射）；
   文档变更后若未刷新快照，门禁失败并提示运行 `--update-snapshot`。
 - `--update-snapshot` 与 `--require-ssot` 在 SSoT 缺失时均以退出码 2
