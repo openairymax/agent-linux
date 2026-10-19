@@ -46,6 +46,16 @@ Exit codes:
     0 — 合并成功
     1 — 内容冲突或 SPDX 语义非法（版本/许可不一致、同键内容冲突等）
     2 — 用法/解析错误（缺少输入、文件不可读、非 JSON 等）
+
+Example:
+    >>> main(["--output", "sbom.spdx.json", "a.spdx.json", "b.spdx.json"])
+    0
+
+Author:
+    SPHARX Ltd. - Airymax Team
+
+Version:
+    1.1.0
 """
 
 from __future__ import annotations
@@ -54,8 +64,20 @@ import argparse
 import json
 import os
 import sys
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
+
+__all__ = [
+    "MergeError",
+    "ParseError",
+    "build_parser",
+    "load_fragment",
+    "main",
+    "merge_documents",
+    "write_document",
+]
 
 # ─── Constants ─────────────────────────────────────────────────────────────
 
@@ -66,7 +88,7 @@ EXIT_USAGE = 2
 SPDX_VERSION = "SPDX-2.3"
 DATA_LICENSE = "CC0-1.0"
 DOC_SPDXID = "SPDXRef-DOCUMENT"
-TOOL_CREATOR = "Tool: merge_sbom.py-1.0.0"
+TOOL_CREATOR = "Tool: merge_sbom.py-1.1.0"
 
 DEFAULT_NAME = "agent-linux"
 NAMESPACE_PREFIX = "https://airymaxos.com/spdx/"
@@ -78,7 +100,12 @@ LIST_FIELDS = (
     ("externalDocumentRefs", "externalDocumentId"),
     ("hasExtractedLicensingInfos", "licenseId"),
 )
+LIST_KEYS = dict(LIST_FIELDS)
 
+# ─── Types ─────────────────────────────────────────────────────────────────
+
+JsonDoc = dict[str, Any]
+Fragment = tuple[Path, JsonDoc]
 
 # ─── Errors ────────────────────────────────────────────────────────────────
 
@@ -94,51 +121,75 @@ class MergeError(Exception):
 # ─── Helpers ───────────────────────────────────────────────────────────────
 
 
-def _canonical(obj) -> str:
-    """对象的内容指纹：键序无关的紧凑 JSON 表示。"""
+def _canonical(obj: Any) -> str:
+    """计算对象的内容指纹：键序无关的紧凑 JSON 表示。
+
+    Args:
+        obj: 任意可被 JSON 序列化的对象。
+
+    Returns:
+        规范化后的紧凑 JSON 字符串。
+    """
     return json.dumps(obj, sort_keys=True, separators=(",", ":"))
 
 
-def load_fragment(path: Path):
-    """读取一个 SPDX JSON 分片；不可读取或非 JSON 对象时抛 ParseError。"""
+def load_fragment(path: Path) -> JsonDoc:
+    """读取一个 SPDX JSON 分片。
+
+    Args:
+        path: 分片文件路径。
+
+    Returns:
+        解析后的 SPDX 文档对象。
+
+    Raises:
+        ParseError: 文件不可读、非合法 JSON 或顶层不是对象。
+    """
     try:
         text = path.read_text(encoding="utf-8")
     except OSError as exc:
-        raise ParseError(f"无法读取输入分片 {path}: {exc}")
+        raise ParseError(f"无法读取输入分片 {path}: {exc}") from exc
     try:
         doc = json.loads(text)
     except json.JSONDecodeError as exc:
-        raise ParseError(f"输入分片不是合法 JSON {path}: {exc}")
+        raise ParseError(f"输入分片不是合法 JSON {path}: {exc}") from exc
     if not isinstance(doc, dict):
         raise ParseError(f"输入分片顶层必须是 JSON 对象: {path}")
     return doc
 
 
-def _resolve_created() -> str:
-    """由 SOURCE_DATE_EPOCH 派生 ISO 8601 时间戳（未设时取当前 UTC）。"""
+def _created_stamp() -> str:
+    """由 SOURCE_DATE_EPOCH 派生 ISO 8601 时间戳（未设时取当前 UTC）。
+
+    Returns:
+        `YYYY-MM-DDTHH:MM:SSZ` 格式的时间戳。
+
+    Raises:
+        ParseError: SOURCE_DATE_EPOCH 不是合法整数。
+    """
     epoch = os.environ.get("SOURCE_DATE_EPOCH")
     if not epoch:
         moment = datetime.now(tz=timezone.utc)
     else:
         try:
             moment = datetime.fromtimestamp(int(epoch), tz=timezone.utc)
-        except ValueError:
-            raise ParseError(f"SOURCE_DATE_EPOCH 非法: {epoch!r}")
+        except ValueError as exc:
+            raise ParseError(f"SOURCE_DATE_EPOCH 非法: {epoch!r}") from exc
     return moment.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _default_namespace(name: str) -> str:
+def _namespace(name: str) -> str:
     """未显式给出命名空间时由文档 name 派生。"""
     return NAMESPACE_PREFIX + name
 
 
-def _version_tuple(text: str):
+def _version_tuple(text: str) -> tuple[int, ...]:
     """把 "3.23" 之类的版本串转为可比较元组。"""
     return tuple(int(chunk) if chunk.isdigit() else -1
                  for chunk in text.split("."))
 
 
-def _max_version(current, candidate):
+def _max_version(current: str | None, candidate: str) -> str:
     """取较大的 licenseListVersion。"""
     if current is None:
         return candidate
@@ -152,10 +203,21 @@ def _max_version(current, candidate):
 class _Accumulator:
     """按去重键累积条目；同键内容不一致即判冲突。"""
 
-    def __init__(self):
-        self._items = {}
+    def __init__(self) -> None:
+        self._items: dict[Any, JsonDoc] = {}
 
-    def add(self, key, item, path, label):
+    def add(self, key: Any, item: JsonDoc, path: Path, label: str) -> None:
+        """并入一条记录。
+
+        Args:
+            key: 去重键。
+            item: 待并入的 JSON 对象。
+            path: 来源分片（用于错误信息）。
+            label: 字段名（用于错误信息）。
+
+        Raises:
+            MergeError: 同键记录内容不一致。
+        """
         previous = self._items.get(key)
         if previous is None:
             self._items[key] = item
@@ -163,12 +225,17 @@ class _Accumulator:
         if _canonical(previous) != _canonical(item):
             raise MergeError(f"{path}: {label} 键 {key!r} 内容冲突")
 
-    def values(self):
+    def values(self) -> list[JsonDoc]:
+        """返回已累积的全部记录。"""
         return list(self._items.values())
 
 
-def _check_document_identity(path, doc):
-    """校验分片的文档级固定字段取值。"""
+def _check_ident(path: Path, doc: JsonDoc) -> None:
+    """校验分片的文档级固定字段取值。
+
+    Raises:
+        MergeError: spdxVersion 或 dataLicense 与规范不符。
+    """
     version = doc.get("spdxVersion")
     if version != SPDX_VERSION:
         raise MergeError(
@@ -179,8 +246,16 @@ def _check_document_identity(path, doc):
             f"{path}: dataLicense 必须为 {DATA_LICENSE}（实际 {license_id!r}）")
 
 
-def _collect_list_fields(path, doc, accumulators):
-    """把 LIST_FIELDS 中的列表型字段并入对应累积器。"""
+def _collect_lists(
+    path: Path,
+    doc: JsonDoc,
+    accs: dict[str, _Accumulator],
+) -> None:
+    """把 LIST_FIELDS 中的列表型字段并入对应累积器。
+
+    Raises:
+        MergeError: 字段不是数组、元素不是对象或缺少去重键。
+    """
     for field, key_name in LIST_FIELDS:
         items = doc.get(field)
         if items is None:
@@ -193,11 +268,15 @@ def _collect_list_fields(path, doc, accumulators):
             key = item.get(key_name)
             if not isinstance(key, str) or not key:
                 raise MergeError(f"{path}: {field} 元素缺少非空 {key_name}")
-            accumulators[field].add(key, item, path, field)
+            accs[field].add(key, item, path, field)
 
 
-def _collect_relationships(path, doc, acc):
-    """把 relationships 按 (源, 类型, 目标) 三元组并入累积器。"""
+def _collect_rels(path: Path, doc: JsonDoc, acc: _Accumulator) -> None:
+    """把 relationships 按 (源, 类型, 目标) 三元组并入累积器。
+
+    Raises:
+        MergeError: relationships 结构非法。
+    """
     rels = doc.get("relationships")
     if rels is None:
         return
@@ -215,8 +294,16 @@ def _collect_relationships(path, doc, acc):
         acc.add(key, rel, path, "relationship")
 
 
-def _collect_creation_info(path, doc, creators):
-    """并入 creators 集合并返回该分片声明的 licenseListVersion。"""
+def _collect_info(
+    path: Path,
+    doc: JsonDoc,
+    creators: set[str],
+) -> str | None:
+    """并入 creators 集合并返回该分片声明的 licenseListVersion。
+
+    Raises:
+        MergeError: creationInfo 不是对象。
+    """
     info = doc.get("creationInfo")
     if info is None:
         return None
@@ -225,40 +312,62 @@ def _collect_creation_info(path, doc, creators):
     for creator in info.get("creators") or []:
         if isinstance(creator, str) and creator:
             creators.add(creator)
-    return info.get("licenseListVersion")
+    version = info.get("licenseListVersion")
+    return str(version) if version else None
 
 
 # ─── Merge ─────────────────────────────────────────────────────────────────
 
 
-def merge_documents(fragments, name, namespace, created):
-    """把 [(path, doc), ...] 分片合并为单一 SPDX 2.3 文档对象。"""
-    accumulators = {field: _Accumulator() for field, _ in LIST_FIELDS}
+def merge_documents(
+    fragments: Sequence[Fragment],
+    name: str,
+    namespace: str,
+    created: str,
+) -> JsonDoc:
+    """把多个 SPDX 分片合并为单一 SPDX 2.3 文档对象。
+
+    Args:
+        fragments: `(来源路径, 文档对象)` 序列。
+        name: 合成文档 name。
+        namespace: 合成文档 documentNamespace。
+        created: 合成文档 creationInfo.created。
+
+    Returns:
+        合并后的 SPDX 文档对象（列表字段均已排序）。
+
+    Raises:
+        MergeError: 分片语义非法或同键内容冲突。
+    """
+    accs = {field: _Accumulator() for field, _ in LIST_FIELDS}
     relationships = _Accumulator()
-    creators = set()
-    license_list_version = None
+    creators: set[str] = set()
+    license_list_version: str | None = None
 
     for path, doc in fragments:
-        _check_document_identity(path, doc)
-        _collect_list_fields(path, doc, accumulators)
-        _collect_relationships(path, doc, relationships)
-        llv = _collect_creation_info(path, doc, creators)
-        if llv:
-            license_list_version = _max_version(license_list_version, str(llv))
+        _check_ident(path, doc)
+        _collect_lists(path, doc, accs)
+        _collect_rels(path, doc, relationships)
+        declared = _collect_info(path, doc, creators)
+        if declared:
+            license_list_version = _max_version(license_list_version, declared)
 
     creators.add(TOOL_CREATOR)
-    creation_info = {"creators": sorted(creators), "created": created}
+    creation_info: JsonDoc = {
+        "creators": sorted(creators),
+        "created": created,
+    }
     if license_list_version:
         creation_info["licenseListVersion"] = license_list_version
 
-    document = {
+    document: JsonDoc = {
         "spdxVersion": SPDX_VERSION,
         "dataLicense": DATA_LICENSE,
         "SPDXID": DOC_SPDXID,
         "name": name,
         "documentNamespace": namespace,
         "creationInfo": creation_info,
-        "packages": sorted(accumulators["packages"].values(),
+        "packages": sorted(accs["packages"].values(),
                            key=lambda item: item["SPDXID"]),
         "relationships": sorted(
             relationships.values(),
@@ -267,27 +376,36 @@ def merge_documents(fragments, name, namespace, created):
     }
     for field in ("files", "externalDocumentRefs",
                   "hasExtractedLicensingInfos"):
-        values = accumulators[field].values()
+        values = accs[field].values()
         if values:
-            key_name = dict(LIST_FIELDS)[field]
+            key_name = LIST_KEYS[field]
             document[field] = sorted(values, key=lambda item: item[key_name])
     return document
 
 
-def write_document(document, output: Path):
-    """以确定性 JSON 写出合并结果；写入失败时抛 ParseError。"""
+def write_document(document: JsonDoc, output: Path) -> None:
+    """以确定性 JSON 写出合并结果。
+
+    Args:
+        document: 合并后的 SPDX 文档对象。
+        output: 输出路径。
+
+    Raises:
+        ParseError: 输出目录或文件不可写。
+    """
     try:
         output.parent.mkdir(parents=True, exist_ok=True)
         text = json.dumps(document, indent=2, sort_keys=True) + "\n"
         output.write_text(text, encoding="utf-8")
     except OSError as exc:
-        raise ParseError(f"无法写入输出 {output}: {exc}")
+        raise ParseError(f"无法写入输出 {output}: {exc}") from exc
 
 
 # ─── Main ──────────────────────────────────────────────────────────────────
 
 
-def build_parser():
+def build_parser() -> argparse.ArgumentParser:
+    """构建命令行解析器。"""
     parser = argparse.ArgumentParser(
         description="AirymaxOS SPDX 2.3 SBOM 分片合并器 "
                     "(docs/docs-linux/190-distribution/06-sbom-generation.md)",
@@ -306,19 +424,27 @@ def build_parser():
     return parser
 
 
-def main(argv=None):
+def main(argv: Sequence[str] | None = None) -> int:
+    """命令行入口。
+
+    Args:
+        argv: 参数序列；None 表示使用 `sys.argv[1:]`。
+
+    Returns:
+        进程退出码（0 成功 / 1 冲突 / 2 用法或解析错误）。
+    """
     args = build_parser().parse_args(argv)
     if not args.inputs:
         print("ERROR: 至少需要一个输入分片", file=sys.stderr)
         return EXIT_USAGE
 
     try:
-        fragments = []
+        fragments: list[Fragment] = []
         for raw in args.inputs:
             path = Path(raw)
             fragments.append((path, load_fragment(path)))
-        created = _resolve_created()
-        namespace = args.namespace or _default_namespace(args.name)
+        created = _created_stamp()
+        namespace = args.namespace or _namespace(args.name)
         document = merge_documents(fragments, args.name, namespace, created)
         write_document(document, Path(args.output))
     except ParseError as exc:
