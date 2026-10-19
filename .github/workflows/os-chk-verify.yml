@@ -25,6 +25,8 @@
 # OS-BUILD-REPO-SCAFFOLD 的受检对象为 tools/repo-scaffold/manifest.yaml、
 # .gitmodules 与八子仓检出目录，故 tools/repo-scaffold/** 与 .gitmodules
 # 亦纳入监听。
+# OS-OPS-ROLLBACK 的受检对象为 tools/airy-rollback/manifest.yaml 及其编排
+# 器，故 tools/airy-rollback/** 亦纳入监听。
 # ===========================================================================
 
 name: os-chk-verify
@@ -48,6 +50,7 @@ on:
       - 'tools/nightly/**'
       - '.github/workflows/nightly.yml'
       - 'tools/repo-scaffold/**'
+      - 'tools/airy-rollback/**'
       - '.gitmodules'
       - 'ssot-registry.yaml'
       - 'kernel'
@@ -71,6 +74,7 @@ on:
       - 'tools/nightly/**'
       - '.github/workflows/nightly.yml'
       - 'tools/repo-scaffold/**'
+      - 'tools/airy-rollback/**'
       - '.gitmodules'
       - 'ssot-registry.yaml'
       - 'kernel'
@@ -104,6 +108,7 @@ jobs:
           pip install -r tools/release-engineering/requirements-dev.txt
           pip install -r tools/nightly/requirements-dev.txt
           pip install -r tools/repo-scaffold/requirements-dev.txt
+          pip install -r tools/airy-rollback/requirements-dev.txt
 
       - name: Run OS-CHK unit tests (pytest)
         run: |
@@ -112,7 +117,7 @@ jobs:
             tools/defconfig-matrix/tests/ tools/ci-matrix/tests/ \
             tools/btf-integration/tests/ tools/kbuild-version/tests/ \
             tools/release-engineering/tests/ tools/nightly/tests/ \
-            tools/repo-scaffold/tests/ -q
+            tools/repo-scaffold/tests/ tools/airy-rollback/tests/ -q
 
       - name: Run OS-CHK unified gates
         run: |

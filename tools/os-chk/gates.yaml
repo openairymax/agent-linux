@@ -27,7 +27,7 @@
 #
 # version: 注册表版本，随门禁增删而递增。
 
-version: "1.8.0"
+version: "1.9.0"
 
 gates:
   # ── 文档类 ────────────────────────────────────────────────────────────
@@ -173,3 +173,15 @@ gates:
     authority: 10-architecture/07-directory-structure.md §3.6/附录 A
     executor:
       argv: ["python3", "tools/repo-scaffold/repo_scaffold.py", "--check"]
+
+  # ── 版本回滚契约一致性（OS-OPS-ROLLBACK）──────────────────────────────
+  # 受检对象为 tools/airy-rollback/manifest.yaml：路径、12 daemon 名单与
+  # 全部外部命令模板须逐项合法，且每个模板的占位符与编排器约定一致；任一
+  # 漂移即阻断，杜绝「回滚命令写错」或「daemon 名单缺项」进入发布镜像。
+  - id: OS-OPS-ROLLBACK
+    name: 版本回滚契约一致性
+    severity: P0
+    category: build
+    authority: 100-operations/01-deployment.md §11
+    executor:
+      argv: ["python3", "tools/airy-rollback/airy_rollback.py", "check"]
