@@ -272,22 +272,48 @@ def test_pack_path_must_be_directory(tmp_path: Path) -> None:
         make_runner(store).run(make_plan())
 
 
-def test_plan_requires_three_steps() -> None:
-    """计划必须恰为准备、执行、取证三步且顺序固定。"""
+def test_plan_requires_ordered_steps() -> None:
+    """执行步骤必须是准备、执行、取证的有序前缀，且至少含准备步。"""
     noop = lambda _pack: {PREP: b"{}\n"}
     with pytest.raises(ValueError, match="in order"):
-        orun.ExpPlan("exp-001", (make_th(),),
-                     ((om.Step.PREPARE, noop), (om.Step.RUN, noop)))
+        orun.ExpPlan("exp-001", (make_th(),), ())
     with pytest.raises(ValueError, match="in order"):
-        orun.ExpPlan(
-            "exp-001",
-            (make_th(),),
-            (
-                (om.Step.RUN, noop),
-                (om.Step.PREPARE, noop),
-                (om.Step.CAPTURE, noop),
-            ),
+        orun.ExpPlan("exp-001", (make_th(),),
+                     ((om.Step.RUN, noop), (om.Step.PREPARE, noop)))
+    with pytest.raises(ValueError, match="in order"):
+        orun.ExpPlan("exp-001", (make_th(),),
+                     ((om.Step.PREPARE, noop), (om.Step.PREPARE, noop)))
+
+
+def test_partial_plan_requires_review(tmp_path: Path) -> None:
+    """只含准备步的计划没有复核即为流程缺陷，不得落盘任何证据。"""
+    store = make_store(tmp_path)
+    plan = orun.ExpPlan(
+        "exp-001", (make_th(),), ((om.Step.PREPARE, lambda _p: {PREP: b""}),)
+    )
+    with pytest.raises(ValueError, match="requires a review"):
+        make_runner(store).run(plan)
+    assert not store.pack(DATE, "exp-001").exists()
+
+
+def test_review_must_return_ruling(tmp_path: Path) -> None:
+    """复核回调必须返回 Ruling，禁止返回裸结果对象。"""
+    with pytest.raises(TypeError, match="Ruling"):
+        make_runner(make_store(tmp_path)).run(make_plan(), lambda res: res)
+
+
+def test_review_must_keep_evidence(tmp_path: Path) -> None:
+    """复核不得丢弃已取证条目，否则证据链与判定脱节。"""
+    store = make_store(tmp_path)
+
+    def review(result: om.ExpResult) -> orun.Ruling:
+        trimmed = om.ExpResult(
+            result.exp_id, result.thresholds, [], om.Verdict.PASS
         )
+        return orun.Ruling(trimmed)
+
+    with pytest.raises(ValueError, match="keep collected evidence"):
+        make_runner(store).run(make_plan(), review)
 
 
 def test_run_rejects_non_plan(tmp_path: Path) -> None:
