@@ -106,6 +106,24 @@ agentrt_linux_rules:
     ranges:
       - { start: "OS-STD-030", end: "OS-STD-057", count: 28, section: "Rust Parts I-III" }
 
+  # ── Chapter 4.5.1: OS-STD-0xx Cross-Subsystem Registration ────────
+  # Authority: 09-ssot-registry.md §9.4 (2026-07-15 消解跨域冲突)
+  - prefix: OS-STD
+    authority: "09-ssot-registry.md §9.4"
+    chapter: "Ch 4.5.1"
+    registration: individual
+    individual_entries:
+      - { id: OS-STD-001, desc: "blob 大小变化必须配套 BUILD_BUG_ON 校验", section: "01-lsm-framework §C-1", status: active }
+      - { id: OS-STD-002, desc: "钩子回调签名严格由 LSM_HOOK 宏决定", section: "01-lsm-framework §C-2", status: active }
+      - { id: OS-STD-003, desc: "blob 生命周期由 kmem_cache 自动管理", section: "01-lsm-framework §C-3", status: active }
+      - { id: OS-STD-004, desc: "init_debug 默认开启，便于启动审计", section: "01-lsm-framework §A-1", status: active }
+      - { id: OS-STD-005, desc: "拒绝路径必须通过 AgentsIPC 上报可读原因", section: "01-lsm-framework §A-3", status: active }
+      - { id: OS-STD-006, desc: "ABI 结构体大小变化必须配套 BUILD_BUG_ON 校验", section: "02-landlock-sandbox §C-1", status: active }
+      - { id: OS-STD-007, desc: "用户缓冲区必须通过 copy_min_struct_from_user 校验", section: "02-landlock-sandbox §C-2", status: active }
+      - { id: OS-STD-008, desc: "ruleset FD 通过引用计数管理生命周期", section: "02-landlock-sandbox §C-3", status: active }
+      - { id: OS-STD-009, desc: "域绑定后红黑树冻结为不可变", section: "02-landlock-sandbox §C-5", status: active }
+      - { id: OS-STD-012, desc: "新增代码引入新的 sparse/Smatch 警告禁止合并", section: "05-development-process §1.2", status: active }
+
   # ── Chapter 4.6: OS-STD-TOOL Toolchain Rules (range) ──────────────
   - prefix: OS-STD-TOOL
     authority: "05-development-process.md Part II"
