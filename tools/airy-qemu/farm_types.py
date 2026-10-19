@@ -50,6 +50,7 @@ __all__ = [
     "FARM_VERSION",
     "Accel",
     "Arch",
+    "Argv",
     "FarmConfigError",
     "FarmError",
     "FarmJob",
