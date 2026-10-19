@@ -150,6 +150,7 @@ jobs:
             ${{ runner.temp }}/out/acceptance/*.ks
             ${{ runner.temp }}/out/logs/*
             ${{ runner.temp }}/out/*/work/logs/*.rpmspec.log
+            ${{ runner.temp }}/out/*/work/logs/*.build.log
           retention-days: 7
           if-no-files-found: warn
           compression-level: 0
