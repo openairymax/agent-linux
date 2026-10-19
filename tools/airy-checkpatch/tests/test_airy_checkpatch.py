@@ -196,6 +196,32 @@ class TestCodeRules:
         assert "AIRY-CHECKPATCH-004" in reported_ids(proc)
         assert proc.returncode == 1
 
+    def test_multiline_unchecked_ipc_send(self, perl, kernel_root, tmp_path):
+        path = c_file(tmp_path, "ipc_multi.c",
+                      "static int airy_probe(void)", "{",
+                      "\tairy_ipc_send(p,", "\t\t     q);", "\treturn 0;", "}")
+        proc = run_engine(perl, kernel_root, str(path))
+        assert "AIRY-CHECKPATCH-004" in reported_ids(proc)
+        assert proc.returncode == 1
+
+    def test_checked_ipc_send_is_silent(self, perl, kernel_root, tmp_path):
+        path = c_file(tmp_path, "ipc_checked.c",
+                      "static int airy_probe(void)", "{",
+                      "\tint ret;", "",
+                      "\tret = airy_ipc_send(p);", "\treturn ret;", "}")
+        proc = run_engine(perl, kernel_root, str(path))
+        assert "AIRY-CHECKPATCH-004" not in reported_ids(proc)
+        assert proc.returncode == 0
+
+    def test_void_cast_ipc_send_is_still_unchecked(self, perl, kernel_root,
+                                                   tmp_path):
+        path = c_file(tmp_path, "ipc_void.c",
+                      "static void airy_probe(void)", "{",
+                      "\t(void)airy_ipc_send(p);", "}")
+        proc = run_engine(perl, kernel_root, str(path))
+        assert "AIRY-CHECKPATCH-004" in reported_ids(proc)
+        assert proc.returncode == 1
+
     def test_direct_lsm_registration(self, perl, kernel_root, tmp_path):
         path = c_file(tmp_path, "lsm.c",
                       "void airy_lsm_setup(void)", "{",
