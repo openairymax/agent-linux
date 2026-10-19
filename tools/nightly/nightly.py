@@ -578,10 +578,10 @@ def check_budget(man: Mapping[str, Any],
     if not lines:
         return CheckResult(NAME_BUDGET, False,
                            f"未调用预算检测 {entry['path']}")
-    call = " ".join(lines)
-    problems = [f"预算检测缺少参数 {token}"
-                for token in rules["argv"] if token not in call]
-    return _result(NAME_BUDGET, problems)
+    expected = " ".join(rules["argv"])
+    if expected not in " ".join(lines):
+        return _result(NAME_BUDGET, [f"预算检测参数不匹配: {expected}"])
+    return _result(NAME_BUDGET, [])
 
 
 def _budget_job(man: Mapping[str, Any],

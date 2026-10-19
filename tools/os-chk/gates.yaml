@@ -27,7 +27,7 @@
 #
 # version: 注册表版本，随门禁增删而递增。
 
-version: "1.6.0"
+version: "1.7.0"
 
 gates:
   # ── 文档类 ────────────────────────────────────────────────────────────
@@ -148,3 +148,16 @@ gates:
     authority: 120-development-process/09-release-process.md §3
     executor:
       argv: ["python3", "tools/release-engineering/release_manifest.py", "--check"]
+
+  # ── nightly 契约一致性（OS-BUILD-NIGHTLY）─────────────────────────────
+  # 受检对象为 tools/nightly/manifest.yaml 与 .github/workflows/nightly.yml：
+  # 触发方式、并发、权限、job 拓扑、超时预算与 helper 调用契约须逐项一致；
+  # deferred helper 必须有存在性守卫与 SKIP 标记，落地后须同步转为 available，
+  # 杜绝「未实现即静默执行」与「已实现仍被跳过」两类漂移。
+  - id: OS-BUILD-NIGHTLY
+    name: nightly 契约一致性
+    severity: P0
+    category: build
+    authority: 120-development-process/08-ci-cd-pipeline.md §6/§9
+    executor:
+      argv: ["python3", "tools/nightly/nightly.py", "--check"]
