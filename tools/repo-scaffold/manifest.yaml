@@ -1,0 +1,97 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+#
+# AirymaxOS 八子仓脚手架契约清单（唯一事实源 / SSoT）
+# Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
+#
+# 权威依据：
+#   docs/docs-linux/10-architecture/07-directory-structure.md
+#     §2.2 管理仓结构（.gitmodules 登记）
+#     §2.3 八子仓职责矩阵（许可证与 IRON-9 主层）
+#     §3.6 决策 F1（最小可编译骨架，非桩）
+#     附录 A 子仓公共骨架清单（9 个文件）
+#     §11.3 反模式（不得删除公共骨架文件）
+#
+# 铁律：本清单是八子仓骨架的唯一事实源。子仓目录、公共骨架、
+#      许可证标识与构建入口的任何漂移由 repo_scaffold.py --check 检出。
+#
+# 字段：
+#   gitmodules  子模块登记文件（相对仓库根）
+#   excluded    已登记但不属于八子仓的模块（distro 为发行构建仓）
+#   skeletons   骨架剖面：文件名集合（附录 A + 双语 README）
+#   licenses    许可证剖面：file + marker（首部必须出现的标识）
+#   subrepos[]  八子仓：path / skeleton / license / build_entry
+#   entry_probe 原生入口探针（仅 Linux fork 使用，证明源码树非空壳）
+#
+# kernel 为 Linux 6.6 完整 fork（Model A），采用上游原生布局：
+# README / COPYING / Kbuild / Makefile 是 Linux 的规范文件，另建
+# README.md / LICENSE 会造成同一内容的双事实源，故以 linux 剖面建模。
+
+version: "1.0.0"
+
+gitmodules: .gitmodules
+
+excluded:
+  - distro
+
+skeletons:
+  standard:
+    - README.md
+    - README_zh.md
+    - LICENSE
+    - NOTICE
+    - MAINTAINERS
+    - .clang-format
+    - .editorconfig
+    - CONTRIBUTING.md
+    - Documentation/README.md
+  linux:
+    - README
+    - README_zh.md
+    - COPYING
+    - MAINTAINERS
+    - .clang-format
+    - Kbuild
+    - Makefile
+
+licenses:
+  dual:
+    file: LICENSE
+    marker: "SPHARX Ltd. Dual License"
+  gpl2:
+    file: COPYING
+    marker: "SPDX-License-Identifier: GPL-2.0"
+
+subrepos:
+  - path: kernel
+    skeleton: linux
+    license: gpl2
+    build_entry: Makefile
+    entry_probe: init/main.c
+  - path: services
+    skeleton: standard
+    license: dual
+    build_entry: CMakeLists.txt
+  - path: security
+    skeleton: standard
+    license: dual
+    build_entry: Kbuild
+  - path: memory
+    skeleton: standard
+    license: dual
+    build_entry: Kbuild
+  - path: cognition
+    skeleton: standard
+    license: dual
+    build_entry: Kbuild
+  - path: cloudnative
+    skeleton: standard
+    license: dual
+    build_entry: CMakeLists.txt
+  - path: system
+    skeleton: standard
+    license: dual
+    build_entry: CMakeLists.txt
+  - path: tests-linux
+    skeleton: standard
+    license: dual
+    build_entry: CMakeLists.txt
