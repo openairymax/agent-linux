@@ -286,3 +286,23 @@ class TestConfigBlacklist:
         assert "AIRY-CHECKPATCH-010" in reported_ids(proc)
         assert "AIRY-CHECKPATCH-009" not in reported_ids(proc)
         assert proc.returncode == 1
+
+    def test_module_builds_are_also_forbidden(self, perl, kernel_root,
+                                              tmp_path):
+        path = raw_file(tmp_path, "frag_mod.config",
+                        "CONFIG_BPF_LSM=m\nCONFIG_SCHED_EXT=m\n")
+        proc = run_engine(perl, kernel_root, str(path))
+        ids = reported_ids(proc)
+        assert "AIRY-CHECKPATCH-009" in ids
+        assert "AIRY-CHECKPATCH-010" in ids
+        assert proc.returncode == 1
+
+    def test_explicitly_disabled_options_are_allowed(self, perl, kernel_root,
+                                                     tmp_path):
+        path = raw_file(tmp_path, "frag_off.config",
+                        "# CONFIG_BPF_LSM is not set\n"
+                        "# CONFIG_SCHED_EXT is not set\n")
+        proc = run_engine(perl, kernel_root, str(path))
+        assert "AIRY-CHECKPATCH-009" not in reported_ids(proc)
+        assert "AIRY-CHECKPATCH-010" not in reported_ids(proc)
+        assert proc.returncode == 0
