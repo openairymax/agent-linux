@@ -1,3 +1,5 @@
-# tools/airy-qemu/requirements-dev.txt — 测试工具链依赖（CI 与本地开发）
-# farm_types 仅依赖 Python 标准库；pytest 仅供单元测试使用。
+# tools/airy-qemu/requirements-dev.txt — 运行时与测试工具链依赖（CI 与本地开发）
+# pyyaml 为农场清单（manifest.yaml）解析的运行时依赖；
+# pytest 仅供单元测试使用。
+pyyaml>=6.0,<7.0
 pytest>=8.0,<9.0

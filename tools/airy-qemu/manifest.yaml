@@ -1,0 +1,65 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+#
+# AirymaxOS QEMU 测试农场清单（唯一事实源 / SSoT）
+# Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
+#
+# 权威依据：
+#   docs-linux/70-build-system/03-ci-cd-pipeline.md §5.3
+#     OS-TEST-013~022（kselftest 默认在 QEMU 运行、TAP 解析、flaky 登记）
+#   docs-linux/80-testing/02-kselftest.md
+#     OS-STD-009（测试超时默认 60 秒）
+#   .github/workflows/ci-kernel.yml（kselftest 子集与 virtme-ng 基线）
+#
+# 铁律：本清单是「架构 × QEMU 机器 × kselftest 套件 × 并行预算」的唯一
+#      事实源。farm_manifest.py 以严格 schema 加载：未知字段、缺失字段、
+#      重复条目、非法取值一律拒绝，不做静默修正。
+#
+# 字段：
+#   machines[].arch     目标架构，必须落在 farm_types.Arch 的四个取值内
+#   machines[].machine  qemu -M 机器类型（q35 / virt）
+#   machines[].cpu      qemu -cpu 型号
+#   machines[].console  内核控制台设备名（console=<dev>）
+#   machines[].binary   可选：覆盖 Arch.qemu_bin 的模拟器路径或名称
+#   suites[].name       kselftest 子系统名（与 TARGETS 及安装目录同名）
+#   suites[].timeout_s  外层 QEMU 墙钟预算（秒），不得小于套件 settings
+#                       声明的内部超时；省略时取 OS-STD-009 的 60 秒
+#   limits              并行预算：max_jobs / mem_mb / cpus
+#
+# 套件子集与 ci-kernel.yml 的 TARGETS="seccomp pidfd membarrier rseq" 一致。
+# seccomp 的 120 秒来自内核树 tools/testing/selftests/seccomp/settings，
+# 外层预算必须覆盖该内部超时；其余套件未声明内部超时，取默认 60 秒。
+
+version: "1.0.0"
+
+machines:
+  - arch: x86_64
+    machine: q35
+    cpu: max
+    console: ttyS0
+  - arch: arm64
+    machine: virt
+    cpu: cortex-a57
+    console: ttyAMA0
+  - arch: riscv
+    machine: virt
+    cpu: rv64
+    console: ttyS0
+  - arch: loongarch
+    machine: virt
+    cpu: la464
+    console: ttyS0
+
+suites:
+  - name: seccomp
+    timeout_s: 120
+  - name: pidfd
+    timeout_s: 60
+  - name: membarrier
+    timeout_s: 60
+  - name: rseq
+    timeout_s: 60
+
+limits:
+  max_jobs: 2
+  mem_mb: 8192
+  cpus: 4
