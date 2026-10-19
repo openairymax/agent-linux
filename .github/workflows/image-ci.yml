@@ -116,6 +116,17 @@ jobs:
               distro/ci/run-image-ci.sh "${args[@]}"
             '
 
+      - name: Show build logs on failure
+        if: failure()
+        run: |
+          out="$RUNNER_TEMP/out"
+          for log in "$out"/*/logs/*.log; do
+            [ -f "$log" ] || continue
+            echo "::group::${log#"$out"/}"
+            tail -n 120 "$log"
+            echo '::endgroup::'
+          done
+
       - name: Verify assembly manifest
         run: |
           set -euo pipefail
@@ -149,6 +160,7 @@ jobs:
             ${{ runner.temp }}/out/image-ci-manifest.txt
             ${{ runner.temp }}/out/acceptance/*.ks
             ${{ runner.temp }}/out/logs/*
+            ${{ runner.temp }}/out/*/logs/*.log
             ${{ runner.temp }}/out/*/work/logs/*.rpmspec.log
             ${{ runner.temp }}/out/*/work/logs/*.build.log
           retention-days: 7
