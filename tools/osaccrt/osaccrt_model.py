@@ -35,16 +35,19 @@ from enum import Enum
 from typing import Final, Protocol
 
 __all__ = [
+    "EXP_ID_RE",
+    "SHA256_RE",
     "Evidence",
     "ExpResult",
     "Judge",
     "Step",
     "Threshold",
     "Verdict",
+    "need_text",
 ]
 
-_EXP_ID_RE: Final[re.Pattern[str]] = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
-_SHA256_RE: Final[re.Pattern[str]] = re.compile(r"[0-9a-f]{64}")
+EXP_ID_RE: Final[re.Pattern[str]] = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+SHA256_RE: Final[re.Pattern[str]] = re.compile(r"[0-9a-f]{64}")
 
 
 class Verdict(Enum):
@@ -77,10 +80,10 @@ class Threshold:
     unit: str
 
     def __post_init__(self) -> None:
-        _need_text(self.key, "key")
-        _need_text(self.source, "source")
-        _need_text(self.limit, "limit")
-        _need_text(self.unit, "unit")
+        need_text(self.key, "key")
+        need_text(self.source, "source")
+        need_text(self.limit, "limit")
+        need_text(self.unit, "unit")
 
 
 @dataclass(frozen=True)
@@ -93,7 +96,7 @@ class Evidence:
 
     def __post_init__(self) -> None:
         _need_relpath(self.path)
-        if not _SHA256_RE.fullmatch(self.sha256):
+        if not SHA256_RE.fullmatch(self.sha256):
             raise ValueError(f"sha256 must be 64 lowercase hex: {self.path!r}")
         if not isinstance(self.step, Step):
             raise ValueError(f"step must be Step, got {type(self.step).__name__}")
@@ -111,7 +114,7 @@ class ExpResult:
     blocked_reason: str = ""
 
     def __post_init__(self) -> None:
-        if not _EXP_ID_RE.fullmatch(self.exp_id):
+        if not EXP_ID_RE.fullmatch(self.exp_id):
             raise ValueError(f"invalid exp_id: {self.exp_id!r}")
         _need_thresholds(self.thresholds)
         if not isinstance(self.evidences, list):
@@ -142,7 +145,7 @@ class Judge(Protocol):
         ...
 
 
-def _need_text(value: str, name: str) -> None:
+def need_text(value: str, name: str) -> None:
     """校验必填文本非空且无首尾空白。"""
     if not isinstance(value, str) or not value:
         raise ValueError(f"{name} must be a non-empty string")
@@ -152,7 +155,7 @@ def _need_text(value: str, name: str) -> None:
 
 def _need_relpath(path: str) -> None:
     """校验证据路径为包内相对路径，禁止绝对路径与向上逃逸。"""
-    _need_text(path, "path")
+    need_text(path, "path")
     if path.startswith("/") or "\\" in path:
         raise ValueError(f"path must be relative POSIX: {path!r}")
     parts = path.split("/")
@@ -189,7 +192,7 @@ def _need_waiver(result: ExpResult) -> None:
         raise ValueError("WAIVED requires waiver_sig")
     first, second = sig
     for signer in (first, second):
-        _need_text(signer, "waiver_sig")
+        need_text(signer, "waiver_sig")
         if "@" not in signer:
             raise ValueError(f"waiver_sig must be an email: {signer!r}")
     if first == second:
@@ -199,6 +202,6 @@ def _need_waiver(result: ExpResult) -> None:
 def _need_blocked(result: ExpResult) -> None:
     """BLOCKED 必须给出降级原因，其余状态不得携带原因。"""
     if result.verdict is Verdict.BLOCKED:
-        _need_text(result.blocked_reason, "blocked_reason")
+        need_text(result.blocked_reason, "blocked_reason")
     elif result.blocked_reason:
         raise ValueError("blocked_reason only allowed with BLOCKED")
