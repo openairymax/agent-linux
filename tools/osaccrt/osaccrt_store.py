@@ -187,7 +187,9 @@ class Store:
         target = [item for item in packs
                   if item.manifest.exp_id == man.supersedes]
         if not target:
-            raise ValueError(f"supersedes unknown experiment: {man.supersedes}")
+            raise ValueError(
+                f"supersedes unknown experiment: {man.supersedes}"
+            )
         if target[0].pack.parent.name >= man.date:
             raise ValueError("supersedes must start a new date directory")
         if any(item.manifest.supersedes == man.supersedes for item in packs):
@@ -261,7 +263,9 @@ def _check_tree(pack: Path) -> None:
         if path.is_symlink():
             raise ValueError(f"symlink is not allowed in evidence: {path}")
         if not path.is_file() and not path.is_dir():
-            raise ValueError(f"special file is not allowed in evidence: {path}")
+            raise ValueError(
+                f"special file is not allowed in evidence: {path}"
+            )
 
 
 def _write_seal(pack: Path, man: Manifest, sealed: str) -> None:

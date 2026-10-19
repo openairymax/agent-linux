@@ -238,9 +238,9 @@ def test_load_rejects_bad_json() -> None:
 def test_load_rejects_bad_fields() -> None:
     """未知、缺失与类型不符的字段一律拒绝。"""
     base = record_of()
-    with pytest.raises(ValueError, match="unknown prepare fields"):
+    with pytest.raises(ValueError, match="prepare has unknown fields"):
         ob.load(json.dumps({**base, "extra": 1}))
-    with pytest.raises(ValueError, match="missing prepare fields"):
+    with pytest.raises(ValueError, match="prepare is missing fields"):
         ob.load(json.dumps({"key": "sw_64"}))
     with pytest.raises(ValueError, match="unregistered"):
         ob.load(json.dumps({**base, "key": "riscv"}))

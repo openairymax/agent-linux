@@ -179,9 +179,9 @@ def test_load_rejects_bad_json() -> None:
 def test_load_rejects_bad_fields() -> None:
     """未知、缺失与类型不符的字段一律拒绝。"""
     base = {"basis": "accepted", "reason": "理由", "signers": list(SIG)}
-    with pytest.raises(ValueError, match="unknown review fields"):
+    with pytest.raises(ValueError, match="review has unknown fields"):
         ow.load(json.dumps({**base, "extra": 1}))
-    with pytest.raises(ValueError, match="missing review fields"):
+    with pytest.raises(ValueError, match="review is missing fields"):
         ow.load(json.dumps({"basis": "accepted"}))
     with pytest.raises(ValueError, match="invalid waiver basis"):
         ow.load(json.dumps({**base, "basis": "waived"}))

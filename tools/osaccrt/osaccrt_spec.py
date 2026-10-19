@@ -37,15 +37,28 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
+from osaccrt_codec import check_keys
 from osaccrt_model import Threshold, need_text
 
-__all__ = ["DEFAULT_SPEC", "SPEC_SCHEMA", "SpecTable", "load_spec", "parse_spec"]
+__all__ = [
+    "DEFAULT_SPEC",
+    "SPEC_SCHEMA",
+    "SpecTable",
+    "load_spec",
+    "parse_spec",
+]
 
 SPEC_SCHEMA: Final[int] = 1
 DEFAULT_SPEC: Final[Path] = Path(__file__).with_name("specs") / "nfr.toml"
-KEY_RE: Final[re.Pattern[str]] = re.compile(r"[a-z][a-z0-9_]*(?:\.[a-z0-9_]+)*")
-SRC_RE: Final[re.Pattern[str]] = re.compile(r"(?:NFR-[A-Z]-\d{3}|OS-ACC-[A-Z]+-\d{3})")
-LIMIT_RE: Final[re.Pattern[str]] = re.compile(r"(?:<=|>=|<|>|=) -?\d+(?:\.\d+)?")
+KEY_RE: Final[re.Pattern[str]] = re.compile(
+    r"[a-z][a-z0-9_]*(?:\.[a-z0-9_]+)*"
+)
+SRC_RE: Final[re.Pattern[str]] = re.compile(
+    r"(?:NFR-[A-Z]-\d{3}|OS-ACC-[A-Z]+-\d{3})"
+)
+LIMIT_RE: Final[re.Pattern[str]] = re.compile(
+    r"(?:<=|>=|<|>|=) -?\d+(?:\.\d+)?"
+)
 _FIELDS: Final[frozenset[str]] = frozenset({"key", "source", "limit", "unit"})
 _ROOTS: Final[frozenset[str]] = frozenset({"schema", "threshold"})
 
@@ -103,7 +116,7 @@ def parse_spec(data: Mapping[str, object]) -> SpecTable:
     """校验表结构并转换为阈值快照。"""
     if not isinstance(data, Mapping):
         raise ValueError("spec root must be a table")
-    _need_keys(data, _ROOTS, "spec")
+    check_keys(data, _ROOTS, what="spec")
     schema = data.get("schema")
     if isinstance(schema, bool) or not isinstance(schema, int):
         raise ValueError(f"schema must be an integer: {schema!r}")
@@ -118,7 +131,7 @@ def _row(row: object, idx: int) -> Threshold:
     """校验单条阈值，错误信息带数组下标。"""
     if not isinstance(row, Mapping):
         raise ValueError(f"threshold[{idx}] must be a table")
-    _need_keys(row, _FIELDS, f"threshold[{idx}]")
+    check_keys(row, _FIELDS, what=f"threshold[{idx}]")
     for name in sorted(_FIELDS):
         need_text(row[name], f"threshold[{idx}].{name}")
     key, source, limit = row["key"], row["source"], row["limit"]
@@ -126,16 +139,6 @@ def _row(row: object, idx: int) -> Threshold:
     _need_match(SRC_RE, source, f"threshold[{idx}].source")
     _need_match(LIMIT_RE, limit, f"threshold[{idx}].limit")
     return Threshold(key, source, limit, row["unit"])
-
-
-def _need_keys(data: Mapping[str, object], fields: frozenset[str], where: str) -> None:
-    """字段集合必须与 schema 完全一致，拼写错误立即暴露。"""
-    unknown = sorted(set(data) - fields)
-    missing = sorted(fields - set(data))
-    if unknown:
-        raise ValueError(f"{where} has unknown fields: {unknown}")
-    if missing:
-        raise ValueError(f"{where} is missing fields: {missing}")
 
 
 def _need_match(pattern: re.Pattern[str], value: object, where: str) -> None:

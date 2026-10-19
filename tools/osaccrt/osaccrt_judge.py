@@ -68,7 +68,9 @@ def missing_keys(result: ExpResult) -> tuple[str, ...]:
         item.path for item in result.evidences if item.step is Step.CAPTURE
     )
     return tuple(
-        key for key in result.keys if not any(_covers(path, key) for path in paths)
+        key
+        for key in result.keys
+        if not any(_covers(path, key) for path in paths)
     )
 
 

@@ -104,7 +104,9 @@ class Evidence:
                 f"sha256 must be 64 lowercase hex: {self.path!r}"
             )
         if not isinstance(self.step, Step):
-            raise ValueError(f"step must be Step, got {type(self.step).__name__}")
+            raise ValueError(
+                f"step must be Step, got {type(self.step).__name__}"
+            )
 
 
 @dataclass
@@ -121,7 +123,7 @@ class ExpResult:
     def __post_init__(self) -> None:
         if not EXP_ID_RE.fullmatch(self.exp_id):
             raise ValueError(f"invalid exp_id: {self.exp_id!r}")
-        _need_thresholds(self.thresholds)
+        _need_ths(self.thresholds)
         if not isinstance(self.evidences, list):
             raise ValueError("evidences must be a list")
         for item in self.evidences:
@@ -188,7 +190,7 @@ def need_relpath(path: str) -> None:
         raise ValueError(f"path must be normalized: {path!r}")
 
 
-def _need_thresholds(items: tuple[Threshold, ...]) -> None:
+def _need_ths(items: tuple[Threshold, ...]) -> None:
     """校验阈值表非空、类型正确且键唯一。"""
     if not isinstance(items, tuple) or not items:
         raise ValueError("thresholds must be a non-empty tuple")

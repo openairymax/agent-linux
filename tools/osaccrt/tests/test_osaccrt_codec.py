@@ -35,13 +35,13 @@ def test_check_keys_exact_match() -> None:
 
 def test_check_keys_rejects_unknown() -> None:
     """未知字段一律拒绝并指出字段名。"""
-    with pytest.raises(ValueError, match="unknown item fields: \\['c'\\]"):
+    with pytest.raises(ValueError, match="item has unknown fields: \\['c'\\]"):
         oc.check_keys({"a": 1, "c": 2}, frozenset({"a"}), what="item")
 
 
 def test_check_keys_rejects_missing() -> None:
     """缺失必填字段一律拒绝。"""
-    with pytest.raises(ValueError, match="missing item fields: \\['b'\\]"):
+    with pytest.raises(ValueError, match="item is missing fields: \\['b'\\]"):
         oc.check_keys({"a": 1}, frozenset({"a", "b"}), what="item")
 
 

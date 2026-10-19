@@ -86,7 +86,7 @@ def test_evidence_rejects_bad_digest(digest: str) -> None:
 def test_evidence_rejects_bad_step() -> None:
     """步骤必须取自 Step 枚举。"""
     with pytest.raises(ValueError, match="step"):
-        om.Evidence("step-01-run.json", DIGEST, "run")  # type: ignore[arg-type]
+        om.Evidence("step-01-run.json", DIGEST, "run")  # type: ignore
 
 
 def test_result_defaults_to_undecided() -> None:
@@ -154,7 +154,8 @@ def test_waiver_requires_two_signers() -> None:
         )
     with pytest.raises(ValueError, match="email"):
         om.ExpResult(
-            "exp-1", th, verdict=om.Verdict.WAIVED, waiver_sig=(SIG_A, "nobody")
+            "exp-1", th, verdict=om.Verdict.WAIVED,
+            waiver_sig=(SIG_A, "nobody"),
         )
     exp = om.ExpResult(
         "exp-1", th, verdict=om.Verdict.WAIVED, waiver_sig=(SIG_A, SIG_B)
@@ -166,7 +167,8 @@ def test_waiver_forbidden_outside_waived() -> None:
     """非 WAIVED 状态不得携带双签。"""
     with pytest.raises(ValueError, match="WAIVED"):
         om.ExpResult(
-            "exp-1", (make_th(),), verdict=om.Verdict.PASS, waiver_sig=(SIG_A, SIG_B)
+            "exp-1", (make_th(),), verdict=om.Verdict.PASS,
+            waiver_sig=(SIG_A, SIG_B),
         )
 
 
@@ -186,7 +188,10 @@ def test_blocked_requires_reason() -> None:
 def test_blocked_reason_forbidden_outside_blocked() -> None:
     """非 BLOCKED 状态不得携带降级原因。"""
     with pytest.raises(ValueError, match="blocked_reason"):
-        om.ExpResult("exp-1", (make_th(),), verdict=om.Verdict.FAIL, blocked_reason="x")
+        om.ExpResult(
+            "exp-1", (make_th(),), verdict=om.Verdict.FAIL,
+            blocked_reason="x",
+        )
 
 
 def test_judge_protocol_declares_decide() -> None:
