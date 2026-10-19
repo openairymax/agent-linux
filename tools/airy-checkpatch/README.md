@@ -59,7 +59,12 @@ LC_ALL=C perl kernel/scripts/airy_checkpatch_ext.pl security/airy
 
 # 查看帮助（含全部规则与退出码说明）
 perl kernel/scripts/airy_checkpatch_ext.pl --help
+
+# 输出规则注册表（TSV：id / 级别 / 摘要），供门禁与文档核对
+perl kernel/scripts/airy_checkpatch_ext.pl --list-rules
 ```
+
+规则集由引擎内的单一注册表维护，`--help` 与 `--list-rules` 均由其派生。
 
 默认扫描目录（相对 kernel 根）：
 
