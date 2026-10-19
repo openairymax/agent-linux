@@ -84,6 +84,25 @@ class TestCliContract:
         assert proc.returncode == 2
         assert "invalid usage" in proc.stderr
 
+    def test_list_rules_is_tsv_registry(self, perl, kernel_root):
+        proc = run_engine(perl, kernel_root, "--list-rules")
+        assert proc.returncode == 0
+        assert "files checked" not in proc.stdout
+        rows = [line.split("\t") for line in proc.stdout.splitlines()]
+        assert [row[0] for row in rows] == list(RULE_IDS)
+        assert all(len(row) == 3 for row in rows)
+        assert {row[1] for row in rows} <= {"error", "warning"}
+        warnings = {row[0] for row in rows if row[1] == "warning"}
+        assert warnings == {"AIRY-CHECKPATCH-005"}
+
+    def test_help_derives_from_registry(self, perl, kernel_root):
+        listing = run_engine(perl, kernel_root, "--list-rules")
+        help_out = run_engine(perl, kernel_root, "--help")
+        assert help_out.returncode == 0
+        for rid, sev, brief in (row.split("\t") for row in
+                                listing.stdout.splitlines()):
+            assert f"{rid[-3:]} {sev:<8} {brief}" in help_out.stdout
+
 
 class TestDefaultScan:
     def test_shipped_tree_is_clean(self, perl, kernel_root):
