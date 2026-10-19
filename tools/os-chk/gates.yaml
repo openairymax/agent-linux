@@ -27,7 +27,7 @@
 #
 # version: 注册表版本，随门禁增删而递增。
 
-version: "1.7.0"
+version: "1.8.0"
 
 gates:
   # ── 文档类 ────────────────────────────────────────────────────────────
@@ -161,3 +161,15 @@ gates:
     authority: 120-development-process/08-ci-cd-pipeline.md §6/§9
     executor:
       argv: ["python3", "tools/nightly/nightly.py", "--check"]
+
+  # ── 八子仓脚手架一致性（OS-BUILD-REPO-SCAFFOLD）───────────────────────
+  # 受检对象为 tools/repo-scaffold/manifest.yaml、.gitmodules 与八子仓检出：
+  # 公共骨架、许可证标识、构建入口及入口引用的源文件须逐项一致；任一漂移
+  # 即阻断，杜绝「子仓空壳」与「入口指向不存在的源文件」进入构建。
+  - id: OS-BUILD-REPO-SCAFFOLD
+    name: 八子仓脚手架一致性
+    severity: P0
+    category: build
+    authority: 10-architecture/07-directory-structure.md §3.6/附录 A
+    executor:
+      argv: ["python3", "tools/repo-scaffold/repo_scaffold.py", "--check"]
