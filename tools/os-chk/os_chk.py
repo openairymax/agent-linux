@@ -251,11 +251,12 @@ def evaluate(results: Sequence[GateResult], fail_on: str) -> List[GateResult]:
     if fail_on == "none":
         return []
     threshold = SEVERITY_ORDER[fail_on]
-    return [
-        r for r in results
-        if r.status != STATUS_PASS
-        and SEVERITY_ORDER.get(r.gate.severity, len(SEVERITY_ORDER)) <= threshold
-    ]
+
+    def rank(result: GateResult) -> int:
+        return SEVERITY_ORDER.get(result.gate.severity, len(SEVERITY_ORDER))
+
+    return [r for r in results
+            if r.status != STATUS_PASS and rank(r) <= threshold]
 
 
 # ─── Report ────────────────────────────────────────────────────────────────
@@ -272,18 +273,24 @@ def format_line(result: GateResult, ts: str) -> str:
 
 def print_report(results: Sequence[GateResult], registry_version: str,
                  elapsed_s: float, check_mode: bool, verbose: bool,
-                 ts: str) -> None:
+                 ts: str, fail_on: str = "P1") -> None:
     total = len(results)
     failed = [r for r in results if r.status != STATUS_PASS]
     passed = total - len(failed)
+    blocking = evaluate(results, fail_on)
 
     if check_mode:
-        if not failed:
-            print(f"OS-CHK: PASS ({passed}/{total} gates, {elapsed_s:.1f}s)")
+        if not blocking:
+            extra = "" if not failed else f", {len(failed)} non-blocking"
+            print(f"OS-CHK: PASS ({passed}/{total} gates{extra}, "
+                  f"{elapsed_s:.1f}s)")
+            for r in failed:
+                print(f"  {_marker(r.status)} {r.gate.id} {r.gate.name}: "
+                      f"{r.detail}")
         else:
             print(f"OS-CHK: FAIL ({passed}/{total} gates, "
-                  f"{len(failed)} failed, {elapsed_s:.1f}s)")
-            for r in failed:
+                  f"{len(blocking)} blocking, {elapsed_s:.1f}s)")
+            for r in blocking:
                 print(f"  {_marker(r.status)} {r.gate.id} {r.gate.name}: "
                       f"{r.detail}")
         return
@@ -413,10 +420,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     elapsed = time.monotonic() - started
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    print_report(results, version, elapsed, args.check, args.verbose, ts)
+    print_report(results, version, elapsed, args.check, args.verbose, ts,
+                 args.fail_on)
 
     if args.json:
-        write_json_report(Path(args.json), version, ts, args.fail_on, results)
+        try:
+            write_json_report(Path(args.json), version, ts, args.fail_on,
+                              results)
+        except OSError as exc:
+            print(f"ERROR: 无法写入 JSON 报告：{exc}", file=sys.stderr)
+            return EXIT_USAGE
 
     blocking = evaluate(results, args.fail_on)
     return EXIT_BLOCKED if blocking else EXIT_PASS
