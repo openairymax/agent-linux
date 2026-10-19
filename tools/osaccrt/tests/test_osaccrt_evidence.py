@@ -83,6 +83,18 @@ def test_chain_binds_prev_head() -> None:
     )
 
 
+def test_chain_binds_metadata() -> None:
+    """清单元数据参与计算，篡改宿主会改变链头。"""
+    assert make_manifest(host="other").chain_head != make_manifest().chain_head
+
+
+def test_chain_binds_verdict() -> None:
+    """判定变化必须改变链头，避免事后改写结论。"""
+    exp = make_result()
+    exp.verdict = om.Verdict.PASS
+    assert make_manifest(result=exp).chain_head != make_manifest().chain_head
+
+
 def test_seal_rejects_empty_pack() -> None:
     """空证据包不得封口。"""
     with pytest.raises(ValueError, match="empty"):

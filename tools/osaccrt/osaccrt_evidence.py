@@ -54,6 +54,7 @@ __all__ = [
     "Manifest",
     "STEP_LAYOUT",
     "chain_head",
+    "check_date",
     "dump",
     "load",
     "seal",
@@ -103,7 +104,7 @@ class Manifest:
     supersedes: str = ""
 
     def __post_init__(self) -> None:
-        _check_date(self.date)
+        check_date(self.date)
         need_text(self.host, "host")
         _check_sha(self.image_sha256, "image_sha256")
         _check_prev(self.prev_chain_head)
@@ -119,7 +120,16 @@ class Manifest:
     def chain_head(self) -> str:
         """按证据顺序滚动计算的链头；空证据集返回前链头。"""
         return chain_head(self.result.exp_id, self.result.evidences,
-                          self.prev_chain_head)
+                          self.prev_chain_head, self._meta())
+
+    def _meta(self) -> str:
+        """清单元数据的规范化摘要输入，排除已入链的字段。"""
+        data = self.to_dict()
+        for name in ("exp_id", "prev_chain_head", "evidences"):
+            data.pop(name)
+        return json.dumps(
+            data, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        )
 
     def to_dict(self) -> dict[str, Any]:
         """展开为 manifest.json 的字段集合，省略空的可选字段。"""
@@ -137,12 +147,13 @@ class Manifest:
         return data
 
 
-def chain_head(exp_id: str, evidences: Sequence[Evidence], prev: str = "") -> str:
-    """按证据顺序滚动计算链头；空证据集原样返回前链头。"""
+def chain_head(exp_id: str, evidences: Sequence[Evidence],
+               prev: str = "", meta: str = "") -> str:
+    """按证据顺序滚动计算链头；元数据非空时一并绑定。"""
     head = prev
     for item in evidences:
         head = _link(head, exp_id, item)
-    return head
+    return _bind(head, meta) if meta else head
 
 
 def seal(manifest: Manifest) -> str:
@@ -186,7 +197,13 @@ def _link(head: str, exp_id: str, item: Evidence) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def _check_date(value: str) -> None:
+def _bind(head: str, meta: str) -> str:
+    """把清单元数据绑定到链头，篡改日期/宿主/阈值/判定都会失配。"""
+    payload = f"{head}\n{meta}\n"
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def check_date(value: str) -> None:
     """日期必须是零填充的 YYYY-MM-DD，且为真实日历日。"""
     try:
         parsed = _date.fromisoformat(value)
