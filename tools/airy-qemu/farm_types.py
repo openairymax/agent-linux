@@ -65,7 +65,7 @@ __all__ = [
 
 # 3. 契约版本与默认资源预算
 FARM_VERSION: Final[str] = "1.0.0"
-DEFAULT_SUITE_TIMEOUT_S: Final[int] = 120
+DEFAULT_SUITE_TIMEOUT_S: Final[int] = 60
 DEFAULT_JOB_TIMEOUT_S: Final[int] = 1800
 DEFAULT_MEM_MB: Final[int] = 2048
 DEFAULT_SMP: Final[int] = 2
