@@ -10,7 +10,7 @@ Author:
     SPHARX Ltd. - Airymax Team
 
 Version:
-    1.0.0
+    1.1.0
 """
 
 from __future__ import annotations
@@ -74,19 +74,20 @@ GOOD_CONTRACT = """\
 """
 
 # 真实 filechk 产物（含 Linux 原生宏 + AirymaxOS 注入宏）。
-REAL_VERSION_H = """\
-#define LINUX_VERSION_CODE 394909
-#define KERNEL_VERSION(a,b,c) (((a) << 16) + ((b) << 8) + ((c) > 255 ? 255 : (c)))
-#define LINUX_VERSION_MAJOR 6
-#define LINUX_VERSION_PATCHLEVEL 6
-#define LINUX_VERSION_SUBLEVEL 157
-#define AIRYMAXOS_LTS 0
-#define AIRYMAXOS_MAJOR 0
-#define AIRYMAXOS_MINOR 3
-#define AIRYMAXOS_VERSION(a,b) (((a) << 8) + (b))
-#define AIRYMAXOS_VERSION_CODE 3
-#define AIRYMAXOS_RELEASE ""
-"""
+REAL_VERSION_H = (
+    "#define LINUX_VERSION_CODE 394909\n"
+    "#define KERNEL_VERSION(a,b,c) (((a) << 16) + ((b) << 8) + "
+    "((c) > 255 ? 255 : (c)))\n"
+    "#define LINUX_VERSION_MAJOR 6\n"
+    "#define LINUX_VERSION_PATCHLEVEL 6\n"
+    "#define LINUX_VERSION_SUBLEVEL 157\n"
+    "#define AIRYMAXOS_LTS 0\n"
+    "#define AIRYMAXOS_MAJOR 0\n"
+    "#define AIRYMAXOS_MINOR 3\n"
+    "#define AIRYMAXOS_VERSION(a,b) (((a) << 8) + (b))\n"
+    "#define AIRYMAXOS_VERSION_CODE 3\n"
+    '#define AIRYMAXOS_RELEASE ""\n'
+)
 
 
 def write_repo(tmp_path, version_file=None, top_makefile=None,
@@ -119,10 +120,10 @@ def _assignments(tmp_path, version_file=None):
     write_repo(tmp_path, version_file=version_file)
     text = (tmp_path / "kernel" / "Makefile.airymaxos").read_text(
         encoding="utf-8")
-    return kv.parse_assignments(text)
+    return kv.parse_vars(text)
 
 
-def _write_version_h(tmp_path, text=REAL_VERSION_H):
+def _write_vh(tmp_path, text=REAL_VERSION_H):
     path = tmp_path / "generated" / "version.h"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
@@ -133,13 +134,13 @@ def _write_version_h(tmp_path, text=REAL_VERSION_H):
 
 
 class TestHelpers:
-    def test_parse_assignments_skips_comments_and_blanks(self):
+    def test_parse_vars_skips_comments_and_blanks(self):
         text = "# comment\n\nAIRYMAXOS_LTS = 0\n  AIRYMAXOS_MAJOR = 0\n"
-        assert kv.parse_assignments(text) == [("AIRYMAXOS_LTS", "0"),
-                                              ("AIRYMAXOS_MAJOR", "0")]
+        assert kv.parse_vars(text) == [("AIRYMAXOS_LTS", "0"),
+                                       ("AIRYMAXOS_MAJOR", "0")]
 
-    def test_expected_assignments_quotes_release(self):
-        expected = kv.expected_assignments(
+    def test_expect_vars_quotes_release(self):
+        expected = kv.expect_vars(
             {"lts": 0, "major": 0, "minor": 3, "release": ""})
         assert expected == {
             "AIRYMAXOS_LTS": "0",
@@ -154,8 +155,8 @@ class TestHelpers:
         assert "#define AIRYMAXOS_VERSION_CODE 516" in rendered
         assert '#define AIRYMAXOS_RELEASE "rc1"' in rendered
 
-    def test_extract_filechk_block_absent(self):
-        assert kv.extract_filechk_block("VERSION = 6\n") is None
+    def test_filechk_block_absent(self):
+        assert kv.filechk_block("VERSION = 6\n") is None
 
     def test_find_repo_root_points_at_repo(self, repo_root):
         assert kv.find_repo_root() == repo_root
@@ -167,25 +168,25 @@ class TestHelpers:
 
 class TestManifestSchema:
     def test_valid(self, tmp_path):
-        assert kv.check_manifest_schema(_load(tmp_path)).passed
+        assert kv.check_schema(_load(tmp_path)).passed
 
     def test_unknown_top_level_key(self, tmp_path):
         manifest = _load(tmp_path, manifest_yaml=GOOD_MANIFEST + "bogus: 1\n")
-        result = kv.check_manifest_schema(manifest)
+        result = kv.check_schema(manifest)
         assert not result.passed
         assert "未知字段" in result.details
 
     def test_missing_required_field(self, tmp_path):
         manifest = _load(tmp_path, manifest_yaml=GOOD_MANIFEST.replace(
             "top_makefile: kernel/Makefile\n", 'top_makefile: ""\n'))
-        result = kv.check_manifest_schema(manifest)
+        result = kv.check_schema(manifest)
         assert not result.passed
         assert "top_makefile" in result.details
 
     def test_airymaxos_makefile_suffix(self, tmp_path):
         manifest = _load(tmp_path, manifest_yaml=GOOD_MANIFEST.replace(
             "kernel/Makefile.airymaxos", "kernel/Makefile.vendor"))
-        result = kv.check_manifest_schema(manifest)
+        result = kv.check_schema(manifest)
         assert not result.passed
         assert ".airymaxos" in result.details
 
@@ -193,43 +194,44 @@ class TestManifestSchema:
         manifest = _load(tmp_path, manifest_yaml=GOOD_MANIFEST.replace(
             "tools/kbuild-version/contract/version_h.airy.txt",
             "tools/kbuild-version/contract/version_h.airy.md"))
-        result = kv.check_manifest_schema(manifest)
+        result = kv.check_schema(manifest)
         assert not result.passed
         assert ".txt" in result.details
 
     def test_tuple_out_of_range(self, tmp_path):
         manifest = _load(tmp_path, manifest_yaml=GOOD_MANIFEST.replace(
             "  minor: 3\n", "  minor: 256\n"))
-        result = kv.check_manifest_schema(manifest)
+        result = kv.check_schema(manifest)
         assert not result.passed
         assert "version_tuple.minor" in result.details
 
     def test_tuple_bool_rejected(self, tmp_path):
         manifest = _load(tmp_path, manifest_yaml=GOOD_MANIFEST.replace(
             "  major: 0\n", "  major: true\n"))
-        result = kv.check_manifest_schema(manifest)
+        result = kv.check_schema(manifest)
         assert not result.passed
         assert "version_tuple.major" in result.details
 
     def test_tuple_missing_key(self, tmp_path):
         manifest = _load(tmp_path, manifest_yaml=GOOD_MANIFEST.replace(
             '  release: ""\n', ""))
-        result = kv.check_manifest_schema(manifest)
+        result = kv.check_schema(manifest)
         assert not result.passed
         assert "version_tuple 缺少字段" in result.details
 
     def test_tuple_release_must_be_str(self, tmp_path):
         manifest = _load(tmp_path, manifest_yaml=GOOD_MANIFEST.replace(
             '  release: ""', "  release: 1"))
-        result = kv.check_manifest_schema(manifest)
+        result = kv.check_schema(manifest)
         assert not result.passed
         assert "version_tuple.release" in result.details
 
     def test_tuple_not_mapping(self, tmp_path):
         manifest = _load(tmp_path, manifest_yaml=GOOD_MANIFEST.replace(
-            'version_tuple:\n  lts: 0\n  major: 0\n  minor: 3\n  release: ""\n',
+            'version_tuple:\n  lts: 0\n  major: 0\n'
+            '  minor: 3\n  release: ""\n',
             'version_tuple: "oops"\n'))
-        result = kv.check_manifest_schema(manifest)
+        result = kv.check_schema(manifest)
         assert not result.passed
         assert "必须是映射" in result.details
 
@@ -242,13 +244,13 @@ class TestVersionFilePresent:
         repo, _ = write_repo(tmp_path)
         manifest = kv.load_manifest(repo / "tools" / "kbuild-version"
                                     / "manifest.yaml")
-        assert kv.check_version_file_present(manifest, repo).passed
+        assert kv.check_vfile(manifest, repo).passed
 
     def test_missing(self, tmp_path):
         repo, manifest_path = write_repo(tmp_path)
         (repo / "kernel" / "Makefile.airymaxos").unlink()
         manifest = kv.load_manifest(manifest_path)
-        result = kv.check_version_file_present(manifest, repo)
+        result = kv.check_vfile(manifest, repo)
         assert not result.passed
         assert "版本文件缺失" in result.details
 
@@ -258,22 +260,22 @@ class TestVersionFilePresent:
 
 class TestTupleMatches:
     def test_valid(self, tmp_path):
-        assert kv.check_tuple_matches(_assignments(tmp_path),
-                                      _load(tmp_path)).passed
+        assert kv.check_tuple(_assignments(tmp_path),
+                              _load(tmp_path)).passed
 
     def test_mismatch(self, tmp_path):
         version_file = GOOD_VERSION_FILE.replace("AIRYMAXOS_MINOR   = 3",
                                                  "AIRYMAXOS_MINOR   = 9")
-        result = kv.check_tuple_matches(_assignments(tmp_path, version_file),
-                                        _load(tmp_path))
+        result = kv.check_tuple(_assignments(tmp_path, version_file),
+                                _load(tmp_path))
         assert not result.passed
         assert "AIRYMAXOS_MINOR" in result.details
 
     def test_missing_var(self, tmp_path):
         version_file = GOOD_VERSION_FILE.replace(
             'AIRYMAXOS_RELEASE = ""\n', "")
-        result = kv.check_tuple_matches(_assignments(tmp_path, version_file),
-                                        _load(tmp_path))
+        result = kv.check_tuple(_assignments(tmp_path, version_file),
+                                _load(tmp_path))
         assert not result.passed
         assert "AIRYMAXOS_RELEASE" in result.details
         assert "<缺失>" in result.details
@@ -284,12 +286,11 @@ class TestTupleMatches:
 
 class TestOnlyVersionVars:
     def test_valid(self, tmp_path):
-        assert kv.check_only_version_vars(_assignments(tmp_path)).passed
+        assert kv.check_vars(_assignments(tmp_path)).passed
 
     def test_extra_var(self, tmp_path):
         version_file = GOOD_VERSION_FILE + "AIRYMAXOS_FEATURE = 1\n"
-        result = kv.check_only_version_vars(_assignments(tmp_path,
-                                                         version_file))
+        result = kv.check_vars(_assignments(tmp_path, version_file))
         assert not result.passed
         assert "AIRYMAXOS_FEATURE" in result.details
 
@@ -301,13 +302,13 @@ class TestIncludeDirective:
     def test_valid(self, tmp_path):
         repo, manifest_path = write_repo(tmp_path)
         manifest = kv.load_manifest(manifest_path)
-        assert kv.check_include_directive(manifest, repo).passed
+        assert kv.check_include(manifest, repo).passed
 
     def test_missing_directive(self, tmp_path):
         top = GOOD_MAKEFILE.replace(kv.INCLUDE_DIRECTIVE + "\n", "")
         repo, manifest_path = write_repo(tmp_path, top_makefile=top)
         manifest = kv.load_manifest(manifest_path)
-        result = kv.check_include_directive(manifest, repo)
+        result = kv.check_include(manifest, repo)
         assert not result.passed
         assert kv.INCLUDE_DIRECTIVE in result.details
 
@@ -315,7 +316,7 @@ class TestIncludeDirective:
         repo, manifest_path = write_repo(tmp_path)
         (repo / "kernel" / "Makefile").unlink()
         manifest = kv.load_manifest(manifest_path)
-        result = kv.check_include_directive(manifest, repo)
+        result = kv.check_include(manifest, repo)
         assert not result.passed
         assert "顶层 Makefile 缺失" in result.details
 
@@ -327,14 +328,14 @@ class TestFilechkMacros:
     def test_valid(self, tmp_path):
         repo, manifest_path = write_repo(tmp_path)
         manifest = kv.load_manifest(manifest_path)
-        assert kv.check_filechk_macros(manifest, repo).passed
+        assert kv.check_macros(manifest, repo).passed
 
     def test_missing_macro(self, tmp_path):
         top = GOOD_MAKEFILE.replace("AIRYMAXOS_VERSION_CODE",
                                     "AIRYMAXOS_VCODE")
         repo, manifest_path = write_repo(tmp_path, top_makefile=top)
         manifest = kv.load_manifest(manifest_path)
-        result = kv.check_filechk_macros(manifest, repo)
+        result = kv.check_macros(manifest, repo)
         assert not result.passed
         assert "AIRYMAXOS_VERSION_CODE" in result.details
 
@@ -342,9 +343,17 @@ class TestFilechkMacros:
         repo, manifest_path = write_repo(tmp_path,
                                          top_makefile="VERSION = 6\n")
         manifest = kv.load_manifest(manifest_path)
-        result = kv.check_filechk_macros(manifest, repo)
+        result = kv.check_macros(manifest, repo)
         assert not result.passed
         assert "未找到" in result.details
+
+    def test_top_makefile_absent(self, tmp_path):
+        repo, manifest_path = write_repo(tmp_path)
+        (repo / "kernel" / "Makefile").unlink()
+        manifest = kv.load_manifest(manifest_path)
+        result = kv.check_macros(manifest, repo)
+        assert not result.passed
+        assert "顶层 Makefile 缺失" in result.details
 
 
 # ─── 契约快照 ─────────────────────────────────────────────────────────────
@@ -382,12 +391,12 @@ class TestContract:
 class TestRealVersionH:
     def test_valid(self, tmp_path):
         manifest = _load(tmp_path)
-        version_h = _write_version_h(tmp_path)
-        assert kv.check_real_version_h(manifest, version_h).passed
+        version_h = _write_vh(tmp_path)
+        assert kv.check_version_h(manifest, version_h).passed
 
     def test_absent(self, tmp_path):
         manifest = _load(tmp_path)
-        result = kv.check_real_version_h(manifest, tmp_path / "none" / "v.h")
+        result = kv.check_version_h(manifest, tmp_path / "none" / "v.h")
         assert not result.passed
         assert "version.h 不存在" in result.details
 
@@ -395,8 +404,8 @@ class TestRealVersionH:
         manifest = _load(tmp_path)
         text = REAL_VERSION_H.replace("#define AIRYMAXOS_MINOR 3",
                                       "#define AIRYMAXOS_MINOR 5")
-        result = kv.check_real_version_h(manifest, _write_version_h(tmp_path,
-                                                                   text))
+        result = kv.check_version_h(manifest,
+                                    _write_vh(tmp_path, text))
         assert not result.passed
         assert "AIRYMAXOS_MINOR 5" in result.details
 
@@ -416,7 +425,7 @@ class TestBuildChecksAndCli:
         repo, manifest_path = write_repo(tmp_path)
         manifest = kv.load_manifest(manifest_path)
         results = kv.build_checks(manifest, repo,
-                                  version_h=_write_version_h(tmp_path))
+                                  version_h=_write_vh(tmp_path))
         assert len(results) == 8
         assert all(r.passed for r in results)
 
@@ -454,7 +463,7 @@ class TestBuildChecksAndCli:
 
     def test_version_h_flag_via_main(self, tmp_path, capsys):
         repo, _ = write_repo(tmp_path)
-        version_h = _write_version_h(tmp_path)
+        version_h = _write_vh(tmp_path)
         with pytest.raises(SystemExit) as exc:
             kv.main(["--repo-root", str(repo), "--version-h", str(version_h),
                      "--check"])
