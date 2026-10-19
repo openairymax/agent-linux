@@ -51,26 +51,30 @@ kernel/scripts/airy_checkpatch_ext.pl
 ## 使用方法
 
 ```bash
-# 在 kernel 子模块根目录运行；省略路径则扫描 AirymaxOS 全部落点
+# 在 agent-linux 仓库根运行；省略路径则扫描 AirymaxOS 全部默认落点
 LC_ALL=C perl kernel/scripts/airy_checkpatch_ext.pl
 
-# 仅扫描指定路径
-LC_ALL=C perl kernel/scripts/airy_checkpatch_ext.pl security/airy
+# 仅扫描指定路径（相对当前工作目录）
+LC_ALL=C perl kernel/scripts/airy_checkpatch_ext.pl kernel/security/airy
 
 # 查看帮助（含全部规则与退出码说明）
 perl kernel/scripts/airy_checkpatch_ext.pl --help
 
 # 输出规则注册表（TSV：id / 级别 / 摘要），供门禁与文档核对
 perl kernel/scripts/airy_checkpatch_ext.pl --list-rules
+
+# 仅输出违规项，省略汇总行（错误信息仍写 stderr）
+LC_ALL=C perl kernel/scripts/airy_checkpatch_ext.pl --quiet
 ```
 
 规则集由引擎内的单一注册表维护，`--help` 与 `--list-rules` 均由其派生。
 
-默认扫描目录（相对 kernel 根）：
+默认扫描落点（相对 kernel 根）：
 
 ```text
 security/airy  kernel/superv  kernel/syscalls  kernel/corekern
 kernel/log     kernel/ipc     include/airymax  include/uapi/linux/airymax
+init/airy_core.c  include/trace/events/airy.h
 ```
 
 并自动追加 `arch/*/configs/airy*_defconfig`。
@@ -81,10 +85,14 @@ kernel/log     kernel/ipc     include/airymax  include/uapi/linux/airymax
 |--------|------|
 | `0` | 无 `error` 级违规（允许存在 `warning`） |
 | `1` | 存在 `error` 级违规 |
-| `2` | 用法或 IO 错误 |
+| `2` | 用法或 IO 错误（显式目标不存在、文件不可读等） |
+
+显式目标不存在或文件不可读时，引擎在 stderr 指明对象后以 `2` 退出；该
+状态优先于 `1`，表示结果不完整。
 
 输出格式：`<相对路径>:<行号>: <ERROR|WARNING> <规则号>: <说明>`，
-末行为汇总 `airy_checkpatch_ext: N files checked, N errors, N warnings`。
+末行为汇总 `airy_checkpatch_ext: N files checked, N errors, N warnings`；
+`--quiet` 省略汇总行与违规项以外的输出。
 
 ## CI 接入
 

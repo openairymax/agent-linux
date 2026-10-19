@@ -23,6 +23,8 @@ import re
 import subprocess
 from pathlib import Path
 
+import pytest
+
 SUMMARY_RE = re.compile(
     r"airy_checkpatch_ext:\s*(\d+) files checked,\s*(\d+) errors,"
     r"\s*(\d+) warnings")
@@ -112,6 +114,42 @@ class TestCliContract:
         for rid, sev, brief in (row.split("\t") for row in
                                 listing.stdout.splitlines()):
             assert f"{rid[-3:]} {sev:<8} {brief}" in help_out.stdout
+
+
+class TestErrorPaths:
+    def test_quiet_omits_summary_but_keeps_violations(self, perl, kernel_root,
+                                                      tmp_path):
+        path = c_file(tmp_path, "quiet.c", "void badname(void)", "{", "}")
+        proc = run_engine(perl, kernel_root, "-q", str(path))
+        assert proc.returncode == 1
+        assert "AIRY-CHECKPATCH-002" in proc.stdout
+        assert "files checked" not in proc.stdout
+
+    def test_missing_explicit_target_is_usage_error(self, perl, kernel_root,
+                                                    tmp_path):
+        missing = tmp_path / "missing"
+        proc = run_engine(perl, kernel_root, str(missing))
+        assert proc.returncode == 2
+        assert f"{missing}: no such file or directory" in proc.stderr
+        assert "files checked" not in proc.stdout
+
+    def test_unreadable_file_is_io_error(self, perl, kernel_root, tmp_path):
+        if os.geteuid() == 0:
+            pytest.skip("root 无视文件权限，无法构造读取失败")
+        path = c_file(tmp_path, "locked.c", "void airy_probe(void)", "{", "}")
+        path.chmod(0o000)
+        try:
+            proc = run_engine(perl, kernel_root, str(path))
+        finally:
+            path.chmod(0o644)
+        assert proc.returncode == 2
+        assert f"{path.name}: cannot read" in proc.stderr
+
+    def test_quiet_does_not_hide_errors(self, perl, kernel_root, tmp_path):
+        root = copy_engine(kernel_root, tmp_path)
+        proc = run_engine(perl, root, "-q")
+        assert proc.returncode == 2
+        assert "no input files found" in proc.stderr
 
 
 class TestDefaultScan:
