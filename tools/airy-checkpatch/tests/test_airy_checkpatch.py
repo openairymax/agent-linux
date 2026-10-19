@@ -70,6 +70,16 @@ def raw_file(tmp_path, name, body):
     return path
 
 
+def copy_engine(kernel_root, tmp_path):
+    """把引擎复制到临时仓库的 scripts/ 下，用于默认落点边界测试。"""
+    root = tmp_path / "kernel"
+    (root / "scripts").mkdir(parents=True)
+    src = kernel_root / "scripts" / "airy_checkpatch_ext.pl"
+    (root / "scripts" / src.name).write_text(
+        src.read_text(encoding="utf-8"), encoding="utf-8")
+    return root
+
+
 class TestCliContract:
     def test_help_lists_every_rule(self, perl, kernel_root):
         proc = run_engine(perl, kernel_root, "--help")
@@ -122,6 +132,35 @@ class TestDefaultScan:
         assert files == scoped + defconfigs
         assert errors == 0
         assert proc.returncode == 0
+
+    def test_default_scan_reaches_init_and_trace(self, perl, kernel_root,
+                                                 tmp_path):
+        root = copy_engine(kernel_root, tmp_path)
+        (root / "init").mkdir()
+        (root / "init" / "airy_core.c").write_text(
+            C_HEADER + "void airy_probe(void)\n{\n}\n", encoding="utf-8")
+        trace = root / "include" / "trace" / "events"
+        trace.mkdir(parents=True)
+        (trace / "airy.h").write_text(C_HEADER, encoding="utf-8")
+        proc = run_engine(perl, root)
+        files, errors, _ = summarize(proc)
+        assert files == 2
+        assert errors == 0
+
+    def test_vcs_metadata_is_pruned(self, perl, kernel_root, tmp_path):
+        tree = tmp_path / "scan"
+        (tree / ".git").mkdir(parents=True)
+        (tree / ".git" / "config").write_text("CONFIG_BPF_LSM=y\n",
+                                              encoding="utf-8")
+        (tree / "frag.config").write_text("CONFIG_SCHED_EXT=y\n",
+                                          encoding="utf-8")
+        proc = run_engine(perl, kernel_root, str(tree))
+        files, _, _ = summarize(proc)
+        defconfigs = sum(1 for _ in kernel_root.glob(
+            "arch/*/configs/airy*_defconfig"))
+        assert files == 1 + defconfigs
+        assert "AIRY-CHECKPATCH-009" not in reported_ids(proc)
+        assert "AIRY-CHECKPATCH-010" in reported_ids(proc)
 
 
 class TestHeaderRule:
