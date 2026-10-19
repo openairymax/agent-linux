@@ -114,6 +114,13 @@ python3 tools/os-chk/os_chk.py --check
 # 退出码: 0=通过, 1=阻断, 2=用法/环境错误
 ```
 
+存在未达阻断阈值的失败时，摘要仍为 PASS 并标注数量，退出码与之一致：
+
+```text
+OS-CHK: PASS (9/10 gates, 1 non-blocking, 1.2s)
+  [ERROR] P2-GATE 名称: 失败摘要
+```
+
 ### 列出 / 选择性运行
 
 ```bash

@@ -317,6 +317,14 @@ class TestReport:
         assert "OS-CHK: FAIL" in out
         assert "A t: bad" in out
 
+    def test_check_mode_nonblocking_failure_reports_pass(self, capsys):
+        res = make_result(make_gate("P2-GATE", "P2"), oc.STATUS_FAIL, 1)
+        res.detail = "warn"
+        oc.print_report([res], "1.0.0", 0.4, True, False, "T", "P1")
+        out = capsys.readouterr().out
+        assert out.startswith("OS-CHK: PASS (0/1 gates, 1 non-blocking")
+        assert "[ERROR] P2-GATE t: warn" in out
+
     def test_verbose_renders_output(self, capsys):
         res = make_result(make_gate("A", "P0"), oc.STATUS_FAIL, 1)
         res.stdout = "line-1\nline-2"
@@ -386,6 +394,13 @@ class TestCli:
         payload = json.loads(out.read_text(encoding="utf-8"))
         assert payload["summary"]["failed"] == 0
         assert payload["summary"]["total"] >= 6
+
+    def test_json_write_failure(self, repo_root, tmp_path, capsys):
+        out = tmp_path / "missing" / "report.json"
+        rc = oc.main(["--repo-root", str(repo_root), "--check",
+                      "--gate", "OS-IRON-001", "--json", str(out)])
+        assert rc == oc.EXIT_USAGE
+        assert "无法写入" in capsys.readouterr().err
 
     def test_fail_on_none_never_blocks(self, repo_root, tmp_path):
         bad = tmp_path / "bad.yaml"
