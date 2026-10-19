@@ -1,0 +1,108 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+#
+# AirymaxOS 版本级回滚契约清单（唯一事实源 / SSoT）
+# Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
+#
+# 权威依据：
+#   docs/docs-linux/100-operations/01-deployment.md §11（L1/L2/L3 回滚）
+#     OS-OPS-021 快照保留 7 天
+#     OS-OPS-022 回滚后校验 12 daemons 与记忆卷
+#     OS-OPS-023 dnf 回滚不覆盖 %config(noreplace)
+#     OS-OPS-036 /var/lib/agentrt 必须独立挂载
+#   docs/docs-linux/120-development-process/09-release-process.md §7.2-7.5
+#   docs/docs-linux/100-operations/07-systemd-integration.md §8.1（12 unit）
+#
+# 铁律：外部命令模板只在此处定义；airy_rollback.py 只做编排与校验，
+#      避免同一命令出现两个事实源。路径必须是绝对路径。
+#
+# 字段：
+#   release_file    当前版本标识文件（首行为版本号）
+#   snapshot_root   L3 根分区快照根目录
+#   audit_log       回滚审计日志（JSONL，append-only，0600/0640）
+#   pending_flag    升级进行中标记；回滚成功后清除
+#   lock_file       回滚互斥锁（flock，非阻塞）
+#   memory_path     Agent 记忆卷挂载点，不参与根分区回滚
+#   retention_days  L3 快照保留天数（OS-OPS-021）
+#   timeout_s       单条外部命令超时秒数
+#   daemons         12 个 daemon unit，顺序与 07-systemd-integration §8.1 一致
+#   commands        命令模板；{tx}/{units}/{unit}/{dest}/{source}/{path}
+#                   由 airy_rollback.py 在计划阶段展开，不得含其他占位符
+
+version: "1.0.0"
+
+release_file: /etc/airymaxos/release
+snapshot_root: /snapshots
+audit_log: /var/log/agentrt/rollback.jsonl
+pending_flag: /var/lib/agent-linux/.pending-upgrade
+lock_file: /run/airy-rollback.lock
+memory_path: /var/lib/agentrt
+
+retention_days: 7
+timeout_s: 30.0
+
+daemons:
+  - agentrt-gateway.service
+  - agentrt-cogn.service
+  - agentrt-dev.service
+  - agentrt-sched.service
+  - agentrt-macro-superv.service
+  - agentrt-audit.service
+  - agentrt-net.service
+  - agentrt-mem.service
+  - agentrt-sec.service
+  - agentrt-logger.service
+  - agentrt-vfs.service
+  - agentrt-config.service
+
+commands:
+  daemon_active:
+    - systemctl
+    - is-active
+    - "{unit}"
+  l1_rollback:
+    - dnf
+    - "-y"
+    - history
+    - rollback
+    - "{tx}"
+  l2_reload:
+    - systemctl
+    - daemon-reload
+  l2_restart:
+    - systemctl
+    - restart
+    - "{units}"
+  l3_btrfs_snap:
+    - btrfs
+    - subvolume
+    - snapshot
+    - /
+    - "{dest}"
+  l3_btrfs_default:
+    - btrfs
+    - subvolume
+    - set-default
+    - "{source}"
+  l3_lvm_merge:
+    - lvconvert
+    - --merge
+    - "{source}"
+  l3_btrfs_del:
+    - btrfs
+    - subvolume
+    - delete
+    - "{dest}"
+  l3_lvm_del:
+    - lvremove
+    - "-f"
+    - "{source}"
+  mount_source:
+    - findmnt
+    - "-n"
+    - "-o"
+    - SOURCE
+    - "--mountpoint"
+    - "{path}"
+  reboot:
+    - systemctl
+    - reboot
