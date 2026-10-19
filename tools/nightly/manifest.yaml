@@ -1,0 +1,114 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+#
+# AirymaxOS nightly workflow 契约清单（唯一事实源 / SSoT）
+# Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
+#
+# 权威依据：
+#   docs/docs-linux/120-development-process/08-ci-cd-pipeline.md
+#     §6.1 nightly 结果不阻断 PR
+#     §6.2 触发条件（每日 02:00 UTC + 手动）
+#     §9.2 并发限制（nightly 全局单实例，不取消进行中的运行）
+#   docs/docs-linux/70-build-system/03-ci-cd-pipeline.md
+#     §2.1 workflow 布局（develop nightly build）
+#     §5.4/§5.5 formal/soak/chaos 工具未实现，降级 SKIP
+#     §9.4 超时约束（OS-STD-TEST-011，CI 总时长 ≤60 分钟）
+#
+# 铁律：本清单是 nightly workflow 的结构、预算与 helper 契约的唯一事实源。
+#      .github/workflows/nightly.yml 必须与本表逐项相等；任何一侧漂移由
+#      tools/nightly/nightly.py --check 检出。
+#
+# 字段：
+#   workflow        受检 workflow（相对仓库根）
+#   helper_surface  helper 脚本登记表（tools/README.md）
+#   triggers.cron   schedule 唯一 cron（每日 02:00 UTC）
+#   triggers.forbidden 禁止的触发方式（nightly 不得阻断 PR）
+#   concurrency.group 全局单实例组名；cancel_in_progress 必须为 false
+#   permissions     workflow 级最小权限
+#   runner.label   托管 runner 标签
+#   runner.hosted_ceiling_minutes 托管 runner 单 job 硬上限（6 小时）
+#   jobs[].timeout_minutes job 超时；jobs[].needs 依赖；jobs[].always 无条件执行
+#   helpers.<key>.status  deferred（未落地，存在性守卫）| available（已落地）
+#   helpers.<key>.argv    调用契约必须出现的参数
+#   budget          CI 总时长检测（OS-STD-TEST-011）
+
+version: "1.0.0"
+
+workflow: .github/workflows/nightly.yml
+helper_surface: tools/README.md
+
+triggers:
+  cron: "0 2 * * *"
+  workflow_dispatch: true
+  forbidden:
+    - pull_request
+    - pull_request_target
+    - push
+
+concurrency:
+  group: nightly
+  cancel_in_progress: false
+
+permissions:
+  contents: read
+
+runner:
+  label: ubuntu-latest
+  hosted_ceiling_minutes: 360
+
+jobs:
+  - name: nightly-test-suite
+    timeout_minutes: 360
+    needs: []
+    helpers:
+      - formal-verify
+      - soak-runner
+      - chaos-runner
+  - name: nightly-revert-or-budget
+    timeout_minutes: 30
+    needs:
+      - nightly-test-suite
+    always: true
+    helpers:
+      - auto-bisect
+      - create-revert-pr
+      - ci-budget-check
+
+helpers:
+  formal-verify:
+    path: tools/formal-verify.py
+    status: deferred
+    argv:
+      - "--target"
+  soak-runner:
+    path: tools/soak-runner.py
+    status: deferred
+    argv:
+      - "--duration"
+      - "--workload"
+  chaos-runner:
+    path: tools/chaos-runner.py
+    status: deferred
+    argv:
+      - "--profile"
+  auto-bisect:
+    path: tools/auto-bisect.py
+    status: deferred
+    argv:
+      - "--baseline"
+  create-revert-pr:
+    path: tools/create-revert-pr.py
+    status: deferred
+    argv:
+      - "--regression-commit"
+  ci-budget-check:
+    path: tools/ci-budget-check.py
+    status: deferred
+    argv:
+      - "--max-minutes"
+
+budget:
+  max_minutes: 60
+  helper: ci-budget-check
+  argv:
+    - "--max-minutes"
+    - "60"
