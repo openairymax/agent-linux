@@ -27,12 +27,15 @@
 # 亦纳入监听。
 # OS-OPS-ROLLBACK 的受检对象为 tools/airy-rollback/manifest.yaml 及其编排
 # 器，故 tools/airy-rollback/** 亦纳入监听。
+# OS-ACC-RT 验收工具 tools/osaccrt/ 以 pytest 单元测试作为 L0 门禁，其用例
+# 落在 tools/osaccrt/tests/，故该目录亦纳入监听与测试清单。
 # ===========================================================================
 
 name: os-chk-verify
 on:
   pull_request:
     paths:
+      - 'tools/osaccrt/**'
       - 'tools/os-chk/**'
       - 'tools/check-copyright.py'
       - 'tools/validate-ssot.py'
@@ -57,6 +60,7 @@ on:
   push:
     branches: [main, develop]
     paths:
+      - 'tools/osaccrt/**'
       - 'tools/os-chk/**'
       - 'tools/check-copyright.py'
       - 'tools/validate-ssot.py'
@@ -117,7 +121,8 @@ jobs:
             tools/defconfig-matrix/tests/ tools/ci-matrix/tests/ \
             tools/btf-integration/tests/ tools/kbuild-version/tests/ \
             tools/release-engineering/tests/ tools/nightly/tests/ \
-            tools/repo-scaffold/tests/ tools/airy-rollback/tests/ -q
+            tools/repo-scaffold/tests/ tools/airy-rollback/tests/ \
+            tools/osaccrt/tests/ -q
 
       - name: Run OS-CHK unified gates
         run: |
