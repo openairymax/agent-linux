@@ -15,11 +15,12 @@ governance files, build the kernel, run nightly verification, publish releases,
 guard the `[SC]` shared-contract layer, and enforce SSoT (Single Source of
 Truth) consistency.
 
-Each workflow stays deliberately small: the kernel and management-orchestration
-pipelines use **2 jobs** (`ci-kernel.yml`: `kernel-build` → `kernel-verify`;
-`mgmt-orchestrator.yml`: `file-integrity` → `orchestrate-leaf-ci`), while
-`ci-airy.yml` fans out into 4 focused jobs and `codegen-verify.yml` is a single
-SSoT drift gate. Language-level CI for C / Rust / Go / Python is delegated to
+Each workflow stays deliberately small: the kernel, management-orchestration and
+image-acceptance pipelines use **2 jobs** (`ci-kernel.yml`: `kernel-build` →
+`kernel-verify`; `mgmt-orchestrator.yml`: `file-integrity` →
+`orchestrate-leaf-ci`; `image-ci.yml`: `assemble` → `accept`), while
+`ci-airy.yml` fans out into 4 focused jobs and the remaining gates are single
+SSoT drift checks. Language-level CI for C / Rust / Go / Python is delegated to
 each leaf repository's own `.github/workflows/`; this repository only performs
 management-level orchestration.
 
@@ -28,11 +29,16 @@ management-level orchestration.
 ```text
 .github/
 ├── README.md                    # This file
-├── workflows/                   # 8 GitHub Actions workflows
+├── workflows/                   # 13 GitHub Actions workflows
 │   ├── ci-kernel.yml            # Kernel build matrix + static analysis + tests
 │   ├── ci-airy.yml              # Airymax build (4 arches) + checkpatch + SPDX + symbol integrity
+│   ├── abi-verify.yml           # syscall ABI four-source + baseline snapshot check
+│   ├── dsl-verify.yml           # Policy DSL (.adl → C tables) zero-drift gate
+│   ├── farm-verify.yml          # QEMU test-farm unit and end-to-end tests
+│   ├── os-chk-verify.yml        # OS-CHK unified gate orchestration (P0/P1 blocking)
 │   ├── codegen-verify.yml       # Codegen SSoT drift gate (contract sources → generated outputs)
 │   ├── mgmt-orchestrator.yml    # Governance file integrity + leaf CI orchestration
+│   ├── image-ci.yml             # Desktop ISO assembly + install/cold-boot acceptance
 │   ├── nightly.yml              # Nightly test suite + auto-revert/budget check
 │   ├── release.yml              # Build + SBOM + sign + publish release
 │   ├── sc-dual-ci.yml           # [SC] header validation + agentrt mirror CI
@@ -41,14 +47,19 @@ management-level orchestration.
 └── PULL_REQUEST_TEMPLATE.md     # Pull request template
 ```
 
-## CI Workflows (8 workflows)
+## CI Workflows (13 workflows)
 
 | Workflow | Jobs | Trigger |
 |----------|------|---------|
 | `ci-kernel.yml` | `kernel-build` — Kbuild matrix (4 configs × 4 arches × 2 compilers − 1 exclude = 31) with `W=2` zero-warning gate; `kernel-verify` — checkpatch `--strict`, sparse `C=2`, Coccinelle, KUnit on UML, kselftest on QEMU | PR / push on `kernel/**` |
 | `ci-airy.yml` | `airy-defconfig-verify` — `airy_defconfig` build on 4 arches (x86_64/arm64/riscv/loongarch) + Airymax CONFIG gate + `.o` artifact check; `airy-checkpatch` — checkpatch `--strict` on Airymax dirs; `airy-spdx-audit` — SPDX identifier audit (`[SC]` = BSD-3-Clause OR GPL-2.0, else GPL-2.0-only); `airy-symbol-integrity` — `security/airy/` vs `kernel/superv/` symbol-clash check | PR / push on Airymax paths |
+| `abi-verify.yml` | `abi-verify` — `abi-check` unit tests plus four-source consistency (SSoT registry / UAPI `unistd.h` / `syscall_64.tbl` / `[SC]` `syscalls.h`) against `abi_baseline.json` (OS-IRON-001) | PR / push on `tools/abi-check/**`, ABI sources |
+| `dsl-verify.yml` | `dsl-verify` — `tools/dsl` unit tests plus `dsl_compile.py --check` content compare, proving `.adl` contract sources and generated C tables stay in sync (IRON-9) | PR / push on `tools/dsl/**`, `tools/codegen/**` |
+| `farm-verify.yml` | `farm-verify` — QEMU test-farm unit and end-to-end pytest suite; executors are substituted so no host KVM or real QEMU is required | PR / push on `tools/airy-qemu/**` |
+| `os-chk-verify.yml` | `os-chk-verify` — resolve `gates.yaml`, dispatch registered OS-CHK executors, aggregate reports and block on P0/P1 findings | PR / push on `tools/**` executors and their audited objects |
 | `codegen-verify.yml` | `codegen-diff-check` — run `tools/codegen/run_codegen.py --check` (content compare, works across submodules) as the zero-drift SSoT gate (IRON-9) | PR / push on `tools/codegen/**`, `sdk/**`, `kernel`, `security` |
 | `mgmt-orchestrator.yml` | `file-integrity` — verify submodule dirs derived from `.gitmodules` (9 entries), `[SC]` 12 shared headers, 12 governance files, no `airymaxos-` prefix; `orchestrate-leaf-ci` — aggregate leaf CI statuses, markdownlint repository-owned markdown, copyright header check | PR on `**.md`, `.gitmodules`, `ssot-registry.yaml`, `MAINTAINERS`, `CODEOWNERS`, `tools/**`, `.github/**` / push on `main` |
+| `image-ci.yml` | `assemble` — build the desktop ISO from a pinned openEuler netinst base inside a privileged official container, then verify the assembly manifest and ISO checksum; `accept` — install the ISO in QEMU under BIOS and UEFI, cold-boot to `AIRYMAX-DESKTOP-READY` (or `AIRYMAX-SMOKE-PASS` with `acceptance=true`), publish TAP and serial logs | `workflow_dispatch` (release gate, not a PR gate) |
 | `nightly.yml` | `nightly-test-suite` — seL4-style formal verification, 72h soak test, chaos injection (CPU hotplug / mem hotremove / I/O error / net partition); `nightly-revert-or-budget` — auto-revert on regression via `auto-bisect`, or CI budget check (60 min gate, OS-STD-TEST-011) | cron `0 2 * * *` / `workflow_dispatch` |
 | `release.yml` | `build-and-sign` — SPDX SBOM (syft per submodule + merge), kernel RPM build, GPG + cosign signing, SDK tarball; `publish-release` — publish dnf repo, push OCI image, create GitHub Release with artifacts | tag `v*` / `v*-rc*` / `workflow_dispatch` |
 | `sc-dual-ci.yml` | `sc-validate` — verify `[SC]` 12 shared headers exist under `kernel/include/uapi/linux/airymax/`, no physical duplicates (OS-IRON-014); `sc-trigger-and-await` — export header patches, create mirror PR in agentrt repo, poll mirror CI status (30 min timeout) | PR touching any `[SC]` header |
@@ -75,7 +86,9 @@ mirror) per OS-IRON-014.
 ## Development Guide
 
 - **Trigger a workflow manually** — workflows exposing `workflow_dispatch` can be
-  run from the GitHub Actions UI (`nightly.yml`, `release.yml`).
+  run from the GitHub Actions UI (`nightly.yml`, `release.yml`, `image-ci.yml`).
+  For `image-ci.yml`, set `acceptance: true` to build the acceptance ISO and
+  assert the in-session `AIRYMAX-SMOKE-PASS` marker.
 - **Add a new workflow** — keep the 2-job cap; reference the authority document
   `docs/docs-linux/70-build-system/03-ci-cd-pipeline.md` in the header comment.
 - **Local SSoT validation** before pushing:
