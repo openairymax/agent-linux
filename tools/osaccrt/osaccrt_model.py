@@ -43,6 +43,7 @@ __all__ = [
     "Step",
     "Threshold",
     "Verdict",
+    "need_relpath",
     "need_text",
 ]
 
@@ -95,7 +96,7 @@ class Evidence:
     step: Step
 
     def __post_init__(self) -> None:
-        _need_relpath(self.path)
+        need_relpath(self.path)
         if not SHA256_RE.fullmatch(self.sha256):
             raise ValueError(f"sha256 must be 64 lowercase hex: {self.path!r}")
         if not isinstance(self.step, Step):
@@ -153,7 +154,7 @@ def need_text(value: str, name: str) -> None:
         raise ValueError(f"{name} must not be padded: {value!r}")
 
 
-def _need_relpath(path: str) -> None:
+def need_relpath(path: str) -> None:
     """校验证据路径为包内相对路径，禁止绝对路径与向上逃逸。"""
     need_text(path, "path")
     if path.startswith("/") or "\\" in path:
