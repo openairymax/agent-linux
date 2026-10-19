@@ -61,6 +61,7 @@ __all__ = [
     "Machine",
     "Suite",
     "TapSummary",
+    "Target",
 ]
 
 # 3. 契约版本与默认资源预算
@@ -257,6 +258,30 @@ class Suite:
         if not _SUITE_RE.fullmatch(self.name):
             raise ValueError(f"invalid suite name: {self.name!r}")
         _need_pos(self.timeout_s, "timeout_s")
+
+
+@dataclass(frozen=True)
+class Target:
+    """已解析的 QEMU 目标：清单机器定义 + 实际生效的加速器。"""
+
+    machine: Machine
+    accel: Accel
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.machine, Machine):
+            raise ValueError("machine must be Machine")
+        if not isinstance(self.accel, Accel):
+            raise ValueError(f"accel must be Accel, got {type(self.accel).__name__}")
+
+    @property
+    def arch(self) -> Arch:
+        """目标架构。"""
+        return self.machine.arch
+
+    @property
+    def qemu_bin(self) -> str:
+        """目标实际调用的 QEMU 二进制。"""
+        return self.machine.qemu_bin
 
 
 @dataclass(frozen=True)
