@@ -38,31 +38,51 @@ btf_integration.py — AirymaxOS BTF / eBPF 基线一致性检查器
     Linux 6.6 的 BTF 由 gen_btf() 以 .BTF 段内嵌进 vmlinux，不产出独立的
     vmlinux.btf 文件；故 CI 断言的是 vmlinux 中的 .BTF 段
 
-Usage:
-    python3 tools/btf-integration/btf_integration.py [options]
+Example:
+    >>> from btf_integration import build_checks, load_manifest
+    >>> manifest = load_manifest("tools/btf-integration/manifest.yaml")
+    >>> results = build_checks(manifest, repo_root, repo_root / "kernel")
+    >>> all(result.passed for result in results)
+    True
 
-Options:
-    --repo-root PATH    仓库根（默认：自动探测）
-    --manifest PATH     基线清单（默认：tools/btf-integration/manifest.yaml）
-    --check             CI 模式：精简输出，仅退出码
+Author:
+    SPHARX Ltd. - Airymax Team
 
-Exit codes:
-    0 — 全部检查通过
-    1 — 一项或多项检查失败
-    2 — 用法/环境错误（清单缺失、YAML 非法、内核源码目录缺失等）
+Version:
+    1.1.0
 """
+
+from __future__ import annotations
 
 import argparse
 import re
 import sys
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 try:
     import yaml
 except ImportError:  # pragma: no cover - 环境缺失时在入口统一报错
     yaml = None
 
-# ─── Constants ─────────────────────────────────────────────────────────────
+__all__ = [
+    "CheckResult",
+    "ManifestError",
+    "build_checks",
+    "check_bpf",
+    "check_btf",
+    "check_ci_supply",
+    "check_frags",
+    "check_schema",
+    "check_trace",
+    "find_repo_root",
+    "load_arches",
+    "load_manifest",
+    "main",
+    "print_report",
+    "read_configs",
+]
 
 DEFAULT_MANIFEST_REL = "tools/btf-integration/manifest.yaml"
 DEFAULT_KERNEL_DIR = "kernel"
@@ -71,7 +91,6 @@ EXIT_PASS = 0
 EXIT_FAIL = 1
 EXIT_USAGE = 2
 
-# 受检片段存在性门禁的检查名（schema/清单失败时复用同一名字报告阻塞原因）。
 GUARD_NAME = "受检片段存在（清单 build=true ↔ 内核树）"
 
 MANIFEST_KEYS = frozenset(
@@ -92,35 +111,53 @@ CONFIG_SET_RE = re.compile(r"^# (CONFIG_[A-Za-z0-9_]+) is not set$")
 CONFIG_SYM_RE = re.compile(r"^CONFIG_[A-Za-z0-9_]+$")
 
 
-# ─── Data model ────────────────────────────────────────────────────────────
-
-
+@dataclass(frozen=True)
 class CheckResult:
-    """单项检查结果。"""
+    """单项检查结果。
 
-    def __init__(self, name, passed, details=""):
-        self.name = name
-        self.passed = passed
-        self.details = details
+    Attributes:
+        name: 检查项名称，同时作为报告中的稳定标识。
+        passed: 该项是否通过。
+        details: 失败证据，多行文本；通过时为空串。
+    """
+
+    name: str
+    passed: bool
+    details: str = ""
 
 
 class ManifestError(Exception):
     """清单不可读取或 schema 非法。"""
 
 
-# ─── Helpers ───────────────────────────────────────────────────────────────
+Manifest = dict[str, Any]
+ArchEntry = tuple[str, str]
+Results = list[CheckResult]
 
 
-def find_repo_root():
+def find_repo_root() -> Path:
     """从脚本位置自动探测 agent-linux 仓库根。
 
     脚本位于 <repo_root>/tools/btf-integration/btf_integration.py。
+
+    Returns:
+        仓库根的绝对路径。
     """
     return Path(__file__).resolve().parent.parent.parent
 
 
-def load_manifest(path):
-    """读取并解析清单；缺失或 YAML 非法时抛 ManifestError。"""
+def load_manifest(path: Path) -> Manifest:
+    """读取并解析 YAML 清单。
+
+    Args:
+        path: 清单文件路径。
+
+    Returns:
+        清单顶层映射。
+
+    Raises:
+        ManifestError: PyYAML 不可用、文件缺失、YAML 非法或顶层非映射。
+    """
     if yaml is None:
         raise ManifestError("PyYAML 不可用：请安装 pyyaml（见 requirements-dev.txt）")
     try:
@@ -135,8 +172,15 @@ def load_manifest(path):
     return data
 
 
-def read_config_lines(path):
-    """返回文件中的有效配置行（CONFIG_*=... 或 '# CONFIG_... is not set'）。"""
+def read_configs(path: Path) -> list[str]:
+    """读取文件中的有效配置行。
+
+    Args:
+        path: 内核 defconfig 片段路径。
+
+    Returns:
+        形如 ``CONFIG_X=y`` 或 ``# CONFIG_X is not set`` 的行，保持原序。
+    """
     lines = []
     for raw in path.read_text(encoding="utf-8").splitlines():
         stripped = raw.strip()
@@ -145,11 +189,18 @@ def read_config_lines(path):
     return lines
 
 
-def load_build_entries(manifest, repo_root):
-    """读取 defconfig 矩阵清单，返回 [(arch, configs_rel), ...]。
+def load_arches(manifest: Manifest, repo_root: Path) -> list[ArchEntry]:
+    """读取 defconfig 矩阵清单中的受检架构。
 
-    仅取 build=true 的条目作为受检片段来源；矩阵清单缺失或结构非法时抛
-    ManifestError。受检架构复用矩阵清单，避免在本表重复登记。
+    Args:
+        manifest: BTF 基线清单。
+        repo_root: agent-linux 仓库根。
+
+    Returns:
+        ``(arch, configs_rel)`` 列表，仅含矩阵中 build=true 的条目。
+
+    Raises:
+        ManifestError: 矩阵路径非法、文件缺失、结构非法或无受检条目。
     """
     rel = manifest.get("defconfig_matrix_manifest")
     if not isinstance(rel, str) or not rel:
@@ -162,7 +213,7 @@ def load_build_entries(manifest, repo_root):
     if not isinstance(arches, list):
         raise ManifestError(f"{rel}: architectures 必须是列表")
 
-    entries = []
+    entries: list[ArchEntry] = []
     for idx, entry in enumerate(arches):
         if not isinstance(entry, dict) or entry.get("build") is not True:
             continue
@@ -178,12 +229,16 @@ def load_build_entries(manifest, repo_root):
     return entries
 
 
-# ─── Checks ────────────────────────────────────────────────────────────────
+def check_schema(manifest: Manifest) -> CheckResult:
+    """校验清单 schema：必填字段、取值与路径形态。
 
+    Args:
+        manifest: 待校验的 BTF 基线清单。
 
-def check_manifest_schema(manifest):
-    """校验清单 schema：必填字段、取值与路径形态。"""
-    problems = []
+    Returns:
+        schema 检查结果；失败时 details 汇总全部问题。
+    """
+    problems: list[str] = []
 
     unknown = set(manifest) - MANIFEST_KEYS
     if unknown:
@@ -199,22 +254,33 @@ def check_manifest_schema(manifest):
         problems.append("defconfig_matrix_manifest 必须是 .yaml 相对路径")
 
     for key in CONFIG_LIST_KEYS:
-        problems.extend(_config_list_problems(
+        problems.extend(_cfg_list_errs(
             key, manifest.get(key), CONFIG_VAL_RE,
             "（须为 CONFIG_x=y 形态）"))
     for key in SYMBOL_LIST_KEYS:
-        problems.extend(_config_list_problems(
+        problems.extend(_cfg_list_errs(
             key, manifest.get(key), CONFIG_SYM_RE, "符号"))
     for key in STR_LIST_KEYS:
-        problems.extend(_str_list_problems(key, manifest.get(key)))
+        problems.extend(_str_list_errs(key, manifest.get(key)))
     for key in WORKFLOW_LIST_KEYS:
-        problems.extend(_path_list_problems(key, manifest.get(key)))
+        problems.extend(_path_list_errs(key, manifest.get(key)))
 
     return CheckResult("清单 schema 合法", not problems, "\n".join(problems))
 
 
-def _config_list_problems(key, values, pattern, hint):
-    """校验一个配置项列表：非空列表且每项匹配给定形态。"""
+def _cfg_list_errs(key: str, values: Any, pattern: re.Pattern[str],
+                   hint: str) -> list[str]:
+    """校验一个配置项列表。
+
+    Args:
+        key: 清单字段名。
+        values: 字段取值。
+        pattern: 合法条目的正则。
+        hint: 追加到错误信息后的形态提示。
+
+    Returns:
+        问题描述列表；空列表表示合法。
+    """
     if not isinstance(values, list) or not values:
         return [f"{key} 必须是非空列表"]
     return [
@@ -224,24 +290,48 @@ def _config_list_problems(key, values, pattern, hint):
     ]
 
 
-def _str_list_problems(key, values):
-    """校验一个非空字符串列表。"""
+def _str_list_errs(key: str, values: Any) -> list[str]:
+    """校验一个非空字符串列表。
+
+    Args:
+        key: 清单字段名。
+        values: 字段取值。
+
+    Returns:
+        问题描述列表；空列表表示合法。
+    """
     if not isinstance(values, list) or not values:
         return [f"{key} 必须是非空列表"]
     return [f"{key} 含空项" for item in values
             if not isinstance(item, str) or not item]
 
 
-def _path_list_problems(key, values):
-    """校验一个 .yml 相对路径列表。"""
+def _path_list_errs(key: str, values: Any) -> list[str]:
+    """校验一个 ``.yml`` 相对路径列表。
+
+    Args:
+        key: 清单字段名。
+        values: 字段取值。
+
+    Returns:
+        问题描述列表；空列表表示合法。
+    """
     if not isinstance(values, list) or not values:
         return [f"{key} 必须是非空列表"]
     return [f"{key} 含非 .yml 路径: {item!r}" for item in values
             if not isinstance(item, str) or not item.endswith(".yml")]
 
 
-def check_fragments_present(entries, kernel_dir):
-    """受检片段（清单 build=true 的 configs）在内核树中真实存在。"""
+def check_frags(entries: list[ArchEntry], kernel_dir: Path) -> CheckResult:
+    """确认受检片段在内核树中真实存在。
+
+    Args:
+        entries: 受检架构与片段的相对路径。
+        kernel_dir: 内核源码目录。
+
+    Returns:
+        片段存在性检查结果。
+    """
     missing = [
         f"{arch}: 片段缺失 {configs}"
         for arch, configs in entries
@@ -250,52 +340,92 @@ def check_fragments_present(entries, kernel_dir):
     return CheckResult(GUARD_NAME, not missing, "\n".join(missing))
 
 
-def _check_expected_present(name, entries, kernel_dir, expected):
-    """每个受检片段均逐项含 expected 中的配置行。"""
-    problems = []
+def _check_present(name: str, entries: list[ArchEntry], kernel_dir: Path,
+                   expected: list[str]) -> CheckResult:
+    """确认每个受检片段逐项含 expected 中的配置行。
+
+    Args:
+        name: 检查项名称。
+        entries: 受检架构与片段的相对路径。
+        kernel_dir: 内核源码目录。
+        expected: 必须出现的完整配置行。
+
+    Returns:
+        检查结果；缺失项按架构逐条记入 details。
+    """
+    problems: list[str] = []
     for arch, configs in entries:
         path = kernel_dir / configs
         if not path.is_file():
             continue
-        present = set(read_config_lines(path))
+        present = set(read_configs(path))
         for want in expected:
             if want not in present:
                 problems.append(f"{arch} ({configs}): 缺少 {want}")
     return CheckResult(name, not problems, "\n".join(problems))
 
 
-def check_bpf_baseline(entries, kernel_dir, manifest):
-    """每个受检片段均含 eBPF 基线配置（OS-KER-106）。"""
-    return _check_expected_present(
+def check_bpf(entries: list[ArchEntry], kernel_dir: Path,
+              manifest: Manifest) -> CheckResult:
+    """校验每个受检片段均含 eBPF 基线配置（OS-KER-106）。
+
+    Args:
+        entries: 受检架构与片段的相对路径。
+        kernel_dir: 内核源码目录。
+        manifest: BTF 基线清单。
+
+    Returns:
+        eBPF 基线检查结果。
+    """
+    return _check_present(
         "eBPF 基线齐备 (OS-KER-106)", entries, kernel_dir,
         manifest.get("bpf_configs", []))
 
 
-def check_tracing_chain(entries, kernel_dir, manifest):
-    """每个受检片段均含 BPF_EVENTS 的前置链路（OS-KER-106）。"""
-    return _check_expected_present(
+def check_trace(entries: list[ArchEntry], kernel_dir: Path,
+                manifest: Manifest) -> CheckResult:
+    """校验每个受检片段均含 BPF_EVENTS 的前置链路（OS-KER-106）。
+
+    Args:
+        entries: 受检架构与片段的相对路径。
+        kernel_dir: 内核源码目录。
+        manifest: BTF 基线清单。
+
+    Returns:
+        tracing 链路检查结果。
+    """
+    return _check_present(
         "tracing 链路前置齐备 (OS-KER-106)", entries, kernel_dir,
         manifest.get("tracing_chain", []))
 
 
-def check_btf_baseline(entries, kernel_dir, manifest):
-    """每个受检片段均含 BTF 基线：开启 BTF、关闭互斥项、命中 DWARF 形态。
+def check_btf(entries: list[ArchEntry], kernel_dir: Path,
+              manifest: Manifest) -> CheckResult:
+    """校验每个受检片段均满足 BTF 基线与 Kconfig 前置条件。
 
     CONFIG_DEBUG_INFO_BTF `depends on !DEBUG_INFO_SPLIT && !DEBUG_INFO_REDUCED`，
     且 DEBUG_INFO 只由 DWARF choice 项 select；三者缺其一，olddefconfig 都会
     丢弃 CONFIG_DEBUG_INFO_BTF（OS-OBS-012）。
+
+    Args:
+        entries: 受检架构与片段的相对路径。
+        kernel_dir: 内核源码目录。
+        manifest: BTF 基线清单。
+
+    Returns:
+        BTF 基线检查结果。
     """
     expected = list(manifest.get("btf_configs", []))
     expected += [MUTEX_FMT.format(key=key)
                  for key in manifest.get("btf_mutex_unset", [])]
     choice = manifest.get("debug_info_choice", [])
 
-    problems = []
+    problems: list[str] = []
     for arch, configs in entries:
         path = kernel_dir / configs
         if not path.is_file():
             continue
-        present = set(read_config_lines(path))
+        present = set(read_configs(path))
         for want in expected:
             if want not in present:
                 problems.append(f"{arch} ({configs}): 缺少 {want}")
@@ -307,15 +437,23 @@ def check_btf_baseline(entries, kernel_dir, manifest):
                        "\n".join(problems))
 
 
-def check_ci_supply(manifest, repo_root):
-    """受检 CI 工作流同时提供 pahole 与 BTF 产物断言（OS-OBS-012）。
+def check_ci_supply(manifest: Manifest, repo_root: Path) -> CheckResult:
+    """校验受检 CI 工作流同时提供 pahole 与 BTF 产物断言。
 
     gen_btf() 在 CONFIG_DEBUG_INFO_BTF=y 时要求 pahole 可用，否则构建直接
-    失败；且必须对构建产物断言 BTF 标识，否则「开启 BTF」无法被证明落地。
+    失败；且必须对构建产物断言 BTF 标识，否则「开启 BTF」无法被证明落地
+    （OS-OBS-012）。
+
+    Args:
+        manifest: BTF 基线清单。
+        repo_root: agent-linux 仓库根。
+
+    Returns:
+        CI 供给检查结果。
     """
     package = manifest.get("pahole_package")
     tokens = manifest.get("btf_artifacts", [])
-    problems = []
+    problems: list[str] = []
     for rel in manifest.get("ci_workflows", []):
         try:
             text = (repo_root / rel).read_text(encoding="utf-8")
@@ -331,11 +469,15 @@ def check_ci_supply(manifest, repo_root):
                        not problems, "\n".join(problems))
 
 
-# ─── Report ────────────────────────────────────────────────────────────────
+def print_report(results: Results, manifest: Manifest,
+                 check_mode: bool) -> None:
+    """打印检查报告。
 
-
-def print_report(results, manifest, check_mode):
-    """打印检查报告。"""
+    Args:
+        results: 已执行的检查结果。
+        manifest: BTF 基线清单，用于展示版本号。
+        check_mode: 为真时输出 CI 精简格式，否则输出完整报告。
+    """
     total = len(results)
     passed = sum(1 for r in results if r.passed)
     failed = total - passed
@@ -374,32 +516,47 @@ def print_report(results, manifest, check_mode):
     print("-" * 72)
 
 
-# ─── Main ──────────────────────────────────────────────────────────────────
+def build_checks(manifest: Manifest, repo_root: Path,
+                 kernel_dir: Path) -> Results:
+    """按清单 schema 与片段存在性决定是否继续执行内容类检查。
 
+    Args:
+        manifest: BTF 基线清单。
+        repo_root: agent-linux 仓库根。
+        kernel_dir: 内核源码目录。
 
-def build_checks(manifest, repo_root, kernel_dir):
-    """按清单 schema 与片段存在性决定是否继续执行内容类检查。"""
-    schema = check_manifest_schema(manifest)
+    Returns:
+        检查结果列表；前置检查失败时短路，仅返回已能判定的项。
+    """
+    schema = check_schema(manifest)
     if not schema.passed:
         return [schema]
     try:
-        entries = load_build_entries(manifest, repo_root)
+        entries = load_arches(manifest, repo_root)
     except ManifestError as exc:
         return [schema, CheckResult(GUARD_NAME, False, str(exc))]
-    guard = check_fragments_present(entries, kernel_dir)
+    guard = check_frags(entries, kernel_dir)
     if not guard.passed:
         return [schema, guard]
     return [
         schema,
         guard,
-        check_bpf_baseline(entries, kernel_dir, manifest),
-        check_btf_baseline(entries, kernel_dir, manifest),
-        check_tracing_chain(entries, kernel_dir, manifest),
+        check_bpf(entries, kernel_dir, manifest),
+        check_btf(entries, kernel_dir, manifest),
+        check_trace(entries, kernel_dir, manifest),
         check_ci_supply(manifest, repo_root),
     ]
 
 
-def main(argv=None):
+def main(argv: list[str] | None = None) -> None:
+    """命令入口。
+
+    Args:
+        argv: 命令行参数；None 表示使用 ``sys.argv[1:]``。
+
+    Raises:
+        SystemExit: 以 ``EXIT_PASS`` / ``EXIT_FAIL`` / ``EXIT_USAGE`` 退出。
+    """
     parser = argparse.ArgumentParser(
         description="AirymaxOS BTF / eBPF 基线一致性检查器 "
                     "(OS-KER-106, OS-OBS-012)",
