@@ -161,6 +161,22 @@ jobs:
           gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
           passphrase: ${{ secrets.GPG_PASSPHRASE }}
 
+      # import 只保证私钥进入 keyring，不保证后续无交互签名可用。此处在
+      # 耗时的 SDK/OCI/签名步骤之前做一次真实签名自检，密钥口令错误或缺
+      # 席时立即失败，避免跑完一小时后才在发布末尾暴露。
+      - name: Verify GPG signing capability
+        env:
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          probe="$(mktemp)"
+          echo "airymaxos signing probe" > "${probe}"
+          gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 \
+            --detach-sign --armor -o "${probe}.asc" "${probe}" \
+            3<<<"${GPG_PASSPHRASE}"
+          gpg --verify "${probe}.asc" "${probe}"
+          rm -f "${probe}" "${probe}.asc"
+
       - name: Build SDK tarball
         run: |
           set -euo pipefail
@@ -181,12 +197,15 @@ jobs:
           docker save "${OCI_IMAGE}:${tag}" -o "oci-image-${tag}.tar"
 
       - name: Sign release artifacts (GPG)
+        env:
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: |
           set -euo pipefail
           mapfile -t files < <(find dist/rpm -name '*.rpm')
           files+=("agent-linux-sdk-${{ steps.ver.outputs.ver }}.tar.gz")
           for f in "${files[@]}"; do
-            gpg --batch --yes --detach-sign --armor -o "${f}.asc" "$f"
+            gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 \
+              --detach-sign --armor -o "${f}.asc" "$f" 3<<<"${GPG_PASSPHRASE}"
           done
           ls -l dist/rpm/*/
 
@@ -194,6 +213,8 @@ jobs:
       # 确定性实现产出校验和文件与结构化 release notes，并即时 GPG 签名。
       # 命名规则：发布资产用 agent-linux-<ver>（§3.2），RPM 包名用 airymaxos-*（§3.3）。
       - name: Generate + sign checksums and release notes
+        env:
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: |
           set -euo pipefail
           ver="${{ steps.ver.outputs.ver }}"
@@ -215,7 +236,8 @@ jobs:
             --output "agent-linux-${ver}-release-notes.md"
           for f in "agent-linux-${ver}.sha256sum" \
                    "agent-linux-${ver}-release-notes.md"; do
-            gpg --batch --yes --detach-sign --armor -o "${f}.asc" "$f"
+            gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 \
+              --detach-sign --armor -o "${f}.asc" "$f" 3<<<"${GPG_PASSPHRASE}"
           done
           ls -l "agent-linux-${ver}".sha256sum* "agent-linux-${ver}-release-notes.md"*
 
