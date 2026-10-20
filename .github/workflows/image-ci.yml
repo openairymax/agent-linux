@@ -120,12 +120,11 @@ jobs:
         if: failure()
         run: |
           out="$RUNNER_TEMP/out"
-          for log in "$out"/*/logs/*.log; do
-            [ -f "$log" ] || continue
+          while IFS= read -r log; do
             echo "::group::${log#"$out"/}"
             tail -n 120 "$log"
             echo '::endgroup::'
-          done
+          done < <(find "$out" -type f -name '*.log' | sort)
 
       - name: Verify assembly manifest
         run: |
@@ -161,6 +160,7 @@ jobs:
             ${{ runner.temp }}/out/acceptance/*.ks
             ${{ runner.temp }}/out/logs/*
             ${{ runner.temp }}/out/*/logs/*.log
+            ${{ runner.temp }}/out/*/iso/work/logs/*.log
             ${{ runner.temp }}/out/*/work/logs/*.rpmspec.log
             ${{ runner.temp }}/out/*/work/logs/*.build.log
           retention-days: 7
