@@ -108,6 +108,19 @@ tools/
 │   ├── requirements-dev.txt     # Runtime + test dependency (pyyaml, pytest)
 │   ├── tests/                   # pytest suite (manifest/snapshot/layer/steps/preflight/apply/prune/CLI)
 │   └── README.md                # Tool-specific documentation
+├── osaccrt/                     # OS-ACC-RT runtime acceptance executor (module V / V-01)
+│   ├── osaccrt_model.py         # Verdict/Step/Threshold/Evidence/ExpResult/Judge protocol
+│   ├── osaccrt_spec.py          # NFR/OS-ACC threshold table loader (specs/nfr.toml)
+│   ├── osaccrt_evidence.py      # Manifest schema and sha256 chain
+│   ├── osaccrt_store.py         # Append-only evidence store (create/write/seal/verify)
+│   ├── osaccrt_judge.py         # PackJudge four-state decision machine
+│   ├── osaccrt_waiver.py        # FAIL → WAIVED dual-sign workflow
+│   ├── osaccrt_blocked.py       # BLOCKED pre-registration ledger
+│   ├── osaccrt_repro.py         # Offline replay script generator
+│   ├── osaccrt_runner.py        # Execution loop with resume and review callback
+│   ├── requirements-dev.txt     # Test dependency (pytest)
+│   ├── tests/                   # pytest suite
+│   └── README.md                # Tool-specific documentation
 └── release-engineering/         # Release-engineering tool set (SPDX SBOM + release material gate)
     ├── merge_sbom.py            # Merge per-submodule SPDX 2.3 JSON fragments into one document
     ├── release_manifest.py      # Manifest ↔ release.yml bidirectional gate + checksums + notes (`--check` gate)
@@ -142,6 +155,7 @@ tools/
 | `nightly/nightly.py` | Nightly pipeline contract SSoT checker — reads `manifest.yaml` (the only source of truth for triggers, concurrency, permissions, job topology, timeouts, helper calls, and the 60-minute CI budget) and verifies manifest schema, cron/`workflow_dispatch`-only triggers, single-flight concurrency, read-only permissions, job/`needs` topology, runner label and hosted timeout ceiling, shell variable definitions, helper-surface registration, deferred-helper guards plus `SKIP:` markers (and their removal once a script lands), and the `--max-minutes 60` budget call; `--check` is the CI gate (OS-STD-TEST-011 / §6.1 / §9.2) | `nightly.yml` (`nightly-test-suite`), `os-chk-verify.yml`, `tools/os-chk/gates.yaml` (OS-BUILD-NIGHTLY) |
 | `repo-scaffold/repo_scaffold.py` | Eight-subrepo skeleton SSoT checker — reads `manifest.yaml` (the only source of truth for the eight subrepositories, their common skeleton profiles, license markers, and build entries) and verifies manifest schema, `.gitmodules` registration, checkout presence, non-empty skeleton files, license markers, non-empty build entries, and that CMake/Kbuild entries reference real non-empty sources (decision F1); the kernel fork is modelled with its native upstream layout plus an entry probe; `--check` is the CI gate (07-directory-structure.md §3.6 / Appendix A) | `os-chk-verify.yml`, `tools/os-chk/gates.yaml` (OS-BUILD-REPO-SCAFFOLD) |
 | `airy-rollback/airy_rollback.py` | Three-level rollback orchestrator — reads `manifest.yaml` (the only source of truth for paths, the 12 daemon units, and every external command template) and implements `check`/`plan`/`apply`/`verify`/`prune`: snapshot selection, L1/L2/L3 layer decision, preflight checks (snapshot, pending-upgrade flag, memory-volume independence, btrfs source), first-failure-short-circuit step execution, post-rollback 12-daemon verification, 7-day snapshot pruning, flock mutual exclusion, and append-only JSONL audit; `check` is the CI gate (01-deployment.md §11, OS-OPS-021/022/023/036) | `os-chk-verify.yml`, `tools/os-chk/gates.yaml` (OS-OPS-ROLLBACK) |
+| `osaccrt/` (module V / V-01) | OS-ACC-RT runtime acceptance executor — the single entry point for the six-step acceptance procedure: threshold table loading with source-backed limits (`specs/nfr.toml`), append-only evidence store (`<date>/<exp-id>/`) with a rolling sha256 chain, four-state judgement (`PASS`/`FAIL`/`WAIVED`/`BLOCKED`) from the evidence pack alone, dual-sign waivers, pre-registered BLOCKED degradation ledger, offline replay-script generation, and a resumable execution loop with a review callback; the four verdict paths are pinned by `tests/test_v01_judge.py` (docs-closed acceptance task card §3) | `os-chk-verify.yml` (`os-chk-unit-tests`) |
 | `release-engineering/merge_sbom.py` | Merge per-submodule SPDX 2.3 JSON SBOM fragments into one `agent-linux` document — unions `packages`/`files`/`relationships`/`externalDocumentRefs`/`hasExtractedLicensingInfos` by their identity key, fails on conflicting duplicates, pins the document-level fields (`SPDX-2.3` / `CC0-1.0` / `SPDXRef-DOCUMENT`), and derives `created` from `SOURCE_DATE_EPOCH` for byte-deterministic output; `--output` + fragments (`0`/`1`/`2` exit codes) | `release.yml` (`build-and-sign`) |
 | `release-engineering/release_manifest.py` | Release-material SSoT checker & generator — reads `manifest.yaml` (the only source of truth for the 12 release materials, their formats/signatures/authorities/delivery state) and verifies manifest schema plus **bidirectional** manifest↔`release.yml` consistency (every `active` material's `evidence` must be declared by the pipeline, and every pipeline artifact glob must be registered); also emits `sha256sum`-compatible checksums (`--checksums`) and the eight-section release notes (`--notes`); `--check` is the CI gate (OS-BUILD-RELEASE) | `os-chk-verify.yml`, `tools/os-chk/gates.yaml` (OS-BUILD-RELEASE); `release.yml` (`build-and-sign`) via checksums/notes |
 
