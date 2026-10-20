@@ -10,7 +10,11 @@
 #   * 仅 workflow_dispatch：不进入 PR 门禁，不阻断日常提交（§3.6）。
 #   * 管理仓每 workflow 最多 2 job；本流水线固定 assemble + accept。
 #   * 60 分钟预算（OS-STD-TEST-011）只约束 PR 门禁；本流水线按 release.yml
-#     先例申请 240 分钟发布级例外，两个 job 分别为 180 / 120 分钟。
+#     先例申请发布级例外，两个 job 分别为 180 / 300 分钟。
+#   * accept 的时限不是拍定值，而由装机腿数推导：双固件各装一次，每腿
+#     装机上限 7200 秒、冷启动上限 900 秒，2×(7200+900) 秒加固定开销仍
+#     小于 300 分钟。GitHub 标准 runner 无 /dev/kvm，QEMU 只能走 TCG，
+#     装机耗时约为 KVM 的数倍，不得沿用方案 §3.5 的 KVM 估算。
 #   * 源码以只读方式挂载进构建容器，产物只落 $RUNNER_TEMP/out，不违反
 #     「严禁在 airymaxhub 源码区内构建」。
 #   * ISO 基线固定为 openEuler 24.03-LTS-SP2 netinst，容器镜像取官方
@@ -172,7 +176,7 @@ jobs:
     name: Install + Cold Boot (L2/L3)
     runs-on: ubuntu-24.04
     needs: assemble
-    timeout-minutes: 120
+    timeout-minutes: 300
     steps:
       - uses: actions/checkout@v4
 
@@ -221,7 +225,8 @@ jobs:
           out="$RUNNER_TEMP/install"
           mkdir -p "$out"
           distro/scripts/install-test.sh --iso "$AIRYMAX_ISO" --out "$out" \
-            --runs 1 --firmware both --boot-marker "$marker" | tee "$out/tap.txt"
+            --runs 1 --firmware both --boot-marker "$marker" \
+            --install-timeout 7200 --boot-timeout 900 | tee "$out/tap.txt"
 
       - name: Annotate boot failures
         if: failure()
