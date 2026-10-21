@@ -78,17 +78,25 @@ jobs:
           media="$RUNNER_TEMP/media"
           mkdir -p "$media"
 
-          # 单源限时 25 分钟、连接 20 秒；30 秒内低于 100 KiB/s 即判停滞并
-          # 换源。三个源合计最坏 2.5 小时，超出 180 分钟预算的部分由
-          # max-time 收敛：ISO（约 1.8 GB）与容器镜像（约 0.6 GB）各留余量。
+          # 媒体总预算 45 分钟：构建约 30 分钟，job 上限 180 分钟，留足余量。
+          # 单次尝试按剩余预算分配但不超过 20 分钟；30 秒内低于 100 KiB/s
+          # 判为停滞并换源。换源保留已下字节（镜像内容由 sha256 认定，
+          # 故跨源续传成立），避免慢链路每次都从头再来。
+          media_deadline=$(( $(date +%s) + 2700 ))
           fetch()
           {
-            local name="$1" path="$2" want="$3" url got
+            local name="$1" path="$2" want="$3" url got left cap
             for url in ${OE_MIRRORS}; do
+              left=$(( media_deadline - $(date +%s) ))
+              if [ "$left" -lt 60 ]; then
+                echo '::warning::媒体预算耗尽，停止换源'
+                break
+              fi
+              cap=$(( left < 1200 ? left : 1200 ))
               url="${url}/${path}/${name}"
-              echo "::group::fetch ${url}"
-              if curl -fL --progress-bar \
-                  --connect-timeout 20 --max-time 1500 \
+              echo "::group::fetch ${url} (max ${cap}s)"
+              if curl -fL --progress-bar -C - \
+                  --connect-timeout 20 --max-time "$cap" \
                   --retry 2 --retry-delay 5 --retry-all-errors \
                   --speed-limit 102400 --speed-time 30 \
                   -o "${media}/${name}.part" "$url"; then
@@ -100,11 +108,11 @@ jobs:
                   return 0
                 fi
                 echo "::warning::${url} 摘要不符: ${got}"
+                rm -f "${media}/${name}.part"
               else
                 echo "::warning::${url} 下载失败"
               fi
-              rm -f "${media}/${name}.part"
-              echo '::endgroup::'
+              echo "::endgroup::"
             done
             echo "::error::${name} 在所有镜像源均不可得"
             return 1
