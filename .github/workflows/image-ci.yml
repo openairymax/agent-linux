@@ -43,11 +43,15 @@ permissions:
 
 env:
   OE_ISO_NAME: openEuler-24.03-LTS-SP2-netinst-x86_64-dvd.iso
-  OE_ISO_URL: https://repo.openeuler.org/openEuler-24.03-LTS-SP2/ISO/x86_64/openEuler-24.03-LTS-SP2-netinst-x86_64-dvd.iso
   OE_ISO_SHA256: 291c1a2ad7ceb74e2b5308ca58f8aaa0206a0520c39145792af08f8adbbb6199
   OE_IMG_NAME: openEuler-docker.x86_64.tar.xz
-  OE_IMG_URL: https://repo.openeuler.org/openEuler-24.03-LTS-SP2/docker_img/x86_64/openEuler-docker.x86_64.tar.xz
   OE_IMG_SHA256: c152f7cf7e6966dcf5819890db5f277a303d462c2982e423d5935b33a47d6a05
+  # 媒体只按 sha256 认定，源可替换：官方源跨洋链路曾整段停滞（run
+  # 39543892713 在 Fetch 卡满 55 分钟），国内镜像作等价回退，摘要不符即弃。
+  OE_MIRRORS: |
+    https://repo.openeuler.org/openEuler-24.03-LTS-SP2
+    https://mirrors.tuna.tsinghua.edu.cn/openeuler/openEuler-24.03-LTS-SP2
+    https://mirrors.huaweicloud.com/openeuler/openEuler-24.03-LTS-SP2
 
 jobs:
   # ─── Job 1: RPM + 内核 + ISO 组装（源码只读，产物出源码区） ─────────────
@@ -73,12 +77,41 @@ jobs:
           set -euo pipefail
           media="$RUNNER_TEMP/media"
           mkdir -p "$media"
-          curl -fsSL --retry 3 --retry-delay 5 \
-            -o "$media/$OE_ISO_NAME" "$OE_ISO_URL"
-          curl -fsSL --retry 3 --retry-delay 5 \
-            -o "$media/$OE_IMG_NAME" "$OE_IMG_URL"
-          printf '%s  %s\n' "$OE_ISO_SHA256" "$media/$OE_ISO_NAME" | sha256sum -c -
-          printf '%s  %s\n' "$OE_IMG_SHA256" "$media/$OE_IMG_NAME" | sha256sum -c -
+
+          # 单源限时 25 分钟、连接 20 秒；30 秒内低于 100 KiB/s 即判停滞并
+          # 换源。三个源合计最坏 2.5 小时，超出 180 分钟预算的部分由
+          # max-time 收敛：ISO（约 1.8 GB）与容器镜像（约 0.6 GB）各留余量。
+          fetch()
+          {
+            local name="$1" path="$2" want="$3" url got
+            for url in ${OE_MIRRORS}; do
+              url="${url}/${path}/${name}"
+              echo "::group::fetch ${url}"
+              if curl -fL --progress-bar \
+                  --connect-timeout 20 --max-time 1500 \
+                  --retry 2 --retry-delay 5 --retry-all-errors \
+                  --speed-limit 102400 --speed-time 30 \
+                  -o "${media}/${name}.part" "$url"; then
+                got="$(sha256sum "${media}/${name}.part" | cut -d' ' -f1)"
+                if [ "$got" = "$want" ]; then
+                  mv "${media}/${name}.part" "${media}/${name}"
+                  echo "${name}: sha256 ${got} ok"
+                  echo '::endgroup::'
+                  return 0
+                fi
+                echo "::warning::${url} 摘要不符: ${got}"
+              else
+                echo "::warning::${url} 下载失败"
+              fi
+              rm -f "${media}/${name}.part"
+              echo '::endgroup::'
+            done
+            echo "::error::${name} 在所有镜像源均不可得"
+            return 1
+          }
+
+          fetch "$OE_ISO_NAME" ISO/x86_64 "$OE_ISO_SHA256"
+          fetch "$OE_IMG_NAME" docker_img/x86_64 "$OE_IMG_SHA256"
 
       - name: Load build container image
         run: |
@@ -107,7 +140,9 @@ jobs:
             -w /src \
             "$AIRYMAX_BUILD_IMAGE" bash -c '
               set -euo pipefail
-              dnf -y install rpm-build lorax createrepo_c xorriso isomd5sum \
+              dnf -y install --setopt=timeout=30 --setopt=minrate=1000 \
+                --setopt=retries=5 --setopt=max_parallel_downloads=10 \
+                rpm-build lorax createrepo_c xorriso isomd5sum \
                 gcc gcc-c++ make flex bison bc dwarves cpio openssl-devel \
                 libtraceevent-devel elfutils-libelf-devel zlib-devel git \
                 python3 python3-devel perl tar gzip rsync \
