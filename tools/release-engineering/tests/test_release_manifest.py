@@ -24,6 +24,10 @@ import release_manifest as rm
 
 GOOD_MANIFEST = """\
 version: "1.0.0"
+notes:
+  known_issues:
+    - 已知边界示例
+  upgrade_notes: []
 materials:
   - id: kernel-rpm
     name: 内核 RPM
@@ -110,9 +114,11 @@ def active_material(mid, *globs):
             "evidence": list(globs)}
 
 
-def manifest_dict(materials, version="1.0.0"):
-    """构造顶层清单结构。"""
-    return {"version": version, "materials": materials}
+def manifest_dict(materials, version="1.0.0", notes=None):
+    """构造顶层清单结构（notes 缺省为合法披露段）。"""
+    if notes is None:
+        notes = {"known_issues": [], "upgrade_notes": []}
+    return {"version": version, "materials": materials, "notes": notes}
 
 
 def _git(repo, *args):
@@ -214,6 +220,36 @@ class TestManifestSchema:
         result = rm.check_schema(manifest_dict([item]))
         assert not result.passed
         assert "未知字段" in result.details
+
+    def test_missing_notes_section(self):
+        manifest = manifest_dict([active_material("m", "a/*.rpm")])
+        del manifest["notes"]
+        result = rm.check_schema(manifest)
+        assert not result.passed
+        assert "notes" in result.details
+
+    def test_notes_requires_both_keys(self):
+        manifest = manifest_dict([active_material("m", "a/*.rpm")],
+                                 notes={"known_issues": []})
+        result = rm.check_schema(manifest)
+        assert not result.passed
+        assert "notes.upgrade_notes" in result.details
+
+    def test_notes_rejects_blank_entry(self):
+        manifest = manifest_dict([active_material("m", "a/*.rpm")],
+                                 notes={"known_issues": [" "],
+                                        "upgrade_notes": []})
+        result = rm.check_schema(manifest)
+        assert not result.passed
+        assert "notes.known_issues" in result.details
+
+    def test_notes_rejects_unknown_key(self):
+        manifest = manifest_dict([active_material("m", "a/*.rpm")],
+                                 notes={"known_issues": [], "upgrade_notes": [],
+                                        "bogus": []})
+        result = rm.check_schema(manifest)
+        assert not result.passed
+        assert "notes 未知字段" in result.details
 
 
 # ─── Pipeline extraction ───────────────────────────────────────────────────
@@ -349,6 +385,35 @@ class TestReleaseNotes:
         notes = rm.render_notes("v0.0.3", "HEAD", commits, "")
         assert rm.NOTES_NOT_PROVIDED in notes
 
+    def test_render_notes_discloses_ssot(self, tmp_path):
+        repo = make_git_repo(tmp_path / "gitrepo")
+        commits = rm.collect_git_log(repo, "HEAD")
+        notes = rm.render_notes("v0.0.3", "HEAD", commits, "",
+                                {"known_issues": ["边界 A"],
+                                 "upgrade_notes": ["迁移 B"]})
+        assert "## 已知问题" in notes
+        assert "- 边界 A" in notes
+        assert "## 升级说明" in notes
+        assert "- 迁移 B" in notes
+
+    def test_render_notes_empty_disclosure_is_none(self, tmp_path):
+        repo = make_git_repo(tmp_path / "gitrepo")
+        commits = rm.collect_git_log(repo, "HEAD")
+        notes = rm.render_notes("v0.0.3", "HEAD", commits, "",
+                                {"known_issues": [], "upgrade_notes": []})
+        assert "## 已知问题\n\n（无）" in notes
+        assert "## 升级说明\n\n（无）" in notes
+
+    def test_render_notes_missing_disclosure_marked(self, tmp_path):
+        repo = make_git_repo(tmp_path / "gitrepo")
+        commits = rm.collect_git_log(repo, "HEAD")
+        notes = rm.render_notes("v0.0.3", "HEAD", commits, "",
+                                {"known_issues": []})
+        known = notes.split("## 已知问题", 1)[1].split("##", 1)[0]
+        upgrade = notes.split("## 升级说明", 1)[1].split("##", 1)[0]
+        assert rm.NOTES_NOT_PROVIDED not in known
+        assert rm.NOTES_NOT_PROVIDED in upgrade
+
     def test_collect_git_log_bad_range(self, tmp_path):
         repo = make_git_repo(tmp_path / "gitrepo")
         with pytest.raises(rm.ToolError):
@@ -413,11 +478,29 @@ class TestCli:
 
     def test_notes_generates_file(self, tmp_path, capsys):
         repo = make_git_repo(tmp_path / "gitrepo")
+        tool = repo / "tools" / "release-engineering"
+        tool.mkdir(parents=True, exist_ok=True)
+        (tool / "manifest.yaml").write_text(GOOD_MANIFEST, encoding="utf-8")
         out = tmp_path / "notes.md"
         rc = rm.main(["--notes", "--version", "v0.0.3",
                       "--repo-root", str(repo), "--output", str(out)])
         assert rc == rm.EXIT_PASS
-        assert "Release Notes" in out.read_text(encoding="utf-8")
+        text = out.read_text(encoding="utf-8")
+        assert "Release Notes" in text
+        assert "- 已知边界示例" in text
+
+    def test_notes_requires_ssot_section(self, tmp_path, capsys):
+        repo = make_git_repo(tmp_path / "gitrepo")
+        tool = repo / "tools" / "release-engineering"
+        tool.mkdir(parents=True, exist_ok=True)
+        manifest = manifest_dict([active_material("kernel-rpm", "a/*.rpm")])
+        del manifest["notes"]
+        (tool / "manifest.yaml").write_text(
+            rm.yaml.safe_dump(manifest, allow_unicode=True), encoding="utf-8")
+        rc = rm.main(["--notes", "--version", "v0.0.3",
+                      "--repo-root", str(repo)])
+        assert rc == rm.EXIT_USAGE
+        assert "notes" in capsys.readouterr().err
 
     def test_missing_manifest_usage_error(self, tmp_path, capsys):
         rc = rm.main(["--check", "--repo-root", str(tmp_path),

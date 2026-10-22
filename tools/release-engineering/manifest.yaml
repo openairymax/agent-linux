@@ -41,8 +41,32 @@
 #   evidence      active 必填：release.yml 中对应的产物 glob 列表（含签名件）
 #   defer_reason  deferred 必填：暂缓交付的原因
 #   defer_target  deferred 必填：补齐目标版本
+#
+# 字段（notes，release notes 披露段 · §3.7）：
+#   known_issues    已知问题：本版发行的已知缺陷、验收边界与分发约束
+#   upgrade_notes   升级说明：兼容性、迁移路径与物料补齐计划
+#   * 两键均必填且须为字符串列表；确无此类条目时用空列表表达，不得缺键——
+#     render_notes 的相应章节直接取用本段，杜绝「章节静默为空」。
+#   * release_manifest.py --check 校验本段的键集与取值类型。
 
 version: "1.1.0"
+
+notes:
+  # ── 已知问题（发行披露 · 依据 0.0.3-验收发行方案.md §5.1 第 7 项）─────
+  # 注：条目为单行标量——多行折叠会在渲染时于断行处插入空格，破坏中文语流。
+  known_issues:
+    - ISO 仅覆盖 x86_64（BIOS + UEFI）；aarch64 / riscv64 / loongarch64 本版仅随 release 提供内核 RPM，无安装镜像
+    - UKUI 桌面验收基于 GitHub hosted runner 的 KVM 无头 QEMU 双固件证得；P2 真机 BIOS / UEFI 复验与人工签核尚未执行，不阻断本版发行
+    - 桌面会话（autologin + UKUI smoke）实证基于叠加夹具的验收 ISO，发行产品 ISO 不含 autologin 夹具；桌面可进入由验收轮 greeter 就绪与会话 smoke TAP 联合支撑
+    - 安装 ISO（3.68 GB）超 GitHub Release 单资产 2 GiB 上限，按 09-release-process.md §3.6 方式 2 人工附加到 AtomGit releases，与 tag v0.0.3 的 release.yml 产物并列
+    - ISO 逐字节可复现性未跨 runner 镜像对照；build-iso.sh 已把 source_date_epoch 写入组装 manifest，复现验证列入后续项
+
+  # ── 升级说明（发行披露 · 依据 09-release-process.md §3.7）──────────────
+  upgrade_notes:
+    - 本版为首个可安装、可运行、可进 UKUI 的 AirymaxOS 初步版本，无历史版本升级路径，建议全新安装
+    - 本版交付内核 RPM / SBOM / SDK / OCI 四条主线物料；源码 tarball、daemon RPM、devstation RPM 等物料按 materials 各条 defer_target 于 0.0.4 补齐
+    - 安装镜像为 x86_64；内核 RPM 覆盖 x86_64 / aarch64 / riscv64 / loongarch64 四架构
+    - OCI 镜像命名空间统一为 ghcr.io/openairymax/airymaxos（cosign 签名）
 
 materials:
   # ── §3.1 物料 1：源码 tarball ──────────────────────────────────────────
