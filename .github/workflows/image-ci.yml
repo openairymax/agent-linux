@@ -204,6 +204,7 @@ jobs:
             ${{ runner.temp }}/out/desktop/iso/*.iso
             ${{ runner.temp }}/out/desktop/iso/*.sha256
             ${{ runner.temp }}/out/desktop/iso/iso-manifest.txt
+            ${{ runner.temp }}/out/desktop/payload/airymax/payload-manifest.txt
             ${{ runner.temp }}/out/image-ci-manifest.txt
             ${{ runner.temp }}/out/acceptance/*.ks
             ${{ runner.temp }}/out/logs/*
