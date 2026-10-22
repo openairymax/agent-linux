@@ -119,15 +119,21 @@ jobs:
             rm -rf rpmbuild
             mkdir -p rpmbuild/BUILD rpmbuild/RPMS rpmbuild/SOURCES \
               rpmbuild/SPECS rpmbuild/SRPMS
-            rpmbuild -bb "$spec" \
-              --define="_topdir $PWD/rpmbuild" \
-              --define="_smp_mflags -j$(nproc)" \
-              --define="ARCH ${arch}" \
-              --define="SRCARCH ${kdir}" \
-              --define="KERNELRELEASE ${krel}" \
-              --define="airy_version ${{ steps.ver.outputs.ver }}" \
-              --define="airy_release 1" \
-              --define="cross_compile ${cross}" \
+            defs=(
+              --define="_topdir $PWD/rpmbuild"
+              --define="_smp_mflags -j$(nproc)"
+              --define="ARCH ${arch}"
+              --define="SRCARCH ${kdir}"
+              --define="KERNELRELEASE ${krel}"
+              --define="airy_version ${{ steps.ver.outputs.ver }}"
+              --define="airy_release 1"
+            )
+            # 空体宏非法（rpm: "Macro %cross_compile has empty body"）：原生腿
+            # 不定义该宏，spec 以 %{?cross_compile} 的缺省展开为空。
+            if [ -n "$cross" ]; then
+              defs+=(--define="cross_compile ${cross}")
+            fi
+            rpmbuild -bb "$spec" "${defs[@]}" \
               --target "${target}-linux" \
               --build-in-place --noprep --nodeps
             cd "$GITHUB_WORKSPACE"
