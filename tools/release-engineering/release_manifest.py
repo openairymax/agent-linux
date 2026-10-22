@@ -111,13 +111,14 @@ DELIVERY_ACTIVE = "active"
 DELIVERY_DEFERRED = "deferred"
 DELIVERY_CHOICES = (DELIVERY_ACTIVE, DELIVERY_DEFERRED)
 
-TOP_KEYS = frozenset({"version", "materials"})
+TOP_KEYS = frozenset({"version", "materials", "notes"})
 MATERIAL_KEYS = frozenset({
     "id", "name", "format", "signature", "authority", "delivery",
     "evidence", "defer_reason", "defer_target",
 })
 REQUIRED_MATERIAL_KEYS = ("id", "name", "format", "signature",
                           "authority", "delivery")
+NOTES_KEYS = frozenset({"known_issues", "upgrade_notes"})
 
 UPLOAD_ARTIFACT_USES = "actions/upload-artifact"
 GH_RELEASE_USES = "softprops/action-gh-release"
@@ -323,6 +324,39 @@ def _delivery_errs(where: str, entry: Manifest, delivery: Any) -> list[str]:
     return problems
 
 
+def _notes_errs(notes: Any) -> list[str]:
+    """校验清单 notes 披露段。
+
+    notes 是 release notes「已知问题」「升级说明」两章节的唯一事实源，
+    两键均须显式声明为字符串列表；确无此类条目时用空列表表达，不得缺键，
+    以杜绝「章节静默为空」的漂移。
+
+    Args:
+        notes: 清单 notes 段（可能缺失）。
+
+    Returns:
+        问题描述列表；空列表表示通过。
+    """
+    if notes is None:
+        return ["缺少必填字段: notes（release notes 披露段）"]
+    if not isinstance(notes, dict):
+        return ["notes 必须是映射"]
+
+    problems = []
+    unknown = set(notes) - NOTES_KEYS
+    if unknown:
+        problems.append(f"notes 未知字段: {', '.join(sorted(unknown))}")
+    for key in sorted(NOTES_KEYS):
+        value = notes.get(key)
+        if not isinstance(value, list) or any(
+                not isinstance(item, str) or not item.strip()
+                for item in value):
+            problems.append(
+                f"notes.{key} 必须是字符串列表且条目非空"
+                "（确无此类条目时用空列表）")
+    return problems
+
+
 def check_schema(manifest: Manifest) -> CheckResult:
     """校验清单 schema。
 
@@ -340,6 +374,7 @@ def check_schema(manifest: Manifest) -> CheckResult:
         problems.append(f"顶层未知字段: {', '.join(sorted(unknown))}")
     if not manifest.get("version"):
         problems.append("缺少或为空值的必填字段: version")
+    problems.extend(_notes_errs(manifest.get("notes")))
 
     materials = manifest.get("materials")
     if not isinstance(materials, list) or not materials:
@@ -498,11 +533,28 @@ def _contributors(commits: Commits) -> list[str]:
     return [f"{name} ({counts[name]})" for name in sorted(counts)]
 
 
+def _disclosure(notes: Manifest, key: str) -> str:
+    """渲染 notes 披露章节内容。
+
+    Args:
+        notes: 清单 notes 段。
+        key: 披露键（NOTES_KEYS 之一）。
+
+    Returns:
+        条目列表；键缺失时为「未提供」，空列表时为「无」。
+    """
+    items = notes.get(key)
+    if items is None:
+        return NOTES_NOT_PROVIDED
+    return _bullet_list(items)
+
+
 def render_notes(
     version: str,
     rev_range: str,
     commits: Commits,
     checksum_text: str,
+    notes: Manifest | None = None,
 ) -> str:
     """按 §3.7 结构渲染 release notes Markdown。
 
@@ -511,6 +563,7 @@ def render_notes(
         rev_range: git 提交区间。
         commits: 提交三元组列表。
         checksum_text: 物料校验和文本（空表示未提供）。
+        notes: 清单 notes 披露段（「已知问题」/「升级说明」的唯一事实源）。
 
     Returns:
         完整的 release notes Markdown。
@@ -520,6 +573,7 @@ def render_notes(
         buckets[classify_commit(subject)].append(subject)
 
     checksum_block = checksum_text.strip() or NOTES_NOT_PROVIDED
+    disclosures = notes or {}
     sections = [
         ("版本概述",
          f"- 版本号：{version}\n- 发布日期：{date.today().isoformat()}\n"
@@ -527,8 +581,8 @@ def render_notes(
         ("新特性", _bullet_list(buckets["feature"])),
         ("修复的缺陷", _bullet_list(buckets["fix"])),
         ("安全修复", _bullet_list(buckets["security"])),
-        ("已知问题", NOTES_EMPTY),
-        ("升级说明", NOTES_EMPTY),
+        ("已知问题", _disclosure(disclosures, "known_issues")),
+        ("升级说明", _disclosure(disclosures, "upgrade_notes")),
         ("贡献者列表", _bullet_list(_contributors(commits))),
         ("物料校验和", f"```\n{checksum_block}\n```"),
     ]
@@ -670,9 +724,16 @@ def cmd_notes(args: argparse.Namespace) -> int:
     if not args.version:
         print("ERROR: --notes 需要 --version 指定版本号", file=sys.stderr)
         return EXIT_USAGE
-    repo_root = Path(args.repo_root) if args.repo_root else find_repo_root()
-    if not repo_root.is_dir():
-        print(f"ERROR: 仓库根不存在：{repo_root}", file=sys.stderr)
+    try:
+        repo_root, manifest_path = resolve_paths(args)
+        manifest = load_yaml(manifest_path, "物料清单")
+    except ToolError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return EXIT_USAGE
+    notes = manifest.get("notes")
+    if not isinstance(notes, dict):
+        print("ERROR: 物料清单缺少 notes 披露段："
+              "「已知问题」/「升级说明」须以 SSoT 声明（§3.7）", file=sys.stderr)
         return EXIT_USAGE
     rev_range = args.rev_range or "HEAD"
     checksum_text = ""
@@ -684,7 +745,7 @@ def cmd_notes(args: argparse.Namespace) -> int:
             print(f"ERROR: 校验和文件无法读取：{exc}", file=sys.stderr)
             return EXIT_USAGE
     commits = collect_git_log(repo_root, rev_range)
-    emit(render_notes(args.version, rev_range, commits, checksum_text),
+    emit(render_notes(args.version, rev_range, commits, checksum_text, notes),
          args.output)
     return EXIT_PASS
 
