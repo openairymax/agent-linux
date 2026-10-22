@@ -28,7 +28,7 @@ env:
   # 发布 tag 的唯一来源：tag 推送事件取 ref_name，手动触发取 inputs.tag
   RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
   # OCI 镜像名（SSoT: docs/docs-linux/70-build-system/03-ci-cd-pipeline.md §8.4/§8.5）
-  OCI_IMAGE: ghcr.io/spharx/airymaxos
+  OCI_IMAGE: ghcr.io/openairymax/airymaxos
 
 jobs:
   build-and-sign:

@@ -14,7 +14,7 @@
 #   docker build -f oci/Containerfile.agent-base \
 #     --build-arg SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct) \
 #     --build-arg AIRY_VERSION=<X.Y.Z> \
-#     -t ghcr.io/spharx/airymaxos:v<X.Y.Z> .
+#     -t ghcr.io/openairymax/airymaxos:v<X.Y.Z> .
 #   （BASE_IMAGE 已内建默认值；更换基底时以 --build-arg BASE_IMAGE=... 覆盖）
 #
 # 构建上下文为管理仓根目录：依赖同一次 release 构建产出的
