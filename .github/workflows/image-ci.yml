@@ -299,6 +299,28 @@ jobs:
               done || true
           done
 
+      - name: Extract smoke TAP
+        if: always()
+        env:
+          ACCEPTANCE: ${{ inputs.acceptance }}
+        run: |
+          set -euo pipefail
+          # 会话内 reporter 以 AIRYMAX-TAP| 前缀把 TAP 原文转发到串口，这里从
+          # boot.log 还原成 smoke.tap，补齐验收发行方案 §9.3 的 L3 归档证据。
+          out="$RUNNER_TEMP/install"
+          token='AIRYMAX-TAP|'
+          for log in "$out"/run-*/boot.log; do
+            [ -f "$log" ] || continue
+            dir="$(basename "$(dirname "$log")")"
+            awk -v t="$token" 'i = index($0, t) { print substr($0, i + length(t)) }' \
+              "$log" > "$out/smoke-${dir#run-}.tap"
+          done
+          if [ "$ACCEPTANCE" = true ]; then
+            for f in "$out"/smoke-*.tap; do
+              [ -s "$f" ] || { echo "::error::smoke TAP 未能从串口还原: $f"; exit 1; }
+            done
+          fi
+
       - name: Upload acceptance evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -307,6 +329,7 @@ jobs:
           path: |
             ${{ runner.temp }}/install/tap.txt
             ${{ runner.temp }}/install/install-manifest.txt
+            ${{ runner.temp }}/install/smoke-*.tap
             ${{ runner.temp }}/install/run-*/*.log
           retention-days: 7
           if-no-files-found: warn
