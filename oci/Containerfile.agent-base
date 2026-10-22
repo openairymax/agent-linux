@@ -37,8 +37,13 @@ ENV LC_ALL=${LC_ALL}
 ENV PATH=/opt/airymaxos/sdk/bin:${PATH}
 
 # ---- 内核层：安装本仓 release 产出的 airymaxos-kernel 主包与模块包 ----
+# 密封安装：本地 RPM 的内核依赖闭包完全由基底镜像已装集合满足（spec 仅声明
+# 内部子包 Requires，scriptlet 对 depmod 等外部命令均带可用性判断），因此
+# 显式停用全部网络仓库。此举使该层只取决于固定基底与本仓产物，不随上游
+# 镜像仓元数据的瞬时不一致而失败（reproducible-build §8.3 的密封化收敛）。
 COPY dist/rpm/${RPM_ARCH}/ /tmp/airymaxos-rpms/
-RUN dnf install -y --setopt=install_weak_deps=False --setopt=tsflags=nodocs \
+RUN dnf install -y --disablerepo='*' \
+        --setopt=install_weak_deps=False --setopt=tsflags=nodocs \
         /tmp/airymaxos-rpms/airymaxos-kernel-*.rpm \
         /tmp/airymaxos-rpms/airymaxos-kernel-modules-*.rpm \
     && rm -rf /tmp/airymaxos-rpms
