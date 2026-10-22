@@ -41,7 +41,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # release notes 需完整提交历史与 tag 才能派生「上一版本..本版本」区间（§3.7）
+          # 全量历史保证 SOURCE_DATE_EPOCH 可取到确定性提交时间（§3.7）；
+          # 递归子模块供 SBOM 扫描与内核构建使用。
           fetch-depth: 0
           submodules: recursive
 
