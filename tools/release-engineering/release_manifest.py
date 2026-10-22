@@ -11,9 +11,9 @@ release_manifest.py — AirymaxOS 发布物料清单门禁与发布辅助工具
                  的物料都被真实产出，反向保证流水线不产出未登记的物料。
   2. --checksums 按 09-release-process.md §3.2 的确定性规则生成 sha256sum 校验
                  和文本（按文件名排序，每行 `<sha256>  <文件名>`）。
-  3. --notes     按 §3.7 从 git 提交区间派生结构化 release notes（版本概述、
-                 新特性、修复的缺陷、安全修复、已知问题、升级说明、贡献者列表、
-                 物料校验和）。
+  3. --notes     按 §3.7 渲染精简 release notes（概述 / 说明 / 其他 三节，
+                 总文字不超过 12 行）；「说明」「其他」两节的内容由清单 notes
+                 段提供，杜绝自动派生出的冗长章节。
 
 设计原则（与项目铁律一致）：
   * 清单是唯一事实源；只做「清单 ↔ 发布流水线/仓库」的交叉比对，不重复实现
@@ -35,13 +35,11 @@ Usage:
 Options:
     --check               物料清单门禁的 CI 模式（精简输出，仅退出码）
     --checksums           生成 sha256sum 校验和文本
-    --notes               生成结构化 release notes
+    --notes               生成精简 release notes（概述 / 说明 / 其他）
     --repo-root PATH      agent-linux 仓库根（默认：自动探测）
     --manifest PATH       物料清单（默认：tools/release-engineering/manifest.yaml）
     --output PATH         结果写入文件（默认：标准输出）
     --version VER         release notes 的版本号（--notes 必填）
-    --rev-range RANGE     git 提交区间，如 v0.0.2..v0.0.3（--notes，默认 HEAD）
-    --checksums-file F    嵌入 release notes 的校验和文件（--notes，可选）
 
 Exit codes:
     0 — 检查通过 / 生成成功
@@ -56,7 +54,7 @@ Author:
     SPHARX Ltd. - Airymax Team
 
 Version:
-    1.1.0
+    1.2.0
 """
 
 from __future__ import annotations
@@ -64,7 +62,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import re
-import subprocess
 import sys
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
@@ -85,8 +82,6 @@ __all__ = [
     "build_sums",
     "check_pipeline",
     "check_schema",
-    "classify_commit",
-    "collect_git_log",
     "find_repo_root",
     "load_yaml",
     "main",
@@ -118,26 +113,19 @@ MATERIAL_KEYS = frozenset({
 })
 REQUIRED_MATERIAL_KEYS = ("id", "name", "format", "signature",
                           "authority", "delivery")
-NOTES_KEYS = frozenset({"known_issues", "upgrade_notes"})
+NOTES_KEYS = frozenset({"summary", "remarks"})
+NOTES_MAX_LINES = 3
 
 UPLOAD_ARTIFACT_USES = "actions/upload-artifact"
 GH_RELEASE_USES = "softprops/action-gh-release"
 TEMPLATE_RE = re.compile(r"\$\{\{[^}]*\}\}")
 
-CVE_RE = re.compile(r"CVE-\d{4}-\d+")
-FIX_RE = re.compile(r"\bfix(?:es|ed)?\b", re.IGNORECASE)
-FEATURE_RE = re.compile(r"\b(?:add|feat|implement|introduce|support)\b",
-                        re.IGNORECASE)
-
 NOTES_EMPTY = "（无）"
-NOTES_NOT_PROVIDED = "（未提供）"
 
 # ─── Types ─────────────────────────────────────────────────────────────────
 
 Manifest = dict[str, Any]
 Globs = set[str]
-Commit = tuple[str, str, str]
-Commits = list[Commit]
 
 # ─── Data model ────────────────────────────────────────────────────────────
 
@@ -327,9 +315,9 @@ def _delivery_errs(where: str, entry: Manifest, delivery: Any) -> list[str]:
 def _notes_errs(notes: Any) -> list[str]:
     """校验清单 notes 披露段。
 
-    notes 是 release notes「已知问题」「升级说明」两章节的唯一事实源，
-    两键均须显式声明为字符串列表；确无此类条目时用空列表表达，不得缺键，
-    以杜绝「章节静默为空」的漂移。
+    notes 是 release notes「说明」「其他」两章节的唯一事实源，两键均须显式
+    声明为不超过 NOTES_MAX_LINES 条的字符串列表；确无此类条目时用空列表
+    表达，不得缺键，以杜绝「章节静默为空」与「发行说明冗长」两类漂移。
 
     Args:
         notes: 清单 notes 段（可能缺失）。
@@ -354,6 +342,9 @@ def _notes_errs(notes: Any) -> list[str]:
             problems.append(
                 f"notes.{key} 必须是字符串列表且条目非空"
                 "（确无此类条目时用空列表）")
+        elif len(value) > NOTES_MAX_LINES:
+            problems.append(
+                f"notes.{key} 至多 {NOTES_MAX_LINES} 条（当前 {len(value)} 条）")
     return problems
 
 
@@ -470,54 +461,6 @@ def build_sums(files: Iterable[str | Path]) -> str:
 # ─── Release notes ─────────────────────────────────────────────────────────
 
 
-def collect_git_log(repo_root: Path, rev_range: str) -> Commits:
-    """读取 git 提交（跳过 merge）。
-
-    Args:
-        repo_root: 仓库根路径。
-        rev_range: git 提交区间。
-
-    Returns:
-        `(hash, subject, author)` 三元组列表。
-
-    Raises:
-        ToolError: git 不可用或提交区间非法。
-    """
-    fmt = "%H%x1f%s%x1f%an"
-    try:
-        proc = subprocess.run(
-            ["git", "-C", str(repo_root), "log", "--no-merges",
-             f"--format={fmt}", rev_range],
-            capture_output=True, text=True, check=False)
-    except FileNotFoundError as exc:
-        raise ToolError("git 不可用：请安装 git 后重试") from exc
-    if proc.returncode != 0:
-        raise ToolError(f"git log 失败（{rev_range}）：{proc.stderr.strip()}")
-    commits: Commits = []
-    for line in proc.stdout.splitlines():
-        parts = line.split("\x1f")
-        if len(parts) == 3:
-            commits.append((parts[0], parts[1], parts[2]))
-    return commits
-
-
-def classify_commit(subject: str) -> str:
-    """按标题归类提交。
-
-    Args:
-        subject: 提交标题。
-
-    Returns:
-        `security` / `fix` / `feature`（无法识别时归入 feature）。
-    """
-    if CVE_RE.search(subject) or re.match(r"^\s*security\b", subject,
-                                          re.IGNORECASE):
-        return "security"
-    if FIX_RE.search(subject):
-        return "fix"
-    return "feature"
-
-
 def _bullet_list(items: Sequence[str]) -> str:
     """把条目渲染为 Markdown 列表；空则返回占位符。"""
     if not items:
@@ -525,70 +468,25 @@ def _bullet_list(items: Sequence[str]) -> str:
     return "\n".join(f"- {item}" for item in items)
 
 
-def _contributors(commits: Commits) -> list[str]:
-    """按贡献者聚合提交数，输出 `姓名 (N)` 列表。"""
-    counts: dict[str, int] = {}
-    for _, _, author in commits:
-        counts[author] = counts.get(author, 0) + 1
-    return [f"{name} ({counts[name]})" for name in sorted(counts)]
-
-
-def _disclosure(notes: Manifest, key: str) -> str:
-    """渲染 notes 披露章节内容。
-
-    Args:
-        notes: 清单 notes 段。
-        key: 披露键（NOTES_KEYS 之一）。
-
-    Returns:
-        条目列表；键缺失时为「未提供」，空列表时为「无」。
-    """
-    items = notes.get(key)
-    if items is None:
-        return NOTES_NOT_PROVIDED
-    return _bullet_list(items)
-
-
-def render_notes(
-    version: str,
-    rev_range: str,
-    commits: Commits,
-    checksum_text: str,
-    notes: Manifest | None = None,
-) -> str:
-    """按 §3.7 结构渲染 release notes Markdown。
+def render_notes(version: str, notes: Manifest | None = None) -> str:
+    """按 §3.7 渲染精简 release notes Markdown（概述 / 说明 / 其他）。
 
     Args:
         version: 版本号。
-        rev_range: git 提交区间。
-        commits: 提交三元组列表。
-        checksum_text: 物料校验和文本（空表示未提供）。
-        notes: 清单 notes 披露段（「已知问题」/「升级说明」的唯一事实源）。
+        notes: 清单 notes 披露段（「说明」/「其他」两节的唯一事实源）。
 
     Returns:
-        完整的 release notes Markdown。
+        完整的 release notes Markdown；三节合计文字不超过 12 行。
     """
-    buckets = {"security": [], "fix": [], "feature": []}
-    for _, subject, _ in commits:
-        buckets[classify_commit(subject)].append(subject)
-
-    checksum_block = checksum_text.strip() or NOTES_NOT_PROVIDED
-    disclosures = notes or {}
+    disclosures: Manifest = notes or {}
     sections = [
-        ("版本概述",
-         f"- 版本号：{version}\n- 发布日期：{date.today().isoformat()}\n"
-         f"- 提交区间：{rev_range}\n- 提交数量：{len(commits)}"),
-        ("新特性", _bullet_list(buckets["feature"])),
-        ("修复的缺陷", _bullet_list(buckets["fix"])),
-        ("安全修复", _bullet_list(buckets["security"])),
-        ("已知问题", _disclosure(disclosures, "known_issues")),
-        ("升级说明", _disclosure(disclosures, "upgrade_notes")),
-        ("贡献者列表", _bullet_list(_contributors(commits))),
-        ("物料校验和", f"```\n{checksum_block}\n```"),
+        ("概述", f"版本号：{version}；发布日期：{date.today().isoformat()}"),
+        ("说明", _bullet_list(disclosures.get("summary") or [])),
+        ("其他", _bullet_list(disclosures.get("remarks") or [])),
     ]
     body = "\n\n".join(
-        f"## {title}\n\n{content}" for title, content in sections)
-    return f"# {version} Release Notes\n\n{body}\n"
+        f"## {title}\n{content}" for title, content in sections)
+    return f"{body}\n"
 
 
 # ─── Report ────────────────────────────────────────────────────────────────
@@ -720,12 +618,12 @@ def cmd_checksums(args: argparse.Namespace) -> int:
 
 
 def cmd_notes(args: argparse.Namespace) -> int:
-    """生成结构化 release notes。"""
+    """生成精简 release notes。"""
     if not args.version:
         print("ERROR: --notes 需要 --version 指定版本号", file=sys.stderr)
         return EXIT_USAGE
     try:
-        repo_root, manifest_path = resolve_paths(args)
+        _, manifest_path = resolve_paths(args)
         manifest = load_yaml(manifest_path, "物料清单")
     except ToolError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
@@ -733,20 +631,9 @@ def cmd_notes(args: argparse.Namespace) -> int:
     notes = manifest.get("notes")
     if not isinstance(notes, dict):
         print("ERROR: 物料清单缺少 notes 披露段："
-              "「已知问题」/「升级说明」须以 SSoT 声明（§3.7）", file=sys.stderr)
+              "「说明」/「其他」须以 SSoT 声明（§3.7）", file=sys.stderr)
         return EXIT_USAGE
-    rev_range = args.rev_range or "HEAD"
-    checksum_text = ""
-    if args.checksums_file:
-        try:
-            checksum_text = Path(args.checksums_file).read_text(
-                encoding="utf-8")
-        except OSError as exc:
-            print(f"ERROR: 校验和文件无法读取：{exc}", file=sys.stderr)
-            return EXIT_USAGE
-    commits = collect_git_log(repo_root, rev_range)
-    emit(render_notes(args.version, rev_range, commits, checksum_text, notes),
-         args.output)
+    emit(render_notes(args.version, notes), args.output)
     return EXIT_PASS
 
 
@@ -765,7 +652,7 @@ def build_parser() -> argparse.ArgumentParser:
     mode.add_argument("--checksums", action="store_true",
                       help="生成 sha256sum 校验和文本")
     mode.add_argument("--notes", action="store_true",
-                      help="生成结构化 release notes")
+                      help="生成精简 release notes（概述 / 说明 / 其他）")
     parser.add_argument("--repo-root", default=None,
                         help="agent-linux 仓库根（默认：自动探测）")
     parser.add_argument("--manifest", default=None,
@@ -773,10 +660,6 @@ def build_parser() -> argparse.ArgumentParser:
                              "（默认：tools/release-engineering/manifest.yaml）")
     parser.add_argument("--output", default=None, help="结果写入文件（默认标准输出）")
     parser.add_argument("--version", default=None, help="release notes 版本号")
-    parser.add_argument("--rev-range", default=None,
-                        help="git 提交区间，如 v0.0.2..v0.0.3（默认 HEAD）")
-    parser.add_argument("--checksums-file", default=None,
-                        help="嵌入 release notes 的校验和文件")
     parser.add_argument("files", nargs="*", help="--checksums 的待校验文件")
     return parser
 

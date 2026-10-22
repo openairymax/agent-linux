@@ -91,9 +91,9 @@ SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct) \
    「流水线产了、清单没登记」的漂移。
 2. **校验和（`--checksums`）**：对指定文件流式计算 SHA-256，输出
    `<hash>  <filename>` 双空格格式（`sha256sum` 兼容）。
-3. **release notes（`--notes`）**：按提交区间生成八要素 Markdown（版本概述 /
-   新特性 / 修复的缺陷 / 安全修复 / 已知问题 / 升级说明 / 贡献者列表 /
-   物料校验和），提交按 `CVE`/`security` → 安全修复、`fix` → 修复、其余 → 新特性归类。
+3. **release notes（`--notes`）**：渲染精简 Markdown（概述 / 说明 / 其他 三节，
+   三节合计文字不超过 12 行）；「说明」「其他」两节的内容取自 `manifest.yaml`
+   的 `notes` 段，每节至多 3 条。
 
 工具**不做任何静默降级**：清单缺字段、流水线无产物、待校验文件缺失均以非零退出码
 显式失败。
@@ -106,12 +106,19 @@ SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct) \
 | 源码 tarball 与校验和（§3.2） | 同上 §3.2 |
 | RPM 包集合（§3.3） | 同上 §3.3 |
 | SBOM 交付格式 | `docs/docs-linux/190-distribution/06-sbom-generation.md` §2 |
-| release notes 八要素（§3.7） | `docs/docs-linux/120-development-process/09-release-process.md` §3.7 |
+| release notes 三节（§3.7） | `docs/docs-linux/120-development-process/09-release-process.md` §3.7 |
 | SDK tarball / OCI 镜像 / DNF 仓库发布流水线 | `docs/docs-linux/70-build-system/03-ci-cd-pipeline.md` |
 
 ### 清单结构
 
-`manifest.yaml` 顶层仅两个键：`version`（清单 schema 版本）与 `materials`（物料列表）。
+`manifest.yaml` 顶层仅三个键：`version`（清单 schema 版本）、`notes`（release
+notes 披露段）与 `materials`（物料列表）。`notes` 段两键均必填：
+
+| 键 | 含义 |
+|----|------|
+| `summary` | 说明：本版更新了什么（至多 3 条，每条渲染为一行） |
+| `remarks` | 其他：其他需要说明的事项（至多 3 条，每条渲染为一行） |
+
 每条物料字段：
 
 | 字段 | 含义 |
@@ -138,9 +145,9 @@ python3 tools/release-engineering/release_manifest.py
 python3 tools/release-engineering/release_manifest.py --checksums \
   dist/rpm/x86_64/airymaxos-kernel-6.6.157-1.x86_64.rpm
 
-# 生成 release notes
+# 生成 release notes（概述 / 说明 / 其他）
 python3 tools/release-engineering/release_manifest.py --notes \
-  --version v0.0.3 --rev-range HEAD~20..HEAD
+  --version 0.0.3
 
 # 指定非默认清单
 python3 tools/release-engineering/release_manifest.py --check \
@@ -153,7 +160,7 @@ python3 tools/release-engineering/release_manifest.py --check \
 |--------|------|
 | `0` | 检查通过 / 生成成功 |
 | `1` | 门禁失败（schema 违规、清单 ↔ 流水线不一致） |
-| `2` | 用法 / 输入错误（清单不可读、YAML 非法、待校验文件缺失、git 不可用、输出不可写等） |
+| `2` | 用法 / 输入错误（清单不可读、YAML 非法、待校验文件缺失、输出不可写等） |
 
 ### 维护清单
 

@@ -216,7 +216,7 @@ jobs:
           ls -l dist/rpm/*/
 
       # 物料 8/9（09-release-process.md §3.1）：以 tools/release-engineering 的
-      # 确定性实现产出校验和文件与结构化 release notes，并即时 GPG 签名。
+      # 确定性实现产出校验和文件与精简 release notes，并即时 GPG 签名。
       # 命名规则：发布资产用 agent-linux-<ver>（§3.2），RPM 包名用 airymaxos-*（§3.3）。
       - name: Generate + sign checksums and release notes
         env:
@@ -235,10 +235,8 @@ jobs:
           )
           python3 tools/release-engineering/release_manifest.py --checksums \
             --output "agent-linux-${ver}.sha256sum" "${assets[@]}"
-          prev="$(git describe --tags --abbrev=0 "${tag}^" 2>/dev/null || true)"
           python3 tools/release-engineering/release_manifest.py --notes \
-            --version "${ver}" --rev-range "${prev:+${prev}..}HEAD" \
-            --checksums-file "agent-linux-${ver}.sha256sum" \
+            --version "${ver}" \
             --output "agent-linux-${ver}-release-notes.md"
           for f in "agent-linux-${ver}.sha256sum" \
                    "agent-linux-${ver}-release-notes.md"; do

@@ -2,21 +2,20 @@
 """release_manifest 单元测试。
 
 覆盖三块能力：清单 schema 门禁、清单 ↔ 发布流水线双向一致、以及
-`--checksums` / `--notes` 两个发布辅助模式；并用合成仓库与真实 git 历史做
-端到端验证，避免任何桩路径。
+`--checksums` / `--notes` 两个发布辅助模式；并用合成仓库做端到端验证，
+避免任何桩路径。
 
 Author:
     SPHARX Ltd. - Airymax Team
 
 Version:
-    1.0.0
+    1.1.0
 """
 
 from __future__ import annotations
 
 import hashlib
-import os
-import subprocess
+from datetime import date
 
 import pytest
 
@@ -25,9 +24,10 @@ import release_manifest as rm
 GOOD_MANIFEST = """\
 version: "1.0.0"
 notes:
-  known_issues:
-    - 已知边界示例
-  upgrade_notes: []
+  summary:
+    - 更新说明示例
+  remarks:
+    - 其他说明示例
 materials:
   - id: kernel-rpm
     name: 内核 RPM
@@ -69,14 +69,6 @@ jobs:
             other/**/*.rpm
 """
 
-_GIT_ENV = {
-    "GIT_AUTHOR_NAME": "Alice",
-    "GIT_AUTHOR_EMAIL": "alice@example.com",
-    "GIT_COMMITTER_NAME": "Alice",
-    "GIT_COMMITTER_EMAIL": "alice@example.com",
-}
-
-
 # ─── Fixtures / helpers ────────────────────────────────────────────────────
 
 
@@ -117,29 +109,13 @@ def active_material(mid, *globs):
 def manifest_dict(materials, version="1.0.0", notes=None):
     """构造顶层清单结构（notes 缺省为合法披露段）。"""
     if notes is None:
-        notes = {"known_issues": [], "upgrade_notes": []}
+        notes = {"summary": [], "remarks": []}
     return {"version": version, "materials": materials, "notes": notes}
 
 
-def _git(repo, *args):
-    return subprocess.run(["git", "-C", str(repo), *args], check=True,
-                          capture_output=True, text=True,
-                          env={**os.environ, **_GIT_ENV})
-
-
-def _commit(repo, name, content, subject):
-    (repo / name).write_text(content, encoding="utf-8")
-    _git(repo, "add", name)
-    _git(repo, "-c", "commit.gpgsign=false", "commit", "-q", "-m", subject)
-
-
-def make_git_repo(path):
-    """初始化一个带若干提交的最小 git 仓库。"""
+def make_repo(path):
+    """创建一个仅含目录结构的最小仓库根（供 resolve_paths 校验）。"""
     path.mkdir(parents=True, exist_ok=True)
-    _git(path, "init", "-q")
-    _commit(path, "a.txt", "1", "mm: fix high-order allocation stall")
-    _commit(path, "b.txt", "2", "net: add io_uring support")
-    _commit(path, "c.txt", "3", "security: fix CVE-2026-0001 in airy lsm")
     return path
 
 
@@ -230,26 +206,33 @@ class TestManifestSchema:
 
     def test_notes_requires_both_keys(self):
         manifest = manifest_dict([active_material("m", "a/*.rpm")],
-                                 notes={"known_issues": []})
+                                 notes={"summary": []})
         result = rm.check_schema(manifest)
         assert not result.passed
-        assert "notes.upgrade_notes" in result.details
+        assert "notes.remarks" in result.details
 
     def test_notes_rejects_blank_entry(self):
         manifest = manifest_dict([active_material("m", "a/*.rpm")],
-                                 notes={"known_issues": [" "],
-                                        "upgrade_notes": []})
+                                 notes={"summary": [" "], "remarks": []})
         result = rm.check_schema(manifest)
         assert not result.passed
-        assert "notes.known_issues" in result.details
+        assert "notes.summary" in result.details
 
     def test_notes_rejects_unknown_key(self):
         manifest = manifest_dict([active_material("m", "a/*.rpm")],
-                                 notes={"known_issues": [], "upgrade_notes": [],
+                                 notes={"summary": [], "remarks": [],
                                         "bogus": []})
         result = rm.check_schema(manifest)
         assert not result.passed
         assert "notes 未知字段" in result.details
+
+    def test_notes_rejects_too_many_lines(self):
+        manifest = manifest_dict(
+            [active_material("m", "a/*.rpm")],
+            notes={"summary": ["一", "二", "三", "四"], "remarks": []})
+        result = rm.check_schema(manifest)
+        assert not result.passed
+        assert "notes.summary 至多 3 条" in result.details
 
 
 # ─── Pipeline extraction ───────────────────────────────────────────────────
@@ -350,74 +333,42 @@ class TestChecksums:
 # ─── Release notes ─────────────────────────────────────────────────────────
 
 
+NOTES_SAMPLE = {"summary": ["甲", "乙"], "remarks": ["丙"]}
+NOTES_EMPTY = {"summary": [], "remarks": []}
+
+
 class TestReleaseNotes:
-    @pytest.mark.parametrize("subject,expected", [
-        ("security: fix CVE-2026-0001 in airy lsm", "security"),
-        ("fix: null deref in logger", "fix"),
-        ("mm: fix page leak", "fix"),
-        ("net: add gateway support", "feature"),
-        ("docs: update readme", "feature"),
-    ])
-    def test_classify_commit(self, subject, expected):
-        assert rm.classify_commit(subject) == expected
+    def test_sections_in_order(self):
+        notes = rm.render_notes("0.0.3", NOTES_SAMPLE)
+        assert notes.index("## 概述") < notes.index("## 说明")
+        assert notes.index("## 说明") < notes.index("## 其他")
 
-    def test_collect_git_log(self, tmp_path):
-        repo = make_git_repo(tmp_path / "gitrepo")
-        commits = rm.collect_git_log(repo, "HEAD")
-        assert len(commits) == 3
-        assert all(len(item) == 3 for item in commits)
-        assert {item[2] for item in commits} == {"Alice"}
+    def test_overview_carries_version_and_date(self):
+        notes = rm.render_notes("0.0.3", NOTES_EMPTY)
+        assert f"版本号：0.0.3；发布日期：{date.today().isoformat()}" in notes
 
-    def test_render_notes_sections(self, tmp_path):
-        repo = make_git_repo(tmp_path / "gitrepo")
-        commits = rm.collect_git_log(repo, "HEAD")
-        notes = rm.render_notes("v0.0.3", "HEAD", commits, "abc123  x.rpm\n")
-        assert notes.startswith("# v0.0.3 Release Notes")
-        assert "## 修复的缺陷" in notes
-        assert "## 安全修复" in notes
-        assert "CVE-2026-0001" in notes
-        assert "abc123  x.rpm" in notes
-        assert "- Alice (3)" in notes
+    def test_disclosures_rendered_as_bullets(self):
+        notes = rm.render_notes("0.0.3", NOTES_SAMPLE)
+        assert "- 甲" in notes
+        assert "- 乙" in notes
+        assert "- 丙" in notes
 
-    def test_render_notes_without_checksums(self, tmp_path):
-        repo = make_git_repo(tmp_path / "gitrepo")
-        commits = rm.collect_git_log(repo, "HEAD")
-        notes = rm.render_notes("v0.0.3", "HEAD", commits, "")
-        assert rm.NOTES_NOT_PROVIDED in notes
+    def test_empty_disclosure_marked(self):
+        notes = rm.render_notes("0.0.3", NOTES_EMPTY)
+        assert "## 说明\n（无）" in notes
+        assert "## 其他\n（无）" in notes
 
-    def test_render_notes_discloses_ssot(self, tmp_path):
-        repo = make_git_repo(tmp_path / "gitrepo")
-        commits = rm.collect_git_log(repo, "HEAD")
-        notes = rm.render_notes("v0.0.3", "HEAD", commits, "",
-                                {"known_issues": ["边界 A"],
-                                 "upgrade_notes": ["迁移 B"]})
-        assert "## 已知问题" in notes
-        assert "- 边界 A" in notes
-        assert "## 升级说明" in notes
-        assert "- 迁移 B" in notes
+    def test_missing_disclosure_defaults_to_marker(self):
+        notes = rm.render_notes("0.0.3")
+        assert "## 说明\n（无）" in notes
+        assert "## 其他\n（无）" in notes
 
-    def test_render_notes_empty_disclosure_is_none(self, tmp_path):
-        repo = make_git_repo(tmp_path / "gitrepo")
-        commits = rm.collect_git_log(repo, "HEAD")
-        notes = rm.render_notes("v0.0.3", "HEAD", commits, "",
-                                {"known_issues": [], "upgrade_notes": []})
-        assert "## 已知问题\n\n（无）" in notes
-        assert "## 升级说明\n\n（无）" in notes
-
-    def test_render_notes_missing_disclosure_marked(self, tmp_path):
-        repo = make_git_repo(tmp_path / "gitrepo")
-        commits = rm.collect_git_log(repo, "HEAD")
-        notes = rm.render_notes("v0.0.3", "HEAD", commits, "",
-                                {"known_issues": []})
-        known = notes.split("## 已知问题", 1)[1].split("##", 1)[0]
-        upgrade = notes.split("## 升级说明", 1)[1].split("##", 1)[0]
-        assert rm.NOTES_NOT_PROVIDED not in known
-        assert rm.NOTES_NOT_PROVIDED in upgrade
-
-    def test_collect_git_log_bad_range(self, tmp_path):
-        repo = make_git_repo(tmp_path / "gitrepo")
-        with pytest.raises(rm.ToolError):
-            rm.collect_git_log(repo, "no-such-ref..HEAD")
+    def test_total_lines_within_budget(self):
+        notes = rm.render_notes("0.0.3", {
+            "summary": ["一", "二", "三"],
+            "remarks": ["甲", "乙", "丙"],
+        })
+        assert len([line for line in notes.splitlines() if line.strip()]) <= 12
 
 
 # ─── CLI ───────────────────────────────────────────────────────────────────
@@ -477,27 +428,28 @@ class TestCli:
         assert "--version" in capsys.readouterr().err
 
     def test_notes_generates_file(self, tmp_path, capsys):
-        repo = make_git_repo(tmp_path / "gitrepo")
+        repo = make_repo(tmp_path / "repo")
         tool = repo / "tools" / "release-engineering"
         tool.mkdir(parents=True, exist_ok=True)
         (tool / "manifest.yaml").write_text(GOOD_MANIFEST, encoding="utf-8")
         out = tmp_path / "notes.md"
-        rc = rm.main(["--notes", "--version", "v0.0.3",
+        rc = rm.main(["--notes", "--version", "0.0.3",
                       "--repo-root", str(repo), "--output", str(out)])
         assert rc == rm.EXIT_PASS
         text = out.read_text(encoding="utf-8")
-        assert "Release Notes" in text
-        assert "- 已知边界示例" in text
+        assert "## 概述" in text
+        assert "- 更新说明示例" in text
+        assert "- 其他说明示例" in text
 
     def test_notes_requires_ssot_section(self, tmp_path, capsys):
-        repo = make_git_repo(tmp_path / "gitrepo")
+        repo = make_repo(tmp_path / "repo")
         tool = repo / "tools" / "release-engineering"
         tool.mkdir(parents=True, exist_ok=True)
         manifest = manifest_dict([active_material("kernel-rpm", "a/*.rpm")])
         del manifest["notes"]
         (tool / "manifest.yaml").write_text(
             rm.yaml.safe_dump(manifest, allow_unicode=True), encoding="utf-8")
-        rc = rm.main(["--notes", "--version", "v0.0.3",
+        rc = rm.main(["--notes", "--version", "0.0.3",
                       "--repo-root", str(repo)])
         assert rc == rm.EXIT_USAGE
         assert "notes" in capsys.readouterr().err
