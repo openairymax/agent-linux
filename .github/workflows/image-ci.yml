@@ -22,6 +22,9 @@
 #     docker_img tar；URL 与 sha256 同时写死，禁止浮动 latest。
 #   * acceptance=true 组装验收 ISO（自动登录 + 会话内冒烟），accept 断言
 #     AIRYMAX-SMOKE-PASS；false 时断言产品 ISO 的 AIRYMAX-DESKTOP-READY。
+#   * release_tag 非空时，内核包取自对应 Release（下载并校验发行
+#     .sha256sum）而不是就地构建：ISO 载荷与发行资产的内核只能有一次
+#     构建，否则同名包哈希分叉，装机载荷无法用发行校验和核验。
 # ===========================================================================
 
 name: image-ci
@@ -33,6 +36,10 @@ on:
         description: '组装验收 ISO（B 轮：自动登录 + 会话内冒烟）'
         type: boolean
         default: false
+      release_tag:
+        description: '复用该 Release 的内核包（如 v0.0.3；留空则就地构建）'
+        type: string
+        default: ''
 
 concurrency:
   group: image-ci
@@ -132,6 +139,34 @@ jobs:
             echo "::error::容器镜像不是 openEuler: $img"; exit 1; }
           printf 'AIRYMAX_BUILD_IMAGE=%s\n' "$img" >> "$GITHUB_ENV"
 
+      # 发行资产里的内核包是 ISO 载荷的内核来源。只下载与校验，不重建：
+      # 只要 ISO 自己再编一次内核，载荷中同名包的哈希就与发行 .sha256sum
+      # 分叉，装机介质也就无法用发行校验和核验。
+      - name: Fetch release kernel RPMs
+        if: inputs.release_tag != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          rel="$RUNNER_TEMP/rel-rpms"
+          ver="${TAG#v}"
+          mkdir -p "$rel"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --dir "$rel" --clobber \
+            --pattern "airymaxos-kernel*.x86_64.rpm" \
+            --pattern "agent-linux-${ver}.sha256sum"
+          sum="$rel/agent-linux-${ver}.sha256sum"
+          grep -E '  airymaxos-kernel[^ ]*\.x86_64\.rpm$' "$sum" >"$rel/kernel.sha256"
+          [ -s "$rel/kernel.sha256" ] ||
+            { echo "::error::${TAG} 的校验和未登记内核包"; exit 1; }
+          ( cd "$rel" && sha256sum -c kernel.sha256 )
+          want="$(grep -c . "$rel/kernel.sha256")"
+          have="$(find "$rel" -name 'airymaxos-kernel*.x86_64.rpm' | wc -l)"
+          [ "$have" -eq "$want" ] ||
+            { echo "::error::内核包 ${have} 个，校验和登记 ${want} 个"; exit 1; }
+          printf 'AIRYMAX_REL_RPMS=%s\n' "$rel" >>"$GITHUB_ENV"
+
       - name: Build desktop ISO in container
         env:
           ACCEPTANCE: ${{ inputs.acceptance }}
@@ -139,12 +174,21 @@ jobs:
           set -euo pipefail
           out="$RUNNER_TEMP/out"
           mkdir -p "$out"
+          mounts=(-v "$GITHUB_WORKSPACE:/src:ro" -v "$out:/out"
+                  -v "$RUNNER_TEMP/media:/media:ro")
+          args=(--out /out --iso-base "/media/$OE_ISO_NAME"
+                --profile desktop --arch x86_64 --skip-install)
+          if [ -n "${AIRYMAX_REL_RPMS:-}" ]; then
+            mounts+=(-v "${AIRYMAX_REL_RPMS}:/rel-rpms:ro")
+            args+=(--kernel-rpms /rel-rpms)
+          fi
+          if [ "$ACCEPTANCE" = true ]; then
+            args+=(--acceptance)
+          fi
           docker run --rm --privileged \
             -e ACCEPTANCE="$ACCEPTANCE" \
             -e OE_ISO_NAME="$OE_ISO_NAME" \
-            -v "$GITHUB_WORKSPACE:/src:ro" \
-            -v "$out:/out" \
-            -v "$RUNNER_TEMP/media:/media:ro" \
+            "${mounts[@]}" \
             -w /src \
             "$AIRYMAX_BUILD_IMAGE" bash -c '
               set -euo pipefail
@@ -156,13 +200,8 @@ jobs:
                 python3 python3-devel perl tar gzip rsync \
                 findutils diffutils which util-linux ca-certificates
               git config --global --add safe.directory "*"
-              args=(--out /out --iso-base "/media/$OE_ISO_NAME" \
-                    --profile desktop --arch x86_64 --skip-install)
-              if [ "$ACCEPTANCE" = true ]; then
-                args+=(--acceptance)
-              fi
-              distro/ci/run-image-ci.sh "${args[@]}"
-            '
+              distro/ci/run-image-ci.sh "$@"
+            ' airy "${args[@]}"
 
       - name: Show build logs on failure
         if: failure()
@@ -181,10 +220,16 @@ jobs:
           man="$out/image-ci-manifest.txt"
           [ -f "$man" ] || { echo '::error::缺少镜像清单'; exit 1; }
           cat "$man"
-          for stage in rpm kernel iso; do
+          want_kern=pass
+          if [ -n "${AIRYMAX_REL_RPMS:-}" ]; then
+            want_kern=reuse
+          fi
+          for stage in rpm iso; do
             grep -qx "stage ${stage}=pass" "$man" || {
               echo "::error::组装段未通过: ${stage}"; exit 1; }
           done
+          grep -qx "stage kernel=${want_kern}" "$man" || {
+            echo "::error::内核段状态不是 ${want_kern}"; exit 1; }
           grep -qx 'result=pass' "$man" || { echo '::error::镜像组装失败'; exit 1; }
           line="$(grep -m1 '^iso ' "$man" || true)"
           [ -n "$line" ] || { echo '::error::清单缺少 ISO 记录'; exit 1; }
@@ -194,6 +239,25 @@ jobs:
           got="$(sha256sum "$iso" | cut -d' ' -f1)"
           [ "$got" = "$sum" ] || { echo '::error::ISO 与清单摘要不一致'; exit 1; }
           [ -f "$iso.sha256" ] || { echo '::error::缺少 ISO 校验和文件'; exit 1; }
+
+      # 双链路收敛的判据：载荷里每个内核包的 sha256 都必须命中发行
+      # .sha256sum，否则 ISO 与 Release 仍是两份不同的内核。
+      - name: Verify payload kernel checksums
+        if: inputs.release_tag != ''
+        run: |
+          set -euo pipefail
+          man="$RUNNER_TEMP/out/desktop/payload/airymax/payload-manifest.txt"
+          [ -f "$man" ] || { echo '::error::缺少载荷清单'; exit 1; }
+          n=0
+          while read -r kind sum name; do
+            [ "$kind" = rpm ] || continue
+            case "$name" in airymaxos-kernel*) ;; *) continue ;; esac
+            grep -qxF "${sum}  ${name}" "${AIRYMAX_REL_RPMS}/agent-linux-"*.sha256sum || {
+              echo "::error::${name} 与发行校验和不一致"; exit 1; }
+            n=$((n + 1))
+          done <"$man"
+          [ "$n" -ge 3 ] || { echo "::error::载荷内核包仅 ${n} 个"; exit 1; }
+          echo "载荷内核包与发行校验和一致: ${n} 个"
 
       - name: Upload image artifacts
         if: always()
