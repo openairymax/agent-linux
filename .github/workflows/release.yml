@@ -92,8 +92,9 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y flex bison libelf-dev libssl-dev bc cpio \
-            dwarves rsync rpm
+          sudo apt-get install -y flex bison libelf-dev libssl-dev libdw-dev \
+            libtraceevent-dev libcap-dev libnuma-dev systemtap-sdt-dev \
+            python3-dev zlib1g-dev bc cpio dwarves rsync rpm
           sudo apt-get install -y gcc-aarch64-linux-gnu gcc-riscv64-linux-gnu \
             gcc-13-loongarch64-linux-gnu
           # noble 仅提供带版本号的 loongarch64 交叉 gcc，补齐 CROSS_COMPILE 期望的无版本号驱动名
@@ -101,66 +102,66 @@ jobs:
             /usr/local/bin/loongarch64-linux-gnu-gcc
 
       # 4 架构内核 RPM：单 job 内顺序构建（管理仓 2 job 铁律，不得引入 matrix job）。
-      # 内核为 in-tree 构建，切换架构前必须 mrproper，否则混架构对象文件会致构建失败。
-      # target 名由 arch/<kdir>/Makefile 覆写的 UTS_MACHINE 决定，恰等于 RPM arch 名。
+      # 与 ISO 路径共用 distro/scripts/build-kernel.sh 与同一份配方：源码归档、
+      # 三步配置、包矩阵只有一处事实源，Release 与 ISO 因此不可能再产出哈希
+      # 不同的同名内核包。产物先落在 RUNNER_TEMP（源码区之外），再拷入 dist/。
       - name: Build kernel RPM (4 architectures)
+        env:
+          SOURCE_DATE_EPOCH: ${{ steps.epoch.outputs.value }}
         run: |
           set -euo pipefail
-          spec="$GITHUB_WORKSPACE/build/airymaxos-kernel.spec"
-          while IFS='|' read -r arch kdir target cross; do
+          while IFS='|' read -r arch cross; do
             [ -n "$arch" ] || continue
-            echo "::group::kernel RPM ${arch} (target ${target}-linux)"
-            cd "$GITHUB_WORKSPACE/kernel"
-            make ARCH="$arch" CROSS_COMPILE="$cross" mrproper
-            make ARCH="$arch" CROSS_COMPILE="$cross" defconfig
-            ./scripts/kconfig/merge_config.sh -m .config \
-              "arch/${kdir}/configs/airy_defconfig"
-            make ARCH="$arch" CROSS_COMPILE="$cross" olddefconfig
-            krel="$(make ARCH="$arch" CROSS_COMPILE="$cross" -s kernelrelease)"
-            rm -rf rpmbuild
-            mkdir -p rpmbuild/BUILD rpmbuild/RPMS rpmbuild/SOURCES \
-              rpmbuild/SPECS rpmbuild/SRPMS
-            defs=(
-              --define="_topdir $PWD/rpmbuild"
-              --define="_smp_mflags -j$(nproc)"
-              --define="ARCH ${arch}"
-              --define="SRCARCH ${kdir}"
-              --define="KERNELRELEASE ${krel}"
-              --define="airy_version ${{ steps.ver.outputs.ver }}"
-              --define="airy_release 1"
-            )
-            # 空体宏非法（rpm: "Macro %cross_compile has empty body"）：原生腿
-            # 不定义该宏，spec 以 %{?cross_compile} 的缺省展开为空。
+            echo "::group::kernel RPM ${arch}"
+            out="${RUNNER_TEMP}/kernel-${arch}"
+            args=(--out "$out" --kernel "${GITHUB_WORKSPACE}/kernel"
+                  --arch "$arch" --nodeps)
             if [ -n "$cross" ]; then
-              defs+=(--define="cross_compile ${cross}")
+              args+=(--cross "$cross")
             fi
-            rpmbuild -bb "$spec" "${defs[@]}" \
-              --target "${target}-linux" \
-              --build-in-place --noprep --nodeps
-            cd "$GITHUB_WORKSPACE"
-            mkdir -p "dist/rpm/${target}"
-            cp "kernel/rpmbuild/RPMS/${target}"/*.rpm "dist/rpm/${target}/"
-            ls -l "dist/rpm/${target}"
+            distro/scripts/build-kernel.sh "${args[@]}"
+            mkdir -p "dist/rpm/${arch}"
+            cp "${out}/RPMS/${arch}/"*.rpm "dist/rpm/${arch}/"
+            ls -l "dist/rpm/${arch}"
             echo "::endgroup::"
           done <<'MATRIX'
-          x86_64|x86|x86_64|
-          arm64|arm64|aarch64|aarch64-linux-gnu-
-          riscv|riscv|riscv64|riscv64-linux-gnu-
-          loongarch|loongarch|loongarch64|loongarch64-linux-gnu-
+          x86_64|
+          aarch64|aarch64-linux-gnu-
+          riscv64|riscv64-linux-gnu-
+          loongarch64|loongarch64-linux-gnu-
           MATRIX
 
-      - name: Verify kernel RPM metadata
+      # 包矩阵取自 190-distribution/01-rpm-packaging.md §3.1：tools 子包只在
+      # 目标架构与构建机一致时产出，交叉腿必须恰好没有它。
+      - name: Verify kernel RPM matrix
         run: |
           set -euo pipefail
-          total=$(find dist/rpm -name '*.rpm' | wc -l)
-          echo "内核 RPM 总数: ${total}"
-          [ "$total" -ge 4 ] || { echo "::error::内核 RPM 数量不足（期望 4 架构各主包）"; exit 1; }
-          for rpm in dist/rpm/*/*.rpm; do
-            printf '%s -> %s/%s\n' \
-              "$rpm" \
-              "$(rpm -qp --queryformat '%{NAME}' "$rpm")" \
-              "$(rpm -qp --queryformat '%{ARCH}' "$rpm")"
+          declare -A want=(
+            [x86_64]="core headers devel modules tools"
+            [aarch64]="core headers devel modules"
+            [riscv64]="core headers devel modules"
+            [loongarch64]="core headers devel modules"
+          )
+          total=0
+          for arch in x86_64 aarch64 riscv64 loongarch64; do
+            got="$(rpm -qp --queryformat '%{NAME} %{ARCH}\n' \
+              dist/rpm/"${arch}"/*.rpm | sort -u)"
+            expect="airymaxos-kernel"
+            for sub in ${want[${arch}]}; do
+              expect="${expect} airymaxos-kernel-${sub}"
+            done
+            for pkg in ${expect}; do
+              printf '%s\n' "${got}" | grep -qx "${pkg} ${arch}" ||
+                { echo "::error::${arch} 缺少 ${pkg}"; exit 1; }
+            done
+            set -- ${expect}
+            have="$(printf '%s\n' "${got}" | grep -c . || true)"
+            [ "${have}" -eq "$#" ] ||
+              { echo "::error::${arch} 包数 ${have}，期望 $#"; exit 1; }
+            echo "${arch}: $(printf '%s' "${got}" | tr '\n' ' ')"
+            total=$((total + have))
           done
+          echo "内核 RPM 总数: ${total}"
 
       - name: Import GPG signing key
         uses: crazy-max/ghaction-import-gpg@v6
