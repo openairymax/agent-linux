@@ -11,8 +11,8 @@
 #   - individual: non-contiguous IDs listed individually
 # ===========================================================================
 
-version: "0.2.9"
-last_updated: "2026-10-15"
+version: "0.3.0"
+last_updated: "2026-10-23"
 
 # ===========================================================================
 # Part 1: agent-linux (OS-*) Rules — Chapters 2-13
@@ -694,3 +694,28 @@ technical_points:
     tier: 1
     description: "agent-linux 目录结构、[SC] 头文件物理宿主（kernel/include/uapi/linux/airymax/）的唯一定义源"
     constraint: "OS-IRON-014：[SC] 头文件唯一物理宿主，禁止物理副本"
+
+
+# ===========================================================================
+# Part 4: AirymaxOS 版本方案登记（Plan Registry）
+# ===========================================================================
+# 账本（施工图纸）与规则注册表必须同源可核对：每个在制版本的权威账本在此
+# 登记，使「账本版本 ↔ 注册表版本」的对应关系只有一处定义（TD-03 收口）。
+# 文档路径以 `<仓名>:` 前缀标明物理宿主仓，避免跨仓路径歧义。
+# ===========================================================================
+
+plan_registry:
+
+  - id: airymaxos_002_plan
+    ledger_version: "v0.0.3"
+    ledger_milestones: "MILESTONES_002"
+    release_tag: "v0.0.3"
+    status: active
+    authority_doc: "airymaxhub:docs/docs-closed/agent-linux-dev/0.0.3-极境OS任务方案.md"
+    acceptance_doc: "airymaxhub:docs/docs-closed/agent-linux-dev/0.0.3-验收发行方案.md"
+    roadmap_doc: "airymaxhub:docs/docs-closed/agent-linux-dev/agentrt-linux开发路线和进度.md"
+    generator: "airymaxhub:docs/docs-closed/agent-linux-dev/scripts/bp_003_gen.py"
+    scope_modules: ["L", "A", "B", "C", "K", "M", "P", "R1", "V"]
+    milestones: ["B0", "B1", "B2", "B3", "B4", "B5"]
+    blocking_gates: ["G-ISO-1", "G-UKUI-1"]
+    constraint: "账本永远由生成器产出、人工只改种子；本段只登记版本对应关系，禁止在注册表内重述任务范围"
