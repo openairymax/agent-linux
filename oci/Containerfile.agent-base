@@ -36,17 +36,27 @@ ENV TZ=${TZ}
 ENV LC_ALL=${LC_ALL}
 ENV PATH=/opt/airymaxos/sdk/bin:${PATH}
 
-# ---- 内核层：安装本仓 release 产出的 airymaxos-kernel 主包与模块包 ----
-# 密封安装：本地 RPM 的内核依赖闭包完全由基底镜像已装集合满足（spec 仅声明
-# 内部子包 Requires，scriptlet 对 depmod 等外部命令均带可用性判断），因此
-# 显式停用全部网络仓库。此举使该层只取决于固定基底与本仓产物，不随上游
-# 镜像仓元数据的瞬时不一致而失败（reproducible-build §8.3 的密封化收敛）。
+# ---- 内核层：装入本仓 release 产出的 airymaxos-kernel 内核层 ----
+# 层语义（09-release-process.md §5.4）：基底镜像由「内核层 + SDK 层」构成，供
+# 系统层在其上叠加 12 daemon。容器不引导内核，内核包的 %post（kernel-install、
+# dracut 生成 initramfs、depmod）属目标机引导栈动作，构建期既无 systemd 也无
+# /run 上下文，须由本层以补偿方式显式跳过（RHEL image mode 的既有处置）。
+# 目标机装机路径不受影响：distro 闭包求解以 strict=1 跑真实 dnf 事务，内核包
+# 的 Requires(post): dracut/kmod 会在 ISO 载荷内被解析补齐，故 spec 声明保持不动。
+# 只装内核层所需的 3 个包（meta + core + modules），精确包集取代过宽通配，避免
+# 误拉 devel/headers/tools（其依赖 perl/make/LLVM 等构建期组件，不属运行层）。
+# 该层输入仅为固定基底与本仓产物，全程不触网（reproducible-build §8.3 密封化）。
 COPY dist/rpm/${RPM_ARCH}/ /tmp/airymaxos-rpms/
-RUN dnf install -y --disablerepo='*' \
-        --setopt=install_weak_deps=False --setopt=tsflags=nodocs \
-        /tmp/airymaxos-rpms/airymaxos-kernel-*.rpm \
-        /tmp/airymaxos-rpms/airymaxos-kernel-modules-*.rpm \
-    && rm -rf /tmp/airymaxos-rpms
+RUN set -eux; \
+    d=/tmp/airymaxos-rpms; \
+    meta="$(ls "${d}"/airymaxos-kernel-[0-9]*.rpm)"; \
+    vr="$(rpm -qp --qf '%{VERSION}-%{RELEASE}' "${meta}")"; \
+    rpm -ivh --nodeps --noscripts \
+        "${meta}" \
+        "${d}/airymaxos-kernel-core-${vr}".*.rpm \
+        "${d}/airymaxos-kernel-modules-${vr}".*.rpm; \
+    rpm -q airymaxos-kernel airymaxos-kernel-core airymaxos-kernel-modules; \
+    rm -rf "${d}"
 
 # ---- SDK 层：展开同一 release 的 SDK 交付物 ----
 COPY agent-linux-sdk-*.tar.gz /tmp/airymaxos-sdk.tar.gz
