@@ -104,6 +104,11 @@ jobs:
           # noble 仅提供带版本号的 loongarch64 交叉 gcc，补齐 CROSS_COMPILE 期望的无版本号驱动名
           sudo ln -sf "$(command -v loongarch64-linux-gnu-gcc-13)" \
             /usr/local/bin/loongarch64-linux-gnu-gcc
+          # 交叉腿的 brp-strip 以 <prefix>strip 去符号，缺任一即无法打包；
+          # 在装包阶段断言，避免 30 分钟后才在 %install 里失败。
+          command -v aarch64-linux-gnu-strip riscv64-linux-gnu-strip \
+            loongarch64-linux-gnu-strip >/dev/null || {
+            echo '::error::缺少交叉 strip，内核 RPM 的 brp-strip 无法完成'; exit 1; }
 
       # 4 架构内核 RPM：单 job 内顺序构建（管理仓 2 job 铁律，不得引入 matrix job）。
       # 与 ISO 路径共用 distro/scripts/build-kernel.sh 与同一份配方：源码归档、
