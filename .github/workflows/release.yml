@@ -94,7 +94,11 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y flex bison libelf-dev libssl-dev libdw-dev \
             libtraceevent-dev libcap-dev libnuma-dev systemtap-sdt-dev \
-            python3-dev zlib1g-dev bc cpio dwarves rsync rpm
+            python3-dev zlib1g-dev bc cpio dwarves rsync rpm clang llvm
+          # tools 子包的 bpftool skeleton 依赖 clang 与 llvm-strip，提前
+          # 断言比在 rpmbuild 里以 make Error 127 的形式暴露更易定位。
+          command -v clang llvm-strip >/dev/null || {
+            echo '::error::缺少 clang/llvm-strip，tools 子包无法构建'; exit 1; }
           sudo apt-get install -y gcc-aarch64-linux-gnu gcc-riscv64-linux-gnu \
             gcc-13-loongarch64-linux-gnu
           # noble 仅提供带版本号的 loongarch64 交叉 gcc，补齐 CROSS_COMPILE 期望的无版本号驱动名
