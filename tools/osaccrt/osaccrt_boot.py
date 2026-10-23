@@ -17,6 +17,10 @@
     AIRYMAX-DESKTOP-FAIL unit=<unit> wait=<seconds>
     AIRYMAX-SMOKE-PASS tap=<path> / AIRYMAX-SMOKE-FAIL reason=<why> tap=<path>
     AIRYMAX-TAP|<TAP 原文一行>
+    AIRYMAX-BOOT-CHAIN|<critical-chain 原文一行>
+
+TAP 与关键链都是「原文转发」：探针在 guest 侧不改写 systemd 的输出格式，
+只加可剥离的前缀，宿主侧因此能与 `systemd-analyze` 的既有文法保持同步。
 
 权威依据：
     docs/docs-closed/agent-linux-dev/agentrt-linux验收实验任务卡草案.md
@@ -47,6 +51,7 @@ from typing import Final
 
 __all__ = [
     "DEFAULT_ENV",
+    "TAG_CHAIN",
     "TAG_DEGRADED",
     "TAG_DIAG",
     "TAG_DFAIL",
@@ -68,12 +73,14 @@ TAG_DIAG: Final[str] = "AIRYMAX-DESKTOP-DIAG"
 TAG_DFAIL: Final[str] = "AIRYMAX-DESKTOP-FAIL"
 TAG_SPASS: Final[str] = "AIRYMAX-SMOKE-PASS"
 TAG_SFAIL: Final[str] = "AIRYMAX-SMOKE-FAIL"
+TAG_CHAIN: Final[str] = "AIRYMAX-BOOT-CHAIN"
 
 DEFAULT_ENV: Final[Path] = (
     Path(__file__).resolve().parents[2] / "distro/scripts/lib/verdict.env"
 )
 
 _TAP_LINE: Final[str] = "AIRYMAX-TAP|"
+_CHAIN_LINE: Final[str] = "AIRYMAX-BOOT-CHAIN|"
 _PREFIX: Final[str] = "AIRYMAX-"
 _KERNEL: Final[re.Pattern[str]] = re.compile(r"^\[\s*(\d+\.\d+)\]\s*")
 _PROG: Final[re.Pattern[str]] = re.compile(r"^[A-Za-z0-9_.\-]+\[\d+\]:\s*")
@@ -103,6 +110,7 @@ class BootLog:
 
     marks: tuple[Mark, ...]
     tap: tuple[str, ...]
+    chain: tuple[str, ...]
     raw: tuple[str, ...]
 
     def find(self, tag: str) -> tuple[Mark, ...]:
@@ -140,19 +148,23 @@ class BootLog:
 
 
 def parse_text(text: str) -> BootLog:
-    """把串口全文解析为标记序列、TAP 原文与原始行。"""
+    """把串口全文解析为标记序列、TAP 原文、关键链原文与原始行。"""
     marks: list[Mark] = []
     tap: list[str] = []
+    chain: list[str] = []
     raw = tuple(text.splitlines())
     for line in raw:
         secs, rest = _split(line)
         if rest.startswith(_TAP_LINE):
             tap.append(rest[len(_TAP_LINE) :])
             continue
+        if rest.startswith(_CHAIN_LINE):
+            chain.append(rest[len(_CHAIN_LINE) :])
+            continue
         mark = _mark(secs, rest)
         if mark is not None:
             marks.append(mark)
-    return BootLog(tuple(marks), tuple(tap), raw)
+    return BootLog(tuple(marks), tuple(tap), tuple(chain), raw)
 
 
 def read_log(path: Path | str) -> BootLog:
