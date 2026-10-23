@@ -8,7 +8,8 @@
 实验执行。
 
 表按实验矩阵闭合：E1~E7 引用的 NFR 编号都有条目，未引用的 NFR 不
-收录，避免出现没有实验承担的死阈值。
+收录，避免出现没有实验承担的死阈值。比较表达式统一由 ``meet`` 求值，
+各实验域不各自实现一份大小于判断。
 
 权威依据：
     docs/docs-closed/agent-linux-dev/agentrt-linux验收实验任务卡草案.md
@@ -30,9 +31,10 @@ Version:
 
 from __future__ import annotations
 
+import operator
 import re
 import tomllib
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
@@ -45,6 +47,7 @@ __all__ = [
     "SPEC_SCHEMA",
     "SpecTable",
     "load_spec",
+    "meet",
     "parse_spec",
 ]
 
@@ -61,6 +64,14 @@ LIMIT_RE: Final[re.Pattern[str]] = re.compile(
 )
 _FIELDS: Final[frozenset[str]] = frozenset({"key", "source", "limit", "unit"})
 _ROOTS: Final[frozenset[str]] = frozenset({"schema", "threshold"})
+_EVAL: Final[re.Pattern[str]] = re.compile(r"(<=|>=|<|>|=) (-?\d+(?:\.\d+)?)")
+_OPS: Final[Mapping[str, Callable[[float, float], bool]]] = {
+    "<": operator.lt,
+    "<=": operator.le,
+    ">": operator.gt,
+    ">=": operator.ge,
+    "=": operator.eq,
+}
 
 
 @dataclass(frozen=True)
@@ -96,6 +107,14 @@ class SpecTable:
     def for_source(self, source: str) -> tuple[Threshold, ...]:
         """按 NFR/OS-ACC 编号取该来源的全部阈值。"""
         return tuple(item for item in self.thresholds if item.source == source)
+
+
+def meet(limit: str, value: float) -> bool:
+    """按阈值表的比较表达式判定实测值，各实验域共用同一比较语义。"""
+    match = _EVAL.fullmatch(limit)
+    if match is None:
+        raise ValueError(f"malformed limit: {limit!r}")
+    return _OPS[match.group(1)](value, float(match.group(2)))
 
 
 def load_spec(path: str | Path = DEFAULT_SPEC) -> SpecTable:

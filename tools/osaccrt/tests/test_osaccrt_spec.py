@@ -159,3 +159,27 @@ def test_reject_empty_table() -> None:
     """空表不得作为阈值来源。"""
     with pytest.raises(ValueError, match="non-empty tuple"):
         osp.parse_spec({"schema": 1, "threshold": []})
+
+
+@pytest.mark.parametrize(
+    ("limit", "value", "want"),
+    [
+        ("< 30", 29.999, True),
+        ("< 30", 30.0, False),
+        ("> 100000", 100001.0, True),
+        ("<= 512", 512.0, True),
+        (">= 5", 4.9, False),
+        ("= 0", 0.0, True),
+        ("= 0", 0.001, False),
+    ],
+)
+def test_meet_applies_limit(limit: str, value: float, want: bool) -> None:
+    """比较表达式按原文语义求值，各实验域共用同一实现。"""
+    assert osp.meet(limit, value) is want
+
+
+@pytest.mark.parametrize("limit", ["30", "~30", "<30", "< ", ""])
+def test_meet_rejects_malformed(limit: str) -> None:
+    """非法的比较表达式直接报错，不猜默认语义。"""
+    with pytest.raises(ValueError, match="malformed limit"):
+        osp.meet(limit, 1.0)

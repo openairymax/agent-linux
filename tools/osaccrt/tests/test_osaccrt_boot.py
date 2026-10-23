@@ -82,6 +82,24 @@ def test_tap_forwarding() -> None:
     assert log.find("AIRYMAX-TAP") == ()
 
 
+def test_chain_forwarding() -> None:
+    """关键链原文逐行还原，且不产生同名标记。"""
+    text = "\n".join(
+        [
+            "[    9.0] desktop_ready.sh[1]: AIRYMAX-BOOT-CHAIN|graphical.target @7.1s",
+            "AIRYMAX-BOOT-CHAIN|└─multi-user.target @7.1s",
+            "AIRYMAX-DESKTOP-READY unit=lightdm class=greeter type=x11",
+        ]
+    )
+    log = ob.parse_text(text)
+    assert log.chain == (
+        "graphical.target @7.1s",
+        "└─multi-user.target @7.1s",
+    )
+    assert log.tap == ()
+    assert log.find(ob.TAG_CHAIN) == ()
+
+
 def test_find_keeps_order() -> None:
     """同标签多次出现按串口顺序返回，末条即 last 结果。"""
     text = "AIRYMAX-DESKTOP-DIAG session first\nAIRYMAX-DESKTOP-DIAG session second"

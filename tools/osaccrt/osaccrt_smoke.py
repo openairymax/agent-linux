@@ -32,9 +32,6 @@ Version:
 from __future__ import annotations
 
 import json
-import operator
-import re
-from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Final
 
@@ -42,7 +39,7 @@ from osaccrt_boot import TAG_READY, BootLog, load_env
 from osaccrt_img import Boot, Image
 from osaccrt_judge import CAPTURE_ROOT
 from osaccrt_model import Verdict
-from osaccrt_spec import SpecTable
+from osaccrt_spec import SpecTable, meet
 
 __all__ = [
     "COLD_KEY",
@@ -54,16 +51,6 @@ __all__ = [
 ]
 
 COLD_KEY: Final[str] = "boot.cold"
-_LIMIT: Final[re.Pattern[str]] = re.compile(
-    r"(<=|>=|<|>|=)\s*(-?\d+(?:\.\d+)?)"
-)
-_OPS: Final[Mapping[str, Callable[[float, float], bool]]] = {
-    "<": operator.lt,
-    "<=": operator.le,
-    ">": operator.gt,
-    ">=": operator.ge,
-    "=": operator.eq,
-}
 _RANK: Final[tuple[Verdict, ...]] = (Verdict.FAIL, Verdict.BLOCKED)
 
 
@@ -87,7 +74,7 @@ class Sample:
     @property
     def over(self) -> bool:
         """耗时可测且不满足阈值；不可测不算超限。"""
-        return self.secs is not None and not _meet(self.limit, self.secs)
+        return self.secs is not None and not meet(self.limit, self.secs)
 
     @property
     def broken(self) -> bool:
@@ -208,14 +195,6 @@ def _boot_s(rows: tuple[Boot, ...]) -> float | None:
 def _fault(log: BootLog | None, pattern: str) -> str:
     """负向证据行原文；无会话时为空串。"""
     return "" if log is None else (log.fault(pattern) or "")
-
-
-def _meet(limit: str, value: float) -> bool:
-    """按阈值表的比较表达式判定实测值。"""
-    match = _LIMIT.fullmatch(limit)
-    if match is None:
-        raise ValueError(f"malformed limit: {limit!r}")
-    return _OPS[match.group(1)](value, float(match.group(2)))
 
 
 def _row(item: Sample) -> dict[str, object]:

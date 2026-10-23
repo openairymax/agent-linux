@@ -35,9 +35,13 @@ tools/osaccrt/
 ├── osaccrt_blocked.py    # BLOCKED 预登记与降级台账
 ├── osaccrt_repro.py      # 复现脚本生成器（离线复核摘要与链头）
 ├── osaccrt_runner.py     # 执行器主循环、断点续跑与复核回调
+├── osaccrt_boot.py       # 串口启动日志解析：标记、TAP 与关键链原文转发
+├── osaccrt_img.py        # 装机清单解析：镜像摘要与逐固件结果
+├── osaccrt_smoke.py      # 冷启动冒烟判定（NFR-P-005 boot.cold）
+├── osaccrt_bootchain.py  # 冷启动关键链判定（NFR-P-005 boot.service）
 ├── specs/nfr.toml        # 阈值表（唯一事实源，源码随发布）
 ├── requirements-dev.txt  # 测试依赖（pytest）
-└── tests/                # pytest 套件（11 个模块，含 test_v01_judge.py 全链基线）
+└── tests/                # pytest 套件（16 个模块，含 test_v01_judge.py 全链基线）
 ```
 
 ## 六步规程与代码入口
