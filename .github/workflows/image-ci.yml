@@ -198,6 +198,8 @@ jobs:
                 gcc gcc-c++ make flex bison bc dwarves cpio openssl-devel \
                 libtraceevent-devel elfutils-libelf-devel zlib-devel git \
                 python3 python3-devel perl tar gzip rsync \
+                clang llvm elfutils-devel libcap-devel numactl-devel \
+                systemtap-sdt-devel \
                 findutils diffutils which util-linux ca-certificates
               git config --global --add safe.directory "*"
               distro/ci/run-image-ci.sh "$@"
