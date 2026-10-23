@@ -63,9 +63,9 @@ architectures:
     build: false
     configs: arch/sw_64/configs/airy_defconfig
 
-# 必备 CONFIG：每个 airy_defconfig 必须含有的 Airymax 开关，须与
-# ci-airy.yml / ci-kernel.yml 的 required=(...) 清单逐项相等，
-# 并与 kernel/security/airy/Kconfig 的声明一致。
+# 必备 CONFIG：每个 airy_defconfig 必须含有的基线开关（Airymax 专属项 +
+# 桌面运行时依赖项），须与 ci-airy.yml / ci-kernel.yml 的 required=(...)
+# 清单逐项相等，并与 kernel/security/airy/Kconfig 的声明一致。
 required_configs:
   - CONFIG_SECURITY=y
   - CONFIG_SECURITY_AIRY=y
@@ -76,6 +76,9 @@ required_configs:
   - CONFIG_AIRY_AGENT_TRACING=y
   - CONFIG_AIRY_CAP_TABLE_SIZE=1024
   - CONFIG_IO_URING=y
+  # 桌面运行时依赖：systemd 单元的 PrivateUsers=/RestrictNamespaces=
+  # 需要用户命名空间；缺失时 upower.service 以 217/USER 失败。
+  - CONFIG_USER_NS=y
 
 # CONFIG_LSM 中必须出现的 LSM 名。
 lsm_entry: airy

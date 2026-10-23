@@ -242,6 +242,7 @@ jobs:
             'CONFIG_AIRY_AGENT_TRACING=y'
             'CONFIG_AIRY_CAP_TABLE_SIZE=1024'
             'CONFIG_IO_URING=y'
+            'CONFIG_USER_NS=y'
           )
           for want in "${required[@]}"; do
             grep -qx "$want" .config || {
