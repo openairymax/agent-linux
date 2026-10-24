@@ -10,7 +10,11 @@
 #   * 仅 workflow_dispatch：不进入 PR 门禁，不阻断日常提交（§3.6）。
 #   * 管理仓每 workflow 最多 2 job；本流水线固定 assemble + accept。
 #   * 60 分钟预算（OS-STD-TEST-011）只约束 PR 门禁；本流水线按 release.yml
-#     先例申请发布级例外，两个 job 分别为 180 / 300 分钟。
+#     先例申请发布级例外，两个 job 分别为 240 / 300 分钟。
+#     assemble 从 180 分钟上调的依据：内核基线改为 openeuler_defconfig 后
+#     模块数从数百涨到两千余，单次构建在 4 核 runner 上明显长于
+#     x86_64_defconfig（run 40025896195 的 12.2 分钟不再可比），180 分钟
+#     会在编译尾段取消 job，等于整轮白跑。
 #   * accept 的时限不是拍定值，而由装机腿数推导：双固件各装一次，每腿
 #     装机上限 3600 秒、冷启动上限 900 秒，2×(3600+900) 秒加固定开销仍
 #     小于 300 分钟。装机腿失败时该轮启动腿跳过，最坏 2×3600 秒。托管
@@ -65,7 +69,7 @@ jobs:
   assemble:
     name: Assemble ISO (L1)
     runs-on: ubuntu-24.04
-    timeout-minutes: 180
+    timeout-minutes: 240
     steps:
       - uses: actions/checkout@v4
         with:
