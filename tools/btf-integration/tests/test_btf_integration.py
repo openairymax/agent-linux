@@ -321,6 +321,24 @@ class TestCiSupply:
         assert not result.passed
         assert "无法读取" in result.details
 
+    def test_supply_may_live_in_invoked_gate(self, tmp_path: Path) -> None:
+        """供给逻辑抽到 ci/gates/ 后仍应被认定为已供给。"""
+        ci_text = GOOD_CI.replace(
+            "      - name: install\n"
+            "        run: sudo apt-get install -y dwarves\n"
+            "      - name: assert btf\n"
+            "        run: readelf -S vmlinux | grep -q '.BTF'\n",
+            "      - name: refbuild\n"
+            "        run: ci/ci.sh kernel-refbuild\n")
+        repo, manifest_path = write_repo(tmp_path, ci_text=ci_text)
+        gate = repo / "ci" / "gates" / "kernel-refbuild.sh"
+        gate.parent.mkdir(parents=True, exist_ok=True)
+        gate.write_text("apt-get install -y dwarves\n"
+                        "readelf -S vmlinux | grep -q '.BTF'\n",
+                        encoding="utf-8")
+        manifest = bi.load_manifest(manifest_path)
+        assert bi.check_ci_supply(manifest, repo).passed
+
 
 class TestBuildChecksAndCli:
     def test_happy_path_six_checks(self, tmp_path: Path) -> None:
