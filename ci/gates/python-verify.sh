@@ -84,6 +84,7 @@ case "${KIND}" in
             tools/nightly/requirements-dev.txt
             tools/repo-scaffold/requirements-dev.txt
             tools/airy-rollback/requirements-dev.txt
+            tools/airy-flash/requirements-dev.txt
         )
         TESTS=(
             tools/os-chk/tests/
@@ -96,6 +97,7 @@ case "${KIND}" in
             tools/nightly/tests/
             tools/repo-scaffold/tests/
             tools/airy-rollback/tests/
+            tools/airy-flash/tests/
             tools/osaccrt/tests/
         )
         CHECK=(python3 tools/os-chk/os_chk.py --check)
