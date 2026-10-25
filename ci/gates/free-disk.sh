@@ -12,7 +12,6 @@
 # ===========================================================================
 set -uo pipefail
 
-CI_NS=free-disk
 # shellcheck source=../lib/log.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/log.sh"
 # shellcheck source=../lib/host.sh

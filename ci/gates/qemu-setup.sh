@@ -14,7 +14,6 @@
 set -uo pipefail
 
 readonly EINVAL=5
-CI_NS=qemu-setup
 # shellcheck source=../lib/log.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/log.sh"
 # shellcheck source=../lib/host.sh
@@ -44,8 +43,11 @@ else
     need_cmd apt-get
     group "apt-get install qemu"
     sudo apt-get update
-    sudo apt-get install -y --no-install-recommends \
-        qemu-system-x86 qemu-utils $( [ "${FIRMWARE}" = both ] && echo ovmf )
+    pkgs=(qemu-system-x86 qemu-utils)
+    if [ "${FIRMWARE}" = both ]; then
+        pkgs+=(ovmf)
+    fi
+    sudo apt-get install -y --no-install-recommends "${pkgs[@]}"
     endgroup
 fi
 

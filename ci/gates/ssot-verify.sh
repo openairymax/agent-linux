@@ -19,7 +19,6 @@
 set -uo pipefail
 
 readonly EINVAL=5
-CI_NS=ssot-verify
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 # shellcheck source=../lib/log.sh
 . "${ROOT}/ci/lib/log.sh"
