@@ -109,6 +109,12 @@ esac
 
 cd "${ROOT}" || die "无法进入仓库根: ${ROOT}"
 
+# 本地 python3 常被发行版拆掉 pip/ensurepip；先给出可执行的提示，而不是让
+# 第一条 pip 命令以 "No module named pip" 失败。
+if ! python3 -m pip --version >/dev/null 2>&1; then
+    die "本机 python3 没有 pip：请先 'python3 -m venv .venv && . .venv/bin/activate'，或安装 python3-pip"
+fi
+
 group "${KIND}: 依赖"
 for r in "${REQS[@]}"; do
     [ -f "${r}" ] || die "缺少依赖清单: ${r}"
