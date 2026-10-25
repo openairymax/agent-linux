@@ -22,6 +22,8 @@ set -uo pipefail
 readonly EINVAL=5
 # shellcheck source=../lib/log.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/log.sh"
+# shellcheck source=../lib/apt.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/apt.sh"
 
 KIND=""
 ARCH=x86_64
@@ -153,10 +155,9 @@ install_debian()
         ;;
     esac
     group "apt-get install (${KIND})"
+    apt_sync
     # shellcheck disable=SC2086  # 包名按空格拆分是本函数的接口约定
-    ${SUDO} apt-get update -qq
-    # shellcheck disable=SC2086
-    ${SUDO} apt-get install -y ${pkgs}
+    apt_install ${pkgs}
     endgroup
 }
 
@@ -171,14 +172,9 @@ link_loongarch_alias()
     local src
     src="$(command -v loongarch64-linux-gnu-gcc-13 || true)"
     [ -n "${src}" ] || return 0
-    ${SUDO} ln -sf "${src}" /usr/local/bin/loongarch64-linux-gnu-gcc
+    "${APT_SUDO[@]}" ln -sf "${src}" /usr/local/bin/loongarch64-linux-gnu-gcc
     note "补齐 loongarch64-linux-gnu-gcc 别名"
 }
-
-SUDO=""
-if [ "$(id -u)" -ne 0 ]; then
-    SUDO="sudo"
-fi
 
 if command -v apt-get >/dev/null 2>&1; then
     install_debian

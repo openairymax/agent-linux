@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 """ci/check-workflows.py —— 守住 workflow 薄化约束
 
-三条规则：
+四条规则：
 
 1. 结构上限：每个 workflow 的 job 数 ≤ 预算，内联 ``run: |`` 块数 ≤ 预算
    （预算见 ci/workflow-budgets.txt，只许下调）。
@@ -10,6 +10,9 @@
    把逻辑抄回 YAML 会让这条规则变红。
 3. 已迁移文件（内联预算为 0）不得出现被 gate 收编的模式：宿主清理、
    docker load、摘要校验、qemu 安装、串口 TAP 解析。
+4. 任何 workflow 都不得直接调用 apt-get：acquire 超时、重试与整步硬超时
+   只有 ci/lib/apt.sh 一处实现，写回 YAML 就会重新长出「镜像不响应、
+   一步烧光 240min 预算」的 run。
 
 为什么需要它：这些约束此前只存在于文档里，没有执行者。78 段内联 shell
 就是这样一段段长出来的——每一次单看都合理，合起来就没有人能在本地验证。
@@ -26,12 +29,16 @@ ROOT = Path(__file__).resolve().parent.parent
 WORKFLOWS = ROOT / ".github" / "workflows"
 BUDGETS = ROOT / "ci" / "workflow-budgets.txt"
 
+# 所有 workflow 都适用的禁令：(正则, 应改用的入口)
+ALWAYS_FORBIDDEN = [
+    (re.compile(r"\bapt-get\b"), "ci/lib/apt.sh apt_sync/apt_install"),
+]
+
 # 内联预算为 0 的文件里不允许再出现的模式：(正则, 应改用的 gate)
 FORBIDDEN = [
     (re.compile(r"/usr/share/dotnet"), "ci/lib/host.sh free_disk"),
     (re.compile(r"docker\s+load"), "ci/ci.sh container-load"),
     (re.compile(r"sha256sum\s+-c"), "ci/ci.sh iso-checksum | image-verify"),
-    (re.compile(r"apt-get\s+install\s+-y.*qemu"), "ci/ci.sh qemu-setup"),
     (re.compile(r"AIRYMAX-TAP\|"), "ci/ci.sh tap-extract"),
 ]
 
@@ -142,6 +149,12 @@ def main() -> int:
                     if pat.search(s):
                         errors.append(
                             f"{name}:{no}: 已收编逻辑回流（{pat.pattern}），应走 {gate}")
+
+        for pat, entry in ALWAYS_FORBIDDEN:
+            for no, s in enumerate(text.splitlines(), 1):
+                if pat.search(s):
+                    errors.append(
+                        f"{name}:{no}: 直接调用 apt-get，应走 {entry}")
 
     if errors:
         print("workflow 薄化检查未通过:", file=sys.stderr)

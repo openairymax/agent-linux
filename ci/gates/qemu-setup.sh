@@ -18,6 +18,8 @@ readonly EINVAL=5
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/log.sh"
 # shellcheck source=../lib/host.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/host.sh"
+# shellcheck source=../lib/apt.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/apt.sh"
 
 FIRMWARE="both"
 
@@ -42,12 +44,12 @@ if [ "${have_qemu}" -eq 0 ]; then
 else
     need_cmd apt-get
     group "apt-get install qemu"
-    sudo apt-get update
     pkgs=(qemu-system-x86 qemu-utils)
     if [ "${FIRMWARE}" = both ]; then
         pkgs+=(ovmf)
     fi
-    sudo apt-get install -y --no-install-recommends "${pkgs[@]}"
+    apt_sync
+    apt_install_min "${pkgs[@]}"
     endgroup
 fi
 

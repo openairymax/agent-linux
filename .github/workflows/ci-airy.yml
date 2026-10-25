@@ -78,16 +78,17 @@ jobs:
       - name: Install build dependencies and cross toolchain
         run: |
           set -euo pipefail
-          sudo apt-get update -qq
-          sudo apt-get install -y flex bison libelf-dev libssl-dev bc cpio dwarves
+          . ci/lib/apt.sh
+          apt_sync
+          apt_install flex bison libelf-dev libssl-dev bc cpio dwarves
           case "${{ matrix.arch }}" in
             x86_64) ;;
-            arm64)     sudo apt-get install -y gcc-aarch64-linux-gnu ;;
-            riscv)     sudo apt-get install -y gcc-riscv64-linux-gnu ;;
+            arm64)     apt_install gcc-aarch64-linux-gnu ;;
+            riscv)     apt_install gcc-riscv64-linux-gnu ;;
             loongarch)
               # noble 仅提供带版本号的 loongarch64 交叉 gcc，而 CROSS_COMPILE
               # 期望无版本号的驱动名，这里补齐该别名。
-              sudo apt-get install -y gcc-13-loongarch64-linux-gnu
+              apt_install gcc-13-loongarch64-linux-gnu
               sudo ln -sf "$(command -v loongarch64-linux-gnu-gcc-13)" \
                 /usr/local/bin/loongarch64-linux-gnu-gcc
               ;;
