@@ -64,8 +64,9 @@ architectures:
     configs: arch/sw_64/configs/airy_defconfig
 
 # 必备 CONFIG：每个 airy_defconfig 必须含有的基线开关（Airymax 专属项 +
-# 桌面运行时依赖项），须与 ci-airy.yml / ci-kernel.yml 的 required=(...)
-# 清单逐项相等，并与 kernel/security/airy/Kconfig 的声明一致。
+# 桌面运行时依赖项），须与 ci-airy.yml 的 required=(...) 以及 kernel 腿
+# gate（ci/gates/kernel-refbuild.sh）的 REQUIRED_CONF 清单逐项相等，
+# 并与 kernel/security/airy/Kconfig 的声明一致。
 required_configs:
   - CONFIG_SECURITY=y
   - CONFIG_SECURITY_AIRY=y

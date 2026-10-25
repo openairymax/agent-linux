@@ -62,6 +62,9 @@ DEFAULT_MANIFEST_REL = "tools/defconfig-matrix/manifest.yaml"
 DEFAULT_KERNEL_DIR = "kernel"
 CI_AIRY_REL = ".github/workflows/ci-airy.yml"
 CI_KERNEL_REL = ".github/workflows/ci-kernel.yml"
+# kernel 腿的必备 CONFIG 断言已抽成 gate（ci-kernel.yml 只留一行调用），
+# 清单因此落在该脚本的 REQUIRED_CONF 数组里，而不是 workflow 内联块。
+CI_KERNEL_GATE_REL = "ci/gates/kernel-refbuild.sh"
 
 EXIT_PASS = 0
 EXIT_FAIL = 1
@@ -91,6 +94,7 @@ CONFIG_REF_RE = re.compile(r"\$\((CONFIG_[A-Za-z0-9_]+)\)")
 KCONFIG_DECL_RE = re.compile(
     r"^\s*(?:menuconfig|config)\s+([A-Za-z0-9_]+)\s*$", re.MULTILINE)
 REQUIRED_BLOCK_RE = re.compile(r"required=\((.*?)\)", re.DOTALL)
+REQUIRED_ARRAY_RE = re.compile(r"REQUIRED_CONF=\((.*?)^\s*\)", re.DOTALL | re.MULTILINE)
 REQUIRED_ITEM_RE = re.compile(r"'([^']+)'")
 
 
@@ -399,20 +403,24 @@ def check_ci_matrix_sync(manifest, repo_root):
 
 
 def check_ci_required_sync(manifest, repo_root):
-    """CI 的 required=(...) 必备 CONFIG 清单与清单逐项相等（OS-BUILD-026）。"""
+    """CI 的必备 CONFIG 清单与清单逐项相等（OS-BUILD-026）。"""
     name = "CI 必备 CONFIG 清单与清单一致 (OS-BUILD-026)"
     want = set(manifest.get("required_configs", []))
     problems = []
-    for rel in (CI_AIRY_REL, CI_KERNEL_REL):
+    carriers = (
+        (CI_AIRY_REL, REQUIRED_BLOCK_RE, "required=(...)"),
+        (CI_KERNEL_GATE_REL, REQUIRED_ARRAY_RE, "REQUIRED_CONF=(...)"),
+    )
+    for rel, pattern, label in carriers:
         path = repo_root / rel
         try:
             text = path.read_text(encoding="utf-8")
         except OSError as exc:
             problems.append(f"{rel}: 无法读取: {exc}")
             continue
-        blocks = REQUIRED_BLOCK_RE.findall(text)
+        blocks = pattern.findall(text)
         if not blocks:
-            problems.append(f"{rel}: 未找到 required=(...) 必备 CONFIG 清单块")
+            problems.append(f"{rel}: 未找到 {label} 必备 CONFIG 清单块")
             continue
         found = set()
         for block in blocks:
