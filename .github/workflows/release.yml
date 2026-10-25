@@ -99,24 +99,23 @@ jobs:
 
       # 同一段安装在暖缓存 runner 上 33s 完成，冷启动 28min，也出现过整步
       # 卡住 45min 以上的实例：镜像源无响应时 apt 没有超时，会把 240min 的
-      # job 预算烧光。给 acquire 加超时与重试，并给本步封顶，让镜像故障表现
-      # 为一次可重试的失败，而不是一条永远不结束的 run。
+      # job 预算烧光。acquire 超时、重试与硬超时统一收在 ci/lib/apt.sh，
+      # 本步只需封顶，让镜像故障表现为一次可重试的失败。
       - name: Install kernel build dependencies and cross toolchains
         timeout-minutes: 60
         run: |
           set -euo pipefail
-          apt=(-o Acquire::Retries=3 -o Acquire::http::Timeout=30
-               -o Acquire::https::Timeout=30)
-          sudo apt-get "${apt[@]}" update -qq
-          sudo apt-get "${apt[@]}" install -y flex bison libelf-dev libssl-dev libdw-dev \
+          . ci/lib/apt.sh
+          apt_sync
+          apt_install flex bison libelf-dev libssl-dev libdw-dev \
             libtraceevent-dev libcap-dev libnuma-dev systemtap-sdt-dev \
             python3-dev zlib1g-dev bc cpio dwarves rsync rpm clang llvm
           # tools 子包的 bpftool skeleton 依赖 clang 与 llvm-strip，提前
           # 断言比在 rpmbuild 里以 make Error 127 的形式暴露更易定位。
           command -v clang llvm-strip >/dev/null || {
             echo '::error::缺少 clang/llvm-strip，tools 子包无法构建'; exit 1; }
-          sudo apt-get "${apt[@]}" install -y gcc-aarch64-linux-gnu \
-            gcc-riscv64-linux-gnu gcc-13-loongarch64-linux-gnu
+          apt_install gcc-aarch64-linux-gnu gcc-riscv64-linux-gnu \
+            gcc-13-loongarch64-linux-gnu
           # noble 仅提供带版本号的 loongarch64 交叉 gcc，补齐 CROSS_COMPILE 期望的无版本号驱动名
           sudo ln -sf "$(command -v loongarch64-linux-gnu-gcc-13)" \
             /usr/local/bin/loongarch64-linux-gnu-gcc
@@ -309,8 +308,9 @@ jobs:
       - name: Build dnf repository
         run: |
           set -euo pipefail
-          sudo apt-get update -qq
-          sudo apt-get install -y createrepo-c
+          . ci/lib/apt.sh
+          apt_sync
+          apt_install createrepo-c
           ver="${{ needs.build-and-sign.outputs.ver }}"
           repo="rpm-repo/stable/${ver}"
           for archdir in dist/rpm/*/; do
