@@ -3,12 +3,15 @@
 # ===========================================================================
 # Authority: docs/docs-linux/70-build-system/03-ci-cd-pipeline.md
 #            docs/docs-closed/agent-linux-dev/0.0.3-验收发行方案.md §3/§4/§8
-# Gate:      distro/ci/run-image-ci.sh --skip-install（assemble）
-#            distro/scripts/install-test.sh（accept）
+# Gate:      ci/ci.sh <gate>（实现在 ci/gates/，可在本地对着产物重放）
+#
+# 本文件只做三件事：checkout、调用门禁、上传产物。任何超过一行 shell 的
+# 判断都必须落进 ci/gates/ —— 内联逻辑只能在云端 job 里验证，是这条流水线
+# 此前「一堆脚本拼凑」的根因。约束由 ci/check-workflows.py 强制（棘轮）。
 #
 # 约束：
 #   * 仅 workflow_dispatch：不进入 PR 门禁，不阻断日常提交（§3.6）。
-#   * 管理仓每 workflow 最多 2 job；本流水线固定 assemble + accept。
+#   * 本流水线固定 assemble + accept 两个 job（上限 2，与 docs 一致）。
 #   * 60 分钟预算（OS-STD-TEST-011）只约束 PR 门禁；本流水线按 release.yml
 #     先例申请发布级例外，两个 job 分别为 240 / 300 分钟。
 #     assemble 从 180 分钟上调的依据：内核基线改为 openeuler_defconfig 后
@@ -57,8 +60,9 @@ env:
   OE_ISO_SHA256: 291c1a2ad7ceb74e2b5308ca58f8aaa0206a0520c39145792af08f8adbbb6199
   OE_IMG_NAME: openEuler-docker.x86_64.tar.xz
   OE_IMG_SHA256: c152f7cf7e6966dcf5819890db5f277a303d462c2982e423d5935b33a47d6a05
-  # 媒体只按 sha256 认定，源可替换：官方源跨洋链路曾整段停滞（run
+  # 介质只按 sha256 认定，源可替换：官方源跨洋链路曾整段停滞（run
   # 39543892713 在 Fetch 卡满 55 分钟），国内镜像作等价回退，摘要不符即弃。
+  # 未设 --mirror 时 media-fetch.sh 使用同一组三源（官方 → 清华 → 华为云）。
   OE_MIRRORS: |
     https://repo.openeuler.org/openEuler-24.03-LTS-SP2
     https://mirrors.tuna.tsinghua.edu.cn/openeuler/openEuler-24.03-LTS-SP2
@@ -76,72 +80,13 @@ jobs:
           submodules: recursive
 
       - name: Free runner disk
-        run: |
-          set -euo pipefail
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
-            /opt/hostedtoolcache/CodeQL /usr/local/share/boost \
-            /usr/local/.ghcup /usr/share/swift
-          df -h /
+        run: ci/ci.sh free-disk
 
       - name: Fetch fixed openEuler media
-        run: |
-          set -euo pipefail
-          media="$RUNNER_TEMP/media"
-          mkdir -p "$media"
-
-          # 媒体总预算 45 分钟：构建约 30 分钟，job 上限 180 分钟，留足余量。
-          # 单次尝试按剩余预算分配但不超过 20 分钟；30 秒内低于 100 KiB/s
-          # 判为停滞并换源。换源保留已下字节（镜像内容由 sha256 认定，
-          # 故跨源续传成立），避免慢链路每次都从头再来。
-          media_deadline=$(( $(date +%s) + 2700 ))
-          fetch()
-          {
-            local name="$1" path="$2" want="$3" url got left cap
-            for url in ${OE_MIRRORS}; do
-              left=$(( media_deadline - $(date +%s) ))
-              if [ "$left" -lt 60 ]; then
-                echo '::warning::媒体预算耗尽，停止换源'
-                break
-              fi
-              cap=$(( left < 1200 ? left : 1200 ))
-              url="${url}/${path}/${name}"
-              echo "::group::fetch ${url} (max ${cap}s)"
-              if curl -fL --progress-bar -C - \
-                  --connect-timeout 20 --max-time "$cap" \
-                  --retry 2 --retry-delay 5 --retry-all-errors \
-                  --speed-limit 102400 --speed-time 30 \
-                  -o "${media}/${name}.part" "$url"; then
-                got="$(sha256sum "${media}/${name}.part" | cut -d' ' -f1)"
-                if [ "$got" = "$want" ]; then
-                  mv "${media}/${name}.part" "${media}/${name}"
-                  echo "${name}: sha256 ${got} ok"
-                  echo '::endgroup::'
-                  return 0
-                fi
-                echo "::warning::${url} 摘要不符: ${got}"
-                rm -f "${media}/${name}.part"
-              else
-                echo "::warning::${url} 下载失败"
-              fi
-              echo "::endgroup::"
-            done
-            echo "::error::${name} 在所有镜像源均不可得"
-            return 1
-          }
-
-          fetch "$OE_ISO_NAME" ISO/x86_64 "$OE_ISO_SHA256"
-          fetch "$OE_IMG_NAME" docker_img/x86_64 "$OE_IMG_SHA256"
+        run: ci/ci.sh media-fetch --dir "$RUNNER_TEMP/media" "$OE_ISO_NAME" ISO/x86_64 "$OE_ISO_SHA256" "$OE_IMG_NAME" docker_img/x86_64 "$OE_IMG_SHA256"
 
       - name: Load build container image
-        run: |
-          set -euo pipefail
-          log="$RUNNER_TEMP/media/docker-load.log"
-          docker load --input "$RUNNER_TEMP/media/$OE_IMG_NAME" | tee "$log"
-          img="$(sed -n 's/^Loaded image: //p' "$log" | tail -n 1)"
-          [ -n "$img" ] || { echo '::error::无法解析 openEuler 镜像名'; exit 1; }
-          docker run --rm "$img" grep -qi '^ID="\?openeuler"' /etc/os-release || {
-            echo "::error::容器镜像不是 openEuler: $img"; exit 1; }
-          printf 'AIRYMAX_BUILD_IMAGE=%s\n' "$img" >> "$GITHUB_ENV"
+        run: ci/ci.sh container-load --file "$RUNNER_TEMP/media/$OE_IMG_NAME"
 
       # 发行资产里的内核包是 ISO 载荷的内核来源。只下载与校验，不重建：
       # 只要 ISO 自己再编一次内核，载荷中同名包的哈希就与发行 .sha256sum
@@ -151,119 +96,19 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ inputs.release_tag }}
-        run: |
-          set -euo pipefail
-          rel="$RUNNER_TEMP/rel-rpms"
-          ver="${TAG#v}"
-          mkdir -p "$rel"
-          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
-            --dir "$rel" --clobber \
-            --pattern "airymaxos-kernel*.x86_64.rpm" \
-            --pattern "agent-linux-${ver}.sha256sum"
-          sum="$rel/agent-linux-${ver}.sha256sum"
-          grep -E '  airymaxos-kernel[^ ]*\.x86_64\.rpm$' "$sum" >"$rel/kernel.sha256"
-          [ -s "$rel/kernel.sha256" ] ||
-            { echo "::error::${TAG} 的校验和未登记内核包"; exit 1; }
-          ( cd "$rel" && sha256sum -c kernel.sha256 )
-          want="$(grep -c . "$rel/kernel.sha256")"
-          have="$(find "$rel" -name 'airymaxos-kernel*.x86_64.rpm' | wc -l)"
-          [ "$have" -eq "$want" ] ||
-            { echo "::error::内核包 ${have} 个，校验和登记 ${want} 个"; exit 1; }
-          printf 'AIRYMAX_REL_RPMS=%s\n' "$rel" >>"$GITHUB_ENV"
+        run: ci/ci.sh release-rpms --tag "$TAG" --repo "$GITHUB_REPOSITORY" --dir "$RUNNER_TEMP/rel-rpms"
 
       - name: Build desktop ISO in container
         env:
           ACCEPTANCE: ${{ inputs.acceptance }}
-        run: |
-          set -euo pipefail
-          out="$RUNNER_TEMP/out"
-          mkdir -p "$out"
-          mounts=(-v "$GITHUB_WORKSPACE:/src:ro" -v "$out:/out"
-                  -v "$RUNNER_TEMP/media:/media:ro")
-          args=(--out /out --iso-base "/media/$OE_ISO_NAME"
-                --profile desktop --arch x86_64 --skip-install)
-          if [ -n "${AIRYMAX_REL_RPMS:-}" ]; then
-            mounts+=(-v "${AIRYMAX_REL_RPMS}:/rel-rpms:ro")
-            args+=(--kernel-rpms /rel-rpms)
-          fi
-          if [ "$ACCEPTANCE" = true ]; then
-            args+=(--acceptance)
-          fi
-          docker run --rm --privileged \
-            -e ACCEPTANCE="$ACCEPTANCE" \
-            -e OE_ISO_NAME="$OE_ISO_NAME" \
-            "${mounts[@]}" \
-            -w /src \
-            "$AIRYMAX_BUILD_IMAGE" bash -c '
-              set -euo pipefail
-              dnf -y install --setopt=timeout=30 --setopt=minrate=1000 \
-                --setopt=retries=5 --setopt=max_parallel_downloads=10 \
-                rpm-build lorax createrepo_c xorriso isomd5sum \
-                gcc gcc-c++ make flex bison bc dwarves cpio openssl-devel \
-                libtraceevent-devel elfutils-libelf-devel zlib-devel git \
-                python3 python3-devel perl tar gzip rsync \
-                clang llvm elfutils-devel libcap-devel numactl-devel \
-                systemtap-sdt-devel \
-                findutils diffutils which util-linux ca-certificates
-              git config --global --add safe.directory "*"
-              distro/ci/run-image-ci.sh "$@"
-            ' airy "${args[@]}"
+        run: ci/ci.sh assemble --image "$AIRYMAX_BUILD_IMAGE" --src "$GITHUB_WORKSPACE" --out "$RUNNER_TEMP/out" --media "$RUNNER_TEMP/media" --iso-base "$OE_ISO_NAME"
 
       - name: Show build logs on failure
         if: failure()
-        run: |
-          out="$RUNNER_TEMP/out"
-          while IFS= read -r log; do
-            echo "::group::${log#"$out"/}"
-            tail -n 120 "$log"
-            echo '::endgroup::'
-          done < <(find "$out" -type f -name '*.log' | sort)
+        run: ci/ci.sh log-dump --dir "$RUNNER_TEMP/out"
 
       - name: Verify assembly manifest
-        run: |
-          set -euo pipefail
-          out="$RUNNER_TEMP/out"
-          man="$out/image-ci-manifest.txt"
-          [ -f "$man" ] || { echo '::error::缺少镜像清单'; exit 1; }
-          cat "$man"
-          want_kern=pass
-          if [ -n "${AIRYMAX_REL_RPMS:-}" ]; then
-            want_kern=reuse
-          fi
-          for stage in rpm iso; do
-            grep -qx "stage ${stage}=pass" "$man" || {
-              echo "::error::组装段未通过: ${stage}"; exit 1; }
-          done
-          grep -qx "stage kernel=${want_kern}" "$man" || {
-            echo "::error::内核段状态不是 ${want_kern}"; exit 1; }
-          grep -qx 'result=pass' "$man" || { echo '::error::镜像组装失败'; exit 1; }
-          line="$(grep -m1 '^iso ' "$man" || true)"
-          [ -n "$line" ] || { echo '::error::清单缺少 ISO 记录'; exit 1; }
-          read -r _ sum name <<<"$line"
-          iso="$out/desktop/iso/$name"
-          [ -f "$iso" ] || { echo "::error::ISO 不存在: $iso"; exit 1; }
-          got="$(sha256sum "$iso" | cut -d' ' -f1)"
-          [ "$got" = "$sum" ] || { echo '::error::ISO 与清单摘要不一致'; exit 1; }
-          [ -f "$iso.sha256" ] || { echo '::error::缺少 ISO 校验和文件'; exit 1; }
-
-      # 双链路收敛的判据：载荷里每个内核包的 sha256 都必须命中发行
-      # .sha256sum，否则 ISO 与 Release 仍是两份不同的内核。
-      - name: Verify payload kernel checksums
-        if: inputs.release_tag != ''
-        run: |
-          set -euo pipefail
-          man="$RUNNER_TEMP/out/desktop/payload/airymax/payload-manifest.txt"
-          [ -f "$man" ] || { echo '::error::缺少载荷清单'; exit 1; }
-          n=0
-          while read -r kind sum name; do
-            [ "$kind" = rpm ] || continue
-            case "$name" in airymaxos-kernel*) ;; *) continue ;; esac
-            grep -qxF "${sum}  ${name}" "${AIRYMAX_REL_RPMS}/agent-linux-"*.sha256sum || {
-              echo "::error::${name} 与发行校验和不一致"; exit 1; }
-            n=$((n + 1))
-          done <"$man"
-          [ "$n" -ge 3 ] || { echo "::error::载荷内核包仅 ${n} 个"; exit 1; }
-          echo "载荷内核包与发行校验和一致: ${n} 个"
+        run: ci/ci.sh image-verify --out "$RUNNER_TEMP/out"
 
       - name: Upload image artifacts
         if: always()
@@ -299,27 +144,12 @@ jobs:
         run: git submodule update --init distro
 
       - name: Free runner disk
-        run: |
-          set -euo pipefail
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
-            /opt/hostedtoolcache/CodeQL /usr/local/share/boost \
-            /usr/local/.ghcup /usr/share/swift
-          df -h /
+        run: ci/ci.sh free-disk
 
-      - name: Install QEMU and UEFI firmware
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            qemu-system-x86 qemu-utils ovmf
-
-      - name: Enable KVM
-        run: |
-          if [ -e /dev/kvm ]; then
-            sudo chmod 666 /dev/kvm
-            echo 'KVM 已启用'
-          else
-            echo '::warning::/dev/kvm 不可用，回退 TCG（耗时显著上升）'
-          fi
+      # qemu 与 /dev/kvm 权限同属装机前置：分开两步只会让缺权限在装机跑了
+      # 半小时后以超时形式暴露。
+      - name: Install QEMU, UEFI firmware, enable KVM
+        run: ci/ci.sh qemu-setup --firmware both
 
       - name: Download image artifact
         uses: actions/download-artifact@v4
@@ -328,69 +158,22 @@ jobs:
           path: ${{ runner.temp }}/image
 
       - name: Verify ISO checksum
-        run: |
-          set -euo pipefail
-          iso="$(find "$RUNNER_TEMP/image" -name '*.iso' -type f | head -n 1)"
-          [ -n "$iso" ] || { echo '::error::artifact 中缺少 ISO'; exit 1; }
-          [ -f "$iso.sha256" ] || { echo '::error::缺少 ISO 校验和'; exit 1; }
-          ( cd "$(dirname "$iso")" && sha256sum -c "$(basename "$iso").sha256" )
-          printf 'AIRYMAX_ISO=%s\n' "$iso" >> "$GITHUB_ENV"
+        run: ci/ci.sh iso-checksum --dir "$RUNNER_TEMP/image"
 
       - name: Install and cold boot (BIOS + UEFI)
         env:
           ACCEPTANCE: ${{ inputs.acceptance }}
-        run: |
-          set -euo pipefail
-          marker=AIRYMAX-DESKTOP-READY
-          if [ "$ACCEPTANCE" = true ]; then
-            marker=AIRYMAX-SMOKE-PASS
-          fi
-          out="$RUNNER_TEMP/install"
-          mkdir -p "$out"
-          distro/scripts/install-test.sh --iso "$AIRYMAX_ISO" --out "$out" \
-            --runs 1 --firmware both --boot-marker "$marker" \
-            --install-timeout 3600 --boot-timeout 900 | tee "$out/tap.txt"
+        run: ci/ci.sh accept --iso "$AIRYMAX_ISO" --out "$RUNNER_TEMP/install" --firmware both --runs 1 --install-timeout 3600 --boot-timeout 900
 
       - name: Annotate boot failures
         if: failure()
-        run: |
-          # 注解集与 install-test.sh 的 BOOT_FAIL 保持一致：单元失败以会话
-          # 内探针的 AIRYMAX-BOOT-DEGRADED 为准，串口里的「Failed to start」
-          # 不是判据，把它标成 error 会与真实结论相左。
-          pattern='Kernel panic|Welcome to emergency mode|dracut-initqueue.*timeout|AIRYMAX-BOOT-DEGRADED|AIRYMAX-DESKTOP-FAIL|AIRYMAX-SMOKE-FAIL'
-          for log in "$RUNNER_TEMP"/install/run-*/boot.log; do
-            [ -f "$log" ] || continue
-            grep -nE "$pattern" "$log" | head -n 5 | while IFS= read -r hit; do
-              echo "::error file=${log}::${hit}"
-            done || true
-            grep -oE "systemctl status [^']+" "$log" 2>/dev/null |
-              awk '{ print $3 }' | sort -u | head -n 8 |
-              while IFS= read -r unit; do
-                echo "::warning file=${log}::boot unit failed: ${unit}"
-              done || true
-          done
+        run: ci/ci.sh boot-annotate --dir "$RUNNER_TEMP/install"
 
       - name: Extract smoke TAP
         if: always()
         env:
           ACCEPTANCE: ${{ inputs.acceptance }}
-        run: |
-          set -euo pipefail
-          # 会话内 reporter 以 AIRYMAX-TAP| 前缀把 TAP 原文转发到串口，这里从
-          # boot.log 还原成 smoke.tap，补齐验收发行方案 §9.3 的 L3 归档证据。
-          out="$RUNNER_TEMP/install"
-          token='AIRYMAX-TAP|'
-          for log in "$out"/run-*/boot.log; do
-            [ -f "$log" ] || continue
-            dir="$(basename "$(dirname "$log")")"
-            awk -v t="$token" 'i = index($0, t) { print substr($0, i + length(t)) }' \
-              "$log" > "$out/smoke-${dir#run-}.tap"
-          done
-          if [ "$ACCEPTANCE" = true ]; then
-            for f in "$out"/smoke-*.tap; do
-              [ -s "$f" ] || { echo "::error::smoke TAP 未能从串口还原: $f"; exit 1; }
-            done
-          fi
+        run: ci/ci.sh tap-extract --dir "$RUNNER_TEMP/install"
 
       - name: Upload acceptance evidence
         if: always()

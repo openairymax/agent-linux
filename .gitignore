@@ -35,6 +35,9 @@
 !sdk/**
 !oci/
 !oci/**
+# 仓库级 CI 门禁（ci/ci.sh 分发 + ci/gates/ 实现 + workflow 薄化校验）
+!ci/
+!ci/**
 # Python bytecode cache must stay untracked
 tools/__pycache__/
 tools/**/__pycache__/

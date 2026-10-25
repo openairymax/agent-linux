@@ -1,0 +1,30 @@
+# Workflow 内联 shell 预算（棘轮）
+#
+# 背景：13 个 workflow 曾合计 78 段内联 `run: |`，逻辑只能靠云端 job 验证，
+# 改一处要在多个 YAML 里同步，排障必须重跑整条流水线。系统性改造的目标是
+# 把这些逻辑收敛到 ci/gates/，YAML 只留 checkout → ci/ci.sh <gate> → upload。
+#
+# 本文件是「不许回退」的凭据：
+#   * 第一列  文件名
+#   * 第二列  允许的内联 run 块数上限（只许减，不许加）
+#   * 第三列  允许的 job 数上限
+#
+# 校验：ci/ci.sh 之外由 ci/check-workflows.py 执行，run-lint 里跑一遍。
+# 迁移某个 workflow 时把它的内联预算改成 0；内联预算为 0 的文件还会额外
+# 检查禁用模式（docker load、sha256sum -c、rm -rf /usr/share/dotnet、
+# apt-get install qemu、AIRYMAX-TAP| 解析），防止把逻辑再抄回 YAML。
+#
+# file                       inline  jobs
+abi-verify.yml                    1     1
+ci-airy.yml                      13     2
+ci-kernel.yml                    10     2
+codegen-verify.yml                1     1
+dsl-verify.yml                    1     1
+farm-verify.yml                   0     1
+image-ci.yml                      0     2
+mgmt-orchestrator.yml             6     2
+nightly.yml                       6     2
+os-chk-verify.yml                 3     1
+release.yml                      13     2
+sc-dual-ci.yml                    7     2
+ssot-validate.yml                 2     2
