@@ -62,9 +62,9 @@ notes:
 
   # ── 其他（发行披露 · §3.7「其他」节）───────────────────────────────────
   remarks:
-    - 安装 ISO（3.68 GB）超 GitHub Release 单资产 2 GiB 上限，另附 AtomGit releases（附 .sha256 校验）
+    - 安装镜像 3.4 GB 超出 Release 单资产与 AtomGit 网关上限，经 OCI 通道发布于 ghcr.io/openairymax/airymaxos-iso，oras pull 取件后校验 .sha256
     - UKUI 桌面可进入由 GitHub runner 的 KVM 无头 QEMU 双固件验收轮证得（AIRYMAX-SMOKE-PASS）
-    - OCI 镜像统一命名空间 ghcr.io/openairymax/airymaxos；物料均经 GPG / cosign 签名
+    - 内核 RPM、SBOM 与 SDK 经 GPG 签名，基础镜像 ghcr.io/openairymax/airymaxos 经 cosign 签名
 
 materials:
   # ── §3.1 物料 1：源码 tarball ──────────────────────────────────────────
