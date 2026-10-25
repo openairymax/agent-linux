@@ -225,13 +225,19 @@ def test_job_without_timeout_is_rejected():
 
 
 def test_gate_tokens_present():
-    assert cm.check_tokens(JOB, MANIFEST).passed
+    assert cm.check_tokens(JOB, MANIFEST, REPO_ROOT).passed
+
+
+def test_gate_tokens_resolve_invoked_gate_script():
+    """语义片段可落在 gate 脚本：workflow 只留 ci/ci.sh 调用。"""
+    job = {"steps": [{"run": "ci/ci.sh kernel-build --config defconfig"}]}
+    assert cm.check_tokens(job, MANIFEST, REPO_ROOT).passed
 
 
 def test_gate_token_missing_is_rejected():
     job = _job()
     job["steps"] = [{"run": "make all"}]
-    assert not cm.check_tokens(job, MANIFEST).passed
+    assert not cm.check_tokens(job, MANIFEST, REPO_ROOT).passed
 
 
 # ─── Summary classification ────────────────────────────────────────────────
