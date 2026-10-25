@@ -32,6 +32,8 @@
 #   * release_tag 非空时，内核包取自对应 Release（下载并校验发行
 #     .sha256sum）而不是就地构建：ISO 载荷与发行资产的内核只能有一次
 #     构建，否则同名包哈希分叉，装机载荷无法用发行校验和核验。
+#   * ISO 发布挂在 accept 之后并排除验收剖面：只有双固件装机与冷启动
+#     通过的字节才配占用发行 tag。
 # ===========================================================================
 
 name: image-ci
@@ -112,20 +114,6 @@ jobs:
       - name: Verify assembly manifest
         run: ci/ci.sh image-verify --out "$RUNNER_TEMP/out"
 
-      # ISO 走 OCI 制品通道，与 release.yml 的基础镜像分属两个包
-      # （airymaxos-iso / airymaxos），不会互相覆盖 tag。仅在带发行 tag
-      # 的轮次发布：日常组装轮次不对外写 registry。
-      - uses: oras-project/setup-oras@v1
-        if: inputs.release_tag != ''
-
-      - name: Publish ISO to ghcr.io
-        if: inputs.release_tag != ''
-        env:
-          GHCR_USER: ${{ github.actor }}
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ inputs.release_tag }}
-        run: ci/ci.sh iso-publish --out "$RUNNER_TEMP/out" --tag "$TAG"
-
       - name: Upload image artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -135,7 +123,6 @@ jobs:
             ${{ runner.temp }}/out/desktop/iso/*.iso
             ${{ runner.temp }}/out/desktop/iso/*.sha256
             ${{ runner.temp }}/out/desktop/iso/iso-manifest.txt
-            ${{ runner.temp }}/out/desktop/iso/iso-oci.txt
             ${{ runner.temp }}/out/desktop/payload/airymax/payload-manifest.txt
             ${{ runner.temp }}/out/image-ci-manifest.txt
             ${{ runner.temp }}/out/acceptance/*.ks
@@ -192,6 +179,24 @@ jobs:
           ACCEPTANCE: ${{ inputs.acceptance }}
         run: ci/ci.sh tap-extract --dir "$RUNNER_TEMP/install"
 
+      # ISO 经 OCI 制品通道交付，与 release.yml 的基础镜像分属两个包
+      # （airymaxos-iso / airymaxos），互不覆盖 tag。放在这里而不是 assemble：
+      # 组装成功不等于能引导，先发布等于把未经冷启动验证的字节挂成发行物。
+      # 验收剖面另有排除理由——它自动登录并跑会话内冒烟，字节与产品 ISO
+      # 不同，占用发行 tag 会让两边都无法用 .sha256 自证。
+      # 条件里显式写 success()：一旦给出 if 表达式，Actions 就不再套用默认的
+      # success()，装机失败时发布步骤反而会被放行。
+      - uses: oras-project/setup-oras@v1
+        if: success() && inputs.release_tag != '' && !inputs.acceptance
+
+      - name: Publish ISO to ghcr.io
+        if: success() && inputs.release_tag != '' && !inputs.acceptance
+        env:
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.release_tag }}
+        run: ci/ci.sh iso-publish --out "$RUNNER_TEMP/image" --tag "$TAG"
+
       - name: Upload acceptance evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -201,6 +206,7 @@ jobs:
             ${{ runner.temp }}/install/tap.txt
             ${{ runner.temp }}/install/install-manifest.txt
             ${{ runner.temp }}/install/smoke-*.tap
+            ${{ runner.temp }}/image/desktop/iso/iso-oci.txt
             ${{ runner.temp }}/install/run-*/*.log
           retention-days: 7
           if-no-files-found: warn
