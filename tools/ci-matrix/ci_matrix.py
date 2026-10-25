@@ -47,6 +47,7 @@ Exit codes:
 import argparse
 import itertools
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -415,11 +416,41 @@ def _job_text(job):
                      for step in steps if isinstance(step, dict))
 
 
-def check_tokens(job, manifest):
-    """编译门禁语义片段齐备。"""
+GATE_CALL_RE = re.compile(r"ci/ci\.sh\s+([A-Za-z0-9][A-Za-z0-9_-]*)")
+QUOTES_RE = re.compile(r"[\"']")
+
+
+def _gate_text(text, repo_root):
+    """并入 workflow 实际调用到的门禁脚本正文。
+
+    编译门禁的判定逻辑已从 workflow 抽取到 ci/gates/*.sh（见 §3.3 的
+    「内联逻辑只能在云端验证」约束），语义片段因此落在门禁脚本里。这里
+    按 `ci/ci.sh <gate>` 调用反查 ci/gates/<gate>.sh，使门禁语义仍可被
+    静态证明；调用关系来自 workflow 自身，不另设映射表。
+    """
+    if repo_root is None:
+        return ""
+    chunks = []
+    for name in sorted(set(GATE_CALL_RE.findall(text))):
+        path = Path(repo_root) / "ci" / "gates" / f"{name}.sh"
+        try:
+            chunks.append(path.read_text(encoding="utf-8"))
+        except OSError:
+            continue
+    return "\n".join(chunks)
+
+
+def _unquote(text):
+    """去掉 shell 引号：`grep -E "error:"` 与 `grep -E 'error:'` 语义相同。"""
+    return QUOTES_RE.sub("", text)
+
+
+def check_tokens(job, manifest, repo_root=None):
+    """编译门禁语义片段齐备（workflow 内联段 + 其调用的门禁脚本）。"""
     text = _job_text(job)
+    haystack = _unquote(text + "\n" + _gate_text(text, repo_root))
     missing = [token for token in manifest["gates"]["required_tokens"]
-               if token not in text]
+               if _unquote(token) not in haystack]
     return CheckResult("编译门禁语义片段齐备", not missing,
                        "\n".join(f"缺少片段: {token}" for token in missing))
 
@@ -451,7 +482,7 @@ def build_checks(manifest, repo_root):
         check_parallel(job, manifest),
         check_timeout(job, manifest),
         check_jobcount(workflow, manifest),
-        check_tokens(job, manifest),
+        check_tokens(job, manifest, repo_root),
     ]
 
 

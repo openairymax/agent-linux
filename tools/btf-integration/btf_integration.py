@@ -437,12 +437,39 @@ def check_btf(entries: list[ArchEntry], kernel_dir: Path,
                        "\n".join(problems))
 
 
+GATE_CALL_RE = re.compile(r"ci/ci\.sh\s+([A-Za-z0-9][A-Za-z0-9_-]*)")
+
+
+def _gate_text(workflow_text: str, repo_root: Path) -> str:
+    """读取 workflow 通过 ``ci/ci.sh <gate>`` 调用的门禁脚本正文。
+
+    调用关系取自 workflow 自身，不另设映射表，故门禁改名或迁移后仍能
+    跟上；脚本缺失时返回空串，由调用方的 token 断言报出缺失。
+
+    Args:
+        workflow_text: workflow 文件全文。
+        repo_root: agent-linux 仓库根。
+
+    Returns:
+        被调用门禁脚本的正文，按名字排序拼接。
+    """
+    chunks: list[str] = []
+    for name in sorted(set(GATE_CALL_RE.findall(workflow_text))):
+        path = repo_root / "ci" / "gates" / f"{name}.sh"
+        try:
+            chunks.append(path.read_text(encoding="utf-8"))
+        except OSError:
+            continue
+    return "\n".join(chunks)
+
+
 def check_ci_supply(manifest: Manifest, repo_root: Path) -> CheckResult:
     """校验受检 CI 工作流同时提供 pahole 与 BTF 产物断言。
 
     gen_btf() 在 CONFIG_DEBUG_INFO_BTF=y 时要求 pahole 可用，否则构建直接
     失败；且必须对构建产物断言 BTF 标识，否则「开启 BTF」无法被证明落地
-    （OS-OBS-012）。
+    （OS-OBS-012）。供给逻辑可能已从 workflow 抽取到 ci/gates/*.sh，故按
+    `ci/ci.sh <gate>` 调用把门禁脚本正文一并纳入受检文本。
 
     Args:
         manifest: BTF 基线清单。
@@ -460,6 +487,7 @@ def check_ci_supply(manifest: Manifest, repo_root: Path) -> CheckResult:
         except OSError as exc:
             problems.append(f"{rel}: 无法读取: {exc}")
             continue
+        text += "\n" + _gate_text(text, repo_root)
         if package not in text:
             problems.append(f"{rel}: 未安装生成 BTF 所需的工具包 '{package}'")
         for token in tokens:
