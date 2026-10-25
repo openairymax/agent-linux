@@ -63,6 +63,21 @@ EFI 镜像，顺序写入即可双固件引导；另造一套分区/引导引擎
 - 有任何挂载点即拒绝，必须先 `umount`；只读属性（写保护开关）即拒绝。
 - 普通文件只有在显式 `--allow-file` 时才允许，用于虚机镜像与单元测试。
 
+### WSL2 上的设备接入
+
+B50 验证机跑在 WSL2 里，`/dev/sd*` 只有 WSL 自己的虚拟磁盘，插在主机上的
+U 盘不会自动出现在 Linux 侧；不先做直通，`lsblk` 里根本看不到目标设备。
+
+1. 管理员 PowerShell 列出设备并记下 BUSID：`usbipd list`
+2. 绑定一次即可长期有效：`usbipd bind --busid <BUSID>`
+3. 每次插入 U 盘后接进 WSL：`usbipd attach --wsl --busid <BUSID>`
+4. 回到 WSL 用 `lsblk` 确认新出现的整盘节点，再走上面的 `plan` / `write`
+5. 写完先 `usbipd detach --busid <BUSID>` 再拔盘，避免页缓存没落盘
+
+直通过来的是块设备，系统盘反查照常生效（WSL 的根盘是 `/dev/sdd`，不会和新
+接入的 U 盘混淆）。`write` 需要 root，WSL 里的 `sudo` 必须由操作者本人在交互
+终端输入口令，工具只做预检与写入，不代替提权。
+
 ### 回读强度
 
 | `--verify` | 读取范围 | 适用 |
