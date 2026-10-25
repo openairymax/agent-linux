@@ -30,7 +30,9 @@ EFI 镜像，顺序写入即可双固件引导；另造一套分区/引导引擎
 
 | 内容 | 出处 |
 |------|------|
-| 发布物组成（ISO + `.sha256` + `iso-manifest.txt`） | `.github/workflows/image-ci.yml` 的 `airymaxos-image` artifact |
+| 发布物组成（ISO + `.sha256` + `iso-manifest.txt`） | `.github/workflows/image-ci.yml` |
+| 发行 ISO 的取件通道与摘要 | `desktop/iso/iso-oci.txt`（由 `ci/ci.sh iso-publish` 写入） |
+| 取件通道的不可变性断言 | `ci/gates/iso-publish.sh`（远端 layer digest 必须等于文件 sha256） |
 | BIOS + UEFI 双固件冷启动验收 | `ci/ci.sh accept --firmware both` |
 | 装机后桌面就绪标记 `AIRYMAX-DESKTOP-READY` | 同上，产品 ISO 断言 |
 | 主机名 `airymaxos`、内核 `-alk` 后缀 | `docs/docs-linux/` 品牌与内核归属规范 |
@@ -41,14 +43,25 @@ EFI 镜像，顺序写入即可双固件引导；另造一套分区/引导引擎
 发布物只从流水线取，不从本地构建目录取——本地构建的 ISO 与发行 `.sha256`
 不是同一个文件，混用会让「可复现」失效。
 
+发行 ISO 约 3.4 GiB，超过 GitHub Release 单资产 2 GiB 与 AtomGit 网关 3 GiB
+上限，因此经 OCI 制品通道交付到独立包 `ghcr.io/openairymax/airymaxos-iso`。
+它与 `release.yml` 的基础镜像分属两个包、互不覆盖 tag，layer digest 就是文件
+自身的 sha256，因此 registry 可以自证无损。Actions 的 `airymaxos-image`
+artifact 只保留 7 天，仅用于调试，不作为发行取件来源。
+
 | 步骤 | 动作 | 失败即停 |
 |------|------|----------|
-| 1 | 从 `image-ci` 下载 `airymaxos-image` artifact，解出 `*.iso` 与同名 `*.sha256` | 否 |
+| 1 | `oras pull ghcr.io/openairymax/airymaxos-iso:<tag> -o .` 取 `*.iso`，`sha256sum -c *.iso.sha256` 校验，并与 `iso-oci.txt` 的 `sha256=` 对账 | 是 |
 | 2 | 插入 U 盘，用 `lsblk` 找到**整盘**节点（如 `/dev/sdb`，不是 `/dev/sdb1`） | 是 |
 | 3 | `plan` 只预检：核对系统盘、挂载、只读、容量、摘要来源 | 是 |
 | 4 | `write --yes`：校验镜像 → 写入 → `fsync` → 回读比对 | 是 |
 | 5 | 安全弹出，目标机开机按 F12/F11/Esc 选 U 盘 | — |
 | 6 | 装机后核对主机名、内核后缀、登录策略 | 是 |
+
+第 1 步的三重核对各有分工：`.sha256` 证明文件在传输中没坏，`iso-oci.txt` 的
+`sha256=` 证明拿到的就是这个 tag 当初发布的字节，`oras` 自己的 layer digest
+证明 registry 端的 blob 与 manifest 一致。三者任一不符即中止，不进入烧录。
+`iso-oci.txt` 同时带 `pull=` 一行，可直接复制执行，避免手抄 tag 与包名。
 
 `plan` 与 `write` 共用同一套预检，所以「预检通过」是「可以写」的充分条件；
 `plan` 已经算过完整 sha256，`write` 会再算一次，避免两次操作之间镜像被替换。
@@ -214,7 +227,7 @@ AIRY-FLASH-PASS image=/path/AirymaxOS-0.0.3-x86_64.iso device=/dev/sdb sha256=1a
 | `目标既不是块设备也不是普通文件` | 传了分区或不存在路径 | `lsblk` 取整盘节点 |
 | `非系统盘 [FAIL]` | 目标是当前系统所在盘 | 立即停止，换盘 |
 | `未挂载 [FAIL]` | 桌面自动挂载了 U 盘 | `umount /dev/sdb*` 后重跑 |
-| `校验和来源 [FAIL]` | artifact 里没带 `.sha256` | 从 `image-ci` 重新下载，勿用 `--allow-unverified` |
+| `校验和来源 [FAIL]` | 取件目录里缺 `.iso.sha256` | 重跑 `oras pull` 取全；勿用 `--allow-unverified` |
 | `摘要不符` | 下载不完整或镜像被替换 | 重新下载；两份摘要不同说明不是同一发布物 |
 | `写入失败于偏移 ...` | 介质掉线或坏块 | 换口/换线；仍失败则换盘 |
 | `回读校验 [FAIL] 偏移 N` | 介质写入不可靠 | `--verify full` 复现；确认为坏盘 |
