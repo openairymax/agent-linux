@@ -43,17 +43,5 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install codegen dependencies
-        run: pip install -r tools/codegen/requirements-dev.txt
-
-      - name: Run codegen unit tests (pytest)
-        run: python3 -m pytest tools/codegen/tests/ -q
-
-      - name: Verify generated files match contract sources (zero drift)
-        run: |
-          if ! python3 tools/codegen/run_codegen.py --check; then
-            echo "::error::codegen output differs from committed files."
-            echo "::error::Run 'make codegen' locally and commit the results."
-            exit 1
-          fi
-          echo "::notice::codegen output matches committed files (zero drift)."
+      - name: Install codegen dependencies and verify zero drift (IRON-9)
+        run: ci/ci.sh python-verify --kind codegen

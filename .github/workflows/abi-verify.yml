@@ -42,17 +42,5 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install abi-check test dependencies
-        run: pip install -r tools/abi-check/requirements-dev.txt
-
-      - name: Run abi-check unit tests (pytest)
-        run: python3 -m pytest tools/abi-check/tests/ -q
-
-      - name: Verify syscall ABI stability (OS-IRON-001)
-        run: |
-          if ! python3 tools/abi-check/abi_check.py --check; then
-            echo "::error::syscall ABI check failed (OS-IRON-001)."
-            echo "::error::Check the four authoritative sources and abi_baseline.json."
-            exit 1
-          fi
-          echo "::notice::syscall ABI stable across four authoritative sources."
+      - name: Install abi-check dependencies and verify syscall ABI (OS-IRON-001)
+        run: ci/ci.sh python-verify --kind abi
