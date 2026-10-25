@@ -20,6 +20,26 @@ on:
       - '.github/**'
   push:
     branches: [main]
+    # push 与 pull_request 用同一份判据，并额外列出 9 个子仓的 path：
+    # gitlink 变更在 diff 里就是子仓目录本身，不列出就会漏掉依赖升级这一
+    # 最需要重跑叶子仓编排的场景。
+    paths:
+      - '**.md'
+      - '.gitmodules'
+      - 'ssot-registry.yaml'
+      - 'MAINTAINERS'
+      - 'CODEOWNERS'
+      - 'tools/**'
+      - '.github/**'
+      - 'kernel'
+      - 'memory'
+      - 'security'
+      - 'cognition'
+      - 'services'
+      - 'system'
+      - 'cloudnative'
+      - 'tests-linux'
+      - 'distro'
 
 jobs:
   # ─── Job 1: 治理文件完整性 ─────────────────────────────────────────

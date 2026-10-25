@@ -18,6 +18,14 @@ on:
       - 'tools/validate-ssot.py'
   push:
     branches: [main]
+    # 与 pull_request 侧同一份判据：只有 SSoT 事实源或校验器本身变了才重跑，
+    # 否则每次 push 都排一轮 2 job 的文档校验，纯属队列噪音。
+    paths:
+      - '**.md'
+      - 'ssot-registry.yaml'
+      - 'tools/validate-ssot.py'
+      - 'ci/gates/ssot-verify.sh'
+      - '.github/workflows/ssot-validate.yml'
 
 permissions:
   contents: read
