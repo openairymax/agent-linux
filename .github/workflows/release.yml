@@ -43,7 +43,10 @@ jobs:
   build-and-sign:
     name: Build + SBOM + Sign (L7)
     runs-on: ubuntu-latest
-    timeout-minutes: 240
+    # 上限由内核构建步的 210min 决定：前置 checkout/apt 冷启动可达 28min，
+    # 构建后还有 SDK、OCI 与签名约 15min，240min 会在最坏路径上先于步骤封顶
+    # 触发，因此 job 预算提到 300min（GitHub 托管 runner 上限 360min）。
+    timeout-minutes: 300
     outputs:
       tag: ${{ steps.ver.outputs.tag }}
       ver: ${{ steps.ver.outputs.ver }}
@@ -130,8 +133,12 @@ jobs:
       # 三步配置、包矩阵只有一处事实源，Release 与 ISO 因此不可能再产出哈希
       # 不同的同名内核包。产物先落在 RUNNER_TEMP（源码区之外），再拷入 dist/。
       - name: Build kernel RPM (4 architectures)
-        # 四腿顺序构建的历史耗时约 83min；封顶 150min 只拦真正的卡死。
-        timeout-minutes: 150
+        # 实测（run 40215264970，ALK 全量模块配置）：x86_64 60.6min、
+        # aarch64 57.5min、riscv64 16.7min、loongarch64 约 20min，四腿合计
+        # 约 155min。旧的 150min 封顶正是卡在最后一腿的 loongarch64 上，
+        # 整条流水线连同已完成的三个架构一起丢弃。封顶按实测留 35% 余量，
+        # 仍能在 300min 的 job 预算内拦住真正的卡死。
+        timeout-minutes: 210
         env:
           SOURCE_DATE_EPOCH: ${{ steps.epoch.outputs.value }}
         run: |
