@@ -138,7 +138,7 @@ sudo python3 tools/airy-flash/airy_flash.py write ... --json
 
 人读输出固定六段，顺序不随结果变化，便于肉眼扫描与日志切片：
 
-```
+```text
 AirymaxOS 烧录工具 0.0.3  (write)
 ============================================================
 映像    /path/AirymaxOS-0.0.3-x86_64.iso
