@@ -16,7 +16,6 @@
 # ===========================================================================
 set -uo pipefail
 
-CI_NS=boot-annotate
 # shellcheck source=../lib/log.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/log.sh"
 

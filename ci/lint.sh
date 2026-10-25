@@ -16,7 +16,6 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-CI_NS=lint
 # shellcheck source=lib/log.sh
 . "${ROOT}/ci/lib/log.sh"
 

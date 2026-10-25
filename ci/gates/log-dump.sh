@@ -13,7 +13,6 @@
 # ===========================================================================
 set -uo pipefail
 
-CI_NS=log-dump
 # shellcheck source=../lib/log.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/log.sh"
 

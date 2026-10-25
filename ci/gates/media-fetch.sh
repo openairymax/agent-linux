@@ -23,7 +23,6 @@
 set -uo pipefail
 
 readonly EINVAL=5
-CI_NS=media-fetch
 # shellcheck source=../lib/log.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/log.sh"
 
