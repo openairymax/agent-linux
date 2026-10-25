@@ -41,8 +41,5 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install farm test dependencies
-        run: pip install -r tools/airy-qemu/requirements-dev.txt
-
-      - name: Run farm unit and end-to-end tests (pytest)
-        run: python3 -m pytest tools/airy-qemu/tests/ -q
+      - name: Install farm dependencies and run tests
+        run: ci/ci.sh python-verify --kind farm

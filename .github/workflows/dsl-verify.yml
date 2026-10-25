@@ -38,17 +38,5 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install DSL dependencies
-        run: pip install -r tools/codegen/requirements-dev.txt
-
-      - name: Run DSL unit tests (pytest)
-        run: python3 -m pytest tools/dsl/tests/ -q
-
-      - name: Verify generated headers match contract sources (zero drift)
-        run: |
-          if ! python3 tools/dsl/dsl_compile.py --check; then
-            echo "::error::DSL output differs from committed files."
-            echo "::error::Run 'make -C tools/dsl' locally and commit the results."
-            exit 1
-          fi
-          echo "::notice::DSL output matches committed files (zero drift)."
+      - name: Install DSL dependencies and verify zero drift (IRON-9)
+        run: ci/ci.sh python-verify --kind dsl

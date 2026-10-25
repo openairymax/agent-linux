@@ -15,16 +15,16 @@
 # apt-get install qemu、AIRYMAX-TAP| 解析），防止把逻辑再抄回 YAML。
 #
 # file                       inline  jobs
-abi-verify.yml                    1     1
+abi-verify.yml                    0     1
 ci-airy.yml                      13     2
 ci-kernel.yml                     0     2
-codegen-verify.yml                1     1
-dsl-verify.yml                    1     1
+codegen-verify.yml                0     1
+dsl-verify.yml                    0     1
 farm-verify.yml                   0     1
 image-ci.yml                      0     2
 mgmt-orchestrator.yml             6     2
 nightly.yml                       6     2
-os-chk-verify.yml                 3     1
+os-chk-verify.yml                 0     1
 release.yml                      13     2
 sc-dual-ci.yml                    7     2
-ssot-validate.yml                 2     2
+ssot-validate.yml                 0     2
