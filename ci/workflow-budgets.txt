@@ -17,7 +17,7 @@
 # file                       inline  jobs
 abi-verify.yml                    1     1
 ci-airy.yml                      13     2
-ci-kernel.yml                    10     2
+ci-kernel.yml                     0     2
 codegen-verify.yml                1     1
 dsl-verify.yml                    1     1
 farm-verify.yml                   0     1

@@ -1,10 +1,22 @@
 # ===========================================================================
-# agent-linux (AirymaxOS) CI Pipeline
-# kernel 子仓 CI（Kbuild 矩阵 + 静态分析 + 运行时测试）
-# 重组为 2 jobs：kernel-build（编译矩阵）+ kernel-verify（静态分析 + 测试）
+# AirymaxOS kernel 子仓 CI（Kbuild 矩阵 + 静态分析 + 运行时测试）
 # ===========================================================================
 # Authority: docs/docs-linux/70-build-system/03-ci-cd-pipeline.md
-# Constraint: 管理仓每个 workflow 最多 2 条流水线
+# Gate:      ci/ci.sh <gate>（实现在 ci/gates/，可在本地对着源码树重放）
+#
+# 本文件只做三件事：checkout、调用门禁、上传产物。任何超过一行 shell 的
+# 判断都必须落进 ci/gates/ —— 内联逻辑只能在云端 job 里验证，是这条流水线
+# 此前「一堆脚本拼凑」的根因。约束由 ci/check-workflows.py 强制（棘轮）。
+#
+# 两条 job 的分工：
+#   kernel-build   28 格矩阵（4 config × 4 arch × 2 compiler − 4）。每格
+#                  一条 kernel-build.sh，参数由 matrix 注入。
+#   kernel-verify  零漂移三条 + KUnit + 参考构建 + 三种静态检查 + kselftest。
+#                  全部串行是刻意的：KUnit 要求源码树干净，sparse 要求参考
+#                  构建的 .o，kselftest 要求参考构建的 bzImage。依赖关系
+#                  现在写在 gate 内部并带前置断言，重排步骤会立即报错，
+#                  而不是静默退化成假绿。
+#
 # Rules: OS-STD-TOOL-161（矩阵）/ OS-STD-TOOL-160（checkpatch）
 #        OS-STD-TOOL-081-CI（sparse）/ OS-TEST-001~022（KUnit + kselftest）
 # ===========================================================================
@@ -20,6 +32,7 @@ on:
       - 'kernel/**'
       - 'tools/ci-matrix/**'
       - '.github/workflows/ci-kernel.yml'
+      - 'ci/gates/kernel-*.sh'
   push:
     branches: [main]
     paths:
@@ -27,6 +40,7 @@ on:
       - 'kernel/**'
       - 'tools/ci-matrix/**'
       - '.github/workflows/ci-kernel.yml'
+      - 'ci/gates/kernel-*.sh'
 
 jobs:
   kernel-build:
@@ -52,93 +66,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { submodules: recursive }
-      # ── M1 计划：将以下内联工具链设置提取为 .github/actions/setup-toolchain 复合 action ──
-      # 当前内联实现原因：P0-10 审查发现 .github/actions/ 目录不存在，IRON-2 禁止桩文件，
-      # 故 M0 阶段采用内联步骤保证 CI 可用；M1 阶段将重构为复合 action 以消除重复。
+
       - name: Install build dependencies and toolchain
-        run: |
-          set -euo pipefail
-          sudo apt-get update -qq
-          sudo apt-get install -y flex bison libelf-dev libssl-dev bc cpio dwarves
-          if [ "${{ matrix.compiler }}" = "clang" ]; then
-            sudo apt-get install -y clang lld llvm
-          else
-            case "${{ matrix.arch }}" in
-              x86_64) ;;
-              arm64)     sudo apt-get install -y gcc-aarch64-linux-gnu ;;
-              riscv)     sudo apt-get install -y gcc-riscv64-linux-gnu ;;
-              loongarch)
-                # noble 仅提供带版本号的 loongarch64 交叉 gcc，而 CROSS_COMPILE
-                # 期望无版本号的驱动名，这里补齐该别名。
-                sudo apt-get install -y gcc-13-loongarch64-linux-gnu
-                sudo ln -sf "$(command -v loongarch64-linux-gnu-gcc-13)" \
-                  /usr/local/bin/loongarch64-linux-gnu-gcc
-                ;;
-            esac
-          fi
+        run: ci/ci.sh kernel-deps --kind build --arch ${{ matrix.arch }} --compiler ${{ matrix.compiler }}
+
       - uses: hendrikmuhs/ccache-action@v1
         with:
           key: kernel-${{ matrix.config }}-${{ matrix.arch }}-${{ matrix.compiler }}
           max-size: 2G
+
       - name: Kbuild ${{ matrix.config }} / ${{ matrix.arch }} / ${{ matrix.compiler }}
-        working-directory: kernel
-        run: |
-          set -euo pipefail
-          case "${{ matrix.arch }}" in
-            x86_64)    kdir=x86 ;;
-            arm64)     kdir=arm64 ;;
-            riscv)     kdir=riscv ;;
-            loongarch) kdir=loongarch ;;
-          esac
-          if [ "${{ matrix.compiler }}" = "clang" ]; then
-            # LLVM=1 让 clang/lld/llvm 提供全部工具，跨架构目标由 ARCH 推导；
-            # 不能再设 CROSS_COMPILE，否则会去调用并不存在的 GNU 交叉 binutils。
-            mkargs=(LLVM=1)
-          else
-            case "${{ matrix.arch }}" in
-              x86_64)    cross="" ;;
-              arm64)     cross=aarch64-linux-gnu- ;;
-              riscv)     cross=riscv64-linux-gnu- ;;
-              loongarch) cross=loongarch64-linux-gnu- ;;
-            esac
-            mkargs=("CROSS_COMPILE=$cross")
-          fi
-          if [ "${{ matrix.config }}" = "airy_defconfig" ]; then
-            # airy_defconfig 是叠加在架构 base defconfig 之上的配置片段，
-            # 不是 make 目标，必须走 merge_config.sh 两步法。
-            make ARCH=${{ matrix.arch }} "${mkargs[@]}" defconfig
-            ./scripts/kconfig/merge_config.sh -m .config \
-              "arch/${kdir}/configs/airy_defconfig"
-            make ARCH=${{ matrix.arch }} "${mkargs[@]}" olddefconfig
-          else
-            make ARCH=${{ matrix.arch }} "${mkargs[@]}" "${{ matrix.config }}"
-          fi
-          if [ "${{ matrix.config }}" = "allmodconfig" ]; then
-            # allmodconfig 将绝大多数 tristate 项设为 m，全量模块编译在标准运行器
-            # 上超过 OS-STD-TEST-011 的 60 分钟上限。PR 门禁保留 Kconfig 求解与内建
-            # 面（vmlinux）编译，覆盖 #ifdef 错配与内建符号冲突；模块级符号冲突/
-            # 循环依赖按 03-ci-cd-pipeline.md §1.1 的 L5/L6 归属 nightly。
-            make ARCH=${{ matrix.arch }} "${mkargs[@]}" vmlinux -j"$(nproc)" \
-              2>&1 | tee build.log
-          else
-            make ARCH=${{ matrix.arch }} "${mkargs[@]}" -j"$(nproc)" 2>&1 | tee build.log
-            make ARCH=${{ matrix.arch }} "${mkargs[@]}" modules -j"$(nproc)" \
-              2>&1 | tee -a build.log
-          fi
-          if grep -E "error:" build.log; then
-            echo "::error::build emitted compiler errors"
-            exit 1
-          fi
-          airy_re='security/airy/|kernel/(superv|syscalls|corekern|log|ipc)/|/airymax/'
-          if grep -E "warning:" build.log > warnings.log; then
-            if grep -E "${airy_re}" warnings.log; then
-              echo "::error::Airymax code emitted compiler warnings"
-              exit 1
-            fi
-            echo "NOTE: upstream warnings present, none in Airymax paths"
-          else
-            echo "OK: no compiler warnings emitted"
-          fi
+        run: ci/ci.sh kernel-build --config ${{ matrix.config }} --arch ${{ matrix.arch }} --compiler ${{ matrix.compiler }} --log "$RUNNER_TEMP/build.log"
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kbuild-${{ matrix.config }}-${{ matrix.arch }}-${{ matrix.compiler }}
+          path: ${{ runner.temp }}/build.log
+          retention-days: 3
+          if-no-files-found: ignore
 
   kernel-verify:
     name: Static Analysis + Runtime Tests
@@ -150,225 +97,50 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { submodules: recursive }
+
       - name: Install analysis and runtime test tools
-        run: |
-          set -euo pipefail
-          sudo apt-get update -qq
-          sudo apt-get install -y flex bison libelf-dev libssl-dev bc cpio \
-            sparse coccinelle rsync zstd file kmod iproute2 kbd dwarves \
-            python3-yaml
-          # virtme-ng 在 QEMU 中启动刚构建的内核；qemu 与 busybox 只在
-          # Recommends 中，必须显式安装，否则 vng 无法构建 guest 根环境。
-          sudo apt-get install -y virtme-ng qemu-system-x86 busybox-static
-      - name: CI matrix consistency check (OS-STD-TOOL-161)
-        run: python3 tools/ci-matrix/ci_matrix.py --check
-      - name: ABI consistency check (OS-IRON-001)
-        run: python3 tools/abi-check/abi_check.py --check
-      - name: Codegen zero-drift check
-        run: python3 tools/codegen/run_codegen.py --check
-      - name: checkpatch.pl --strict (OS-STD-TOOL-160)
-        run: |
-          set -uo pipefail
-          cd kernel
-          dirs=(
-            security/airy
-            kernel/superv
-            kernel/syscalls
-            kernel/corekern
-            kernel/log
-            kernel/ipc
-            include/uapi/linux/airymax
-            include/airymax
-          )
-          mapfile -t files < <(
-            find "${dirs[@]}" -type f \( -name '*.c' -o -name '*.h' \) |
-              LC_ALL=C sort
-          )
-          echo "checkpatch targets: ${#files[@]} files"
-          # checkpatch 在 --strict 下只要有 ERROR/WARNING/CHECK 就返回 1，
-          # 因此门禁不能依赖退出码，必须解析 total 行中的 errors 计数。
-          # 定级：ERROR 阻断，WARNING/CHECK 仅报告（L-11 归一化）。
-          err_total=0
-          warn_total=0
-          chk_total=0
-          for f in "${files[@]}"; do
-            out="$(LC_ALL=C scripts/checkpatch.pl --strict --no-tree -f "$f" 2>&1 || true)"
-            total="$(printf '%s\n' "$out" | grep -m1 '^total:' || true)"
-            errs="$(printf '%s\n' "$total" | sed -n 's/^total: \([0-9]\{1,\}\) errors.*/\1/p')"
-            warns="$(printf '%s\n' "$total" | sed -n 's/.*, \([0-9]\{1,\}\) warnings.*/\1/p')"
-            chks="$(printf '%s\n' "$total" | sed -n 's/.*, \([0-9]\{1,\}\) checks.*/\1/p')"
-            err_total=$((err_total + ${errs:-0}))
-            warn_total=$((warn_total + ${warns:-0}))
-            chk_total=$((chk_total + ${chks:-0}))
-            if [ "${errs:-0}" -gt 0 ]; then
-              echo "::error file=$f::checkpatch reported ${errs} errors"
-              printf '%s\n' "$out" | grep '^ERROR:'
-            fi
-          done
-          echo "checkpatch totals: ${err_total} errors, ${warn_total} warnings, ${chk_total} checks"
-          if [ "$err_total" -gt 0 ]; then
-            echo "::error::checkpatch gate failed (${err_total} errors)"
-            exit 1
-          fi
-          echo "checkpatch gate passed (ERROR level only; warnings are reported)"
-      - name: KUnit on UML (OS-TEST-001~012)
-        working-directory: kernel
-        run: |
-          set -o pipefail
-          # KUnit 使用 O=.kunit 外置构建，kbuild 要求源码树干净，
-          # 因此本步骤必须排在所有 in-tree 构建之前。
-          ./tools/testing/kunit/kunit.py run --arch=um --raw_output=kunit \
-            --kunitconfig=security/airy 2>&1 | tee "$GITHUB_WORKSPACE/kunit.tap"
-      - name: Verify KUnit TAP against baseline (OS-TEST-012)
-        run: python3 tools/kunit-tap-diff.py --current kunit.tap
+        run: ci/ci.sh kernel-deps --kind verify
+
+      # 零漂移三连：真值（任务书矩阵 / ABI 黄金样本 / DSL）与生成物必须一致。
+      - name: Consistency (matrix / ABI / codegen)
+        run: ci/ci.sh kernel-consistency --kind all
+
+      # KUnit 必须在任何 in-tree 构建之前：kbuild 要求源码树干净。
+      - name: KUnit on UML + baseline diff
+        run: ci/ci.sh kernel-kunit --tap "$RUNNER_TEMP/kunit.tap"
+
       - uses: hendrikmuhs/ccache-action@v1
         with:
           key: kernel-airy_defconfig-x86_64-gcc
           max-size: 2G
-      - name: Configure and build x86_64 airy_defconfig
-        working-directory: kernel
-        run: |
-          set -euo pipefail
-          make ARCH=x86_64 defconfig
-          ./scripts/kconfig/merge_config.sh -m .config arch/x86/configs/airy_defconfig
-          make ARCH=x86_64 olddefconfig
-          required=(
-            'CONFIG_SECURITY=y'
-            'CONFIG_SECURITY_AIRY=y'
-            'CONFIG_AIRY_SYSCALL=y'
-            'CONFIG_AIRY_COREKERN=y'
-            'CONFIG_AIRY_LOG=y'
-            'CONFIG_AIRY_IPC=y'
-            'CONFIG_AIRY_AGENT_TRACING=y'
-            'CONFIG_AIRY_CAP_TABLE_SIZE=1024'
-            'CONFIG_IO_URING=y'
-            'CONFIG_USER_NS=y'
-          )
-          for want in "${required[@]}"; do
-            grep -qx "$want" .config || {
-              echo "::error::missing $want in airy_defconfig output"
-              exit 1
-            }
-          done
-          lsm="$(sed -n 's/^CONFIG_LSM="\(.*\)"$/\1/p' .config)"
-          case ",${lsm}," in
-            *,airy,*) echo "OK: airy present in CONFIG_LSM=${lsm}" ;;
-            *)
-              echo "::error::airy missing from CONFIG_LSM=${lsm}"
-              exit 1
-              ;;
-          esac
-          make ARCH=x86_64 -j"$(nproc)" 2>&1 | tee build.log
-          if grep -E "error:" build.log; then
-            echo "::error::build emitted compiler errors"
-            exit 1
-          fi
-          airy_re='security/airy/|kernel/(superv|syscalls|corekern|log|ipc)/|/airymax/'
-          if grep -E "warning:" build.log > warnings.log; then
-            if grep -E "${airy_re}" warnings.log; then
-              echo "::error::Airymax code emitted compiler warnings"
-              exit 1
-            fi
-            echo "NOTE: upstream warnings present, none in Airymax paths"
-          else
-            echo "OK: no compiler warnings emitted"
-          fi
-          test -f arch/x86/boot/bzImage
-          # OS-OBS-012：Linux 6.6 的 BTF 由 gen_btf() 以 .BTF 段内嵌进 vmlinux
-          # （scripts/link-vmlinux.sh），不产出独立的 vmlinux.btf 文件，故断言段存在。
-          readelf -S vmlinux | grep -q '\.BTF' || {
-            echo "::error::vmlinux 缺少 .BTF 段（CONFIG_DEBUG_INFO_BTF 未生效）"
-            exit 1
-          }
-          echo "OK: vmlinux carries the .BTF section"
-          echo "bzImage ready for the runtime test stages"
-      - name: sparse make C=2 W=2 on Airymax objects (OS-STD-TOOL-081-CI)
-        working-directory: kernel
-        run: |
-          set -uo pipefail
-          # 只对 Airymax 自己的目标文件触发 sparse，避免整树 C=2 超时；
-          # 对象清单由上一步的构建产物推导，保证与编译配置一致。
-          objs=()
-          for c in $(find security/airy kernel/superv kernel/syscalls \
-                       kernel/corekern kernel/log kernel/ipc -name '*.c'); do
-            if [ -f "${c%.c}.o" ]; then
-              objs+=("${c%.c}.o")
-            fi
-          done
-          if [ "${#objs[@]}" -eq 0 ]; then
-            echo "::error::no Airymax objects were built"
-            exit 1
-          fi
-          echo "sparse targets: ${#objs[@]} objects"
-          make ARCH=x86_64 C=2 W=2 -j"$(nproc)" "${objs[@]}" 2>&1 | tee sparse.log
-          pat='^(security/airy|kernel/(superv|syscalls|corekern|log|ipc))/[^:]+:[0-9]+:[0-9]+: (warning|error):'
-          if grep -E "$pat" sparse.log; then
-            echo "::error::sparse reported issues in Airymax code"
-            exit 1
-          fi
-          echo "sparse gate passed (Airymax objects only)"
+
+      # 参考构建：sparse 拿 .o，kselftest 拿 bzImage，BTF 断言也在这里。
+      - name: Reference build (airy_defconfig / x86_64)
+        run: ci/ci.sh kernel-refbuild --log "$RUNNER_TEMP/build.log"
+
+      - name: checkpatch.pl --strict
+        run: ci/ci.sh kernel-analyze --kind checkpatch --log "$RUNNER_TEMP/checkpatch.log"
+
+      - name: sparse C=2 W=2 on Airymax objects
+        run: ci/ci.sh kernel-analyze --kind sparse --log "$RUNNER_TEMP/sparse.log"
+
       - name: Coccinelle on Airymax directories
-        working-directory: kernel
-        run: |
-          set -uo pipefail
-          cocci_scripts=(
-            scripts/coccinelle/misc/doubleinit.cocci
-            scripts/coccinelle/misc/ifcol.cocci
-            scripts/coccinelle/misc/minmax.cocci
-            scripts/coccinelle/misc/returnvar.cocci
-            scripts/coccinelle/misc/semicolon.cocci
-            scripts/coccinelle/misc/uninitialized_var.cocci
-            scripts/coccinelle/free/ifnullfree.cocci
-            scripts/coccinelle/locks/double_lock.cocci
-            scripts/coccinelle/null/deref_null.cocci
-            scripts/coccinelle/null/kmerr.cocci
-          )
-          cocci_dirs=(
-            security/airy
-            kernel/superv
-            kernel/syscalls
-            kernel/corekern
-            kernel/log
-            kernel/ipc
-          )
-          : > cocci.log
-          for script in "${cocci_scripts[@]}"; do
-            for dir in "${cocci_dirs[@]}"; do
-              # coccicheck 把 SPFLAGS 追加在最后，spatch 冲突时取最后一个选项，
-              # 由此把默认的 --dir $srctree 收窄到单个 Airymax 目录。
-              make -s ARCH=x86_64 coccicheck MODE=report J=1 \
-                COCCI="$script" SPFLAGS="--dir $dir" >> cocci.log 2>&1 || true
-            done
-          done
-          if grep -q '^coccicheck failed' cocci.log; then
-            echo "::error::coccicheck aborted before completing the scan"
-            exit 1
-          fi
-          scans=$(( ${#cocci_scripts[@]} * ${#cocci_dirs[@]} ))
-          pat='^(security/airy|kernel/(superv|syscalls|corekern|log|ipc))/[^:]+:[0-9]+:[0-9]+'
-          if grep -E "$pat" cocci.log; then
-            echo "::error::Coccinelle reported findings in Airymax code"
-            exit 1
-          fi
-          echo "Coccinelle gate passed (${scans} scans over Airymax directories)"
-      - name: Build and install kselftest subset
-        working-directory: kernel
-        run: |
-          set -euo pipefail
-          make -C tools/testing/selftests TARGETS="seccomp pidfd membarrier rseq" \
-            -j"$(nproc)" install KSFT_INSTALL_PATH="$KSFT_INSTALL"
-          test -f "$KSFT_INSTALL/run_kselftest.sh"
-          test -f "$KSFT_INSTALL/kselftest-list.txt"
-          cat "$KSFT_INSTALL/kselftest-list.txt"
-      - name: Run kselftest via virtme-ng (OS-TEST-013~022)
-        working-directory: kernel
-        run: |
-          set -o pipefail
-          # run_kselftest.sh 由自身位置推导 BASE_DIR，必须从 install 目录运行。
-          cd "$KSFT_INSTALL"
-          vng --run "$GITHUB_WORKSPACE/kernel/arch/x86/boot/bzImage" \
-            --cwd "$KSFT_INSTALL" --force-9p --disable-kvm --quiet \
-            --exec "./run_kselftest.sh --summary" \
-            > "$GITHUB_WORKSPACE/kselftest.tap" 2>&1
-      - name: Parse kselftest TAP (OS-TEST-022)
-        run: python3 tools/parse-tap.py --input kselftest.tap --fail-on-not-ok
+        run: ci/ci.sh kernel-analyze --kind coccinelle --log "$RUNNER_TEMP/cocci.log"
+
+      - name: kselftest subset in virtme-ng
+        run: ci/ci.sh kernel-kselftest --tap "$RUNNER_TEMP/kselftest.tap"
+
+      - name: Upload verification logs and TAP
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-verify-evidence
+          path: |
+            ${{ runner.temp }}/kunit.tap
+            ${{ runner.temp }}/kselftest.tap
+            ${{ runner.temp }}/build.log
+            ${{ runner.temp }}/checkpatch.log
+            ${{ runner.temp }}/sparse.log
+            ${{ runner.temp }}/cocci.log
+          retention-days: 7
+          if-no-files-found: warn
