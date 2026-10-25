@@ -54,6 +54,8 @@ concurrency:
 
 permissions:
   contents: read
+  # ISO 经 ghcr 的 blob 通道交付（Release 单资产上限 2 GiB），需要写包权限。
+  packages: write
 
 env:
   OE_ISO_NAME: openEuler-24.03-LTS-SP2-netinst-x86_64-dvd.iso
@@ -110,6 +112,20 @@ jobs:
       - name: Verify assembly manifest
         run: ci/ci.sh image-verify --out "$RUNNER_TEMP/out"
 
+      # ISO 走 OCI 制品通道，与 release.yml 的基础镜像分属两个包
+      # （airymaxos-iso / airymaxos），不会互相覆盖 tag。仅在带发行 tag
+      # 的轮次发布：日常组装轮次不对外写 registry。
+      - uses: oras-project/setup-oras@v1
+        if: inputs.release_tag != ''
+
+      - name: Publish ISO to ghcr.io
+        if: inputs.release_tag != ''
+        env:
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.release_tag }}
+        run: ci/ci.sh iso-publish --out "$RUNNER_TEMP/out" --tag "$TAG"
+
       - name: Upload image artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -119,6 +135,7 @@ jobs:
             ${{ runner.temp }}/out/desktop/iso/*.iso
             ${{ runner.temp }}/out/desktop/iso/*.sha256
             ${{ runner.temp }}/out/desktop/iso/iso-manifest.txt
+            ${{ runner.temp }}/out/desktop/iso/iso-oci.txt
             ${{ runner.temp }}/out/desktop/payload/airymax/payload-manifest.txt
             ${{ runner.temp }}/out/image-ci-manifest.txt
             ${{ runner.temp }}/out/acceptance/*.ks
