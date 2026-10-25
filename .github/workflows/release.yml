@@ -305,6 +305,12 @@ jobs:
         with:
           name: release-artifacts-${{ needs.build-and-sign.outputs.ver }}
 
+      # 发布前自证：签名发生在另一台 runner，落盘字节可能已被 artifact
+      # 打包解包改写。摘要、署名与 notes 形态在这一步重算，失败即停止，
+      # 不进入 registry 与 Release。
+      - name: Verify signed artifacts
+        run: ci/ci.sh release-verify --dir .
+
       - name: Build dnf repository
         run: |
           set -euo pipefail
