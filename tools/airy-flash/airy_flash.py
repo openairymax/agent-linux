@@ -617,7 +617,7 @@ class Renderer:
     def summary(self, report: Report, elapsed: float, report_path: str = "") -> None:
         self.section("结果")
         mark = "成功" if report.result == "pass" else "失败"
-        self._write(f"  结果    {mark}    用时 {human_duration(elapsed)}\n")
+        self._write(f"  判定    {mark}    用时 {human_duration(elapsed)}\n")
         if report.error:
             self._write(f"  原因    {report.error}\n")
         if report_path:
