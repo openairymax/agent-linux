@@ -1,0 +1,45 @@
+# 构建容器内所需的打包工具链。此前直接写在 image-ci.yml 的 heredoc 里，
+# 改动无法 review、无法复用，也无法在本地对照宿主是否齐备。
+#
+# 分组依据（不是按字母表）：
+#   rpm 侧  rpm-build lorax createrepo_c xorriso isomd5sum —— 出 ISO 的最小集
+#   编译侧  gcc gcc-c++ make flex bison bc —— 内核与 RPM 的共同前置
+#   内核侧  dwarves cpio openssl-devel libtraceevent-devel elfutils-libelf-devel
+#          clang llvm elfutils-devel libcap-devel numactl-devel systemtap-sdt-devel
+#          —— pahole/BTF、模块签名、tracepoint、SDT 探针
+#   脚本侧  git python3 python3-devel perl tar gzip rsync diffutils which
+#          util-linux findutils ca-certificates —— run-image-ci.sh 的运行时依赖
+rpm-build
+lorax
+createrepo_c
+xorriso
+isomd5sum
+gcc
+gcc-c++
+make
+flex
+bison
+bc
+dwarves
+cpio
+openssl-devel
+libtraceevent-devel
+elfutils-libelf-devel
+git
+python3
+python3-devel
+perl
+tar
+gzip
+rsync
+clang
+llvm
+elfutils-devel
+libcap-devel
+numactl-devel
+systemtap-sdt-devel
+findutils
+diffutils
+which
+util-linux
+ca-certificates
