@@ -11,6 +11,10 @@
 # 同一份依赖装在 4 处各写一遍，改一处要跑 4 条云端流水线才能确认，本地
 # 无法复现。收进 gate 后，runner 与开发者执行的是同一条命令。
 #
+# oschk 同时收集 system 子仓的单元测试：那些用例断言的是装机后的启动
+# 契约（unit 排序、首次启动闸门、健康自检分档），与 OS 门禁同类，却是
+# 全仓唯一只能手工执行的一组，长期没有进入任何流水线。
+#
 # 退出码: 0 通过；1 检查失败；5 参数不满足。
 # ===========================================================================
 set -uo pipefail
@@ -99,6 +103,7 @@ case "${KIND}" in
             tools/airy-rollback/tests/
             tools/airy-flash/tests/
             tools/osaccrt/tests/
+            system/tests/
         )
         CHECK=(python3 tools/os-chk/os_chk.py --check)
         HINT="OS-CHK 统一门禁（P0/P1 阻断）：python3 tools/os-chk/os_chk.py --verbose"
