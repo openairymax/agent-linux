@@ -31,6 +31,11 @@
 # 落在 tools/osaccrt/tests/，故该目录亦纳入监听与测试清单。
 # 烧录工具 tools/airy-flash/ 与上述工具共用同一套 Python 测试环境，用例同样
 # 挂在 --kind oschk 下执行，避免再开一条只装 pytest 的流水线。
+# 门禁实现自身（ci/）与 system 子仓此前不在任何 workflow 的 paths 里：改
+# ci/gates/*.sh 或 ci/ci.sh 不会触发任何流水线，等于门禁改动无人验证。system
+# 的单元测试自 0.0.3 起挂在本 kind 下，其指针变动必须重跑。故 ci/**、system
+# 与本 workflow 自身纳入监听，并在 job 内先跑 ci/lint.sh（workflow 薄化约束
+# ＋ bash 语法 ＋ shellcheck），让门禁脚本的改动由门禁自己把关。
 # ===========================================================================
 
 name: os-chk-verify
@@ -60,6 +65,9 @@ on:
       - '.gitmodules'
       - 'ssot-registry.yaml'
       - 'kernel'
+      - 'system'
+      - 'ci/**'
+      - '.github/workflows/os-chk-verify.yml'
   push:
     branches: [main, develop]
     paths:
@@ -86,6 +94,9 @@ on:
       - '.gitmodules'
       - 'ssot-registry.yaml'
       - 'kernel'
+      - 'system'
+      - 'ci/**'
+      - '.github/workflows/os-chk-verify.yml'
 
 jobs:
   os-chk-verify:
@@ -100,6 +111,11 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
+      # 先检查门禁自己：workflow 是否仍满足薄化约束、ci/ 下脚本能否被
+      # bash -n 解析、shellcheck 是否过。门禁脚本的改动此前无人验证。
+      - name: Lint gate scripts and workflows
+        run: ci/lint.sh
 
       # 依赖、pytest 与 os_chk.py --check 三步收进 ci/gates/python-verify.sh
       # 的 oschk 分支：此前 10 份依赖清单在本文件里各写一遍，本地无法复现，
