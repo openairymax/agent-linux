@@ -108,6 +108,7 @@ mirror) per OS-IRON-014.
   ./ci/ci.sh image-verify --out <dir>     # re-check an existing image-ci output
   ACCEPTANCE=true ./ci/ci.sh tap-extract --dir <dir>
   ```
+
 - **Local SSoT validation** before pushing:
 
   ```bash

@@ -37,7 +37,7 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 | 4 | 必备 CONFIG 齐备 | `OS-BUILD-026` |
 | 5 | `CONFIG_LSM` 含清单登记的 LSM 名 | `OS-BUILD-026` |
 | 6 | CI 构建矩阵与清单一致（ci-airy 精确匹配 / ci-kernel 登记子集） | `OS-BUILD-028` |
-| 7 | CI `required=(...)` 清单与清单逐项相等 | `OS-BUILD-026` |
+| 7 | 必备 CONFIG 清单逐项相等（ci-airy 的 `required=(...)` / kernel gate 的 `REQUIRED_CONF`） | `OS-BUILD-026` |
 | 8 | `obj-$(CONFIG_*)` 引用均有 Kconfig 声明 | `OS-KER-025` |
 
 清单 schema 不合法时，仅报告该项并短路其余检查（避免在脏数据上生成噪声结论）。
@@ -70,9 +70,9 @@ python3 tools/defconfig-matrix/defconfig_matrix.py \
 
 新增受支持架构时：先在本表 `architectures` 登记（`arch` / `cross` / `kind` /
 `build` / `configs`），再落地 `kernel/<configs>` 文件，并在 `ci-airy.yml`
-（若 `build: true`）与 `ci-kernel.yml` 的矩阵及 `required=(...)` 清单同步；
-随后运行本工具确认无漂移。`build: true` 要求 `kind: fragment`（CI 固定走
-`scripts/kconfig/merge_config.sh` 三步法）。
+（若 `build: true`）与 `ci-kernel.yml` 的矩阵、`ci/gates/kernel-refbuild.sh`
+的 `REQUIRED_CONF` 清单同步；随后运行本工具确认无漂移。`build: true` 要求
+`kind: fragment`（CI 固定走 `scripts/kconfig/merge_config.sh` 三步法）。
 
 ## CI 接入
 
