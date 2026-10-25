@@ -21,6 +21,15 @@ on:
         description: 'Release tag (如 v0.0.3)'
         required: true
 
+concurrency:
+  # 一个 tag 只能有一条发布流水线。tag 重指（收回错误的发布提交）时
+  # 必须让新 run 顶掉旧 run，否则两轮 build-and-sign 会并发写同一个
+  # Release（0.0.3 收尾期出现过 40206825830 与 40207819634 并行）。
+  # 与 image-ci 的 cancel-in-progress: false 相反：ISO 组装宁排队不中断，
+  # 发布则以最新 tag 指向为准。
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
