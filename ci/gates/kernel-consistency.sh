@@ -93,7 +93,12 @@ run_uapi()
     group "uapi: 导出头自包含编译（headers_check 语义）"
     local tmp out hdr rc=0
     tmp="$(mktemp -d)"
-    make -C kernel ARCH=x86_64 headers_install INSTALL_HDR_PATH="${tmp}" >/dev/null 2>&1 ||
+    # O= 是必须的：headers_install 会先生成 include/generated 与
+    # arch/x86/include/generated，缺省落在源码树内——对 git status 不可见
+    # （gitignored），却会被后续 KUnit 的 ARCH=um 构建当作陈旧 x86 头拾取，
+    # 报 asm/types.h: No such file or directory。全部中间产物外置到临时目录。
+    make -C kernel O="${tmp}/build" ARCH=x86_64 \
+        headers_install INSTALL_HDR_PATH="${tmp}" >/dev/null 2>&1 ||
         { rm -rf "${tmp}"; die "headers_install 失败"; }
     out="${tmp}/check.c"
     for hdr in "${tmp}"/include/linux/airymax/*.h; do
