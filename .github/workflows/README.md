@@ -1,7 +1,7 @@
 # `.github/` — GitHub Automation & Templates
 
 > GitHub Actions workflows, issue/PR templates and community health files for the
-> [agent-linux (AirymaxOS)](https://atomgit.com/openairymax/agent-linux) management repository.
+> [agent-linux (AirymaxOS)](https://github.com/openairymax/agent-linux) management repository.
 
 Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 
@@ -56,7 +56,7 @@ a leftover build directory instead of waiting for a cloud job.
 
 | Workflow | Jobs | Trigger |
 |----------|------|---------|
-| `kernel-verify.yml` | `kernel-build` — Kbuild matrix (4 configs × 4 arches × 2 compilers − 1 exclude = 31) with `W=2` zero-warning gate; `kernel-verify` — checkpatch `--strict`, sparse `C=2`, Coccinelle, KUnit on UML, kselftest on QEMU | PR / push on `kernel/**` |
+| `kernel-verify.yml` | `kernel-build` — Kbuild matrix (4 configs × 4 arches × 2 compilers − 4 excluded cells = 28, `max-parallel: 8`) with `W=2` zero-warning gate; `kernel-verify` — checkpatch `--strict`, sparse `C=2`, Coccinelle, KUnit on UML, kselftest on QEMU | PR / push on `kernel/**` |
 | `airy-verify.yml` | `airy-build` — `airy_defconfig` build matrix on 4 arches (x86_64/arm64/riscv/loongarch) + Airymax CONFIG gate + BTF embedded + `.o` artifact check + symbol-clash check between `security/airy/` and `kernel/superv/`; `airy-static` — checkpatch `--strict` plus the Airymax extension rules, SPDX identifier audit (`[SC]` = BSD-3-Clause OR GPL-2.0, else GPL-2.0-only), and SSoT manifest checks (defconfig matrix / BTF / Kbuild version injection) | PR / push on Airymax paths |
 | `abi-verify.yml` | `abi-verify` — `abi-check` unit tests plus four-source consistency (SSoT registry / UAPI `unistd.h` / `syscall_64.tbl` / `[SC]` `syscalls.h`) against `abi_baseline.json` (OS-IRON-001) | PR / push on `tools/abi-check/**`, ABI sources |
 | `dsl-verify.yml` | `dsl-verify` — `tools/dsl` unit tests plus `dsl_compile.py --check` content compare, proving `.adl` contract sources and generated C tables stay in sync (IRON-9) | PR / push on `tools/dsl/**`, `tools/codegen/**` |
@@ -65,7 +65,7 @@ a leftover build directory instead of waiting for a cloud job.
 | `codegen-verify.yml` | `codegen-diff-check` — run `tools/codegen/run_codegen.py --check` (content compare, works across submodules) as the zero-drift SSoT gate (IRON-9) | PR / push on `tools/codegen/**`, `sdk/**`, `kernel`, `security` |
 | `mgmt-verify.yml` | `file-integrity` — verify submodule dirs derived from `.gitmodules` (9 entries), `[SC]` 12 shared headers, 12 governance files, no `airymaxos-` prefix; `orchestrate-leaf-ci` — aggregate leaf CI statuses, markdownlint repository-owned markdown, copyright header check | PR on `**.md`, `.gitmodules`, `ssot-registry.yaml`, `MAINTAINERS`, `CODEOWNERS`, `tools/**`, `.github/**` / push on `main` |
 | `image-build.yml` | `assemble` — build the desktop ISO from a pinned openEuler netinst base inside a privileged official container, then verify the assembly manifest and ISO checksum; `accept` — install the ISO in QEMU under BIOS and UEFI, cold-boot to `AIRYMAX-DESKTOP-READY` (or `AIRYMAX-SMOKE-PASS` with `acceptance=true`), publish TAP and serial logs. Both jobs are 12 one-line `ci/ci.sh` calls; all logic lives in `ci/gates/` | `workflow_dispatch` (release gate, not a PR gate) |
-| `nightly.yml` | `nightly-test-suite` — seL4-style formal verification, 72h soak test, chaos injection (CPU hotplug / mem hotremove / I/O error / net partition); `nightly-revert-or-budget` — auto-revert on regression via `auto-bisect`, or CI budget check (60 min gate, OS-STD-TEST-011) | cron `0 2 * * *` / `workflow_dispatch` |
+| `nightly.yml` | `nightly-test-suite` — seL4-style formal verification, 72h soak test, chaos injection (CPU hotplug / mem hotremove / I/O error / net partition); `nightly-revert-or-budget` — auto-revert on regression via `auto-bisect`, or CI budget check (60 min steady, 90 min kernel cold-cache fallback, OS-STD-TEST-011) | cron `0 2 * * *` / `workflow_dispatch` |
 | `release.yml` | `build-and-sign` — SPDX SBOM (syft per submodule + merge), kernel RPM build, GPG + cosign signing, SDK tarball; `publish-release` — publish dnf repo, push OCI image, create GitHub Release with artifacts | tag `v*` / `v*-rc*` / `workflow_dispatch` |
 | `sc-verify.yml` | `sc-validate` — verify `[SC]` 12 shared headers exist under `kernel/include/uapi/linux/airymax/`, no physical duplicates (OS-IRON-014); `sc-trigger-and-await` — export header patches, create mirror PR in agentrt repo, poll mirror CI status (30 min timeout) | PR touching any `[SC]` header |
 | `ssot-verify.yml` | `ssot-syntax-and-rules` — PyYAML syntax check, rule-ID count + uniqueness (OS-IRON-015), `validate-ssot.py` cross-ref; `doc-links` — repository-owned relative-path markdown link integrity | PR on `**.md`, `ssot-registry.yaml`, `tools/validate-ssot.py` / push on `main` |

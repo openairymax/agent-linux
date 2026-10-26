@@ -7,7 +7,7 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 
 **语言:** [English](README.md) | 简体中文
 
-[![Version](https://img.shields.io/badge/version-v1.0.1-5a6b7e)](https://atomgit.com/openairymax/agent-linux)
+[![Version](https://img.shields.io/badge/version-v0.0.3-5a6b7e)](https://github.com/openairymax/agent-linux/releases/tag/v0.0.3)
 [![License](https://img.shields.io/badge/license-AGPL--3.0+Apache--2.0-4a90d9)](LICENSE)
 [![Linux](https://img.shields.io/badge/Linux-6.6-FCC624?logo=linux\&logoColor=black)](https://www.kernel.org)
 [![Rust](https://img.shields.io/badge/Rust-experimental-DEA584?logo=rust\&logoColor=white)](https://www.rust-lang.org)
