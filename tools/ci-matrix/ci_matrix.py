@@ -59,7 +59,9 @@ except ImportError:  # pragma: no cover - 环境缺失时在入口统一报错
 # ─── Constants ─────────────────────────────────────────────────────────────
 
 DEFAULT_MANIFEST_REL = "tools/ci-matrix/manifest.yaml"
-JOB_MIN_CEILING = 60
+# §9.4 的稳态预算仍是 60 分钟；冷缓存（ccache 被 LRU 淘汰）下 28 格矩阵的
+# 最慢格实测 62 分钟，故矩阵 job 的硬上限放宽到 90 分钟作兜底，不涉及其他 job。
+JOB_MIN_CEILING = 90
 DIMS = ("config", "arch", "compiler")
 CONFIG_KEY = "config"
 
