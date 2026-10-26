@@ -82,8 +82,10 @@ esac
 
 # 基础依赖：两条腿共用的那部分。
 readonly BASE_PKGS="flex bison libelf-dev libssl-dev bc cpio dwarves"
+# libcap-dev：kselftest 的 seccomp 集合要 sys/capability.h 与 -lcap，缺它时
+# install 只跳过该目录，清单里整个 seccomp 消失而 run 段照样「全绿」。
 readonly VERIFY_PKGS="sparse coccinelle rsync zstd file kmod iproute2 kbd
-python3-yaml virtme-ng qemu-system-x86 busybox-static"
+python3-yaml virtme-ng qemu-system-x86 busybox-static libcap-dev"
 
 # 交叉编译器：只有 gcc 腿需要；clang 腿由 LLVM=1 自带跨架构能力。
 cross_pkg()
