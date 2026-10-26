@@ -345,7 +345,8 @@ class TestReleaseNotes:
 
     def test_overview_carries_version_and_date(self):
         notes = rm.render_notes("0.0.3", NOTES_EMPTY)
-        assert f"版本号：0.0.3；发布日期：{date.today().isoformat()}" in notes
+        assert "- 版本号 v0.0.3" in notes
+        assert f"- 发布日期 {date.today():%Y%m}" in notes
 
     def test_disclosures_rendered_as_bullets(self):
         notes = rm.render_notes("0.0.3", NOTES_SAMPLE)
