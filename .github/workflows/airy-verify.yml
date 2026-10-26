@@ -72,6 +72,12 @@ jobs:
             cross: "loongarch64-linux-gnu-"
     env:
       CROSS_COMPILE: ${{ matrix.cross }}
+      # 交叉工具链单次 apt_install 要拉数十 MB 的 .deb（cpp-13、gcc-13、libc6-dev
+      # 各数 MB 到 21 MB）。共享镜像源出现重传时，默认 1200s 的整条命令硬超时
+      # 会被打满而误判为失败（run 40296052499 的 arm64 格即如此）。本矩阵 job
+      # 预算 90min，把上限放宽到 2400s；acquire 级超时与重试仍由 ci/lib/apt.sh
+      # 控制，镜像无响应时不会无限等待。
+      APT_TIMEOUT: "2400"
     steps:
       - uses: actions/checkout@v4
         with: { submodules: recursive }
