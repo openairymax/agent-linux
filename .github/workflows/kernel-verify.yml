@@ -33,6 +33,7 @@ on:
       - 'tools/ci-matrix/**'
       - '.github/workflows/kernel-verify.yml'
       - 'ci/gates/kernel-*.sh'
+      - 'ci/lib/**'
   push:
     branches: [main]
     paths:
@@ -41,6 +42,7 @@ on:
       - 'tools/ci-matrix/**'
       - '.github/workflows/kernel-verify.yml'
       - 'ci/gates/kernel-*.sh'
+      - 'ci/lib/**'
 
 concurrency:
   # 同一 ref 只允许一轮矩阵。两次 push 间隔短于矩阵时长时，旧 run 的结论
