@@ -70,6 +70,27 @@ a leftover build directory instead of waiting for a cloud job.
 | `sc-verify.yml` | `sc-validate` — verify `[SC]` 12 shared headers exist under `kernel/include/uapi/linux/airymax/`, no physical duplicates (OS-IRON-014); `sc-trigger-and-await` — export header patches, create mirror PR in agentrt repo, poll mirror CI status (30 min timeout) | PR touching any `[SC]` header |
 | `ssot-verify.yml` | `ssot-syntax-and-rules` — PyYAML syntax check, rule-ID count + uniqueness (OS-IRON-015), `validate-ssot.py` cross-ref; `doc-links` — repository-owned relative-path markdown link integrity | PR on `**.md`, `ssot-registry.yaml`, `tools/validate-ssot.py` / push on `main` |
 
+## Naming & Structure Conventions
+
+Every workflow obeys one naming scheme so that the Actions list, `gh workflow
+run`, and this document can never disagree. The rules are enforced by
+`ci/check-workflows.py` (rule 5), which runs from `ci/lint.sh` in
+`os-chk-verify.yml` — a convention that is not checked is not a convention.
+
+| Aspect | Rule | Rationale |
+|--------|------|-----------|
+| File name | kebab-case `^[a-z0-9]+(-[a-z0-9]+)*\.yml$` | Case- and locale-insensitive on every filesystem; sorts predictably |
+| `name:` | Identical to the file stem | The UI label and the file path are one single source of truth |
+| `-verify` suffix | Reserved for gating workflows (the 10 SSoT/build gates) | A reader immediately knows the workflow fails the build on violation |
+| Lifecycle names | `image-build` / `nightly` / `release` | Named after the lifecycle stage they own, not the tool they call |
+| Payload | YAML is a thin dispatch layer — checkout, `ci/ci.sh <gate>`, upload | All assertions live in `ci/`, replayable locally |
+| Job count | 2 capped per workflow | Keeps the DAG readable and the critical path short |
+| Inline `run` budget | Ratcheted in `ci/workflow-budgets.txt` | Non-increasing cap prevents shell logic from creeping back into YAML |
+
+Adding or renaming a workflow therefore requires three coordinated edits: the
+file, its `name:`, and `ci/workflow-budgets.txt`; `./ci/lint.sh` rejects the
+change if any of them drift apart.
+
 ## `[SC]` Shared-Contract Headers
 
 The `sc-verify.yml` and `mgmt-verify.yml` workflows guard the `[SC]` layer —

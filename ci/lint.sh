@@ -6,7 +6,7 @@
 # 用法: ci/lint.sh
 #
 # 检查三件事：
-#   1. workflow 薄化约束（ci/check-workflows.py）；
+#   1. workflow 薄化与命名约束（ci/check-workflows.py）；
 #   2. ci/ 下每个脚本可被 bash -n 解析；
 #   3. 有 shellcheck 就用上，没有只告警——本地开发者不该被工具缺失拦住。
 #
@@ -21,7 +21,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 
 rc=0
 
-group "workflow 薄化约束"
+group "workflow 薄化与命名约束"
 if python3 "${ROOT}/ci/check-workflows.py"; then
     say "通过"
 else
