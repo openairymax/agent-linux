@@ -66,6 +66,27 @@ artifact 只保留 7 天，仅用于调试，不作为发行取件来源。
 `plan` 与 `write` 共用同一套预检，所以「预检通过」是「可以写」的充分条件；
 `plan` 已经算过完整 sha256，`write` 会再算一次，避免两次操作之间镜像被替换。
 
+### 适用平台与介质
+
+工具只依赖 POSIX 用户态与 Linux 的 sysfs / `/proc/mounts`，里面没有验证机、
+目录布局或介质品牌的判定分支：任何在 Linux 上以块设备出现的介质（U 盘、SD 卡、
+USB 硬盘盒、NVMe 转接盘）都走同一套预检与写入路径，节点名不做假设，
+整盘与系统盘一律按 sysfs 语义反查。
+
+| 平台 | 是否需要额外步骤 | 写入方式 |
+|------|------------------|----------|
+| Linux | 否 | 直接用本工具：`plan` → `write` → `verify` |
+| WSL2 | 是 | 先做介质直通（见下一节），其余流程与 Linux 相同 |
+| macOS | 是 | 本工具无 macOS 构建，改用系统自带件按同一顺序：`shasum -a 256 -c *.iso.sha256` 校验 → `diskutil unmountDisk /dev/diskN` → `dd if=*.iso of=/dev/rdiskN bs=4m` → `dd if=/dev/rdiskN bs=4m \| cmp - *.iso` 回读比对 |
+| Windows | 是 | 同上，用平台自带工具：`CertUtil -hashfile *.iso SHA256` 校验，再以 DD/原始镜像模式整盘写入（如 Rufus「DD 镜像」模式），写完回读比对 |
+
+`N` 是整盘号，取自 `diskutil list` 的 `/dev/diskN`，不是 `/dev/diskN sM` 分区号——
+写成分区就是半截写入。非 Linux 平台没有 sysfs 与 `/proc/mounts`，
+系统盘反查不成立，写前必须由操作者自行确认整盘身份；写错盘的后果与 Linux 侧相同。
+
+本工具不宣称覆盖这些平台，也不为「看起来通用」给非 Linux 路径加桩分支：
+发行取件与写入顺序是跨平台不变的部分，能在目标平台用原生工具等价复现即可。
+
 ### 设备判定
 
 - 目标必须是**整块设备**。分区（如 `/dev/sdb1`）会被 `probe_device` 当作
@@ -78,7 +99,7 @@ artifact 只保留 7 天，仅用于调试，不作为发行取件来源。
 
 ### WSL2 上的设备接入
 
-B50 验证机跑在 WSL2 里，`/dev/sd*` 只有 WSL 自己的虚拟磁盘，插在主机上的
+本次验证机跑在 WSL2 里，`/dev/sd*` 只有 WSL 自己的虚拟磁盘，插在主机上的
 U 盘不会自动出现在 Linux 侧；不先做直通，`lsblk` 里根本看不到目标设备。
 
 1. 管理员 PowerShell 列出设备并记下 BUSID：`usbipd list`
@@ -87,8 +108,8 @@ U 盘不会自动出现在 Linux 侧；不先做直通，`lsblk` 里根本看不
 4. 回到 WSL 用 `lsblk` 确认新出现的整盘节点，再走上面的 `plan` / `write`
 5. 写完先 `usbipd detach --busid <BUSID>` 再拔盘，避免页缓存没落盘
 
-直通过来的是块设备，系统盘反查照常生效（WSL 的根盘是 `/dev/sdd`，不会和新
-接入的 U 盘混淆）。`write` 需要 root，WSL 里的 `sudo` 必须由操作者本人在交互
+直通过来的是块设备，系统盘反查照常生效（WSL 的根盘是它自己的虚拟盘，
+不会和新接入的 U 盘混淆）。`write` 需要 root，WSL 里的 `sudo` 必须由操作者本人在交互
 终端输入口令，工具只做预检与写入，不代替提权。
 
 ### 回读强度
