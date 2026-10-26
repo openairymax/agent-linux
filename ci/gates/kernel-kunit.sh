@@ -25,6 +25,9 @@ readonly EINVAL=5
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 SRC="${REPO_ROOT}/kernel"
 TAP="kunit.tap"
+# 棘轮基线用绝对路径：gate 会 cd 进内核子模块，diff.py 的相对默认值
+# 会在子模块内解析成 kernel/tools/...，必然读不到（0.0.3 矩阵实测）。
+BASELINE="${REPO_ROOT}/tools/kunit-tap-baseline.tap"
 
 usage()
 {
@@ -67,7 +70,8 @@ endgroup
 [ "${rc}" -eq 0 ] || die "KUnit 运行失败（rc=${rc}）"
 
 group "KUnit TAP 基线比对（OS-TEST-012）"
-python3 "${REPO_ROOT}/tools/kunit-tap-diff.py" --current "${TAP}"
+python3 "${REPO_ROOT}/tools/kunit-tap-diff.py" \
+    --baseline-file "${BASELINE}" --current "${TAP}"
 rc=$?
 endgroup
 [ "${rc}" -eq 0 ] || die "KUnit 结果与基线漂移"
