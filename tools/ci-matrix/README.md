@@ -27,7 +27,7 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 | `OS-STD-TOOL-161`（28 配置矩阵） | `docs/docs-linux/70-build-system/03-ci-cd-pipeline.md` §3.1 |
 | 矩阵生成与调度（`fail-fast` / `max-parallel`） | 同上 §3.2 |
 | 编译命令与门禁模板 | 同上 §3.3 |
-| `OS-STD-TEST-011`（单 job ≤60 分钟） | 同上 §9.4 |
+| `OS-STD-TEST-011`（稳态 ≤60 分钟，冷缓存兜底 ≤90 分钟） | 同上 §9.4 |
 | 失败分类与 PR 标签 | 同上 §10.1 |
 
 ## 检查项
@@ -42,7 +42,7 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 | 6 | `exclude` 项合法、命中真实组合且与 workflow 一致 | §3.2 |
 | 7 | `fail-fast: false` | §3.2 |
 | 8 | `max-parallel` 等于清单值 | §3.2 |
-| 9 | 矩阵 job 超时等于清单值且 ≤60 分钟 | `OS-STD-TEST-011` |
+| 9 | 矩阵 job 超时等于清单值且 ≤ `JOB_MIN_CEILING`（90） | `OS-STD-TEST-011` |
 | 10 | 每 workflow ≤2 job 且每个 job 声明 `timeout-minutes` | §9.4 |
 | 11 | 编译门禁语义片段齐备（error 阻断 / Airymax warning 收敛） | §3.3 |
 
@@ -101,8 +101,9 @@ python3 tools/ci-matrix/ci_matrix.py --summary matrix-result.json
   `matrix` 段，随后运行 `--check` 确认无漂移。
 - **新增支持架构**：只改 `tools/defconfig-matrix/manifest.yaml` 并置
   `build: true`，本工具自动纳入；不要在 `ci-matrix` 重复登记架构名。
-- **调整超时预算**：修改 `budget.timeout_minutes`，但不得超过
-  `OS-STD-TEST-011` 的 60 分钟上限；超时子集须拆分到 nightly。
+- **调整超时预算**：只改 `budget.timeout_minutes`，值为稳态 60 分钟
+  （`OS-STD-TEST-011`）与冷缓存兜底 90 分钟（`ci_matrix.py` 的
+  `JOB_MIN_CEILING`）之间的整数；超出上限的慢子集须拆分到 nightly。
 
 ## CI 接入
 

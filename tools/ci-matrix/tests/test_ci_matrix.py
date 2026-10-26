@@ -201,10 +201,11 @@ def test_timeout_missing_is_rejected():
 
 
 def test_timeout_above_ceiling_is_rejected():
+    ceiling = cm.JOB_MIN_CEILING + 1
     manifest = _manifest()
-    manifest["budget"]["timeout_minutes"] = 90
+    manifest["budget"]["timeout_minutes"] = ceiling
     job = _job()
-    job["timeout-minutes"] = 90
+    job["timeout-minutes"] = ceiling
     assert not cm.check_timeout(job, manifest).passed
 
 
