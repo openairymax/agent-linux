@@ -79,15 +79,31 @@ make -C tools/testing/selftests TARGETS="${TARGETS}" \
 cat "${INSTALL}/kselftest-list.txt"
 endgroup
 
+# install 目录是「构建」与「运行」的唯一契约。某个集合编译失败（例如缺
+# libcap-dev 让 seccomp 拿不到 sys/capability.h）时，install 只跳过该目录并
+# 打印一行 Skipping，清单里就少掉整个集合，而 run 段照样「全部通过」。
+# 逐个断言目标确有用例，把静默丢弃变成硬失败。
+group "校验 kselftest 目标均已产出用例"
+missing=""
+for target in ${TARGETS}; do
+    grep -q "^${target}:" "${INSTALL}/kselftest-list.txt" ||
+        missing="${missing} ${target}"
+done
+[ -z "${missing}" ] || die "目标未产出用例:${missing}（该集合构建失败或缺依赖）"
+endgroup
+
 group "virtme-ng 运行 kselftest（OS-TEST-013~022）"
 set -o pipefail
 (
     # run_kselftest.sh 由自身位置推导 BASE_DIR，必须从 install 目录运行。
     cd "${INSTALL}" || exit 1
+    # 不要加 --summary：它会把 logfile 指向 $BASE_DIR/output.log，而 vng 把
+    # install 目录只读挂载，整批用例因此写日志失败、一律 exit=2（0.0.3 实测
+    # 19/19）。缺省 logfile 是 /dev/stdout，TAP 直接进 tee，正是解析所需。
     # shellcheck disable=SC2086  # ACCEL 可能为空
     vng --run "${SRC}/arch/x86/boot/bzImage" \
         --cwd "${INSTALL}" --force-9p ${ACCEL} --quiet \
-        --exec "./run_kselftest.sh --summary"
+        --exec "./run_kselftest.sh"
 ) >"${TAP}" 2>&1
 rc=$?
 endgroup
