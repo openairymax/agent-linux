@@ -93,8 +93,19 @@ docker run --rm --privileged \
     -w /src \
     "${IMAGE}" bash -c '
         set -euo pipefail
-        dnf -y install --setopt=timeout=30 --setopt=minrate=1000 \
-            --setopt=retries=5 --setopt=max_parallel_downloads=10 '"${pkgs}"'
+        # 工具链自上游镜像在线装，单次事务会因镜像侧 HTTP/2 抖动整体失败
+        # （run 40261523474：gtk3-devel 在 all mirrors tried 后事务级硬退）。
+        # 安装事务幂等，故清缓存后有限重试；三次仍失败即硬退出，不掩盖真实
+        # 依赖缺失，也不把网络抖动伪装成组装缺陷。
+        for try in 1 2 3; do
+            if dnf -y install --setopt=timeout=60 --setopt=minrate=1000 \
+                --setopt=retries=10 --setopt=max_parallel_downloads=10 '"${pkgs}"'; then
+                break
+            fi
+            echo "dnf install 第 ${try} 次未完成，清缓存后重试" >&2
+            dnf clean packages >/dev/null 2>&1 || true
+            [ "${try}" -lt 3 ] || exit 1
+        done
         git config --global --add safe.directory "*"
         distro/ci/run-image-ci.sh "$@"
     ' airy "${args[@]}"
