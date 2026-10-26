@@ -480,7 +480,7 @@ def render_notes(version: str, notes: Manifest | None = None) -> str:
     """
     disclosures: Manifest = notes or {}
     sections = [
-        ("概述", f"版本号：{version}；发布日期：{date.today().isoformat()}"),
+        ("概述", f"- 版本号 v{version}\n- 发布日期 {date.today():%Y%m}"),
         ("说明", _bullet_list(disclosures.get("summary") or [])),
         ("其他", _bullet_list(disclosures.get("remarks") or [])),
     ]
