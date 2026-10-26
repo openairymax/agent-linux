@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
-"""ci/check-workflows.py —— 守住 workflow 薄化约束
+"""ci/check-workflows.py —— 守住 workflow 薄化与命名约束
 
-四条规则：
+五条规则：
 
 1. 结构上限：每个 workflow 的 job 数 ≤ 预算，内联 ``run: |`` 块数 ≤ 预算
    （预算见 ci/workflow-budgets.txt，只许下调）。
@@ -13,6 +13,9 @@
 4. 任何 workflow 都不得直接调用 apt-get：acquire 超时、重试与整步硬超时
    只有 ci/lib/apt.sh 一处实现，写回 YAML 就会重新长出「镜像不响应、
    一步烧光 240min 预算」的 run。
+5. 命名约定：文件名须为 kebab-case ``<scope>[-<scope>…].yml``，且顶层
+   ``name:`` 必须与文件同名词——UI 显示名与文件路径只允许一处事实源，
+   否则 ``gh workflow run``、Actions 列表与文档会对不上。
 
 为什么需要它：这些约束此前只存在于文档里，没有执行者。78 段内联 shell
 就是这样一段段长出来的——每一次单看都合理，合起来就没有人能在本地验证。
@@ -43,6 +46,10 @@ FORBIDDEN = [
 ]
 
 RUN_BLOCK = re.compile(r"^(\s*)run:\s*[|>]")
+
+# 命名约定：kebab-case 文件名，顶层 name: 与文件同名词。
+NAME_FILE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*\.yml$")
+NAME_TOP = re.compile(r"^name:\s*(\S+)\s*$", re.MULTILINE)
 
 
 def count_inline(text: str) -> int:
@@ -110,6 +117,19 @@ def head_inline(name: str) -> int | None:
     return count_inline(blob)
 
 
+def check_name(name: str, text: str) -> list[str]:
+    """命名约定：kebab-case 文件名，且顶层 ``name:`` 与文件同名词。"""
+    if not NAME_FILE.match(name):
+        return [f"{name}: 文件名须为 kebab-case 的 <scope>[-<scope>…].yml"]
+    stem = name[:-4]
+    m = NAME_TOP.search(text)
+    if m is None:
+        return [f"{name}: 缺少顶层 name:（须等于文件名 {stem}）"]
+    if m.group(1) != stem:
+        return [f"{name}: 顶层 name: 为 {m.group(1)}，须等于文件名 {stem}"]
+    return []
+
+
 def main() -> int:
     budgets = load_budgets()
     files = sorted(p.name for p in WORKFLOWS.glob("*.yml"))
@@ -125,6 +145,7 @@ def main() -> int:
     total = 0
     for name in files:
         text = (WORKFLOWS / name).read_text()
+        errors.extend(check_name(name, text))
         inline = count_inline(text)
         jobs = count_jobs(text)
         total += inline
@@ -157,12 +178,12 @@ def main() -> int:
                         f"{name}:{no}: 直接调用 apt-get，应走 {entry}")
 
     if errors:
-        print("workflow 薄化检查未通过:", file=sys.stderr)
+        print("workflow 薄化与命名检查未通过:", file=sys.stderr)
         for e in errors:
             print(f"  - {e}", file=sys.stderr)
         return 1
 
-    print(f"workflow 薄化检查通过: {len(files)} 个文件, 内联 run 块合计 {total}")
+    print(f"workflow 薄化与命名检查通过: {len(files)} 个文件, 内联 run 块合计 {total}")
     return 0
 
 
