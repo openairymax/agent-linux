@@ -3,7 +3,7 @@
 """
 await-agentrt-ci.py — 等待 agentrt 镜像 PR 的 CI 完成
 
-被 sc-dual-ci.yml 引用（OS-IRON-008：[SC] 共享契约层双向 CI）。
+被 sc-verify.yml 引用（OS-IRON-008：[SC] 共享契约层双向 CI）。
 根据 ``--source-pr`` 推导镜像分支 ``mirror/sc-<N>``，轮询 GitHub API
 查询该 PR 的 check runs / combined status，直至完成或超时。
 

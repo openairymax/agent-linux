@@ -5,7 +5,7 @@ ci_matrix.py — AirymaxOS CI 编译矩阵一致性检查器
 
 以 tools/ci-matrix/manifest.yaml 为唯一事实源（SSoT），静态校验
 「编译配置 × 架构 × 编译器 × 排除项 × 调度约束 × 门禁语义」与
-.github/workflows/ci-kernel.yml 的矩阵段逐项一致，并把逐格构建结果
+.github/workflows/kernel-verify.yml 的矩阵段逐项一致，并把逐格构建结果
 按 03-ci-cd-pipeline.md §3.4/§10.1 归因、汇聚为 PR 标签。
 
 设计原则（与项目铁律一致）：

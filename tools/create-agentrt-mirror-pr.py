@@ -3,7 +3,7 @@
 """
 create-agentrt-mirror-pr.py — 在 agentrt 仓创建镜像 PR
 
-被 sc-dual-ci.yml 引用（OS-IRON-008：[SC] 共享契约层双向 CI）。
+被 sc-verify.yml 引用（OS-IRON-008：[SC] 共享契约层双向 CI）。
 读取 ``--patches`` 目录下的 .patch 文件作为 PR 描述，调用 GitHub
 API 在 agentrt 仓创建镜像 PR，输出 PR URL。
 
@@ -159,7 +159,7 @@ def main():
 
     title = f"[SC] mirror of agent-linux #{args.source_pr}"
     body_lines = [
-        f"本 PR 由 agent-linux `sc-dual-ci` 工作流自动创建。",
+        f"本 PR 由 agent-linux `sc-verify` 工作流自动创建。",
         "",
         f"- 源 PR：agent-linux #{args.source_pr}",
         f"- head 分支：`{head}`",

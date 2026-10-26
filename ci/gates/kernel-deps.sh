@@ -6,7 +6,7 @@
 # 用法:
 #   ci/gates/kernel-deps.sh --kind build|verify [--arch ARCH] [--compiler gcc|clang]
 #
-# 这条门禁此前是 ci-kernel.yml 里的两段内联 shell，一段给 Kbuild 矩阵装
+# 这条门禁此前是 kernel-verify.yml 里的两段内联 shell，一段给 Kbuild 矩阵装
 # 交叉工具链，一段给静态分析装 sparse/coccinelle/virtme-ng。两段内容互相
 # 重叠（flex/bison/libelf 两边都要），改一处忘一处就会出现「矩阵能编、
 # verify 编不了」的错位。

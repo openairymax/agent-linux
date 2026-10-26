@@ -3,7 +3,7 @@
 """
 aggregate-subrepo-ci.py — 聚合叶子子仓的 CI 状态
 
-被 mgmt-orchestrator.yml 引用。读取 ``git submodule status``，并结合
+被 mgmt-verify.yml 引用。读取 ``git submodule status``，并结合
 ``.gitmodules`` 派生的子模块清单，对每个子仓调用 GitHub API 查询其 HEAD
 commit 的 check runs / combined status，输出聚合报告。
 

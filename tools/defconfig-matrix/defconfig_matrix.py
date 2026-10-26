@@ -5,7 +5,7 @@ defconfig_matrix.py — AirymaxOS defconfig 矩阵一致性检查器
 
 以 tools/defconfig-matrix/manifest.yaml 为唯一事实源（SSoT），静态校验
 「支持架构 × airy_defconfig 形态 × CI 构建矩阵 × 必备 CONFIG × Kbuild 引用」
-五者彼此一致，把分散在 .github/workflows/ci-airy.yml 与 ci-kernel.yml 的
+五者彼此一致，把分散在 .github/workflows/airy-verify.yml 与 kernel-verify.yml 的
 重复映射收敛到一处清单，并由本工具检出任何一侧的漂移。
 
 设计原则（与项目铁律一致）：
@@ -19,7 +19,7 @@ defconfig_matrix.py — AirymaxOS defconfig 矩阵一致性检查器
   3. defconfig 格式（首行 SPDX / CONFIG 语法 / 无重复键）
   4. 必备 CONFIG 齐备（OS-BUILD-026）
   5. CONFIG_LSM 含清单登记的 LSM 名
-  6. CI 构建矩阵与清单一致（ci-airy 精确匹配 / ci-kernel 登记子集）
+  6. CI 构建矩阵与清单一致（airy-verify 精确匹配 / kernel-verify 登记子集）
   7. CI 必备 CONFIG 清单与清单一致（OS-BUILD-026）
   8. obj-$(CONFIG_*) 引用均有 Kconfig 声明（OS-KER-025）
 
@@ -60,9 +60,9 @@ except ImportError:  # pragma: no cover - 环境缺失时在入口统一报错
 
 DEFAULT_MANIFEST_REL = "tools/defconfig-matrix/manifest.yaml"
 DEFAULT_KERNEL_DIR = "kernel"
-CI_AIRY_REL = ".github/workflows/ci-airy.yml"
-CI_KERNEL_REL = ".github/workflows/ci-kernel.yml"
-# kernel 腿的必备 CONFIG 断言已抽成 gate（ci-kernel.yml 只留一行调用），
+CI_AIRY_REL = ".github/workflows/airy-verify.yml"
+CI_KERNEL_REL = ".github/workflows/kernel-verify.yml"
+# kernel 腿的必备 CONFIG 断言已抽成 gate（kernel-verify.yml 只留一行调用），
 # 清单因此落在该脚本的 REQUIRED_CONF 数组里，而不是 workflow 内联块。
 CI_KERNEL_GATE_REL = "ci/gates/kernel-refbuild.sh"
 
@@ -78,7 +78,7 @@ MANIFEST_KEYS = frozenset(
     {"version", "architectures", "required_configs", "lsm_entry"})
 ARCH_KEYS = frozenset({"arch", "cross", "kind", "build", "configs"})
 
-# Airymax 专属源码落点（与 ci-airy.yml / SPDX 审计保持一致）。
+# Airymax 专属源码落点（与 airy-verify.yml / SPDX 审计保持一致）。
 AIRY_KBUILD_DIRS = (
     "security/airy",
     "kernel/superv",
@@ -361,7 +361,7 @@ def check_lsm_entry(manifest, kernel_dir):
 
 
 def check_ci_matrix_sync(manifest, repo_root):
-    """CI 构建矩阵与清单一致（ci-airy 精确匹配 / ci-kernel 为登记子集）。"""
+    """CI 构建矩阵与清单一致（airy-verify 精确匹配 / kernel-verify 为登记子集）。"""
     name = "CI 构建矩阵与清单一致 (OS-BUILD-028)"
     try:
         airy = load_workflow(repo_root / CI_AIRY_REL)
@@ -381,23 +381,23 @@ def check_ci_matrix_sync(manifest, repo_root):
         arch = entry.get("arch")
         item = matrix.get(arch)
         if item is None:
-            problems.append(f"ci-airy 构建矩阵缺少清单 build=true 架构: {arch}")
+            problems.append(f"airy-verify 构建矩阵缺少清单 build=true 架构: {arch}")
             continue
         kdir = arch_kdir(entry)
         if item.get("kdir") != kdir:
             problems.append(
-                f"{arch}: kdir 漂移（清单 {kdir} / ci-airy {item.get('kdir')}）")
+                f"{arch}: kdir 漂移（清单 {kdir} / airy-verify {item.get('kdir')}）")
         if item.get("cross") != entry.get("cross"):
             problems.append(
                 f"{arch}: cross 漂移（清单 '{entry.get('cross')}' / "
-                f"ci-airy '{item.get('cross')}'）")
+                f"airy-verify '{item.get('cross')}'）")
 
     for arch in sorted(set(matrix) - build_arches):
-        problems.append(f"ci-airy 构建矩阵含清单未标 build=true 的架构: {arch}")
+        problems.append(f"airy-verify 构建矩阵含清单未标 build=true 的架构: {arch}")
 
     known = {e.get("arch") for e in manifest.get("architectures", [])}
     for arch in sorted(set(karch) - known):
-        problems.append(f"ci-kernel 构建矩阵含清单未登记架构: {arch}")
+        problems.append(f"kernel-verify 构建矩阵含清单未登记架构: {arch}")
 
     return CheckResult(name, not problems, "\n".join(problems))
 

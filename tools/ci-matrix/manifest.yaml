@@ -11,7 +11,7 @@
 #     §10.1 CI 失败分类（PR 标签）
 #
 # 铁律：本清单是「编译配置 × 架构 × 编译器 × 排除项 × 调度约束」的唯一
-#      事实源。.github/workflows/ci-kernel.yml 的 matrix 段必须与本表逐项
+#      事实源。.github/workflows/kernel-verify.yml 的 matrix 段必须与本表逐项
 #      相等；架构维度不在此重复定义，统一取自 tools/defconfig-matrix/
 #      manifest.yaml 中 build=true 的条目。任何一侧漂移由
 #      tools/ci-matrix/ci_matrix.py --check 检出。
@@ -37,7 +37,7 @@ version: "1.0.0"
 arch_manifest: tools/defconfig-matrix/manifest.yaml
 
 matrix:
-  workflow: .github/workflows/ci-kernel.yml
+  workflow: .github/workflows/kernel-verify.yml
   job: kernel-build
   configs:
     - defconfig

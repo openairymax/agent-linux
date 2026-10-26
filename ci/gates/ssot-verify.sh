@@ -11,7 +11,7 @@
 #   links   仅扫描 git 跟踪的本仓 .md，校验相对链接是否落到真实文件；
 #           跨仓（../）与外链（http/mailto）不在此判定。
 #
-# 两段判定原先是 ssot-validate.yml 里的内联 heredoc，只有改动 .md 时才会
+# 两段判定原先是 ssot-verify.yml 里的内联 heredoc，只有改动 .md 时才会
 # 在云端跑到，本地无从复现。抽成 gate 后可在提交前直接执行。
 #
 # 退出码: 0 通过；1 校验失败；5 参数不满足。

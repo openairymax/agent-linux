@@ -7,7 +7,7 @@
 #   ci/gates/kernel-kselftest.sh [--src DIR] [--install DIR] [--tap FILE]
 #                               [--targets "seccomp pidfd membarrier rseq"]
 #
-# 三段逻辑此前是 ci-kernel.yml 里三个相邻的 run 块，靠 job 级 env 传
+# 三段逻辑此前是 kernel-verify.yml 里三个相邻的 run 块，靠 job 级 env 传
 # KSFT_INSTALL。合并成一条门禁的理由：install 目录是「构建」与「运行」
 # 之间的唯一契约，拆开写时任何一段单独重跑都会得到看似成功的假象
 # （例如 install 目录过期，run 段照样跑旧用例并通过）。

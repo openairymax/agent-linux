@@ -36,7 +36,7 @@
 #     通过的字节才配占用发行 tag。
 # ===========================================================================
 
-name: image-ci
+name: image-build
 
 on:
   workflow_dispatch:
@@ -51,7 +51,7 @@ on:
         default: ''
 
 concurrency:
-  group: image-ci
+  group: image-build
   cancel-in-progress: false
 
 permissions:

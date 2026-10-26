@@ -24,14 +24,14 @@
 # 文件，因此路径过滤器必须显式包含 'kernel' 以捕获指针变更。
 # ===========================================================================
 
-name: ci-kernel
+name: kernel-verify
 on:
   pull_request:
     paths:
       - 'kernel'
       - 'kernel/**'
       - 'tools/ci-matrix/**'
-      - '.github/workflows/ci-kernel.yml'
+      - '.github/workflows/kernel-verify.yml'
       - 'ci/gates/kernel-*.sh'
   push:
     branches: [main]
@@ -39,7 +39,7 @@ on:
       - 'kernel'
       - 'kernel/**'
       - 'tools/ci-matrix/**'
-      - '.github/workflows/ci-kernel.yml'
+      - '.github/workflows/kernel-verify.yml'
       - 'ci/gates/kernel-*.sh'
 
 jobs:

@@ -7,7 +7,7 @@
 #   ci/gates/kernel-kunit.sh [--src DIR] [--tap FILE]
 #
 # KUnit 用 O=.kunit 外置构建，而 kbuild 要求源码树干净，因此这一步必须
-# 排在所有 in-tree 构建之前。此前这个「顺序敏感」只写在 ci-kernel.yml 的
+# 排在所有 in-tree 构建之前。此前这个「顺序敏感」只写在 kernel-verify.yml 的
 # 一条注释里，步骤一挪就静默失效（kunit.py 会报 kbuild 脏树或复用到旧
 # 配置）。现在把前提变成前置断言：树里有 .config / vmlinux 就明确报错。
 #

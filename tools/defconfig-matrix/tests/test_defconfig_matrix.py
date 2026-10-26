@@ -71,7 +71,7 @@ def _manifest_text(arches, required, lsm_entry="airy", version="1.0.0") -> str:
     return "\n".join(lines) + "\n"
 
 
-def _ci_airy_text(arches, required) -> str:
+def _airy_verify_text(arches, required) -> str:
     include = "".join(
         f"          - arch: {arch['arch']}\n"
         f"            kdir: {_kdir(arch['configs'])}\n"
@@ -95,7 +95,7 @@ def _ci_airy_text(arches, required) -> str:
     )
 
 
-def _ci_kernel_text(arches) -> str:
+def _kernel_verify_text(arches) -> str:
     arch_list = ", ".join(arch["arch"] for arch in arches)
     return (
         "jobs:\n"
@@ -134,10 +134,10 @@ def write_repo(tmp_path, arches=None, required=None,
     workflows = tmp_path / ".github" / "workflows"
     workflows.mkdir(parents=True, exist_ok=True)
     build_arches = [arch for arch in arches if arch["build"]]
-    (workflows / "ci-airy.yml").write_text(
-        _ci_airy_text(build_arches, required), encoding="utf-8")
-    (workflows / "ci-kernel.yml").write_text(
-        _ci_kernel_text(arches), encoding="utf-8")
+    (workflows / "airy-verify.yml").write_text(
+        _airy_verify_text(build_arches, required), encoding="utf-8")
+    (workflows / "kernel-verify.yml").write_text(
+        _kernel_verify_text(arches), encoding="utf-8")
 
     gates = tmp_path / "ci" / "gates"
     gates.mkdir(parents=True, exist_ok=True)
@@ -326,7 +326,7 @@ class TestCiMatrixSync:
 
     def test_kdir_drift(self, tmp_path):
         manifest = dm.load_manifest(write_repo(tmp_path))
-        path = tmp_path / ".github" / "workflows" / "ci-airy.yml"
+        path = tmp_path / ".github" / "workflows" / "airy-verify.yml"
         path.write_text(path.read_text(encoding="utf-8").replace(
             "kdir: x86\n", "kdir: x86_64\n"), encoding="utf-8")
         result = dm.check_ci_matrix_sync(manifest, tmp_path)
@@ -335,7 +335,7 @@ class TestCiMatrixSync:
 
     def test_cross_drift(self, tmp_path):
         manifest = dm.load_manifest(write_repo(tmp_path))
-        path = tmp_path / ".github" / "workflows" / "ci-airy.yml"
+        path = tmp_path / ".github" / "workflows" / "airy-verify.yml"
         path.write_text(path.read_text(encoding="utf-8").replace(
             'cross: "aarch64-linux-gnu-"', 'cross: "aarch64-unknown-linux-"'),
             encoding="utf-8")
@@ -345,7 +345,7 @@ class TestCiMatrixSync:
 
     def test_missing_build_arch(self, tmp_path):
         manifest = dm.load_manifest(write_repo(tmp_path))
-        path = tmp_path / ".github" / "workflows" / "ci-airy.yml"
+        path = tmp_path / ".github" / "workflows" / "airy-verify.yml"
         path.write_text(path.read_text(encoding="utf-8").replace(
             "          - arch: arm64\n"
             "            kdir: arm64\n"
@@ -357,7 +357,7 @@ class TestCiMatrixSync:
 
     def test_extra_build_arch(self, tmp_path):
         manifest = dm.load_manifest(write_repo(tmp_path))
-        path = tmp_path / ".github" / "workflows" / "ci-airy.yml"
+        path = tmp_path / ".github" / "workflows" / "airy-verify.yml"
         path.write_text(path.read_text(encoding="utf-8").replace(
             "  airy-static:",
             "          - arch: riscv\n"
@@ -368,9 +368,9 @@ class TestCiMatrixSync:
         assert not result.passed
         assert "未标 build=true 的架构" in result.details
 
-    def test_unknown_arch_in_ci_kernel(self, tmp_path):
+    def test_unknown_arch_in_kernel_verify(self, tmp_path):
         manifest = dm.load_manifest(write_repo(tmp_path))
-        path = tmp_path / ".github" / "workflows" / "ci-kernel.yml"
+        path = tmp_path / ".github" / "workflows" / "kernel-verify.yml"
         path.write_text(path.read_text(encoding="utf-8").replace(
             "arch: [x86_64, arm64]", "arch: [x86_64, arm64, riscv]"),
             encoding="utf-8")
@@ -389,7 +389,7 @@ class TestCiRequiredSync:
 
     def test_missing_item(self, tmp_path):
         manifest = dm.load_manifest(write_repo(tmp_path))
-        path = tmp_path / ".github" / "workflows" / "ci-airy.yml"
+        path = tmp_path / ".github" / "workflows" / "airy-verify.yml"
         path.write_text(path.read_text(encoding="utf-8").replace(
             "            'CONFIG_IO_URING=y'\n", ""), encoding="utf-8")
         result = dm.check_ci_required_sync(manifest, tmp_path)
@@ -416,7 +416,7 @@ class TestCiRequiredSync:
 
     def test_missing_block(self, tmp_path):
         manifest = dm.load_manifest(write_repo(tmp_path))
-        path = tmp_path / ".github" / "workflows" / "ci-airy.yml"
+        path = tmp_path / ".github" / "workflows" / "airy-verify.yml"
         text = path.read_text(encoding="utf-8")
         path.write_text(text[:text.index("          required=(")],
                         encoding="utf-8")

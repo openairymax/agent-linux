@@ -14,7 +14,7 @@
 #        IRON-3（所有 Airymax 增强代码必须在新增目录中）
 # ===========================================================================
 
-name: ci-airy
+name: airy-verify
 on:
   pull_request:
     paths:
@@ -30,7 +30,7 @@ on:
       - 'tools/defconfig-matrix/**'
       - 'tools/btf-integration/**'
       - 'tools/kbuild-version/**'
-      - '.github/workflows/ci-airy.yml'
+      - '.github/workflows/airy-verify.yml'
   push:
     branches: [main]
     paths:
@@ -46,7 +46,7 @@ on:
       - 'tools/defconfig-matrix/**'
       - 'tools/btf-integration/**'
       - 'tools/kbuild-version/**'
-      - '.github/workflows/ci-airy.yml'
+      - '.github/workflows/airy-verify.yml'
 
 jobs:
   airy-build:

@@ -5,7 +5,7 @@ btf_integration.py — AirymaxOS BTF / eBPF 基线一致性检查器
 
 以 tools/btf-integration/manifest.yaml 为唯一事实源（SSoT），静态校验
 「受检架构 × eBPF 基线 × BTF 基线 × tracing 链路 × CI 供给」五者彼此一致，
-把散落在 kernel/arch/*/configs/airy_defconfig 与 .github/workflows/ci-kernel.yml
+把散落在 kernel/arch/*/configs/airy_defconfig 与 .github/workflows/kernel-verify.yml
 中的隐含约束收敛到一处清单，并由本工具检出任何一侧的漂移。
 
 设计原则（与项目铁律一致）：

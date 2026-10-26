@@ -3,7 +3,7 @@
 
 按已解析目标与作业生成 virtme-ng 的确定性 argv，由运行器直接交给
 subprocess，不经过 shell 拼接。选择 virtme-ng 而非手写 qemu-system
-命令行，是因为 CI 基线（.github/workflows/ci-kernel.yml）与
+命令行，是因为 CI 基线（.github/workflows/kernel-verify.yml）与
 docs-linux/70-build-system/03-ci-cd-pipeline.md §5.3 都以 virtme-ng
 作为 kselftest 的 QEMU 载体：guest 根文件系统、9p 共享与 --exec 执行
 由 virtme-ng 负责，本模块只做参数装配与契约校验，避免重复实现一套
@@ -18,7 +18,7 @@ guest 引导环境。
     OS-TEST-013~022（QEMU 运行 kselftest 与 TAP 解析）
   docs-linux/80-testing/02-kselftest.md
     OS-STD-009（测试超时默认 60 秒）
-  .github/workflows/ci-kernel.yml（virtme-ng 实际调用基线）
+  .github/workflows/kernel-verify.yml（virtme-ng 实际调用基线）
   kernel/tools/testing/selftests/run_kselftest.sh（-c/--collection）
 
 Example:

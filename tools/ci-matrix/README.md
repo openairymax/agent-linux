@@ -11,7 +11,7 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 编译验证矩阵（OS-STD-TOOL-161）把「4 配置 × 4 架构 × 2 编译器 − 4」收敛为
 28 格，是 PR 合并的硬门禁。本工具以 [manifest.yaml](manifest.yaml) 为
 **唯一事实源（SSoT）**，静态校验矩阵定义、调度约束、超时预算与门禁语义
-是否与 `.github/workflows/ci-kernel.yml` 逐项一致，并把逐格构建结果按
+是否与 `.github/workflows/kernel-verify.yml` 逐项一致，并把逐格构建结果按
 失败语义归因、汇聚为 PR 标签。
 
 架构维度不重复定义，统一取自
@@ -97,7 +97,7 @@ python3 tools/ci-matrix/ci_matrix.py --summary matrix-result.json
 
 ## 维护清单
 
-- **新增配置 / 编译器 / 排除项**：先改本清单，再同步 `ci-kernel.yml` 的
+- **新增配置 / 编译器 / 排除项**：先改本清单，再同步 `kernel-verify.yml` 的
   `matrix` 段，随后运行 `--check` 确认无漂移。
 - **新增支持架构**：只改 `tools/defconfig-matrix/manifest.yaml` 并置
   `build: true`，本工具自动纳入；不要在 `ci-matrix` 重复登记架构名。
@@ -106,7 +106,7 @@ python3 tools/ci-matrix/ci_matrix.py --summary matrix-result.json
 
 ## CI 接入
 
-- **管理仓 `ci-kernel.yml`（`kernel-verify` job）**：以新增 step 调用
+- **管理仓 `kernel-verify.yml`（`kernel-verify` job）**：以新增 step 调用
   `--check`，遵守「每 workflow ≤2 job」上限，不新增 job。
 - **管理仓 `os-chk` 注册表**：以门禁 `OS-BUILD-CI-MATRIX`（P0 / category
   `build`）登记，由 `tools/os-chk/os_chk.py --check` 统一编排。

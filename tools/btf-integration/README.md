@@ -13,7 +13,7 @@ Agent 观测面（L2 层）的 eBPF 程序必须基于 **BTF 重定位（CO-RE�
 基线，且构建期提供 `pahole`、构建产物中真实携带 BTF。本工具以
 [manifest.yaml](manifest.yaml) 为**唯一事实源（SSoT）**，静态校验「受检架构 ×
 eBPF 基线 × BTF 基线 × tracing 链路 × CI 供给」五者彼此一致，把散落在内核
-片段与 `.github/workflows/ci-kernel.yml`、`.github/workflows/ci-airy.yml` 中的
+片段与 `.github/workflows/kernel-verify.yml`、`.github/workflows/airy-verify.yml` 中的
 隐含约束收敛到一处清单，并检出任何一侧的漂移。
 
 受检架构不在本清单重复登记，统一复用 [tools/defconfig-matrix/manifest.yaml](../defconfig-matrix/manifest.yaml)
@@ -87,15 +87,15 @@ BTF / tracing 三组基线。
 
 ## CI 接入
 
-- **内核仓 `ci-kernel.yml`（`kernel-build` / `kernel-verify`）**：两个 job 的
+- **内核仓 `kernel-verify.yml`（`kernel-build` / `kernel-verify`）**：两个 job 的
   apt 行均需安装 `dwarves`（提供 `pahole`）；`kernel-verify` 在构建后以
   `readelf -S vmlinux | grep -q '\.BTF'` 断言 BTF 落地。本工具的检查项 6 即
   静态保证该供给存在。
-- **管理仓 `ci-airy.yml`（`airy-build` job）**：`airy-build` 以 `airy_defconfig`
+- **管理仓 `airy-verify.yml`（`airy-build` job）**：`airy-build` 以 `airy_defconfig`
   构建全部 4 架构，故其 apt 行亦需安装 `dwarves`，并在构建后以
   `readelf -S vmlinux | grep -q '\.BTF'` 断言 BTF 落地——缺 `pahole` 会令
   `gen_btf()` 直接失败，构建即红。
-- **管理仓 `ci-airy.yml`（`airy-static` job）**：以新增 step 调用 `--check`，
+- **管理仓 `airy-verify.yml`（`airy-static` job）**：以新增 step 调用 `--check`，
   遵守管理仓「每 workflow ≤ 2 job」的上限，不新增 job。
 - **管理仓 `os-chk` 注册表**：以门禁 `OS-BUILD-BTF`（P0 / category `build`）
   登记，由 `tools/os-chk/os_chk.py --check` 统一编排。
