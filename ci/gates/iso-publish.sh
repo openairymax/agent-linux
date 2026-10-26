@@ -65,7 +65,7 @@ done
 
 [ -n "${OUT}" ] || { usage >&2; exit "${EINVAL}"; }
 
-# 未指定 tag 时不是错误：image-ci 的日常手动轮次只做组装与验收，不对外发布。
+# 未指定 tag 时不是错误：image-build 的日常手动轮次只做组装与验收，不对外发布。
 # 由调用方决定是否带 tag，门禁不替它猜。
 if [ -z "${TAG}" ]; then
     note "未指定 --tag，跳过 OCI 发布"

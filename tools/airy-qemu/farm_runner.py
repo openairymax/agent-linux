@@ -3,7 +3,7 @@
 
 本模块把已通过预检的作业交给 virtme-ng 执行，并完整保留原始证据：
 stdout 单独落盘为 TAP 流，stderr 落盘为控制台日志。stdout 与 stderr
-分离直接映射 CI 基线（.github/workflows/ci-kernel.yml 以
+分离直接映射 CI 基线（.github/workflows/kernel-verify.yml 以
 ``vng --run ... > kselftest.tap`` 收集 TAP），TAP 文件必须保持纯净，
 诊断信息不得混入其中。
 
@@ -20,7 +20,7 @@ CPU，污染后续作业的测量结果。
     OS-TEST-013~022（QEMU 运行 kselftest 与 TAP 解析）
   docs-linux/80-testing/02-kselftest.md
     OS-STD-009（测试超时预算）
-  .github/workflows/ci-kernel.yml（virtme-ng 实际调用基线）
+  .github/workflows/kernel-verify.yml（virtme-ng 实际调用基线）
 
 Example:
     >>> run = run_job(target, job, env, report, Path("out"))

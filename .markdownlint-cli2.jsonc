@@ -3,7 +3,7 @@
 //
 // markdownlint-cli2 配置：agent-linux（AirymaxOS）管理仓 Markdown 约定。
 // 依据 OS-CHK-DOC-01（首行 Copyright 头）与本仓实际排版约定固化规则，
-// 由 .github/workflows/mgmt-orchestrator.yml 的文档格式门禁消费。
+// 由 .github/workflows/mgmt-verify.yml 的文档格式门禁消费。
 {
   "config": {
     // 行宽：本项目文档（含表格与长段落）不设列宽上限，与 docs/docs-linux 一致。

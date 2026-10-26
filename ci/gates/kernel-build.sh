@@ -7,7 +7,7 @@
 #   ci/gates/kernel-build.sh --config CONFIG --arch ARCH --compiler gcc|clang
 #                            [--src DIR] [--log FILE]
 #
-# 一格 = (config, arch, compiler)。整张 28 格矩阵由 ci-kernel.yml 的
+# 一格 = (config, arch, compiler)。整张 28 格矩阵由 kernel-verify.yml 的
 # matrix 展开，本脚本只负责「给一格参数，把这一格编出来并判定红绿」。
 # 这样矩阵里任何一格失败都能在本地用同一条命令复现，而不必触发整条云端
 # 流水线。

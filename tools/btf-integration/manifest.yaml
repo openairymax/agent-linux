@@ -75,8 +75,8 @@ btf_artifacts:
   - .BTF
 
 ci_workflows:
-  # ci-kernel.yml 的 airy_defconfig 矩阵构建 x86_64，ci-airy.yml 的 airy-build
+  # kernel-verify.yml 的 airy_defconfig 矩阵构建 x86_64，airy-verify.yml 的 airy-build
   # 构建全部 4 架构 airy_defconfig：二者均开启 CONFIG_DEBUG_INFO_BTF，
   # 故都须提供 pahole 并断言 vmlinux 的 .BTF 段。
-  - .github/workflows/ci-kernel.yml
-  - .github/workflows/ci-airy.yml
+  - .github/workflows/kernel-verify.yml
+  - .github/workflows/airy-verify.yml

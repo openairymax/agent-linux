@@ -15,7 +15,7 @@ dataclass，构造时经 __post_init__ 校验，不含任何占位或桩逻辑�
     OS-TEST-013~022（QEMU + kselftest + TAP 解析）
   docs-linux/80-testing/03-kernel-selftests.md
     OS-TEST-030（自检注册）、OS-KER-101（自检不得阻塞）
-  .github/workflows/ci-kernel.yml（virtme-ng 实际调用基线）
+  .github/workflows/kernel-verify.yml（virtme-ng 实际调用基线）
   tools/parse-tap.py（TAP 解析契约：plan_total / ok_count / not_ok_count）
 
 Example:

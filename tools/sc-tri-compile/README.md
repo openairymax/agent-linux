@@ -161,7 +161,7 @@ python3 -m pytest tools/sc-tri-compile/tests/ -q
 
 ## CI 集成
 
-`sc-dual-ci.yml` 的 `sc-validate` job 在 `[SC]` 头文件或本工具变更时先跑单
+`sc-verify.yml` 的 `sc-validate` job 在 `[SC]` 头文件或本工具变更时先跑单
 元测试，再执行多路编译门禁：
 
 ```yaml
@@ -185,7 +185,7 @@ tools/sc-tri-compile/requirements-dev.txt` 安装。
   （`__KERNEL__` / `__linux__` / `#else` 三分支）。
 - syscall ABI 三源：`kernel/include/uapi/linux/airymax/syscalls.h`（契约头
   SSoT 形式）、`syscall.xml`（R-01 SSoT）、`syscall_gen.h`（`@generated`
-  生成产物），由 `sc-dual-ci.yml` 的 `sc-validate` job 门禁收口（L-04 /
+  生成产物），由 `sc-verify.yml` 的 `sc-validate` job 门禁收口（L-04 /
   D-04）。
 
 ## 许可证

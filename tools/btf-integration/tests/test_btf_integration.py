@@ -54,7 +54,7 @@ btf_artifacts:
   - .BTF
 
 ci_workflows:
-  - .github/workflows/ci-kernel.yml
+  - .github/workflows/kernel-verify.yml
 """
 
 GOOD_FRAGMENT = (
@@ -116,7 +116,7 @@ def write_repo(tmp_path: Path,
 
     workflows = tmp_path / ".github" / "workflows"
     workflows.mkdir(parents=True, exist_ok=True)
-    (workflows / "ci-kernel.yml").write_text(ci_text, encoding="utf-8")
+    (workflows / "kernel-verify.yml").write_text(ci_text, encoding="utf-8")
 
     matrix = tmp_path / "tools" / "defconfig-matrix" / "manifest.yaml"
     matrix.parent.mkdir(parents=True, exist_ok=True)
@@ -186,8 +186,8 @@ class TestManifestSchema:
 
     def test_workflow_path_must_be_yml(self, tmp_path: Path) -> None:
         manifest = _load(tmp_path, bio_manifest=BIO_MANIFEST.replace(
-            "  - .github/workflows/ci-kernel.yml\n",
-            "  - .github/workflows/ci-kernel.yaml\n"))
+            "  - .github/workflows/kernel-verify.yml\n",
+            "  - .github/workflows/kernel-verify.yaml\n"))
         result = bi.check_schema(manifest)
         assert not result.passed
         assert "ci_workflows" in result.details
@@ -315,7 +315,7 @@ class TestCiSupply:
 
     def test_workflow_absent(self, tmp_path: Path) -> None:
         repo, manifest_path = write_repo(tmp_path)
-        (repo / ".github" / "workflows" / "ci-kernel.yml").unlink()
+        (repo / ".github" / "workflows" / "kernel-verify.yml").unlink()
         manifest = bi.load_manifest(manifest_path)
         result = bi.check_ci_supply(manifest, repo)
         assert not result.passed

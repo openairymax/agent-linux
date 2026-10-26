@@ -11,7 +11,7 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 `airy_defconfig` 是 A-UCS（Unified Configuration Subsystem）在构建期的物理
 承载。本工具以 [manifest.yaml](manifest.yaml) 为**唯一事实源（SSoT）**，静态
 校验「支持架构 × `airy_defconfig` 形态 × CI 构建矩阵 × 必备 CONFIG × Kbuild
-引用」五者彼此一致，把散落在 `.github/workflows/ci-airy.yml` 与 `ci-kernel.yml`
+引用」五者彼此一致，把散落在 `.github/workflows/airy-verify.yml` 与 `kernel-verify.yml`
 中的重复映射收敛到一处清单，并检出任何一侧的漂移。
 
 工具**只做清单与仓库/工作流的交叉比对**，不重复实现构建逻辑；所有检查均读取
@@ -36,8 +36,8 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 | 3 | defconfig 格式（首行 SPDX / CONFIG 语法 / 无重复键） | `OS-STD-STY-007`（沿 50 卷） |
 | 4 | 必备 CONFIG 齐备 | `OS-BUILD-026` |
 | 5 | `CONFIG_LSM` 含清单登记的 LSM 名 | `OS-BUILD-026` |
-| 6 | CI 构建矩阵与清单一致（ci-airy 精确匹配 / ci-kernel 登记子集） | `OS-BUILD-028` |
-| 7 | 必备 CONFIG 清单逐项相等（ci-airy 的 `required=(...)` / kernel gate 的 `REQUIRED_CONF`） | `OS-BUILD-026` |
+| 6 | CI 构建矩阵与清单一致（airy-verify 精确匹配 / kernel-verify 登记子集） | `OS-BUILD-028` |
+| 7 | 必备 CONFIG 清单逐项相等（airy-verify 的 `required=(...)` / kernel gate 的 `REQUIRED_CONF`） | `OS-BUILD-026` |
 | 8 | `obj-$(CONFIG_*)` 引用均有 Kconfig 声明 | `OS-KER-025` |
 
 清单 schema 不合法时，仅报告该项并短路其余检查（避免在脏数据上生成噪声结论）。
@@ -69,14 +69,14 @@ python3 tools/defconfig-matrix/defconfig_matrix.py \
 ## 维护清单
 
 新增受支持架构时：先在本表 `architectures` 登记（`arch` / `cross` / `kind` /
-`build` / `configs`），再落地 `kernel/<configs>` 文件，并在 `ci-airy.yml`
-（若 `build: true`）与 `ci-kernel.yml` 的矩阵、`ci/gates/kernel-refbuild.sh`
+`build` / `configs`），再落地 `kernel/<configs>` 文件，并在 `airy-verify.yml`
+（若 `build: true`）与 `kernel-verify.yml` 的矩阵、`ci/gates/kernel-refbuild.sh`
 的 `REQUIRED_CONF` 清单同步；随后运行本工具确认无漂移。`build: true` 要求
 `kind: fragment`（CI 固定走 `scripts/kconfig/merge_config.sh` 三步法）。
 
 ## CI 接入
 
-- **管理仓 `ci-airy.yml`（`airy-static` job）**：以新增 step 调用 `--check`，
+- **管理仓 `airy-verify.yml`（`airy-static` job）**：以新增 step 调用 `--check`，
   遵守管理仓「每 workflow ≤ 2 job」的上限，不新增 job。
 - **管理仓 `os-chk` 注册表**：以门禁 `OS-BUILD-MATRIX`（P0 / category `build`）
   登记，由 `tools/os-chk/os_chk.py --check` 统一编排。

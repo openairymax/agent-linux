@@ -12,7 +12,7 @@ FarmConfigError 拒绝，避免拼写错误或漂移在运行期才暴露。
     OS-TEST-013~022（kselftest 默认在 QEMU 运行、TAP 解析、flaky 登记）
   docs-linux/80-testing/02-kselftest.md
     OS-STD-009（测试超时默认 60 秒）
-  .github/workflows/ci-kernel.yml（kselftest 子集基线）
+  .github/workflows/kernel-verify.yml（kselftest 子集基线）
 
 Author:
     SPHARX Ltd. - Airymax Team

@@ -30,7 +30,7 @@ EFI 镜像，顺序写入即可双固件引导；另造一套分区/引导引擎
 
 | 内容 | 出处 |
 |------|------|
-| 发布物组成（ISO + `.sha256` + `iso-manifest.txt`） | `.github/workflows/image-ci.yml` |
+| 发布物组成（ISO + `.sha256` + `iso-manifest.txt`） | `.github/workflows/image-build.yml` |
 | 发行 ISO 的取件通道与摘要 | `desktop/iso/iso-oci.txt`（由 `ci/ci.sh iso-publish` 写入） |
 | 取件通道的不可变性断言 | `ci/gates/iso-publish.sh`（远端 layer digest 必须等于文件 sha256） |
 | BIOS + UEFI 双固件冷启动验收 | `ci/ci.sh accept --firmware both` |

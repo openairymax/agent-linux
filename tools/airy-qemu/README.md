@@ -36,7 +36,7 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 | OS-TEST-014/015/021（KVM 回退、TAP 计数、SKIP 单独统计） | `docs/docs-linux/80-testing/02-kselftest.md` |
 | OS-STD-009（测试超时预算） | `docs/docs-linux/80-testing/02-kselftest.md` |
 | TAP 计数与退出码契约 | `tools/parse-tap.py` |
-| virtme-ng 实际调用基线 | `.github/workflows/ci-kernel.yml` |
+| virtme-ng 实际调用基线 | `.github/workflows/kernel-verify.yml` |
 
 ## 目录结构
 
@@ -191,7 +191,7 @@ stdout 只输出控制台摘要，stderr 只输出 `ERROR: ...`；生产代码�
 `.github/workflows/farm-verify.yml` 在 `tools/airy-qemu/**` 变更时运行
 本工具的 pytest 套件（含端到端流水线与 CI/文档契约测试）。测试以假执行器
 替代真实 QEMU，不依赖 KVM 或 virtme-ng；真实 QEMU 上的 kselftest 仍由
-`ci-kernel` 的 virtme-ng 链路承担。
+`kernel-verify` 的 virtme-ng 链路承担。
 
 ## 单元测试
 

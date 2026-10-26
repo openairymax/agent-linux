@@ -8,7 +8,7 @@
 #
 # verify 腿里除矩阵之外的所有检查（sparse、Coccinelle、kselftest）都需要
 # 一份「确定配置」的产物：不是任意矩阵格，而是 airy_defconfig 在 x86_64
-# 上的结果。此前这段配置+编译+断言散在 ci-kernel.yml 的一个长 run 块里，
+# 上的结果。此前这段配置+编译+断言散在 kernel-verify.yml 的一个长 run 块里，
 # 与 sparse 步骤靠「上一步产物」隐式耦合——重排步骤顺序就会静默退化成
 # 对空对象做检查。独立成 gate 后，顺序依赖变成显式的前置命令。
 #

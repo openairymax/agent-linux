@@ -5,10 +5,10 @@
 # Authority: docs/docs-linux/50-engineering-standards/09-ssot-registry.md
 #            docs/docs-linux/70-build-system/03-ci-cd-pipeline.md §6
 # Design: 管理仓只校验本仓自有 .md；file-integrity 与子仓编排见
-#         mgmt-orchestrator.yml
+#         mgmt-verify.yml
 # ===========================================================================
 
-name: ssot-validate
+name: ssot-verify
 on:
   pull_request:
     branches: [main]
@@ -25,14 +25,14 @@ on:
       - 'ssot-registry.yaml'
       - 'tools/validate-ssot.py'
       - 'ci/gates/ssot-verify.sh'
-      - '.github/workflows/ssot-validate.yml'
+      - '.github/workflows/ssot-verify.yml'
 
 permissions:
   contents: read
 
 jobs:
   # ─── Job 1: SSoT YAML 语法 + 规则 ID 注册一致性 ─────────────────────
-  # 合并原 ssot-validate + doc-format 的 YAML 校验部分
+  # 合并原 doc-format 的 YAML 校验部分
   ssot-syntax-and-rules:
     name: SSoT YAML Syntax & Rule ID Validation
     runs-on: ubuntu-latest

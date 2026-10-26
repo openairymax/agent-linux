@@ -6,7 +6,7 @@
 # Design: L1/L3 审查改为 GitHub 分支保护规则，不在 CI 中执行
 # ===========================================================================
 
-name: sc-dual-ci
+name: sc-verify
 on:
   pull_request:
     paths:
@@ -23,7 +23,7 @@ on:
       - 'kernel/include/uapi/linux/airymax/bpf_struct_ops.h'
       - 'kernel/include/uapi/linux/airymax/syscall_gen.h'
       - 'tools/sc-tri-compile/**'
-      - '.github/workflows/sc-dual-ci.yml'
+      - '.github/workflows/sc-verify.yml'
 
 jobs:
   # ─── Job 1: [SC] 头文件验证（agent-linux 侧） ────────────────────

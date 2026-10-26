@@ -3,7 +3,7 @@
 """
 parse-tap.py — 解析 TAP（Test Anything Protocol）输出
 
-被 ci-kernel.yml 引用（OS-TEST-013~022：kselftest TAP 解析）。
+被 kernel-verify.yml 引用（OS-TEST-013~022：kselftest TAP 解析）。
 读取 ``--input`` 指定的 TAP 文件，统计 ok / not ok 用例数；
 当 ``--fail-on-not-ok`` 且存在 not ok 行时以退出码 1 终止。
 

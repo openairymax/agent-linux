@@ -95,7 +95,7 @@ def test_cli_miss_exit_code(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
     """未命中返回 1，并给出可操作的失败说明。"""
     code = pk.main(["--artifacts", str(write(tmp_path, [])), "--sha", SHA])
     assert code == pk.EXIT_MISS
-    assert "image-ci" in capsys.readouterr().err
+    assert "image-build" in capsys.readouterr().err
 
 
 def test_cli_usage_exit_code(tmp_path: Path):

@@ -102,7 +102,7 @@ python3 tools/kbuild-version/kbuild_version.py \
 
 ## CI 接入
 
-- **管理仓 `ci-airy.yml`（`airy-static` job）**：以新增 step 调用 `--check`，
+- **管理仓 `airy-verify.yml`（`airy-static` job）**：以新增 step 调用 `--check`，
   遵守管理仓「每 workflow ≤ 2 job」的上限，不新增 job。
 - **管理仓 `os-chk` 注册表**：以门禁 `OS-BUILD-KBUILD-VERSION`（P0 / category
   `build`）登记，由 `tools/os-chk/os_chk.py --check` 统一编排。
