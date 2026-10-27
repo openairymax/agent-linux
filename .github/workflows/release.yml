@@ -363,6 +363,14 @@ jobs:
           # cosign 必须在 push 之后签名，签名对象是已推送镜像的 digest
           cosign sign --yes --key env://COSIGN_KEY "${OCI_IMAGE}:${tag}"
 
+      # 同一个 tag 重发时，旧号 RPM（airymaxos-kernel-*-0.0.3-5.*）会与本次的
+      # 新号包并排留在发布页上——glob 上传只增不删。写 Release 之前按摘要清单
+      # 把页面收回本次物料。单行 run 不占内联预算（ci/check-workflows.py）。
+      - name: Prune stale release assets
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ci/ci.sh release-prune --tag "${{ needs.build-and-sign.outputs.tag }}" --repo "${{ github.repository }}"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
