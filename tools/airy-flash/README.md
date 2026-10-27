@@ -188,7 +188,7 @@ sudo python3 airy-flash-0.0.3.pyz write ... --json
 
 ### 输出结构
 
-人读输出固定六段，顺序不随结果变化，便于肉眼扫描与日志切片：
+人读输出固定七段，顺序不随结果变化，便于肉眼扫描与日志切片：
 
 ```text
 AirymaxOS 烧录工具 0.0.3  (write)
@@ -197,6 +197,7 @@ AirymaxOS 烧录工具 0.0.3  (write)
         3.4 GiB   sha256 1a2b3c4d5e6f
 目标    /dev/sdb
         USB 3.0 Flash Disk, usb, 28.7 GiB, 可移动
+模式    写入 + 回读
 
 预检
   [ OK ] 目标是块设备     /dev/sdb
@@ -205,12 +206,12 @@ AirymaxOS 烧录工具 0.0.3  (write)
 
 阶段
   [ OK ] 1/4 校验镜像     sha256 一致 1a2b3c4d5e6f
-  [ OK ] 2/4 写入设备     3.4 GiB, 92.1 MiB/s, 用时 38s
-  [ OK ] 3/4 刷盘同步     fsync 完成
-  [ OK ] 4/4 回读校验     sample 3 窗一致
+  [ OK ] 2/4 写入设备     3.4 GiB  92.1 MiB/s
+  [ OK ] 3/4 刷盘同步     fsync 完成 1s
+  [ OK ] 4/4 回读校验     比对 3 段 / 3.4 GiB  12s
 
 结果
-  结果    成功    用时 1m12s
+  判定    成功    用时 1m12s
   报告    flash-report.json
 AIRY-FLASH-PASS image=/path/airymaxos-0.0.3-x86_64.iso device=/dev/sdb sha256=1a2b...e6f
 
@@ -284,7 +285,7 @@ python3 -m pytest tools/airy-flash/tests/ -q
   「预检通过即可写」这一不变式。
 - **新增摘要来源**：只改 `resolve_expected` 的解析顺序，并在测试里补齐
   优先级用例，避免多来源时静默取错。
-- **修改输出结构**：六段顺序与 `AIRY-FLASH-*` 标记是外部契约（CI 解析），
+- **修改输出结构**：七段顺序与 `AIRY-FLASH-*` 标记是外部契约（CI 解析），
   变更需同步更新 README 与 `--json` 字段。
 
 ## 许可证
