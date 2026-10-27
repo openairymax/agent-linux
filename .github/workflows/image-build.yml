@@ -27,6 +27,9 @@
 #     「严禁在 airymaxhub 源码区内构建」。
 #   * ISO 基线固定为 openEuler 24.03-LTS-SP2 netinst，容器镜像取官方
 #     docker_img tar；URL 与 sha256 同时写死，禁止浮动 latest。
+#   * 官方源是跨洋链路，实测单件 ISO 需 43 分钟。介质目录按摘要键缓存，
+#     命中即跳过下载；未命中时总预算 5400 秒、每项保底 900 秒，避免先下
+#     的大件把后一项挤成零头（run 40485745100）。
 #   * acceptance=true 组装验收 ISO（自动登录 + 会话内冒烟），accept 断言
 #     AIRYMAX-SMOKE-PASS；false 时断言产品 ISO 的 AIRYMAX-DESKTOP-READY。
 #   * release_tag 非空时，内核包取自对应 Release（下载并校验发行
@@ -86,8 +89,17 @@ jobs:
       - name: Free runner disk
         run: ci/ci.sh free-disk
 
+      # 介质由 sha256 固定、跨轮不变：整目录以摘要为键缓存。命中时 3.2 GiB
+      # 下载（run 40485745100 的 ISO 单件就占 43 分钟）退化为本地解包，
+      # 重复轮次不再受跨洋链路速率左右。
+      - name: Restore openEuler media
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/media
+          key: oe-media-${{ env.OE_ISO_SHA256 }}-${{ env.OE_IMG_SHA256 }}
+
       - name: Fetch fixed openEuler media
-        run: ci/ci.sh media-fetch --dir "$RUNNER_TEMP/media" "$OE_ISO_NAME" ISO/x86_64 "$OE_ISO_SHA256" "$OE_IMG_NAME" docker_img/x86_64 "$OE_IMG_SHA256"
+        run: ci/ci.sh media-fetch --dir "$RUNNER_TEMP/media" --budget 5400 --floor 900 "$OE_ISO_NAME" ISO/x86_64 "$OE_ISO_SHA256" "$OE_IMG_NAME" docker_img/x86_64 "$OE_IMG_SHA256"
 
       - name: Load build container image
         run: ci/ci.sh container-load --file "$RUNNER_TEMP/media/$OE_IMG_NAME"
