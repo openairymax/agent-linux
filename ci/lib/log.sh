@@ -67,6 +67,23 @@ die()
     exit 1
 }
 
+# need_cmd CMD... —— 前置工具校验，缺一个就立即失败。
+#
+# 放在这里而不是 host.sh：每个 gate 都会 source 本文件，而 need_cmd 只读
+# 不写宿主状态，属于「任何门禁都可用的守卫」。此前它在 host.sh，四个未
+# source host.sh 的 gate 调用时只得到 "command not found"，校验静默失效
+# （run 40478538815 的 media-fetch/assemble/release-rpms/container-load）。
+need_cmd()
+{
+    local c missing=()
+    for c in "$@"; do
+        command -v "${c}" >/dev/null 2>&1 || missing+=("${c}")
+    done
+    if [ "${#missing[@]}" -gt 0 ]; then
+        die "缺少命令: ${missing[*]}"
+    fi
+}
+
 # env_set KEY VALUE —— 写入 GitHub Actions 的环境文件；本地运行时只打印，
 # 由调用方自行 export。统一入口避免每个 gate 重复判断 $GITHUB_ENV。
 env_set()
