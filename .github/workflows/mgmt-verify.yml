@@ -52,65 +52,9 @@ jobs:
       - uses: actions/checkout@v4
         with: { submodules: recursive }
 
-      # 子模块清单从 .gitmodules 单一来源派生，避免与 9 个叶子仓漂移
-      - name: Verify submodule directories exist
-        run: |
-          set -e
-          mapfile -t SUBS < <(
-            git config -f .gitmodules --get-regexp '^submodule\..*\.path$' \
-              | awk '{print $2}'
-          )
-          if [ "${#SUBS[@]}" -eq 0 ]; then
-            echo "FAIL: .gitmodules declares no submodules"
-            exit 1
-          fi
-          for sub in "${SUBS[@]}"; do
-            if [ ! -d "$sub" ]; then
-              echo "FAIL: $sub/ missing"
-              exit 1
-            fi
-            echo "OK: $sub/"
-          done
-          echo "OK: all ${#SUBS[@]} submodule directories present"
-
-      - name: Verify submodule checkout matches .gitmodules
-        run: |
-          set -e
-          declared=$(git config -f .gitmodules --get-regexp '^submodule\..*\.path$' | awk '{print $2}' | sort)
-          checked=$(git submodule status | awk '{print $2}' | sort)
-          if [ "$declared" != "$checked" ]; then
-            echo "FAIL: submodule status diverges from .gitmodules"
-            diff <(echo "$declared") <(echo "$checked") || true
-            exit 1
-          fi
-          echo "OK: submodule status consistent with .gitmodules"
-
-      - name: Verify [SC] 12 shared headers exist
-        run: |
-          set -e
-          for h in error.h log_types.h ipc.h sched.h memory_types.h \
-                   security_types.h cognition_types.h syscalls.h syscall_gen.h \
-                   uapi_compat.h lsm_types.h bpf_struct_ops.h; do
-            test -f "kernel/include/uapi/linux/airymax/$h" || { echo "FAIL: $h missing"; exit 1; }
-          done
-
-      - name: Verify required governance files
-        run: |
-          set -e
-          for f in README.md README_zh.md LICENSE NOTICE CONTRIBUTING.md \
-                   MAINTAINERS SECURITY.md .editorconfig .clang-format \
-                   CODEOWNERS .gitignore .gitmodules; do
-            test -f "$f" || { echo "FAIL: $f missing"; exit 1; }
-          done
-
-      - name: Check no airymaxos- prefix (2026-07-12 decision)
-        run: |
-          set -e
-          if grep -r "airymaxos-" README.md README_zh.md MAINTAINERS 2>/dev/null; then
-            echo "FAIL: deprecated 'airymaxos-' prefix found"
-            exit 1
-          fi
-          echo "OK: no airymaxos- prefix"
+      # 五项断言都只读工作树，判据与本地一致，故统一由 ci/gates 承载
+      - name: Governance file & submodule integrity
+        run: ci/ci.sh mgmt-files
 
   # ─── Job 2: 子仓 CI 编排 ────────────────────────────────────────────
   # 合并原 subrepo-status + doc-format 两个 job
@@ -127,17 +71,10 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: '3.12' }
 
-      # 叶子仓未全部接入 CI 时其状态为 unknown，仅告警；red 才阻断
-      - name: Aggregate leaf submodule CI status
+      # 叶子仓未全部接入 CI 时其状态为 unknown，仅告警；red 才阻断。
+      # markdownlint 只扫本仓自有 .md，版权头同轮校验——三项同属「编排与
+      # 文档」判据，合成一个 gate 以免同一份工作重复执行。
+      - name: Orchestrate leaves & docs
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python3 tools/aggregate-subrepo-ci.py --fail-on-red
-
-      # 仅校验本仓自有 .md，避免扫入子模块内容
-      - name: markdownlint (repository-owned markdown)
-        run: |
-          npm install -g markdownlint-cli2
-          markdownlint-cli2 '*.md' '.github/**/*.md' 'tools/**/*.md'
-
-      - name: Verify copyright header (line 1)
-        run: python3 tools/check-copyright.py --root .
+        run: ci/ci.sh mgmt-leaves
