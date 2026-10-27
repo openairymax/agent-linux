@@ -36,6 +36,9 @@
 # 的单元测试自 0.0.3 起挂在本 kind 下，其指针变动必须重跑。故 ci/**、system
 # 与本 workflow 自身纳入监听，并在 job 内先跑 ci/lint.sh（workflow 薄化约束
 # ＋ bash 语法 ＋ shellcheck），让门禁脚本的改动由门禁自己把关。
+# distro 子仓同理：spec / kickstart / 组件清单的规则与工具单测只在组装镜像
+# 时才跑，子仓内改坏一条断言不会触发任何流水线。故 distro gitlink 纳入监听，
+# 由 ci/ci.sh distro-lint 调用子仓自己的 run-lint.sh。
 # ===========================================================================
 
 name: os-chk-verify
@@ -66,6 +69,7 @@ on:
       - 'ssot-registry.yaml'
       - 'kernel'
       - 'system'
+      - 'distro'
       - 'ci/**'
       - '.github/workflows/os-chk-verify.yml'
   push:
@@ -95,6 +99,7 @@ on:
       - 'ssot-registry.yaml'
       - 'kernel'
       - 'system'
+      - 'distro'
       - 'ci/**'
       - '.github/workflows/os-chk-verify.yml'
 
@@ -116,6 +121,12 @@ jobs:
       # bash -n 解析、shellcheck 是否过。门禁脚本的改动此前无人验证。
       - name: Lint gate scripts and workflows
         run: ci/lint.sh
+
+      # distro 子仓的规则与单测此前只在本地手动执行：子仓内改坏一条断言
+      # 不触发任何流水线，要等下一次组装镜像才暴露。入口交给子仓自己的
+      # run-lint.sh，本层不复制检查项。
+      - name: Distro submodule static gates
+        run: ci/ci.sh distro-lint
 
       # 依赖、pytest 与 os_chk.py --check 三步收进 ci/gates/python-verify.sh
       # 的 oschk 分支：此前 10 份依赖清单在本文件里各写一遍，本地无法复现，
