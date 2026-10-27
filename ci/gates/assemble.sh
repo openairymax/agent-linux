@@ -21,8 +21,11 @@
 set -uo pipefail
 
 readonly EINVAL=5
+LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)"
 # shellcheck source=../lib/log.sh
-. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/log.sh"
+. "${LIB}/log.sh"
+# shellcheck source=../lib/profile.sh
+. "${LIB}/profile.sh"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 PKGS="${ROOT}/ci/container/build-packages.txt"
@@ -34,13 +37,6 @@ MEDIA=""
 ISO_BASE=""
 ARCH="x86_64"
 REL_RPMS="${AIRYMAX_REL_RPMS:-}"
-ACCEPTANCE=0
-
-# 剖面走环境变量，与 accept/tap-extract 同一约定。
-case "${ACCEPTANCE:-0}" in
-    1|true|yes) ACCEPTANCE=1 ;;
-    *)          ACCEPTANCE=0 ;;
-esac
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -81,13 +77,13 @@ if [ -n "${REL_RPMS}" ]; then
     mounts+=(-v "${REL_RPMS}:/rel-rpms:ro")
     args+=(--kernel-rpms /rel-rpms)
 fi
-if [ "${ACCEPTANCE}" -eq 1 ]; then
+if [ "$(airy_profile)" -eq 1 ]; then
     args+=(--acceptance)
 fi
 
 group "assemble in ${IMAGE}"
 docker run --rm --privileged \
-    -e ACCEPTANCE="${ACCEPTANCE}" \
+    -e ACCEPTANCE="$(airy_profile)" \
     -e ISO_BASE="${ISO_BASE}" \
     "${mounts[@]}" \
     -w /src \

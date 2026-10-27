@@ -21,26 +21,21 @@
 set -uo pipefail
 
 readonly EINVAL=5
+LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)"
 # shellcheck source=../lib/log.sh
-. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/log.sh"
+. "${LIB}/log.sh"
+# shellcheck source=../lib/profile.sh
+. "${LIB}/profile.sh"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 RUNNER="${ROOT}/distro/scripts/install-test.sh"
 
 ISO=""
 OUT=""
-ACCEPTANCE=0
 FIRMWARE="both"
 RUNS=1
 INSTALL_TIMEOUT=3600
 BOOT_TIMEOUT=900
-
-# 剖面由调用方以环境变量声明（ACCEPTANCE=true|false），与本地重放时
-# `ACCEPTANCE=true ci/ci.sh accept ...` 的写法一致；--acceptance 仍可用。
-case "${ACCEPTANCE:-0}" in
-    1|true|yes) ACCEPTANCE=1 ;;
-    *)          ACCEPTANCE=0 ;;
-esac
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -64,7 +59,7 @@ done
 [ -x "${RUNNER}" ] || die "缺少装机入口: ${RUNNER}"
 
 marker=AIRYMAX-DESKTOP-READY
-[ "${ACCEPTANCE}" -eq 1 ] && marker=AIRYMAX-SMOKE-PASS
+[ "$(airy_profile)" -eq 1 ] && marker=AIRYMAX-SMOKE-PASS
 
 mkdir -p "${OUT}"
 
