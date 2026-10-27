@@ -17,17 +17,15 @@
 set -uo pipefail
 
 readonly EINVAL=5
+LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)"
 # shellcheck source=../lib/log.sh
-. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/log.sh"
+. "${LIB}/log.sh"
+# shellcheck source=../lib/profile.sh
+. "${LIB}/profile.sh"
 
 DIR=""
 REQUIRE=0
 TOKEN='AIRYMAX-TAP|'
-
-# 验收剖面下必须还原出非空 TAP；--require 与 ACCEPTANCE=true 等价。
-case "${ACCEPTANCE:-0}" in
-    1|true|yes) REQUIRE=1 ;;
-esac
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -37,6 +35,9 @@ while [ "$#" -gt 0 ]; do
         *) die "未知参数: $1" ;;
     esac
 done
+
+# 验收剖面下必须还原出非空 TAP；--require 与 ACCEPTANCE=1|true|yes 等价。
+[ "$(airy_profile)" -eq 1 ] && REQUIRE=1
 
 [ -n "${DIR}" ] || { err "--dir 必填"; exit "${EINVAL}"; }
 [ -d "${DIR}" ] || die "目录不存在: ${DIR}"
