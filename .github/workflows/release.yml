@@ -219,10 +219,12 @@ jobs:
           gpg --verify "${probe}.asc" "${probe}"
           rm -f "${probe}" "${probe}.asc"
 
-      - name: Build SDK tarball
-        run: |
-          set -euo pipefail
-          tar czf "agent-linux-sdk-${{ steps.ver.outputs.ver }}.tar.gz" sdk/
+      # SDK 与烧录工具同出一门：打包、确定性比对、pyz 实跑自检都在 gate 里，
+      # 单行 run 不占内联预算（ci/check-workflows.py）。
+      - name: Pack SDK and airy-flash
+        env:
+          SOURCE_DATE_EPOCH: ${{ steps.epoch.outputs.value }}
+        run: ci/ci.sh tool-pack --out . --version "${{ steps.ver.outputs.ver }}"
 
       - name: Build OCI base image
         env:
@@ -245,6 +247,7 @@ jobs:
           set -euo pipefail
           mapfile -t files < <(find dist/rpm -name '*.rpm')
           files+=("agent-linux-sdk-${{ steps.ver.outputs.ver }}.tar.gz")
+          files+=("airy-flash-${{ steps.ver.outputs.ver }}.pyz")
           for f in "${files[@]}"; do
             gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 \
               --detach-sign --armor -o "${f}.asc" "$f" 3<<<"${GPG_PASSPHRASE}"
@@ -267,6 +270,8 @@ jobs:
               "sbom-agent-linux-${ver}.spdx.json" \
               "agent-linux-sdk-${ver}.tar.gz" \
               "agent-linux-sdk-${ver}.tar.gz.asc" \
+              "airy-flash-${ver}.pyz" \
+              "airy-flash-${ver}.pyz.asc" \
               "oci-image-${tag}.tar"
           )
           python3 tools/release-engineering/release_manifest.py --checksums \
@@ -292,6 +297,8 @@ jobs:
             sbom-agent-linux-${{ steps.ver.outputs.ver }}.spdx.json
             agent-linux-sdk-${{ steps.ver.outputs.ver }}.tar.gz
             agent-linux-sdk-${{ steps.ver.outputs.ver }}.tar.gz.asc
+            airy-flash-${{ steps.ver.outputs.ver }}.pyz
+            airy-flash-${{ steps.ver.outputs.ver }}.pyz.asc
             oci-image-${{ steps.ver.outputs.tag }}.tar
             agent-linux-${{ steps.ver.outputs.ver }}.sha256sum
             agent-linux-${{ steps.ver.outputs.ver }}.sha256sum.asc
@@ -382,6 +389,8 @@ jobs:
             dist/rpm/**/*.rpm.asc
             agent-linux-sdk-*.tar.gz
             agent-linux-sdk-*.tar.gz.asc
+            airy-flash-*.pyz
+            airy-flash-*.pyz.asc
             sbom-agent-linux-*.spdx.json
             agent-linux-*.sha256sum
             agent-linux-*.sha256sum.asc
