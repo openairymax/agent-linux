@@ -57,8 +57,8 @@ notes:
   # 注：条目为单行标量——多行折叠会在渲染时于断行处插入空格，破坏中文语流。
   summary:
     - 首个可安装、可运行、可进入 UKUI 桌面的 AirymaxOS 初步版本
-    - 交付内核 RPM（x86_64/aarch64/riscv64/loongarch64）、SPDX SBOM、Agent SDK tarball 与 OCI 基础镜像四条主线物料
-    - 安装镜像 AirymaxOS-0.0.3-x86_64.iso 支持 BIOS 与 UEFI 双固件装机
+    - 交付内核 RPM（x86_64/aarch64/riscv64/loongarch64）、SPDX SBOM、Agent SDK tarball、airy-flash 烧录工具与 OCI 基础镜像五条主线物料
+    - 安装镜像 airymaxos-0.0.3-x86_64.iso 支持 BIOS 与 UEFI 双固件装机
 
   # ── 其他（发行披露 · §3.7「其他」节）───────────────────────────────────
   remarks:
@@ -207,6 +207,16 @@ materials:
     evidence:
       - agent-linux-sdk-*.tar.gz
       - agent-linux-sdk-*.tar.gz.asc
+
+  - id: airy-flash
+    name: airy-flash 烧录工具
+    format: .pyz
+    signature: gpg
+    authority: docs/docs-closed/agent-linux-dev/0.0.3-验收发行方案.md §5.1 烧录工具唯一实现
+    delivery: active
+    evidence:
+      - airy-flash-*.pyz
+      - airy-flash-*.pyz.asc
 
   - id: oci-image
     name: OCI 基础镜像
