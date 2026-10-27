@@ -31,6 +31,7 @@ jobs:
   sc-validate:
     name: "[SC] Header Validation (agent-linux side)"
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with: { submodules: recursive }
@@ -138,6 +139,9 @@ jobs:
   sc-trigger-and-await:
     name: "[SC] Trigger & Await agentrt Mirror CI"
     runs-on: ubuntu-latest
+    # 内部轮询上限为 30m（await-agentrt-ci --timeout 30m），job 级超时
+    # 必须留出轮询之外的开销，否则会在轮询自然超时前被 runner 硬杀。
+    timeout-minutes: 40
     needs: sc-validate
     if: success()
     steps:
