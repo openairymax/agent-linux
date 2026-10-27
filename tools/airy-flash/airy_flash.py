@@ -18,8 +18,8 @@ airy_flash.py — AirymaxOS 烧录工具
   * 校验和先于写入：镜像摘要必须在写入前核对发布 .sha256，缺失则拒绝，
     除非显式 --allow-unverified。
   * 写入后回读比对：sample 抽头部/中部/尾部三窗，full 全量，none 跳过。
-  * 输出分「映像/目标/预检/阶段/结果/下一步」六段，TTY 下带进度条与吞吐，
-    非 TTY 退化为逐行百分比；--json 输出同一份 Report 的机器可读形式。
+  * 输出分「映像/目标/模式/预检/阶段/结果/下一步」七段，TTY 下带进度条与
+    吞吐，非 TTY 退化为逐行百分比；--json 输出同一份 Report 的机器可读形式。
   * 结束打印 AIRY-FLASH-PASS/FAIL 标记行，便于串口日志与 CI 采集。
 
 Exit codes:
