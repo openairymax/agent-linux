@@ -134,29 +134,32 @@ U 盘不会自动出现在 Linux 侧；不先做直通，`lsblk` 里根本看不
 
 ## 使用方法
 
+发行页交付单文件 `airy-flash-<ver>.pyz`（Python 标准库自足，无解压、无依赖），
+示例统一用它；仓库内调试可等价改用 `python3 tools/airy-flash/airy_flash.py`。
+
 ```bash
 # 环境自检
-python3 tools/airy-flash/airy_flash.py check
+python3 airy-flash-0.0.3.pyz check
 
 # 只预检（不碰目标设备）
-sudo python3 tools/airy-flash/airy_flash.py plan \
-    --image releases/v0.0.3/AirymaxOS-0.0.3-x86_64.iso --device /dev/sdb
+sudo python3 airy-flash-0.0.3.pyz plan \
+    --image releases/v0.0.3/airymaxos-0.0.3-x86_64.iso --device /dev/sdb
 
 # 正式烧录（块设备必须 --yes）
-sudo python3 tools/airy-flash/airy_flash.py write \
-    --image releases/v0.0.3/AirymaxOS-0.0.3-x86_64.iso --device /dev/sdb --yes
+sudo python3 airy-flash-0.0.3.pyz write \
+    --image releases/v0.0.3/airymaxos-0.0.3-x86_64.iso --device /dev/sdb --yes
 
 # 首次使用新介质，全量回读并留证
-sudo python3 tools/airy-flash/airy_flash.py write \
-    --image AirymaxOS-0.0.3-x86_64.iso --device /dev/sdb \
+sudo python3 airy-flash-0.0.3.pyz write \
+    --image airymaxos-0.0.3-x86_64.iso --device /dev/sdb \
     --verify full --report flash-report.json --yes
 
 # 事后复核一块已经写好的盘
-sudo python3 tools/airy-flash/airy_flash.py verify \
-    --image AirymaxOS-0.0.3-x86_64.iso --device /dev/sdb
+sudo python3 airy-flash-0.0.3.pyz verify \
+    --image airymaxos-0.0.3-x86_64.iso --device /dev/sdb
 
 # CI / 脚本取机器可读结果
-sudo python3 tools/airy-flash/airy_flash.py write ... --json
+sudo python3 airy-flash-0.0.3.pyz write ... --json
 ```
 
 摘要来源按 `--sha256` → 镜像同目录 `<iso>.sha256` → 同目录 `SHA256SUMS` →
@@ -190,7 +193,7 @@ sudo python3 tools/airy-flash/airy_flash.py write ... --json
 ```text
 AirymaxOS 烧录工具 0.0.3  (write)
 ============================================================
-映像    /path/AirymaxOS-0.0.3-x86_64.iso
+映像    /path/airymaxos-0.0.3-x86_64.iso
         3.4 GiB   sha256 1a2b3c4d5e6f
 目标    /dev/sdb
         USB 3.0 Flash Disk, usb, 28.7 GiB, 可移动
@@ -209,7 +212,7 @@ AirymaxOS 烧录工具 0.0.3  (write)
 结果
   结果    成功    用时 1m12s
   报告    flash-report.json
-AIRY-FLASH-PASS image=/path/AirymaxOS-0.0.3-x86_64.iso device=/dev/sdb sha256=1a2b...e6f
+AIRY-FLASH-PASS image=/path/airymaxos-0.0.3-x86_64.iso device=/dev/sdb sha256=1a2b...e6f
 
 下一步
   1. 安全弹出 U 盘，插入目标机，开机按 F12/F11/Esc 选择该 U 盘
