@@ -16,6 +16,9 @@
 5. 命名约定：文件名须为 kebab-case ``<scope>[-<scope>…].yml``，且顶层
    ``name:`` 必须与文件同名词——UI 显示名与文件路径只允许一处事实源，
    否则 ``gh workflow run``、Actions 列表与文档会对不上。
+6. 门禁脚本只能调用它 source 的库函数。``need_cmd`` 原在 host.sh，四个
+   未 source 它的 gate 调用时只得到 "command not found"，前置校验静默
+   失效（run 40478538815）；构建期间才发现等于白烧一轮。
 
 为什么需要它：这些约束此前只存在于文档里，没有执行者。78 段内联 shell
 就是这样一段段长出来的——每一次单看都合理，合起来就没有人能在本地验证。
@@ -50,6 +53,15 @@ RUN_BLOCK = re.compile(r"^(\s*)run:\s*[|>]")
 # 命名约定：kebab-case 文件名，顶层 name: 与文件同名词。
 NAME_FILE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*\.yml$")
 NAME_TOP = re.compile(r"^name:\s*(\S+)\s*$", re.MULTILINE)
+
+CILIB = ROOT / "ci" / "lib"
+CIGATES = ROOT / "ci" / "gates"
+SOURCE_LIB = re.compile(r"lib/([a-z0-9_-]+)\.sh")
+FUNC_DEF = re.compile(r"^([a-z][a-z0-9_]*)\(\)", re.MULTILINE)
+# 命令位：行首，或 if/then/elif/else/while/until/do 之后，或 && || ; | 之后。
+FUNC_CALL = re.compile(
+    r"(?:^|[;&|]\s*|\b(?:if|then|elif|else|while|until|do)\s+)"
+    r"([a-z][a-z0-9_]*)", re.MULTILINE)
 
 
 def count_inline(text: str) -> int:
@@ -130,10 +142,34 @@ def check_name(name: str, text: str) -> list[str]:
     return []
 
 
+def check_gate_libs() -> list[str]:
+    """门禁只能调用它 source 的库函数，缺失会在构建中途才暴露。"""
+    home: dict[str, str] = {}
+    for path in CILIB.glob("*.sh"):
+        for name in FUNC_DEF.findall(path.read_text()):
+            home.setdefault(name, path.name)
+    errors: list[str] = []
+    scripts = sorted(CIGATES.glob("*.sh")) + [ROOT / "ci" / "ci.sh"]
+    for path in scripts:
+        text = path.read_text()
+        body = "\n".join(
+            "" if line.lstrip().startswith("#") else line
+            for line in text.splitlines())
+        sourced = set(SOURCE_LIB.findall(text))
+        local = set(FUNC_DEF.findall(text))
+        rel = path.relative_to(ROOT)
+        for name in sorted(set(FUNC_CALL.findall(body))):
+            lib = home.get(name)
+            if lib is None or name in local or lib[:-3] in sourced:
+                continue
+            errors.append(f"{rel}: 调用 {name}() 但未 source ci/lib/{lib}")
+    return errors
+
+
 def main() -> int:
     budgets = load_budgets()
     files = sorted(p.name for p in WORKFLOWS.glob("*.yml"))
-    errors: list[str] = []
+    errors: list[str] = check_gate_libs()
 
     for name in files:
         if name not in budgets:

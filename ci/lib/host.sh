@@ -28,17 +28,6 @@ free_disk()
     endgroup
 }
 
-need_cmd()
-{
-    local c missing=()
-    for c in "$@"; do
-        command -v "${c}" >/dev/null 2>&1 || missing+=("${c}")
-    done
-    if [ "${#missing[@]}" -gt 0 ]; then
-        die "缺少命令: ${missing[*]}"
-    fi
-}
-
 # 托管 runner 的 /dev/kvm 存在但默认只有 root 可读写。可写时直接使用，
 # 不可写再尝试 chmod；两处都失败不算错误——install-test.sh 会自行回退
 # TCG，只是耗时上升。
