@@ -47,6 +47,7 @@ jobs:
   file-integrity:
     name: Governance File & Submodule Integrity
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with: { submodules: recursive }
@@ -116,6 +117,7 @@ jobs:
   orchestrate-leaf-ci:
     name: Orchestrate Leaf Submodule CI
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: file-integrity
     steps:
       - uses: actions/checkout@v4

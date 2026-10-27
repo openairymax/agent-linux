@@ -36,6 +36,7 @@ jobs:
   ssot-syntax-and-rules:
     name: SSoT YAML Syntax & Rule ID Validation
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with: { submodules: false }
@@ -54,6 +55,7 @@ jobs:
   doc-links:
     name: Repo-Owned Markdown Link Integrity
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: ssot-syntax-and-rules
     steps:
       - uses: actions/checkout@v4
