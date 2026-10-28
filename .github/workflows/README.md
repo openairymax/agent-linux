@@ -114,7 +114,10 @@ mirror) per OS-IRON-014.
 - **Trigger a workflow manually** — workflows exposing `workflow_dispatch` can be
   run from the GitHub Actions UI (`nightly.yml`, `release.yml`, `image-build.yml`).
   For `image-build.yml`, set `acceptance: true` to build the acceptance ISO and
-  assert the in-session `AIRYMAX-SMOKE-PASS` marker.
+  assert the in-session `AIRYMAX-SMOKE-PASS` marker. `release_tag` publishes the
+  product ISO to `ghcr.io`; the publish step is idempotent on `(tag, digest)` and
+  refuses to replace an existing tag unless `replace: true` is set explicitly —
+  rebuilding the same version is a decision, not a side effect.
 - **Add a new workflow** — keep the 2-job cap, and do not put shell logic in the
   YAML. Add a gate under `ci/gates/` with a `# 用法:` header, dispatch it from
   `ci/ci.sh`, register its inline-block budget in `ci/workflow-budgets.txt`, then
