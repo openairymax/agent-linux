@@ -329,34 +329,6 @@ jobs:
       - name: Verify signed artifacts
         run: ci/ci.sh release-verify --dir .
 
-      - name: Build dnf repository
-        run: |
-          set -euo pipefail
-          . ci/lib/apt.sh
-          apt_sync
-          apt_install createrepo-c
-          ver="${{ needs.build-and-sign.outputs.ver }}"
-          repo="rpm-repo/stable/${ver}"
-          for archdir in dist/rpm/*/; do
-            arch="$(basename "$archdir")"
-            mkdir -p "${repo}/${arch}"
-            cp "${archdir}"*.rpm "${repo}/${arch}/"
-            cp "${archdir}"*.rpm.asc "${repo}/${arch}/"
-            createrepo_c --update "${repo}/${arch}"
-          done
-          find rpm-repo -type f | sort
-
-      - name: Publish dnf repository
-        env:
-          DNF_REPO_HOST: ${{ secrets.DNF_REPO_HOST }}
-        run: |
-          set -euo pipefail
-          if [ -z "${DNF_REPO_HOST}" ]; then
-            echo "::warning::未配置 DNF_REPO_HOST，跳过 RPM 仓库上传"
-            exit 0
-          fi
-          rsync -avz rpm-repo/ "${DNF_REPO_HOST}:/var/www/rpm-repo/"
-
       - uses: sigstore/cosign-installer@v3
 
       - name: Publish OCI image
