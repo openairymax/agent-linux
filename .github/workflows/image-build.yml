@@ -52,6 +52,10 @@ on:
         description: '复用该 Release 的内核包（如 v0.0.3；留空则就地构建）'
         type: string
         default: ''
+      replace:
+        description: '覆盖 ghcr 同 tag 的既有产物（仅重建同版本发行物时开启）'
+        type: boolean
+        default: false
 
 concurrency:
   group: image-build
@@ -201,13 +205,15 @@ jobs:
       - uses: oras-project/setup-oras@v1
         if: success() && inputs.release_tag != '' && !inputs.acceptance
 
+      # 幂等判据是「同 tag 同摘要」，重建同版本发行物必然摘要不同，故覆盖只
+      # 能由输入显式开启：默认仍拒绝替换，避免把一次误触当成发行。
       - name: Publish ISO to ghcr.io
         if: success() && inputs.release_tag != '' && !inputs.acceptance
         env:
           GHCR_USER: ${{ github.actor }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ inputs.release_tag }}
-        run: ci/ci.sh iso-publish --out "$RUNNER_TEMP/image" --tag "$TAG"
+        run: ci/ci.sh iso-publish --out "$RUNNER_TEMP/image" --tag "$TAG" ${{ inputs.replace && '--force' || '' }}
 
       - name: Upload acceptance evidence
         if: always()
