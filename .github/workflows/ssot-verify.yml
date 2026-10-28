@@ -30,6 +30,11 @@ on:
 permissions:
   contents: read
 
+# 同一 ref 只保留最新一轮：文档校验的结论只对产生它的那棵树有效。
+concurrency:
+  group: ssot-verify-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # ─── Job 1: SSoT YAML 语法 + 规则 ID 注册一致性 ─────────────────────
   # 合并原 doc-format 的 YAML 校验部分

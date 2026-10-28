@@ -48,6 +48,10 @@ on:
       - 'ci/gates/kernel-*.sh'
       - 'ci/lib/**'
 
+# 最小权限：矩阵只读内核源码与工具，构建产物走 artifact，不碰仓库写接口。
+permissions:
+  contents: read
+
 concurrency:
   # 同一 ref 只允许一轮矩阵。两次 push 间隔短于矩阵时长时，旧 run 的结论
   # 对新 HEAD 没有意义，却会和它抢同样的 8 个并发额度（0.0.3 收尾期

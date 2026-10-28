@@ -41,6 +41,17 @@ on:
       - 'tests-linux'
       - 'distro'
 
+# 最小权限：文件完整性与叶子仓编排都只读；叶子仓 CI 状态由 token 只读查询。
+permissions:
+  contents: read
+  actions: read
+
+# 同一 ref 只保留最新一轮：新 push 让旧 run 的结论对当前树失效，
+# 继续排队只会抢并发额度，并让排障读到旧 run 的日志。
+concurrency:
+  group: mgmt-verify-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # ─── Job 1: 治理文件完整性 ─────────────────────────────────────────
   # 合并原 file-integrity + submodule-status 两个 job
