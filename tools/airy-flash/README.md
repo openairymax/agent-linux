@@ -211,23 +211,27 @@ AirymaxOS 烧录工具 0.0.3  (write)
   [ OK ] 4/4 回读校验     比对 3 段 / 3.4 GiB  12s
 
 结果
-  判定    成功    用时 1m12s
-  报告    flash-report.json
-AIRY-FLASH-PASS image=/path/airymaxos-0.0.3-x86_64.iso device=/dev/sdb sha256=1a2b...e6f
+判定    成功
+用时    1m12s
+报告    flash-report.json
 
 下一步
   1. 安全弹出 U 盘，插入目标机，开机按 F12/F11/Esc 选择该 U 盘
   2. UEFI 固件请选带 UEFI 前缀的条目；BIOS 模式直接选 USB 设备
   3. 装机后核对：hostname=airymaxos，uname -r 以 "-alk" 结尾
   4. 核对登录策略：airymax 本地/SSH 免密，root 口令 00000000
+
+AIRY-FLASH-PASS image=/path/airymaxos-0.0.3-x86_64.iso device=/dev/sdb sha256=1a2b...e6f
 ```
 
-- 标签按显示宽度补齐（CJK 记 2 列），续行缩进固定，中英混排不错位。
+- 版式只有两条规则：**字段块（头部与结果）顶格对齐，列表（预检/阶段/下一步）缩进 2**；
+  标签按显示宽度补齐（CJK 记 2 列），续行缩进固定，中英混排不错位。
 - 非 TTY 时进度按 10% 桶输出整行，不写 `\r`，日志可直接 `grep`。
 - 失败时 `sha256=` 用**期望值**兜底，保证这一行仍能把日志对回发布物。
 - `--json` 时 stdout 只有 JSON 对象，人读内容全部抑制；`--report` 支持
   `.json` 与 `key=value` 两种后缀，字段与 `--json` 同源于一个 `Report`。
-- `check` 是环境自检，只输出检查项与一条用法提示，不打 `AIRY-FLASH-*` 标记。
+- `check` 是环境自检，输出检查项、一条判定与一条用法提示，不打 `AIRY-FLASH-*` 标记。
+- `plan` 成功也会给出下一步（加 `--yes` 执行写入），避免把预检通过误当成已写入。
 
 ## 装机后核对
 

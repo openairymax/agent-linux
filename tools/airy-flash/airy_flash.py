@@ -605,9 +605,6 @@ class Renderer:
         self._bar_open = False
         self._last_bucket = -1
 
-    def note(self, text: str) -> None:
-        self._write(f"  {text}\n")
-
     def stages_header(self) -> None:
         self.section("阶段")
 
@@ -615,13 +612,15 @@ class Renderer:
         self.section("预检")
 
     def summary(self, report: Report, elapsed: float, report_path: str = "") -> None:
+        # 字段块与头部用同一个 field()：两处各写一套对齐会差一列。
         self.section("结果")
         mark = "成功" if report.result == "pass" else "失败"
-        self._write(f"  判定    {mark}    用时 {human_duration(elapsed)}\n")
+        self.field("判定", mark)
+        self.field("用时", human_duration(elapsed))
         if report.error:
-            self._write(f"  原因    {report.error}\n")
+            self.field("原因", report.error)
         if report_path:
-            self._write(f"  报告    {report_path}\n")
+            self.field("报告", report_path)
 
     def marker(self, report: Report) -> None:
         # 失败时可能还没算完摘要，用期望值兜底，便于把日志对回发布物。
@@ -631,18 +630,24 @@ class Renderer:
         device = report.device.path if report.device else ""
         status = "PASS" if report.result == "pass" else "FAIL"
         self._write(
-            f"AIRY-FLASH-{status} image={report.image.path if report.image else ''} "
+            f"\nAIRY-FLASH-{status} "
+            f"image={report.image.path if report.image else ''} "
             f"device={device} sha256={digest}\n"
         )
 
-    def next_steps(self) -> None:
+    def next_steps(self, command: str) -> None:
+        """按子命令给出可执行的下一步，避免 plan 成功被误当成已写入。"""
         self.section("下一步")
-        for line in (
-            "1. 安全弹出 U 盘，插入目标机，开机按 F12/F11/Esc 选择该 U 盘",
-            "2. UEFI 固件请选带 UEFI 前缀的条目；BIOS 模式直接选 USB 设备",
-            '3. 装机后核对：hostname=airymaxos，uname -r 以 "-alk" 结尾',
-            "4. 核对登录策略：airymax 本地/SSH 免密，root 口令 00000000",
-        ):
+        if command == "plan":
+            lines = ("预检已通过；确认目标盘后加 --yes 执行写入并回读校验",)
+        else:
+            lines = (
+                "1. 安全弹出 U 盘，插入目标机，开机按 F12/F11/Esc 选择该 U 盘",
+                "2. UEFI 固件请选带 UEFI 前缀的条目；BIOS 模式直接选 USB 设备",
+                '3. 装机后核对：hostname=airymaxos，uname -r 以 "-alk" 结尾',
+                "4. 核对登录策略：airymax 本地/SSH 免密，root 口令 00000000",
+            )
+        for line in lines:
             self._write(f"  {line}\n")
 
 
@@ -755,9 +760,10 @@ def execute(args: argparse.Namespace) -> tuple[Report, int]:
             report_path = str(Path(args.report))
             write_report(report, Path(args.report))
         renderer.summary(report, time.monotonic() - started, report_path)
+        if code == EXIT_OK and args.command in ("plan", "write"):
+            renderer.next_steps(args.command)
+        # 标记行放最后：日志尾部一行即可取到发布物与设备身份。
         renderer.marker(report)
-        if code == EXIT_OK and args.command == "write":
-            renderer.next_steps()
         return report, code
 
     if any(not c.ok and not c.skipped for c in report.checks):
@@ -1002,7 +1008,8 @@ def _self_check(args: argparse.Namespace) -> int:
     for name, detail, ok in rows:
         renderer.check(Check(name, ok, detail, skipped=not ok and name == "root"))
     renderer.section("结果")
-    renderer.note("用法    airy-flash write --image X.iso --device /dev/sdX --yes")
+    renderer.field("判定", "环境就绪" if os.geteuid() == 0 else "可用（写块设备需 sudo）")
+    renderer.field("用法", "airy-flash write --image X.iso --device /dev/sdX --yes")
     return EXIT_OK
 
 

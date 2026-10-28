@@ -493,6 +493,31 @@ def test_cli_plan_does_not_touch_target(tmp_path: Path, capsys: pytest.CaptureFi
     assert target.read_bytes() == before
     assert f"AIRY-FLASH-PASS" in out
     assert digest[:8] in out
+    # plan 通过不等于已写入：下一步必须把 --yes 摆到操作者眼前。
+    assert "下一步" in out and "--yes" in out
+
+
+def test_cli_marker_is_last_line(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """标记行固定收尾：排障与 CI 都按尾部一行取发布物与设备身份。"""
+    image, _ = make_image(tmp_path)
+    target = make_target(tmp_path, 32768)
+
+    code = af.main(
+        [
+            "write",
+            "--image",
+            str(image),
+            "--device",
+            str(target),
+            "--allow-file",
+            "--no-progress",
+        ]
+    )
+    out = capsys.readouterr().out
+    assert code == EXIT_OK
+    lines = [line for line in out.splitlines() if line.strip()]
+    assert lines[-1].startswith("AIRY-FLASH-PASS ")
+    assert out.count("判定") == 1 and out.count("用时") == 1
 
 
 def test_cli_write_then_verify(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
