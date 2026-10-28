@@ -59,6 +59,11 @@ jobs:
           fetch-depth: 0
           submodules: recursive
 
+      # 与 image-build 同一条静态门禁：发布链此前全程无 lint，静态不合格
+      # 的树可以直接进到四架构内核构建与签名（0.0.4 清单 CI-06）。
+      - name: Static gates
+        run: ci/ci.sh distro-lint
+
       - name: Derive release version
         id: ver
         run: |

@@ -90,6 +90,12 @@ jobs:
         with:
           submodules: recursive
 
+      # 静态门禁必须先于组装：spec / comps / kickstart 改坏一条断言，代价
+      # 是整轮 240 分钟组装白跑。此前 assemble 首步是 free-disk，静态不合格
+      # 的树照样能进到 ISO 阶段（0.0.4 清单 CI-06）。
+      - name: Static gates
+        run: ci/ci.sh distro-lint
+
       - name: Free runner disk
         run: ci/ci.sh free-disk
 
