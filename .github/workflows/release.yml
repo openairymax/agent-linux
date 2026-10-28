@@ -312,6 +312,9 @@ jobs:
     permissions:
       contents: write
       packages: write
+    env:
+      # -rc/-beta 后缀才是预发布，正式 tag 直接成为 latest；不在发布后人工改状态
+      PRE_REL: ${{ contains(needs.build-and-sign.outputs.tag, '-rc') || contains(needs.build-and-sign.outputs.tag, '-beta') }}
     steps:
       - uses: actions/checkout@v4
 
@@ -382,6 +385,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.build-and-sign.outputs.tag }}
+          prerelease: ${{ env.PRE_REL }}
+          make_latest: ${{ env.PRE_REL == 'true' && 'false' || 'true' }}
           # release notes 由确定性生成器产出并 GPG 签名，不再使用自动生成
           body_path: agent-linux-${{ needs.build-and-sign.outputs.ver }}-release-notes.md
           files: |
