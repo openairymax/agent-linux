@@ -535,6 +535,9 @@ class Renderer:
     """人读输出。TTY 走进度条，非 TTY 走逐行里程碑，两者都无 ANSI 污染日志。"""
 
     WIDTH = 68
+    # 非 TTY 的里程碑粒度：十等分时一个阶段吐十行，写盘日志会被进度噪声淹没，
+    # 四等分足以判断是否卡住，又能让每个阶段的结束行保持可见。
+    MILESTONES = 4
 
     def __init__(self, stream=None, tty: bool | None = None) -> None:
         self.stream = stream or sys.stdout
@@ -588,11 +591,11 @@ class Renderer:
             )
             self._bar_open = True
             return
-        bucket = int(ratio * 10)
+        bucket = int(ratio * self.MILESTONES)
         if bucket != self._last_bucket:
             self._last_bucket = bucket
             self._write(
-                f"  [ .. ] {head} {bucket * 10:3d}% {human_bytes(done)} "
+                f"  [ .. ] {head} {bucket * 100 // self.MILESTONES:3d}% {human_bytes(done)} "
                 f"{human_bytes(rate)}/s ETA {human_duration(eta)}\n"
             )
 
