@@ -8,7 +8,9 @@ stat 模式走通，写入/回读用普通文件当靶子（--allow-file 的测�
 from __future__ import annotations
 
 import hashlib
+import io
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -130,6 +132,31 @@ def test_short_digest_keeps_short_values_whole() -> None:
     digest = "0123456789abcdef" * 4
     assert af.short_digest(digest) == "01234567…89abcdef"
     assert af.short_digest("deadbeef") == "deadbeef"
+
+
+def test_non_tty_progress_is_quarter_step_and_ansi_free() -> None:
+    stream = io.StringIO()
+    renderer = af.Renderer(stream=stream, tty=False)
+    renderer.stage_start(af.Stage(1, 4, "写入设备", af.FAIL))
+    for step in range(101):
+        renderer.stage_progress(step, 100, 1024.0, 0.0)
+    renderer.stage_end(af.Stage(1, 4, "写入设备", af.OK, "1.00 KiB"))
+    text = stream.getvalue()
+    assert re.findall(r"(\d+)%", text) == ["0", "25", "50", "75", "100"]
+    assert "\x1b" not in text and "\r" not in text
+    # 结束行是阶段的唯一总结，必须落在最后一行。
+    assert text.splitlines()[-1].strip().endswith("1.00 KiB")
+
+
+def test_tty_progress_stays_on_one_line() -> None:
+    stream = io.StringIO()
+    renderer = af.Renderer(stream=stream, tty=True)
+    renderer.stage_start(af.Stage(1, 4, "写入设备", af.FAIL))
+    for step in range(101):
+        renderer.stage_progress(step, 100, 1024.0, 0.0)
+    renderer.stage_end(af.Stage(1, 4, "写入设备", af.OK, "1.00 KiB"))
+    text = stream.getvalue()
+    assert text.count("\n") == 1 and text.endswith("\n")
 
 
 # ─── 校验和 ─────────────────────────────────────────────────────────────────
