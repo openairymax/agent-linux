@@ -25,6 +25,15 @@ on:
       - 'tools/sc-tri-compile/**'
       - '.github/workflows/sc-verify.yml'
 
+# 最小权限：本仓只做校验；跨仓镜像 PR 用的是独立的 AGENTRT_CI_TOKEN。
+permissions:
+  contents: read
+
+# 同一 ref 只保留最新一轮：镜像 PR 的结论只对当前补丁集有效。
+concurrency:
+  group: sc-verify-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # ─── Job 1: [SC] 头文件验证（agent-linux 侧） ────────────────────
   # 合并原 kernel-ci 的 12 头文件验证部分

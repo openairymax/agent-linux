@@ -313,6 +313,8 @@ jobs:
   publish-release:
     name: Publish + GitHub Release (L7)
     runs-on: ubuntu-latest
+    # 上传制品与写 Release 都是短操作，60 分钟足够；不给默认 360 分钟。
+    timeout-minutes: 60
     needs: build-and-sign
     permissions:
       contents: write

@@ -19,6 +19,14 @@
 6. 门禁脚本只能调用它 source 的库函数。``need_cmd`` 原在 host.sh，四个
    未 source 它的 gate 调用时只得到 "command not found"，前置校验静默
    失效（run 40478538815）；构建期间才发现等于白烧一轮。
+7. 最小权限：顶层必须显式声明 ``permissions:``，且不得出现
+   ``write-all`` / ``*: write``。未声明时令牌权限由仓库设置决定，
+   同一份 YAML 在不同仓库里权限不同，审查时无从判断。
+8. 每个 job 必须有 ``timeout-minutes:``。缺省是 360 分钟，等于没有上限；
+   acquire 卡死、串口等不到终态这类故障会一路烧到配额尽头。
+9. PR 触发的 workflow 必须有 ``concurrency:`` 且按 PR 取消旧轮。
+   两次 push 间隔短于 job 时长时，旧 run 的结论对新 HEAD 没有意义，
+   却会和它抢同一批并发额度，排障时也容易读到旧 run 的日志。
 
 为什么需要它：这些约束此前只存在于文档里，没有执行者。78 段内联 shell
 就是这样一段段长出来的——每一次单看都合理，合起来就没有人能在本地验证。
@@ -63,6 +71,15 @@ FUNC_CALL = re.compile(
     r"(?:^|[;&|]\s*|\b(?:if|then|elif|else|while|until|do)\s+)"
     r"([a-z][a-z0-9_]*)", re.MULTILINE)
 
+# 权限与并发：只看列 0 的顶层键，避免把 job 内同名片段当成顶层声明。
+TOP_PERM = re.compile(r"^permissions:", re.MULTILINE)
+PERM_WILD = re.compile(
+    r"^\s*(?:permissions:\s*write-all|\*:\s*(?:read|write))\s*$", re.MULTILINE)
+TOP_CONC = re.compile(r"^concurrency:", re.MULTILINE)
+CANCEL_IN = re.compile(r"^  cancel-in-progress:\s*(.+?)\s*$", re.MULTILINE)
+PR_TRIGGER = re.compile(r"^  pull_request(?:_target)?:", re.MULTILINE)
+JOB_TIMEOUT = re.compile(r"^    timeout-minutes:\s*\S")
+
 
 def count_inline(text: str) -> int:
     """统计 ``run: |`` / ``run: >`` 块数（单行 ``run: cmd`` 不计）。"""
@@ -85,22 +102,55 @@ def count_inline(text: str) -> int:
     return n
 
 
-def count_jobs(text: str) -> int:
-    """统计 ``jobs:`` 下的一级 job 名。"""
+def job_blocks(text: str) -> list[tuple[str, int, list[str]]]:
+    """按 ``jobs:`` 解析一级 job：返回 (job 名, 行号, 该 job 的正文行)。"""
     lines = text.splitlines()
     try:
         start = next(i for i, s in enumerate(lines) if s.rstrip() == "jobs:")
     except StopIteration:
-        return 0
-    n = 0
-    for s in lines[start + 1:]:
+        return []
+    out: list[tuple[str, int, list[str]]] = []
+    cur: tuple[str, int, list[str]] | None = None
+    for i in range(start + 1, len(lines)):
+        s = lines[i]
         if not s.strip():
             continue
         if not s.startswith(" "):
             break
-        if re.match(r"^  [A-Za-z0-9_-]+:\s*$", s):
-            n += 1
-    return n
+        m = re.match(r"^  ([A-Za-z0-9_-]+):\s*$", s)
+        if m:
+            if cur is not None:
+                out.append(cur)
+            cur = (m.group(1), i + 1, [])
+        elif cur is not None:
+            cur[2].append(s)
+    if cur is not None:
+        out.append(cur)
+    return out
+
+
+def count_jobs(text: str) -> int:
+    """统计 ``jobs:`` 下的一级 job 名。"""
+    return len(job_blocks(text))
+
+
+def check_policy(name: str, text: str) -> list[str]:
+    """最小权限、job 级超时、PR 并发：三条都是「缺了就静默退化」的默认值。"""
+    errors: list[str] = []
+    if not TOP_PERM.search(text):
+        errors.append(f"{name}: 缺少顶层 permissions:（须显式声明 contents: read 起的权限集）")
+    for no, s in enumerate(text.splitlines(), 1):
+        if PERM_WILD.search(s):
+            errors.append(f"{name}:{no}: 权限通配（{s.strip()}），须逐项列出")
+    for job, no, body in job_blocks(text):
+        if not any(JOB_TIMEOUT.match(s) for s in body):
+            errors.append(f"{name}:{no}: job {job} 缺少 timeout-minutes（默认 360 分钟等于无上限）")
+    if PR_TRIGGER.search(text):
+        if not TOP_CONC.search(text):
+            errors.append(f"{name}: PR 触发但缺少顶层 concurrency:")
+        elif not (m := CANCEL_IN.search(text)) or m.group(1) != "true":
+            errors.append(f"{name}: PR 触发的 concurrency 须 cancel-in-progress: true")
+    return errors
 
 
 def load_budgets() -> dict[str, tuple[int, int]]:
@@ -182,6 +232,7 @@ def main() -> int:
     for name in files:
         text = (WORKFLOWS / name).read_text()
         errors.extend(check_name(name, text))
+        errors.extend(check_policy(name, text))
         inline = count_inline(text)
         jobs = count_jobs(text)
         total += inline

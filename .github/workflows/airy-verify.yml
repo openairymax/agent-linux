@@ -48,6 +48,16 @@ on:
       - 'tools/kbuild-version/**'
       - '.github/workflows/airy-verify.yml'
 
+# 最小权限：本 workflow 只读源码，构建与测试产物走 artifact 与缓存。
+permissions:
+  contents: read
+
+# 同一 ref 只保留最新一轮：新 push 让旧 run 的结论对当前树失效，
+# 继续排队只会抢并发额度，并让排障读到旧 run 的日志。
+concurrency:
+  group: airy-verify-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   airy-build:
     name: airy_defconfig build (${{ matrix.arch }})

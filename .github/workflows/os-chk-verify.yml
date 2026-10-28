@@ -103,6 +103,16 @@ on:
       - 'ci/**'
       - '.github/workflows/os-chk-verify.yml'
 
+# 最小权限：本 workflow 全程只读，显式声明后不再依赖仓库默认设置。
+permissions:
+  contents: read
+
+# 同一 ref 只保留最新一轮：新 push 让旧 run 的结论对当前树失效，
+# 继续排队只会抢并发额度，并让排障读到旧 run 的日志。
+concurrency:
+  group: os-chk-verify-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   os-chk-verify:
     name: OS-CHK Unified Gates

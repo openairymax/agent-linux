@@ -74,7 +74,7 @@ a leftover build directory instead of waiting for a cloud job.
 
 Every workflow obeys one naming scheme so that the Actions list, `gh workflow
 run`, and this document can never disagree. The rules are enforced by
-`ci/check-workflows.py` (rule 5), which runs from `ci/lint.sh` in
+`ci/check-workflows.py` (rules 1–9), which runs from `ci/lint.sh` in
 `os-chk-verify.yml` — a convention that is not checked is not a convention.
 
 | Aspect | Rule | Rationale |
@@ -86,10 +86,14 @@ run`, and this document can never disagree. The rules are enforced by
 | Payload | YAML is a thin dispatch layer — checkout, `ci/ci.sh <gate>`, upload | All assertions live in `ci/`, replayable locally |
 | Job count | 2 capped per workflow | Keeps the DAG readable and the critical path short |
 | Inline `run` budget | Ratcheted in `ci/workflow-budgets.txt` | Non-increasing cap prevents shell logic from creeping back into YAML |
+| `permissions:` | Top-level, explicit, never `write-all` or `*` | The default token scope drifts with repository settings; only the workflow file can pin it |
+| `concurrency:` | Top-level on every PR-triggered workflow, `cancel-in-progress: true` | A superseded run's verdict no longer describes the current tree; queuing it only burns runners |
+| `timeout-minutes:` | Required on every job | The 360-minute default is no limit at all; a hung job holds the runner until the queue gives up |
 
 Adding or renaming a workflow therefore requires three coordinated edits: the
 file, its `name:`, and `ci/workflow-budgets.txt`; `./ci/lint.sh` rejects the
-change if any of them drift apart.
+change if any of them drift apart. Declaring `permissions:` and
+`concurrency:` is likewise part of adding a workflow, not an afterthought.
 
 ## `[SC]` Shared-Contract Headers
 
