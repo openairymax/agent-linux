@@ -47,7 +47,7 @@ while [ "$#" -gt 0 ]; do
         --iso-base)     ISO_BASE="${2:-}"; shift 2 ;;
         --arch)         ARCH="${2:-}"; shift 2 ;;
         --release-rpms) REL_RPMS="${2:-}"; shift 2 ;;
-        --acceptance)   ACCEPTANCE=1; shift ;;
+        --acceptance)   export ACCEPTANCE=1; shift ;;
         -h|--help)
             echo "用法: ci/gates/assemble.sh --image IMG --src DIR --out DIR --media DIR --iso-base NAME"
             exit 0 ;;
