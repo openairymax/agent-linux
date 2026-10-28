@@ -188,32 +188,38 @@ sudo python3 airy-flash-0.0.3.pyz write ... --json
 
 ### 输出结构
 
-人读输出固定七段，顺序不随结果变化，便于肉眼扫描与日志切片：
+人读输出固定七段（标题 → 身份 → 预检 → 阶段 → 结果 → 下一步 → 标记），
+顺序不随结果变化：失败时只少「下一步」，其余段落位置不变，便于肉眼扫描与
+日志切片。
 
 ```text
 AirymaxOS 烧录工具 0.0.3  (write)
-============================================================
-映像    /path/airymaxos-0.0.3-x86_64.iso
-        3.4 GiB   sha256 1a2b3c4d5e6f
-目标    /dev/sdb
-        USB 3.0 Flash Disk, usb, 28.7 GiB, 可移动
-模式    写入 + 回读
+====================================================================
+映像   /path/airymaxos-0.0.3-x86_64.iso
+       3.40 GiB   sha256 1a2b3c4d…5e6f7a8b
+目标   /dev/sdb
+       USB 3.0 Flash Disk, usb, 28.7 GiB, 可移动
+模式   写入 + 回读
 
 预检
   [ OK ] 目标是块设备     /dev/sdb
   [ OK ] 非系统盘         系统盘: sdd
-  ...
+  [ OK ] 未挂载           无挂载点
+  [ OK ] 非只读           ro=0
+  [ OK ] 容量充足         28.7 GiB ≥ 3.40 GiB
+  [ OK ] 校验和来源       airymaxos-0.0.3-x86_64.iso.sha256
 
 阶段
-  [ OK ] 1/4 校验镜像     sha256 一致 1a2b3c4d5e6f
-  [ OK ] 2/4 写入设备     3.4 GiB  92.1 MiB/s
-  [ OK ] 3/4 刷盘同步     fsync 完成 1s
-  [ OK ] 4/4 回读校验     比对 3 段 / 3.4 GiB  12s
+  [ .. ] 1/4 校验镜像      25% 870.24 MiB 1.12 GiB/s ETA 3s
+  [ OK ] 1/4 校验镜像     sha256 一致 1a2b3c4d…5e6f7a8b  3s
+  [ OK ] 2/4 写入设备     3.40 GiB  92.10 MiB/s  38s
+  [ OK ] 3/4 刷盘同步     fsync 完成  1s
+  [ OK ] 4/4 回读校验     比对 3 段 / 3.40 GiB  12s
 
 结果
-判定    成功
-用时    1m12s
-报告    flash-report.json
+判定   成功
+用时   1m12s
+报告   flash-report.json
 
 下一步
   1. 安全弹出 U 盘，插入目标机，开机按 F12/F11/Esc 选择该 U 盘
@@ -221,16 +227,23 @@ AirymaxOS 烧录工具 0.0.3  (write)
   3. 装机后核对：hostname=airymaxos，uname -r 以 "-alk" 结尾
   4. 核对登录策略：airymax 本地/SSH 免密，root 口令 00000000
 
-AIRY-FLASH-PASS image=/path/airymaxos-0.0.3-x86_64.iso device=/dev/sdb sha256=1a2b...e6f
+AIRY-FLASH-PASS command=write host=airymax-build image=/path/airymaxos-0.0.3-x86_64.iso sha256=1a2b…7a8b device=/dev/sdb
 ```
 
-- 版式只有两条规则：**字段块（头部与结果）顶格对齐，列表（预检/阶段/下一步）缩进 2**；
+- 版式只有两条规则：**字段块（身份与结果）顶格对齐，列表（预检/阶段/下一步）缩进 2**；
+  预检项与阶段共用同一个 `[ OK ]/[SKIP]/[FAIL]` 标签列与 16 列名称列，
   标签按显示宽度补齐（CJK 记 2 列），续行缩进固定，中英混排不错位。
-- 非 TTY 时进度按 10% 桶输出整行，不写 `\r`，日志可直接 `grep`。
-- 失败时 `sha256=` 用**期望值**兜底，保证这一行仍能把日志对回发布物。
+- 非 TTY 时进度按 25% 桶输出整行（`0/25/50/75/100`），不写 `\r`，日志可直接 `grep`。
+- 每个阶段都有心跳：超过 5 秒没有新进度就补一行 `已等待 Ns`，fsync 与
+  回读这类无字节计数的阶段也不会在屏幕上静止。
+- 失败时 `结果` 段追加 `原因` 与 `建议`，报告写失败降级为 `提示` 而不掩盖原始结论；
+  标记行的 `sha256=` 用**期望值**兜底，保证这一行仍能把日志对回发布物。
+- 标记行只写已有事实（`command=`/`host=` 恒有，`image=`/`sha256=`/`device=`
+  按已探测到的内容出现），早期失败不会留下空字段。
 - `--json` 时 stdout 只有 JSON 对象，人读内容全部抑制；`--report` 支持
-  `.json` 与 `key=value` 两种后缀，字段与 `--json` 同源于一个 `Report`。
-- `check` 是环境自检，输出检查项、一条判定与一条用法提示，不打 `AIRY-FLASH-*` 标记。
+  `.json` 与 `key=value` 两种后缀，字段与 `--json` 同源于一个 `Report`，
+  失败同样落盘（含 `error=`/`hint=`）。
+- `check` 与烧录共用同一套报告、版式与标记，只是没有映像与设备字段。
 - `plan` 成功也会给出下一步（加 `--yes` 执行写入），避免把预检通过误当成已写入。
 
 ## 装机后核对
