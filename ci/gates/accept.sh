@@ -41,7 +41,7 @@ while [ "$#" -gt 0 ]; do
     case "$1" in
         --iso)             ISO="${2:-}"; shift 2 ;;
         --out)             OUT="${2:-}"; shift 2 ;;
-        --acceptance)      ACCEPTANCE=1; shift ;;
+        --acceptance)      export ACCEPTANCE=1; shift ;;
         --firmware)        FIRMWARE="${2:-}"; shift 2 ;;
         --runs)            RUNS="${2:-}"; shift 2 ;;
         --install-timeout) INSTALL_TIMEOUT="${2:-}"; shift 2 ;;
