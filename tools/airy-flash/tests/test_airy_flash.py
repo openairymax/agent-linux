@@ -11,6 +11,7 @@ import hashlib
 import io
 import json
 import re
+import time
 from pathlib import Path
 
 import pytest
@@ -745,12 +746,75 @@ def test_cli_check_human_and_json(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert af.main(["check", "--no-progress"]) == EXIT_OK
-    assert "AirymaxOS 烧录工具" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "AirymaxOS 烧录工具" in out
+    # check 与烧录同源：同样以标记收尾，CI 只按尾部一行取证。
+    lines = [line for line in out.splitlines() if line.strip()]
+    assert lines[-1].startswith("AIRY-FLASH-PASS command=check ")
 
     assert af.main(["check", "--json"]) == EXIT_OK
     payload = json.loads(capsys.readouterr().out)
     assert payload["command"] == "check"
     assert {c["name"] for c in payload["checks"]} >= {"python", "/proc/mounts"}
+
+
+def test_cli_failure_lands_in_report(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """早抛的错误也必须进报告与标记：排障只认这一份证据。"""
+    report = tmp_path / "flash-report.txt"
+    code = af.main(
+        [
+            "plan",
+            "--image",
+            str(tmp_path / "absent.iso"),
+            "--device",
+            "/dev/null",
+            "--report",
+            str(report),
+            "--no-progress",
+        ]
+    )
+    text = report.read_text(encoding="utf-8")
+    out = capsys.readouterr().out
+    assert code == EXIT_USAGE
+    assert "result=fail" in text
+    assert "镜像不可读" in text and "error=" in text
+    assert "hint=" in text
+    assert "原因" in out and "建议" in out
+    # 未探测到的事实不写空字段：标记行只保留 command 与 host。
+    last = [line for line in out.splitlines() if line.strip()][-1]
+    assert last.startswith("AIRY-FLASH-FAIL command=plan ")
+    assert "image=" not in last
+
+
+def test_readback_progress_counts_bytes(tmp_path: Path) -> None:
+    image, _ = make_image(tmp_path)
+    target = tmp_path / "usb.img"
+    target.write_bytes(image.read_bytes())
+
+    seen: list[tuple[int, int]] = []
+    same, detail, ranges = af.readback(
+        image, target, "sample", progress=lambda done, total: seen.append((done, total))
+    )
+    assert same
+    assert ranges == [(0, image.stat().st_size)]
+    assert "比对 1 段" in detail
+    assert seen and seen[-1][0] == seen[-1][1]
+    assert {total for _done, total in seen} == {image.stat().st_size}
+
+
+def test_heartbeat_keeps_idle_stage_visible() -> None:
+    """无字节计数的阶段（fsync）也必须持续刷新，不能停在屏幕上一动不动。"""
+    stream = io.StringIO()
+    renderer = af.Renderer(stream=stream, tty=False, pulse=True)
+    stage = af.Stage(3, 4, "刷盘同步", af.OK)
+
+    renderer.stage_start(stage)
+    with af.Ticker(renderer, stage, period=0.05):
+        time.sleep(0.3)
+
+    assert "已等待" in stream.getvalue()
 
 
 def test_write_report_key_value_format(tmp_path: Path) -> None:

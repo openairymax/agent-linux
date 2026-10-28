@@ -18,9 +18,11 @@ airy_flash.py — AirymaxOS 烧录工具
   * 校验和先于写入：镜像摘要必须在写入前核对发布 .sha256，缺失则拒绝，
     除非显式 --allow-unverified。
   * 写入后回读比对：sample 抽头部/中部/尾部三窗，full 全量，none 跳过。
-  * 输出分「映像/目标/模式/预检/阶段/结果/下一步」七段，TTY 下带进度条与
-    吞吐，非 TTY 退化为逐行百分比；--json 输出同一份 Report 的机器可读形式。
-  * 结束打印 AIRY-FLASH-PASS/FAIL 标记行，便于串口日志与 CI 采集。
+  * 输出分「映像/目标/模式/预检/阶段/结果/下一步」七段，预检项与阶段共用
+    一套列宽；TTY 下带进度条与吞吐，非 TTY 退化为逐行里程碑；长阻塞的
+    fsync 与回读按固定间隔吐心跳，任何一个阶段都不会静默卡住。
+  * 失败与成功走同一条收尾路径：都落 --report、都打建议行、都以
+    AIRY-FLASH-PASS/FAIL 标记行结束，便于串口日志与 CI 采集。
 
 Exit codes:
     0 — 成功
@@ -40,6 +42,7 @@ import os
 import socket
 import stat
 import sys
+import threading
 import time
 from collections.abc import Callable, Iterable, Sequence
 from datetime import datetime, timezone
@@ -78,7 +81,6 @@ __all__ = [
     "probe_image",
     "read_mounts",
     "readback",
-    "render",
     "resolve_expected",
     "sample_ranges",
     "sha256_file",
@@ -269,11 +271,21 @@ def probe_image(path: Path) -> ImageFacts:
     try:
         info = target.stat()
     except OSError as exc:
-        raise FlashError(EXIT_USAGE, f"镜像不可读: {path} ({exc.strerror})") from exc
+        raise FlashError(
+            EXIT_USAGE,
+            f"镜像不可读: {path} ({exc.strerror})",
+            hint="核对 --image 路径；发布物请先用 oras pull 取回",
+        ) from exc
     if not stat.S_ISREG(info.st_mode):
-        raise FlashError(EXIT_USAGE, f"镜像不是普通文件: {target}")
+        raise FlashError(
+            EXIT_USAGE,
+            f"镜像不是普通文件: {target}",
+            hint="--image 指向 ISO 文件本身，不是目录或设备节点",
+        )
     if info.st_size == 0:
-        raise FlashError(EXIT_CHECK, f"镜像是空文件: {target}")
+        raise FlashError(
+            EXIT_CHECK, f"镜像是空文件: {target}", hint="重新取件；空文件通常是中断的下载"
+        )
     return ImageFacts(path=target, size=info.st_size)
 
 
@@ -287,12 +299,18 @@ def probe_device(
     """只读取证，不打开写句柄。allow_file 用于测试与虚拟机镜像。"""
     target = Path(os.path.realpath(path))
     if not target.exists():
-        raise FlashError(EXIT_CHECK, f"目标不存在: {target}")
+        raise FlashError(
+            EXIT_CHECK, f"目标不存在: {target}", hint="用 lsblk 取整盘节点，如 /dev/sdb"
+        )
 
     try:
         info = target.stat()
     except OSError as exc:  # pragma: no cover - exists() 已过
-        raise FlashError(EXIT_CHECK, f"无法 stat 目标: {target}") from exc
+        raise FlashError(
+            EXIT_CHECK,
+            f"无法 stat 目标: {target}",
+            hint="确认该节点在当前用户可见（写块设备需 sudo）",
+        ) from exc
 
     table = list(mounts) if mounts is not None else read_mounts()
     prefix = target.as_posix()
@@ -329,6 +347,7 @@ def probe_device(
             raise FlashError(
                 EXIT_CHECK,
                 f"{target} 是普通文件；写镜像到文件需显式 --allow-file",
+                hint="目标应为整块设备；仅虚拟机镜像或测试才用 --allow-file",
             )
         return DeviceFacts(
             path=target,
@@ -337,7 +356,11 @@ def probe_device(
             note="普通文件靶子（测试/虚拟机镜像）",
         )
 
-    raise FlashError(EXIT_CHECK, f"目标既不是块设备也不是普通文件: {target}")
+    raise FlashError(
+        EXIT_CHECK,
+        f"目标既不是块设备也不是普通文件: {target}",
+        hint="传整盘节点（/dev/sdb），不是分区（/dev/sdb1）",
+    )
 
 
 # ─── 预检 ───────────────────────────────────────────────────────────────────
@@ -494,10 +517,13 @@ def readback(
     *,
     chunk: int = CHUNK,
     window: int = SAMPLE_WINDOW,
+    progress: Callable[[int, int], None] | None = None,
 ) -> tuple[bool, str, list[tuple[int, int]]]:
     """回读比对。返回 (一致, 说明, 比对区间)。"""
     size = image.stat().st_size
     ranges = [(0, size)] if mode == "full" else sample_ranges(size, window)
+    total = sum(end - start for start, end in ranges)
+    done = 0
     try:
         with open(image, "rb") as src, open(device, "rb", buffering=0) as dst:
             for start, end in ranges:
@@ -523,32 +549,75 @@ def readback(
                         )
                     cursor += len(left)
                     remaining -= len(left)
+                    done += len(left)
+                    if progress is not None:
+                        progress(done, total)
     except OSError as exc:
         raise FlashError(EXIT_IO, f"回读失败: {exc.strerror or exc}") from exc
-    return True, f"比对 {len(ranges)} 段 / {human_bytes(sum(e - s for s, e in ranges))}", ranges
+    return True, f"比对 {len(ranges)} 段 / {human_bytes(total)}", ranges
 
 
 # ─── 渲染 ───────────────────────────────────────────────────────────────────
 
+TAGS = {OK: "[ OK ]", SKIP: "[SKIP]", FAIL: "[FAIL]"}
+
+NEXT_STEPS = {
+    "plan": ("预检已通过；确认目标盘后加 --yes 执行写入并回读校验",),
+    "write": (
+        "1. 安全弹出 U 盘，插入目标机，开机按 F12/F11/Esc 选择该 U 盘",
+        "2. UEFI 固件请选带 UEFI 前缀的条目；BIOS 模式直接选 USB 设备",
+        '3. 装机后核对：hostname=airymaxos，uname -r 以 "-alk" 结尾',
+        "4. 核对登录策略：airymax 本地/SSH 免密，root 口令 00000000",
+    ),
+}
+NEXT_STEPS["check"] = (
+    "1. 预检目标盘：airy-flash plan --image X.iso --device /dev/sdX",
+    "2. 确认无误后写入：把 plan 换成 write，并追加 --yes",
+)
+NEXT_STEPS["verify"] = ("回读一致即可插机引导；不一致请重做 U 盘",)
+
+MODES = {"plan": "只预检（不写设备）", "write": "写入 + 回读", "verify": "只回读"}
+
+
+def _tag(item: Check | Stage) -> str:
+    """预检项与阶段共用同一套三种标签。"""
+    if isinstance(item, Stage):
+        return TAGS.get(item.status, TAGS[FAIL])
+    return TAGS[SKIP if item.skipped else (OK if item.ok else FAIL)]
+
+
+def _label(stage: Stage) -> str:
+    return f"{stage.index}/{stage.total} {stage.name}"
+
 
 class Renderer:
-    """人读输出。TTY 走进度条，非 TTY 走逐行里程碑，两者都无 ANSI 污染日志。"""
+    """人读输出的唯一来源：预检项、阶段与摘要共用一套列宽。
+
+    TTY 走进度条，非 TTY 走逐行里程碑，两者都无 ANSI 污染日志。
+    """
 
     WIDTH = 68
-    # 非 TTY 的里程碑粒度：十等分时一个阶段吐十行，写盘日志会被进度噪声淹没，
-    # 四等分足以判断是否卡住，又能让每个阶段的结束行保持可见。
-    MILESTONES = 4
+    LABEL = 6       # 头部字段标签列
+    NAME = 16       # 预检项与阶段名所在列
+    MILESTONES = 4  # 非 TTY 进度粒度：四等分足以判断是否卡住
+    BEAT = 5.0      # 长阻塞阶段的心跳间隔（秒）
 
-    def __init__(self, stream=None, tty: bool | None = None) -> None:
+    def __init__(
+        self, stream=None, tty: bool | None = None, pulse: bool = True
+    ) -> None:
         self.stream = stream or sys.stdout
         self.tty = self.stream.isatty() if tty is None else tty
+        self.pulse = pulse
+        self._lock = threading.Lock()
         self._bar_open = False
         self._last_bucket = -1
         self._current = Stage(0, 0, "", OK)
 
     def _write(self, text: str) -> None:
-        self.stream.write(text)
-        self.stream.flush()
+        # 心跳线程与主线程共用一条流，整行加锁避免交错。
+        with self._lock:
+            self.stream.write(text)
+            self.stream.flush()
 
     def rule(self, char: str = "-") -> None:
         self._write(char * self.WIDTH + "\n")
@@ -558,28 +627,32 @@ class Renderer:
         self.rule("=")
 
     def field(self, label: str, value: str, extra: str = "") -> None:
-        # 标签按 6 列补齐后接一个空格，故续行缩进固定 7 列。
-        indent = " " * 7
-        self._write(f"{pad(label, 6)} {value}\n")
+        # 标签按 LABEL 列补齐后接一个空格，故续行缩进固定 LABEL+1 列。
+        self._write(f"{pad(label, self.LABEL)} {value}\n")
         if extra:
-            self._write(f"{indent}{extra}\n")
+            self._write(" " * (self.LABEL + 1) + f"{extra}\n")
 
     def section(self, name: str) -> None:
         self._write(f"\n{name}\n")
 
+    def row(self, tag: str, name: str, detail: str = "") -> None:
+        """预检项与阶段共用的唯一行格式：标签、定宽名称、说明。"""
+        self._write(f"  {tag} {pad(name, self.NAME)} {detail}\n")
+
     def check(self, check: Check) -> None:
-        tag = "[SKIP]" if check.skipped else ("[ OK ]" if check.ok else "[FAIL]")
-        self._write(f"  {tag} {pad(check.name, 16)} {check.detail}\n")
+        self.row(_tag(check), check.name, check.detail)
 
     def stage_start(self, stage: Stage) -> None:
         """只登记当前阶段：进度行与结束行各自自带前缀，避免半行残留。"""
         self._current = stage
         self._last_bucket = -1
 
+    def _head(self, stage: Stage) -> str:
+        return pad(_label(stage), self.NAME)
+
     def stage_progress(self, done: int, total: int, rate: float, eta: float) -> None:
         ratio = done / total if total else 1.0
-        stage = self._current
-        head = f"{stage.index}/{stage.total} {pad(stage.name, 10)}"
+        head = self._head(self._current)
         if self.tty:
             width = 24
             filled = max(0, min(width, int(ratio * width)))
@@ -595,16 +668,22 @@ class Renderer:
         if bucket != self._last_bucket:
             self._last_bucket = bucket
             self._write(
-                f"  [ .. ] {head} {bucket * 100 // self.MILESTONES:3d}% {human_bytes(done)} "
-                f"{human_bytes(rate)}/s ETA {human_duration(eta)}\n"
+                f"  [ .. ] {head} {bucket * 100 // self.MILESTONES:3d}% "
+                f"{human_bytes(done)} {human_bytes(rate)}/s ETA {human_duration(eta)}\n"
             )
 
+    def heartbeat(self, stage: Stage, seconds: float) -> None:
+        """无进度的阻塞阶段也要让屏幕持续刷新，避免看起来像卡死。"""
+        line = f"  [ .. ] {self._head(stage)} 已等待 {human_duration(seconds)}"
+        if self.tty:
+            self._write(f"\r{line}   ")
+            self._bar_open = True
+            return
+        self._write(line + "\n")
+
     def stage_end(self, stage: Stage) -> None:
-        tag = "[ OK ]" if stage.status == OK else ("[SKIP]" if stage.status == SKIP else "[FAIL]")
         prefix = "\r" if self._bar_open else ""
-        self._write(
-            f"{prefix}  {tag} {stage.index}/{stage.total} {pad(stage.name, 10)} {stage.detail}\n"
-        )
+        self._write(f"{prefix}  {_tag(stage)} {self._head(stage)} {stage.detail}\n")
         self._bar_open = False
         self._last_bucket = -1
 
@@ -622,42 +701,79 @@ class Renderer:
         self.field("用时", human_duration(elapsed))
         if report.error:
             self.field("原因", report.error)
+        if report.hint:
+            self.field("建议", report.hint)
+        for line in report.warnings:
+            self.field("提示", line)
         if report_path:
             self.field("报告", report_path)
 
     def marker(self, report: Report) -> None:
+        # 只写已有事实：check 与早期失败不该出现空字段。
         # 失败时可能还没算完摘要，用期望值兜底，便于把日志对回发布物。
+        parts = [f"command={report.command}", f"host={report.host}"]
+        if report.image:
+            parts.append(f"image={report.image.path}")
         digest = ""
         if report.image:
             digest = report.image.digest or report.image.expected
-        device = report.device.path if report.device else ""
+        if digest:
+            parts.append(f"sha256={digest}")
+        if report.device:
+            parts.append(f"device={report.device.path}")
         status = "PASS" if report.result == "pass" else "FAIL"
-        self._write(
-            f"\nAIRY-FLASH-{status} "
-            f"image={report.image.path if report.image else ''} "
-            f"device={device} sha256={digest}\n"
-        )
+        self._write(f"\nAIRY-FLASH-{status} " + " ".join(parts) + "\n")
 
     def next_steps(self, command: str) -> None:
         """按子命令给出可执行的下一步，避免 plan 成功被误当成已写入。"""
         self.section("下一步")
-        if command == "plan":
-            lines = ("预检已通过；确认目标盘后加 --yes 执行写入并回读校验",)
-        else:
-            lines = (
-                "1. 安全弹出 U 盘，插入目标机，开机按 F12/F11/Esc 选择该 U 盘",
-                "2. UEFI 固件请选带 UEFI 前缀的条目；BIOS 模式直接选 USB 设备",
-                '3. 装机后核对：hostname=airymaxos，uname -r 以 "-alk" 结尾',
-                "4. 核对登录策略：airymax 本地/SSH 免密，root 口令 00000000",
-            )
-        for line in lines:
+        for line in NEXT_STEPS.get(command, NEXT_STEPS["write"]):
             self._write(f"  {line}\n")
 
 
-def _meter(total: int, started: float) -> Callable[[int, int], tuple[float, float]]:
+class Ticker:
+    """长阻塞阶段的屏幕心跳：只在超过间隔没有进展时补一行。"""
+
+    def __init__(
+        self, renderer: Renderer, stage: Stage, period: float | None = None
+    ) -> None:
+        self.renderer = renderer
+        self.stage = stage
+        self.period = renderer.BEAT if period is None else period
+        self._stop = threading.Event()
+        self._last = time.monotonic()
+        self._thread: threading.Thread | None = None
+
+    def touch(self) -> None:
+        self._last = time.monotonic()
+
+    def __enter__(self) -> Ticker:
+        if self.renderer.pulse:
+            self._thread = threading.Thread(target=self._loop, daemon=True)
+            self._thread.start()
+        return self
+
+    def _loop(self) -> None:
+        while not self._stop.wait(min(self.period, 0.5)):
+            waited = time.monotonic() - self._last
+            if waited >= self.period:
+                self.renderer.heartbeat(self.stage, waited)
+                self.touch()
+
+    def __exit__(self, *_exc: object) -> None:
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=self.period)
+
+
+Progress = Callable[[int, int], None]
+Task = Callable[[Progress], tuple[str, str]]
+
+
+def _meter(started: float) -> Callable[[int, int], tuple[float, float]]:
     """返回 (已完成, 总量) → (瞬时速率, 剩余秒数) 的换算器。"""
 
-    def compute(done: int, _total: int = total) -> tuple[float, float]:
+    def compute(done: int, total: int) -> tuple[float, float]:
         elapsed = max(time.monotonic() - started, 1e-6)
         rate = done / elapsed
         remaining = (total - done) / rate if rate > 0 else 0.0
@@ -666,10 +782,24 @@ def _meter(total: int, started: float) -> Callable[[int, int], tuple[float, floa
     return compute
 
 
+def _progress(
+    renderer: Renderer, tick: Ticker, meter: Callable[[int, int], tuple[float, float]]
+) -> Progress:
+    """把「进度回调」与「心跳续命」合成一个回调：有进展就不补心跳。"""
+
+    def advance(done: int, total: int) -> None:
+        tick.touch()
+        rate, eta = meter(done, total)
+        renderer.stage_progress(done, total, rate, eta)
+
+    return advance
+
+
 # ─── 编排 ───────────────────────────────────────────────────────────────────
 
 
 def execute(args: argparse.Namespace) -> tuple[Report, int]:
+    """唯一入口：标题先出，成败都走同一套七段与标记。"""
     report = Report(
         command=args.command,
         result="fail",
@@ -681,9 +811,20 @@ def execute(args: argparse.Namespace) -> tuple[Report, int]:
     renderer = Renderer(
         stream=io.StringIO() if args.json else None,
         tty=False if (args.no_progress or args.json) else None,
+        pulse=not (args.no_progress or args.json),
     )
-    started = time.monotonic()
+    clock = time.monotonic()
+    renderer.title(f"AirymaxOS 烧录工具 {TOOL_VERSION}  ({args.command})")
+    try:
+        _run(args, report, renderer)
+        code = EXIT_OK
+    except FlashError as exc:
+        report.error, report.hint = exc.message, exc.hint
+        code = exc.code
+    return _close(args, report, renderer, code, clock)
 
+
+def _run(args: argparse.Namespace, report: Report, renderer: Renderer) -> None:
     image = probe_image(Path(args.image))
     expected, source = resolve_expected(
         image.path, sha256=args.sha256, sums=args.sums
@@ -694,7 +835,6 @@ def execute(args: argparse.Namespace) -> tuple[Report, int]:
         expected=expected,
         sums_file=source,
     )
-
     device = probe_device(
         Path(args.device),
         mounts=read_mounts(Path(args.mounts)) if args.mounts else None,
@@ -702,37 +842,85 @@ def execute(args: argparse.Namespace) -> tuple[Report, int]:
         allow_file=args.allow_file,
     )
     report.image, report.device = image, device
+    _banner(image, device, args.command, renderer)
+    _guard(args, device)
+    _preflight(args, report, renderer, image, device, expected, source)
 
-    if device.kind == "block" and args.command != "plan" and os.geteuid() != 0:
-        raise FlashError(EXIT_USAGE, "写块设备需要 root：请用 sudo 重新执行")
+    _confirm(args, device)
 
-    report.checks = preflight(
-        image,
-        device,
-        expected=expected,
-        source=source,
-        allow_unverified=args.allow_unverified,
-    )
+    renderer.stages_header()
+    steps = _steps(args, report, image, device, expected)
+    for index, (name, body) in enumerate(steps, 1):
+        _stage(renderer, report, index, len(steps), name, body)
 
-    write_mode = args.command == "write"
-    if args.command == "plan":
-        stages_total = 1
-    else:
-        stages_total = 4 if write_mode else 2
 
-    if write_mode and device.kind == "block" and not args.yes:
-        raise FlashError(
-            EXIT_USAGE,
-            f"将覆盖 {device.path}（{human_bytes(device.size)}）上的全部数据；确认请加 --yes",
+def _steps(
+    args: argparse.Namespace,
+    report: Report,
+    image: ImageFacts,
+    device: DeviceFacts,
+    expected: str,
+) -> list[tuple[str, Task]]:
+    """按子命令排出阶段序列：plan 只校镜像，write 四段，verify 只回读。"""
+    steps: list[tuple[str, Task]] = [
+        ("校验镜像", lambda task: _hash(image, report, expected, task)),
+    ]
+    if args.command == "write":
+        steps.append(("写入设备", lambda task: _write(image, device, task)))
+        steps.append(("刷盘同步", lambda _task: _flush(device)))
+    if args.command != "plan":
+        steps.append(
+            ("回读校验", lambda task: _readback(image, device, args.verify, task))
         )
+    return steps
 
-    renderer.title(f"AirymaxOS 烧录工具 {TOOL_VERSION}  ({args.command})")
+
+def _stage(
+    renderer: Renderer,
+    report: Report,
+    index: int,
+    total: int,
+    name: str,
+    body: Task,
+) -> None:
+    """阶段的唯一执行壳：起点、心跳、进度、结束行与报告都从这里走。"""
+    stage = Stage(index, total, name, FAIL)
+    renderer.stage_start(stage)
+    clock = time.monotonic()
+    with Ticker(renderer, stage) as tick:
+        advance = _progress(renderer, tick, _meter(clock))
+        try:
+            status, detail = body(advance)
+        except FlashError as exc:
+            _end(renderer, report, stage, FAIL, exc.message)
+            raise
+        except OSError as exc:
+            message = f"{name}失败: {exc.strerror or exc}"
+            _end(renderer, report, stage, FAIL, message)
+            raise FlashError(EXIT_IO, message) from exc
+    if status == OK:
+        detail = f"{detail}  {human_duration(time.monotonic() - clock)}"
+    _end(renderer, report, stage, status, detail)
+
+
+def _end(
+    renderer: Renderer, report: Report, stage: Stage, status: str, detail: str
+) -> None:
+    """阶段收尾的唯一出口：落一行、进报告，失败与成功同形。"""
+    done = Stage(stage.index, stage.total, stage.name, status, detail.strip())
+    renderer.stage_end(done)
+    report.stages.append(done)
+
+
+def _banner(
+    image: ImageFacts, device: DeviceFacts, command: str, renderer: Renderer
+) -> None:
+    """三行身份信息：映像、目标、模式，是后面所有判定的上下文。"""
+    digest = short_digest(image.expected) if image.expected else "（未提供）"
     renderer.field(
-        "映像",
-        str(image.path),
-        f"{human_bytes(image.size)}   sha256 {short_digest(expected) if expected else '（未提供）'}",
+        "映像", str(image.path), f"{human_bytes(image.size)}   sha256 {digest}"
     )
-    target_extra = ", ".join(
+    facts = ", ".join(
         part
         for part in (
             device.model,
@@ -743,149 +931,138 @@ def execute(args: argparse.Namespace) -> tuple[Report, int]:
         )
         if part
     )
-    renderer.field("目标", str(device.path), target_extra)
-    renderer.field(
-        "模式",
-        {"write": "写入 + 回读", "verify": "只回读", "plan": "只预检"}[args.command],
+    renderer.field("目标", str(device.path), facts)
+    renderer.field("模式", MODES.get(command, command))
+
+
+def _guard(args: argparse.Namespace, device: DeviceFacts) -> None:
+    """写块设备必须 root：预检之前就拦下，避免探测通过后写入才失败。"""
+    if device.kind != "block" or args.command == "plan" or os.geteuid() == 0:
+        return
+    raise FlashError(
+        EXIT_USAGE,
+        "写块设备需要 root：请用 sudo 重新执行",
+        hint="sudo airy-flash write --image X.iso --device /dev/sdX --yes",
     )
 
+
+def _confirm(args: argparse.Namespace, device: DeviceFacts) -> None:
+    """覆盖整块设备要显式 --yes；放在预检之后，操作者已看清目标身份。"""
+    if args.command != "write" or device.kind != "block" or args.yes:
+        return
+    raise FlashError(
+        EXIT_USAGE,
+        f"将覆盖 {device.path}（{human_bytes(device.size)}）上的全部数据；"
+        "确认请加 --yes",
+        hint="确认目标盘无误后追加 --yes 重新执行",
+    )
+
+
+def _preflight(
+    args: argparse.Namespace,
+    report: Report,
+    renderer: Renderer,
+    image: ImageFacts,
+    device: DeviceFacts,
+    expected: str,
+    source: str,
+) -> None:
+    """先渲染逐条判定，再对失败项抛错：预检未过即不触碰设备。"""
+    report.checks = preflight(
+        image,
+        device,
+        expected=expected,
+        source=source,
+        allow_unverified=args.allow_unverified,
+    )
     renderer.checks_header()
     for check in report.checks:
         renderer.check(check)
+    failed = [c.name for c in report.checks if not c.ok and not c.skipped]
+    if failed:
+        raise FlashError(
+            EXIT_CHECK,
+            "预检未通过，未触碰目标设备",
+            hint=f"先处理 {', '.join(failed)}",
+        )
 
-    def finish(code: int, error: str = "") -> tuple[Report, int]:
-        """统一收尾：落报告、打摘要与 AIRY-FLASH 标记。"""
-        report.error = error
-        report.result = "pass" if code == EXIT_OK else "fail"
-        report.finished = now_iso()
-        report_path = ""
-        if args.report:
-            report_path = str(Path(args.report))
+
+def _hash(
+    image: ImageFacts, report: Report, expected: str, task: Progress
+) -> tuple[str, str]:
+    """校验镜像摘要；不符即抛错，实际摘要无论如何都写进报告。"""
+    if not expected:
+        return SKIP, "未提供摘要，跳过（--allow-unverified）"
+    digest = sha256_file(image.path, progress=task)
+    report.image = ImageFacts(
+        path=image.path,
+        size=image.size,
+        digest=digest,
+        expected=expected,
+        sums_file=image.sums_file,
+    )
+    if digest == expected:
+        return OK, f"sha256 一致 {short_digest(digest)}"
+    raise FlashError(
+        EXIT_CHECK,
+        f"摘要不符：实际 {short_digest(digest)} ≠ 期望 {short_digest(expected)}",
+        hint="重新下载镜像；或核对发布 SHA256SUMS 与本地文件是否同一份",
+    )
+
+
+def _write(image: ImageFacts, device: DeviceFacts, task: Progress) -> tuple[str, str]:
+    clock = time.monotonic()
+    written = write_image(
+        image.path, device.path, progress=task, file_target=device.kind == "file"
+    )
+    span = max(time.monotonic() - clock, 1e-6)
+    return OK, f"{human_bytes(written)}  {human_bytes(written / span)}/s"
+
+
+def _flush(device: DeviceFacts) -> tuple[str, str]:
+    flush_device(device.path)
+    return OK, "fsync 完成"
+
+
+def _readback(
+    image: ImageFacts, device: DeviceFacts, mode: str, task: Progress
+) -> tuple[str, str]:
+    if mode == "none":
+        return SKIP, "--verify none 已跳过回读"
+    same, detail, _ranges = readback(image.path, device.path, mode, progress=task)
+    if same:
+        return OK, detail
+    raise FlashError(
+        EXIT_IO,
+        detail,
+        hint="换数据线或换 USB 口重试；仍不一致则重做 U 盘",
+    )
+
+
+def _close(
+    args: argparse.Namespace,
+    report: Report,
+    renderer: Renderer,
+    code: int,
+    clock: float,
+) -> tuple[Report, int]:
+    """成功与失败的唯一收尾：落报告、摘要、下一步与标记。"""
+    report.result = "pass" if code == EXIT_OK else "fail"
+    report.finished = now_iso()
+    path = ""
+    if args.report:
+        path = str(Path(args.report))
+        try:
             write_report(report, Path(args.report))
-        renderer.summary(report, time.monotonic() - started, report_path)
-        if code == EXIT_OK and args.command in ("plan", "write"):
-            renderer.next_steps(args.command)
-        # 标记行放最后：日志尾部一行即可取到发布物与设备身份。
-        renderer.marker(report)
-        return report, code
-
-    if any(not c.ok and not c.skipped for c in report.checks):
-        return finish(EXIT_CHECK, "预检未通过，未触碰目标设备")
-
-    renderer.stages_header()
-    stage_index = 0
-
-    # 1) 校验镜像
-    stage_index += 1
-    hasher = Stage(stage_index, stages_total, "校验镜像", FAIL)
-    renderer.stage_start(hasher)
-    clock = time.monotonic()
-    meter = _meter(image.size, clock)
-
-    def on_hash(done: int, total: int) -> None:
-        rate, eta = meter(done, total)
-        renderer.stage_progress(done, total, rate, eta)
-
-    if expected:
-        image = ImageFacts(
-            path=image.path,
-            size=image.size,
-            digest=sha256_file(image.path, progress=on_hash),
-            expected=image.expected,
-            sums_file=image.sums_file,
-        )
-        report.image = image
-        if image.digest_ok:
-            hasher = Stage(
-                stage_index,
-                stages_total,
-                "校验镜像",
-                OK,
-                f"sha256 一致 {short_digest(image.digest)}",
-            )
-        else:
-            hasher = Stage(
-                stage_index,
-                stages_total,
-                "校验镜像",
-                FAIL,
-                f"摘要不符：实际 {short_digest(image.digest)} ≠ 期望 {short_digest(expected)}",
-            )
-    else:
-        hasher = Stage(stage_index, stages_total, "校验镜像", SKIP, "未提供摘要，跳过")
-    renderer.stage_end(hasher)
-    report.stages.append(hasher)
-    if hasher.status == FAIL:
-        return finish(EXIT_CHECK, hasher.detail)
-
-    if args.command == "plan":
-        return finish(EXIT_OK)
-
-    # 2) 写入
-    if write_mode:
-        stage_index += 1
-        clock = time.monotonic()
-        meter = _meter(image.size, clock)
-
-        def on_write(done: int, total: int) -> None:
-            rate, eta = meter(done, total)
-            renderer.stage_progress(done, total, rate, eta)
-
-        renderer.stage_start(Stage(stage_index, stages_total, "写入设备", FAIL))
-        elapsed_before = time.monotonic()
-        written = write_image(
-            image.path,
-            device.path,
-            progress=on_write,
-            file_target=device.kind == "file",
-        )
-        span = max(time.monotonic() - elapsed_before, 1e-6)
-        stage = Stage(
-            stage_index,
-            stages_total,
-            "写入设备",
-            OK,
-            f"{human_bytes(written)}  {human_bytes(written / span)}/s",
-        )
-        renderer.stage_end(stage)
-        report.stages.append(stage)
-
-        # 3) 刷盘
-        stage_index += 1
-        clock = time.monotonic()
-        renderer.stage_start(Stage(stage_index, stages_total, "刷盘同步", FAIL))
-        flush_device(device.path)
-        stage = Stage(
-            stage_index,
-            stages_total,
-            "刷盘同步",
-            OK,
-            f"fsync 完成 {human_duration(time.monotonic() - clock)}",
-        )
-        renderer.stage_end(stage)
-        report.stages.append(stage)
-
-    # 4) 回读
-    stage_index += 1
-    clock = time.monotonic()
-    renderer.stage_start(Stage(stage_index, stages_total, "回读校验", FAIL))
-    if args.verify == "none":
-        stage = Stage(stage_index, stages_total, "回读校验", SKIP, "--verify none")
-    else:
-        same, detail, _ranges = readback(image.path, device.path, args.verify)
-        stage = Stage(
-            stage_index,
-            stages_total,
-            "回读校验",
-            OK if same else FAIL,
-            f"{detail}  {human_duration(time.monotonic() - clock)}",
-        )
-    renderer.stage_end(stage)
-    report.stages.append(stage)
-    if stage.status == FAIL:
-        return finish(EXIT_IO, stage.detail)
-
-    return finish(EXIT_OK)
+        except OSError as exc:
+            path = ""
+            report.warnings.append(f"报告写入失败: {exc.strerror or exc}")
+    renderer.summary(report, time.monotonic() - clock, path)
+    if code == EXIT_OK and args.command in NEXT_STEPS:
+        renderer.next_steps(args.command)
+    # 标记行放最后：日志尾部一行即可取到发布物与设备身份。
+    renderer.marker(report)
+    return report, code
 
 
 def write_report(report: Report, path: Path) -> None:
@@ -905,6 +1082,8 @@ def write_report(report: Report, path: Path) -> None:
         ("finished", report.finished),
         ("verify", report.verify),
         ("argv", " ".join(report.argv)),
+        ("error", report.error),
+        ("hint", report.hint),
     ):
         rows.append(f"{key}={value}")
     if report.image:
@@ -971,87 +1150,56 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _self_check(args: argparse.Namespace) -> int:
-    rows = [
-        ("python", sys.version.split()[0], True),
-        (
-            "/proc/mounts",
-            "可读" if Path("/proc/mounts").exists() else "缺失",
-            Path("/proc/mounts").exists(),
+def _check(args: argparse.Namespace) -> tuple[Report, int]:
+    """环境自检：与烧录共用同一个 Report 与渲染器，失败也落报告。"""
+    mounts, sysfs = Path("/proc/mounts"), Path("/sys/class/block")
+    root = os.geteuid() == 0
+    report = Report(
+        command="check",
+        result="pass",
+        started=now_iso(),
+        argv=list(sys.argv) if args.argv is None else list(args.argv),
+        host=socket.gethostname(),
+    )
+    report.checks = [
+        Check("python", True, sys.version.split()[0]),
+        Check("/proc/mounts", mounts.exists(), "可读" if mounts.exists() else "缺失"),
+        Check("/sys/class/block", sysfs.is_dir(), "存在" if sysfs.is_dir() else "缺失"),
+        Check(
+            "root",
+            root,
+            "是" if root else "否（写块设备时需 sudo）",
+            skipped=not root,
         ),
-        (
-            "/sys/class/block",
-            "存在" if Path("/sys/class/block").is_dir() else "缺失",
-            Path("/sys/class/block").is_dir(),
-        ),
-        ("root", "是" if os.geteuid() == 0 else "否（写块设备时需要 sudo）", os.geteuid() == 0),
     ]
-    if args.json:
-        sys.stdout.write(
-            json.dumps(
-                {
-                    "tool": "airy-flash",
-                    "version": TOOL_VERSION,
-                    "command": "check",
-                    "result": "pass",
-                    "checks": [
-                        {"name": name, "detail": detail, "ok": ok}
-                        for name, detail, ok in rows
-                    ],
-                },
-                ensure_ascii=False,
-                indent=2,
-            )
-            + "\n"
-        )
-        return EXIT_OK
-    renderer = Renderer(tty=False if args.no_progress else None)
+    renderer = Renderer(
+        stream=io.StringIO() if args.json else None,
+        tty=False if (args.no_progress or args.json) else None,
+        pulse=not (args.no_progress or args.json),
+    )
+    clock = time.monotonic()
     renderer.title(f"AirymaxOS 烧录工具 {TOOL_VERSION}  (check)")
     renderer.checks_header()
-    for name, detail, ok in rows:
-        renderer.check(Check(name, ok, detail, skipped=not ok and name == "root"))
-    renderer.section("结果")
-    renderer.field("判定", "环境就绪" if os.geteuid() == 0 else "可用（写块设备需 sudo）")
-    renderer.field("用法", "airy-flash write --image X.iso --device /dev/sdX --yes")
-    return EXIT_OK
+    for item in report.checks:
+        renderer.check(item)
+    return _close(args, report, renderer, EXIT_OK, clock)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     args.argv = list(argv) if argv is not None else None
-
-    try:
-        if args.command == "check":
-            return _self_check(args)
+    if args.command == "check":
+        report, code = _check(args)
+    else:
         if not args.image or not args.device:
             parser.error("需要 --image 与 --device（check 子命令除外）")
         report, code = execute(args)
-        if args.json:
-            sys.stdout.write(
-                json.dumps(report.as_dict(TOOL_VERSION), ensure_ascii=False, indent=2)
-                + "\n"
-            )
-        return code
-    except FlashError as exc:
-        if getattr(args, "json", False):
-            sys.stdout.write(
-                json.dumps(
-                    {
-                        "tool": "airy-flash",
-                        "version": TOOL_VERSION,
-                        "command": args.command,
-                        "result": "fail",
-                        "error": exc.message,
-                    },
-                    ensure_ascii=False,
-                    indent=2,
-                )
-                + "\n"
-            )
-        else:
-            sys.stderr.write(f"airy-flash: {exc.message}\n")
-        return exc.code
+    if args.json:
+        sys.stdout.write(
+            json.dumps(report.as_dict(TOOL_VERSION), ensure_ascii=False, indent=2) + "\n"
+        )
+    return code
 
 
 if __name__ == "__main__":  # pragma: no cover

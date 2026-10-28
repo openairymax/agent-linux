@@ -26,12 +26,13 @@ VERIFY_MODES = ("sample", "full", "none")
 
 
 class FlashError(Exception):
-    """带退出码的致命错误；由 main() 统一渲染后返回。"""
+    """带退出码与可执行建议的致命错误；由 execute() 统一收尾渲染。"""
 
-    def __init__(self, code: int, message: str) -> None:
+    def __init__(self, code: int, message: str, hint: str = "") -> None:
         super().__init__(message)
         self.code = code
         self.message = message
+        self.hint = hint
 
 
 @dataclass(frozen=True)
@@ -160,6 +161,8 @@ class Report:
     verify: str = "sample"
     host: str = ""
     error: str = ""
+    hint: str = ""
+    warnings: list[str] = field(default_factory=list)
 
     def as_dict(self, version: str) -> dict[str, object]:
         return {
@@ -173,6 +176,8 @@ class Report:
             "started": self.started,
             "finished": self.finished,
             "error": self.error,
+            "hint": self.hint,
+            "warnings": list(self.warnings),
             "image": self.image.as_dict() if self.image else None,
             "device": self.device.as_dict() if self.device else None,
             "checks": [c.as_dict() for c in self.checks],
