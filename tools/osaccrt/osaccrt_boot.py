@@ -13,8 +13,11 @@
     [    5.104237] desktop_ready.sh[563]: AIRYMAX-BOOT-HEALTH failed=0
     AIRYMAX-BOOT-DEGRADED failed=<n> units=<unit list>
     AIRYMAX-DESKTOP-READY unit=<unit> class=<class> type=<type>
+    AIRYMAX-DESKTOP-FAIL reason=boot
     AIRYMAX-DESKTOP-FAIL reason=session path=<path>
     AIRYMAX-DESKTOP-FAIL unit=<unit> wait=<seconds>
+    AIRYMAX-DESKTOP-WAIT elapsed=<seconds> max=<seconds> unit=<unit>
+    AIRYMAX-DESKTOP-HINT console=<tty> cmd="<next step>"
     AIRYMAX-SMOKE-PASS tap=<path> / AIRYMAX-SMOKE-FAIL reason=<why> tap=<path>
     AIRYMAX-TAP|<TAP 原文一行>
     AIRYMAX-BOOT-CHAIN|<critical-chain 原文一行>
