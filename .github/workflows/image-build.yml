@@ -162,7 +162,7 @@ jobs:
     name: Install + Cold Boot (L2/L3)
     runs-on: ubuntu-24.04
     needs: assemble
-    timeout-minutes: 300
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
 
@@ -186,16 +186,34 @@ jobs:
       - name: Verify ISO checksum
         run: ci/ci.sh iso-checksum --dir "$RUNNER_TEMP/image"
 
-      - name: Install and cold boot (BIOS + UEFI)
+      # 真机安装介质是 U 盘：固件按 MBR/GPT 找到 ESP，与 -cdrom 的 El Torito
+      # 通路完全无关。0.0.3 的 B50 装机失败正是前者错位、后者照常通过。这条
+      # 腿放在双固件全量之前，介质布局缺陷在此就地暴露，不必等两个固件都跑完。
+      - name: Install and cold boot (UEFI, USB media)
+        env:
+          ACCEPTANCE: ${{ inputs.acceptance }}
+        run: ci/ci.sh accept --iso "$AIRYMAX_ISO" --out "$RUNNER_TEMP/install-usb" --firmware uefi --media usb --runs 1 --install-timeout 3600 --boot-timeout 900
+
+      - name: Install and cold boot (BIOS + UEFI, CD-ROM)
         env:
           ACCEPTANCE: ${{ inputs.acceptance }}
         run: ci/ci.sh accept --iso "$AIRYMAX_ISO" --out "$RUNNER_TEMP/install" --firmware both --runs 1 --install-timeout 3600 --boot-timeout 900
 
-      - name: Annotate boot failures
+      - name: Annotate boot failures (USB)
+        if: failure()
+        run: ci/ci.sh boot-annotate --dir "$RUNNER_TEMP/install-usb"
+
+      - name: Annotate boot failures (CD-ROM)
         if: failure()
         run: ci/ci.sh boot-annotate --dir "$RUNNER_TEMP/install"
 
-      - name: Extract smoke TAP
+      - name: Extract smoke TAP (USB)
+        if: always()
+        env:
+          ACCEPTANCE: ${{ inputs.acceptance }}
+        run: ci/ci.sh tap-extract --dir "$RUNNER_TEMP/install-usb"
+
+      - name: Extract smoke TAP (CD-ROM)
         if: always()
         env:
           ACCEPTANCE: ${{ inputs.acceptance }}
@@ -230,7 +248,11 @@ jobs:
             ${{ runner.temp }}/install/tap.txt
             ${{ runner.temp }}/install/install-manifest.txt
             ${{ runner.temp }}/install/smoke-*.tap
+            ${{ runner.temp }}/install-usb/tap.txt
+            ${{ runner.temp }}/install-usb/install-manifest.txt
+            ${{ runner.temp }}/install-usb/smoke-*.tap
             ${{ runner.temp }}/image/desktop/iso/iso-oci.txt
             ${{ runner.temp }}/install/run-*/*.log
+            ${{ runner.temp }}/install-usb/run-*/*.log
           retention-days: 7
           if-no-files-found: warn

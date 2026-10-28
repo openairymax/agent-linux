@@ -5,10 +5,14 @@
 #
 # 用法: ci/gates/accept.sh --iso FILE --out DIR [--acceptance]
 #                          [--firmware both|bios] [--runs N]
+#                          [--media cdrom|usb]
 #                          [--install-timeout SECS] [--boot-timeout SECS]
 #
 # 判定权在 distro/scripts/install-test.sh（判负集 verdict.env），本 gate 只
 # 负责两件事：按剖面选期望标记、把 TAP 同时留在文件里供归档。
+#
+# 介质形态透传给装机入口：cdrom 走 El Torito，usb 走分区表。真机 U 盘装机
+# 是后者，因此 usb 腿才是 isohybrid 三元一致性的有效证据。
 #
 # 标记语义：
 #   * 产品 ISO  —— AIRYMAX-DESKTOP-READY（桌面会话真的起来了）
@@ -33,6 +37,7 @@ RUNNER="${ROOT}/distro/scripts/install-test.sh"
 ISO=""
 OUT=""
 FIRMWARE="both"
+MEDIA="cdrom"
 RUNS=1
 INSTALL_TIMEOUT=3600
 BOOT_TIMEOUT=900
@@ -43,6 +48,7 @@ while [ "$#" -gt 0 ]; do
         --out)             OUT="${2:-}"; shift 2 ;;
         --acceptance)      export ACCEPTANCE=1; shift ;;
         --firmware)        FIRMWARE="${2:-}"; shift 2 ;;
+        --media)           MEDIA="${2:-}"; shift 2 ;;
         --runs)            RUNS="${2:-}"; shift 2 ;;
         --install-timeout) INSTALL_TIMEOUT="${2:-}"; shift 2 ;;
         --boot-timeout)    BOOT_TIMEOUT="${2:-}"; shift 2 ;;
@@ -65,10 +71,11 @@ mkdir -p "${OUT}"
 
 set -o pipefail
 "${RUNNER}" --iso "${ISO}" --out "${OUT}" \
-    --runs "${RUNS}" --firmware "${FIRMWARE}" --boot-marker "${marker}" \
+    --runs "${RUNS}" --firmware "${FIRMWARE}" --media "${MEDIA}" \
+    --boot-marker "${marker}" \
     --install-timeout "${INSTALL_TIMEOUT}" --boot-timeout "${BOOT_TIMEOUT}" \
     | tee "${OUT}/tap.txt"
 rc=$?
 
 [ "${rc}" -eq 0 ] || die "装机/冷启动失败（rc=${rc}），TAP 见 ${OUT}/tap.txt"
-say "验收通过: marker=${marker} firmware=${FIRMWARE} runs=${RUNS}"
+say "验收通过: marker=${marker} firmware=${FIRMWARE} media=${MEDIA} runs=${RUNS}"
