@@ -1,15 +1,16 @@
 # ===========================================================================
-# agent-linux (AirymaxOS) CI Pipeline
-# release tag 流水线（L7 发布验证）
-# 重组为 2 jobs：build-and-sign（SBOM + 4 架构内核 RPM + 制品签名）
-#              publish-release（RPM 仓库 / OCI 镜像 / GitHub Release）
+# AirymaxOS release pipeline（L7 发布验证）
 # ===========================================================================
 # Authority: docs/docs-linux/70-build-system/03-ci-cd-pipeline.md
 #            docs/docs-linux/120-development-process/09-release-process.md
 # Constraint: 管理仓每个 workflow 最多 2 条流水线
+#
+# 全部逻辑在 ci/gates/release-*.sh，本文件只保留 checkout → ci/ci.sh <gate>
+# → upload。任一步都能在本地对着同一份物料重放，不必重跑整条流水线。
 # ===========================================================================
 
 name: release
+
 on:
   push:
     tags:
@@ -73,42 +74,23 @@ jobs:
       - name: Static gates
         run: ci/ci.sh distro-lint
 
+      # 归一化、格式校验与 tag/ver 输出都在 gate 里，后续步骤只读输出。
       - name: Derive release version
         id: ver
-        run: |
-          set -euo pipefail
-          tag="${RELEASE_TAG}"
-          case "$tag" in v*) ;; *) tag="v${tag}" ;; esac
-          ver="${tag#v}"
-          if ! printf '%s' "$ver" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]+)?$'; then
-            echo "::error::非法的发布 tag: ${tag}"
-            exit 1
-          fi
-          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
-          echo "ver=${ver}" >> "$GITHUB_OUTPUT"
+        run: ci/ci.sh release-version --tag "${RELEASE_TAG}"
 
-      # 签名密钥是唯一「几秒就能证伪、却只在发布末尾才被发现」的输入：
-      # 私钥缺席或口令错误时，此前要跑满内核四腿（210 分钟）＋SDK＋OCI
-      # 才在签名步暴露。import 只保证私钥进入 keyring，不保证无交互可用，
-      # 因此在任何长步骤之前先做一次真实签名自检。
       - name: Import GPG signing key
         uses: crazy-max/ghaction-import-gpg@v6
         with:
           gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
           passphrase: ${{ secrets.GPG_PASSPHRASE }}
 
+      # 私钥缺席或口令错误时，此前要跑满内核四腿（210 分钟）＋SDK＋OCI
+      # 才在签名步暴露。probe 在任何长步骤之前做一次真实签名自检。
       - name: Verify GPG signing capability
         env:
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
-        run: |
-          set -euo pipefail
-          probe="$(mktemp)"
-          echo "airymaxos signing probe" > "${probe}"
-          gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 \
-            --detach-sign --armor -o "${probe}.asc" "${probe}" \
-            3<<<"${GPG_PASSPHRASE}"
-          gpg --verify "${probe}.asc" "${probe}"
-          rm -f "${probe}" "${probe}.asc"
+        run: ci/ci.sh release-sign probe
 
       - name: Install syft
         uses: anchore/sbom-action/download-syft@v0
@@ -120,23 +102,7 @@ jobs:
       - name: Generate + merge SPDX SBOM
         env:
           SOURCE_DATE_EPOCH: ${{ steps.epoch.outputs.value }}
-        run: |
-          set -euo pipefail
-          # 内核态：扫描 kernel 子仓
-          syft kernel -o spdx-json=sbom-kernel.spdx.json
-          # 用户态：SBOM 方案 §2.4 登记的 7 个用户态子仓
-          for repo in memory security cognition services system cloudnative tests-linux; do
-            syft "$repo" -o spdx-json="sbom-${repo}.spdx.json"
-          done
-          # 合并为统一 SBOM（真实合并器，无桩路径）
-          python3 tools/release-engineering/merge_sbom.py \
-            --name "agent-linux-${{ steps.ver.outputs.ver }}" \
-            --namespace "https://airymaxos.com/spdx/agent-linux-${{ steps.ver.outputs.ver }}" \
-            --output "sbom-agent-linux-${{ steps.ver.outputs.ver }}.spdx.json" \
-            sbom-kernel.spdx.json sbom-memory.spdx.json \
-            sbom-security.spdx.json sbom-cognition.spdx.json \
-            sbom-services.spdx.json sbom-system.spdx.json \
-            sbom-cloudnative.spdx.json sbom-tests-linux.spdx.json
+        run: ci/ci.sh release-sbom --ver "${{ steps.ver.outputs.ver }}"
 
       # 同一段安装在暖缓存 runner 上 33s 完成，冷启动 28min，也出现过整步
       # 卡住 45min 以上的实例：镜像源无响应时 apt 没有超时，会把 240min 的
@@ -144,163 +110,47 @@ jobs:
       # 本步只需封顶，让镜像故障表现为一次可重试的失败。
       - name: Install kernel build dependencies and cross toolchains
         timeout-minutes: 60
-        run: |
-          set -euo pipefail
-          . ci/lib/apt.sh
-          apt_sync
-          apt_install flex bison libelf-dev libssl-dev libdw-dev \
-            libtraceevent-dev libcap-dev libnuma-dev systemtap-sdt-dev \
-            python3-dev zlib1g-dev bc cpio dwarves rsync rpm clang llvm
-          # tools 子包的 bpftool skeleton 依赖 clang 与 llvm-strip，提前
-          # 断言比在 rpmbuild 里以 make Error 127 的形式暴露更易定位。
-          command -v clang llvm-strip >/dev/null || {
-            echo '::error::缺少 clang/llvm-strip，tools 子包无法构建'; exit 1; }
-          apt_install gcc-aarch64-linux-gnu gcc-riscv64-linux-gnu \
-            gcc-13-loongarch64-linux-gnu
-          # noble 仅提供带版本号的 loongarch64 交叉 gcc，补齐 CROSS_COMPILE 期望的无版本号驱动名
-          sudo ln -sf "$(command -v loongarch64-linux-gnu-gcc-13)" \
-            /usr/local/bin/loongarch64-linux-gnu-gcc
-          # 交叉腿的 brp-strip 以 <prefix>strip 去符号，缺任一即无法打包；
-          # 在装包阶段断言，避免 30 分钟后才在 %install 里失败。
-          command -v aarch64-linux-gnu-strip riscv64-linux-gnu-strip \
-            loongarch64-linux-gnu-strip >/dev/null || {
-            echo '::error::缺少交叉 strip，内核 RPM 的 brp-strip 无法完成'; exit 1; }
+        run: ci/ci.sh release-deps
 
-      # SDK 与烧录工具同出一门：打包、确定性比对、pyz 实跑自检都在 gate 里，
-      # 单行 run 不占内联预算（ci/check-workflows.py）。它与内核构建互不依赖，
-      # 因此排在内核四腿之前：pyz 自检失败时只花一分钟，而不是等到最后一腿。
+      # SDK 与烧录工具同出一门：打包、确定性比对、pyz 实跑自检都在 gate 里。
+      # 它与内核构建互不依赖，因此排在内核四腿之前：pyz 自检失败时只花
+      # 一分钟，而不是等到最后一腿。
       - name: Pack SDK and airy-flash
         env:
           SOURCE_DATE_EPOCH: ${{ steps.epoch.outputs.value }}
         run: ci/ci.sh tool-pack --out . --version "${{ steps.ver.outputs.ver }}"
 
-      # 4 架构内核 RPM：单 job 内顺序构建（管理仓 2 job 铁律，不得引入 matrix job）。
-      # 与 ISO 路径共用 distro/scripts/build-kernel.sh 与同一份配方：源码归档、
-      # 三步配置、包矩阵只有一处事实源，Release 与 ISO 因此不可能再产出哈希
-      # 不同的同名内核包。产物先落在 RUNNER_TEMP（源码区之外），再拷入 dist/。
+      # 4 架构内核 RPM：单 job 内顺序构建（管理仓 2 job 铁律，不得引入
+      # matrix job）。实测 x86_64 60.6min、aarch64 57.5min、riscv64 16.7min，
+      # 前三腿已占 135min；末腿 loongarch64 在第 150min 被杀时尚未出包。
+      # 旧的 150min 封顶恰好卡在末腿，整轮连同已完成的三个架构一起丢弃。
+      # 封顶按实测提到 210min（末腿留 75min），仍在 job 的 300min 之内。
       - name: Build kernel RPM (4 architectures)
-        # 实测（run 40215264970，openeuler_defconfig 全量模块）：x86_64 60.6min、
-        # aarch64 57.5min、riscv64 16.7min，前三腿已占 135min；loongarch64 在
-        # 第 150min 被杀时尚未出包。旧的 150min 封顶恰好卡在末腿，整轮连同
-        # 已完成的三个架构一起丢弃。封顶按实测提到 210min（末腿留 75min），
-        # 仍在 job 的 300min 之内，且能拦住真正的卡死。
         timeout-minutes: 210
         env:
           SOURCE_DATE_EPOCH: ${{ steps.epoch.outputs.value }}
-        run: |
-          set -euo pipefail
-          while IFS='|' read -r arch cross; do
-            [ -n "$arch" ] || continue
-            echo "::group::kernel RPM ${arch}"
-            out="${RUNNER_TEMP}/kernel-${arch}"
-            args=(--out "$out" --kernel "${GITHUB_WORKSPACE}/kernel"
-                  --arch "$arch" --nodeps)
-            if [ -n "$cross" ]; then
-              args+=(--cross "$cross")
-            fi
-            distro/scripts/build-kernel.sh "${args[@]}"
-            mkdir -p "dist/rpm/${arch}"
-            cp "${out}/RPMS/${arch}/"*.rpm "dist/rpm/${arch}/"
-            ls -l "dist/rpm/${arch}"
-            echo "::endgroup::"
-          done <<'MATRIX'
-          x86_64|
-          aarch64|aarch64-linux-gnu-
-          riscv64|riscv64-linux-gnu-
-          loongarch64|loongarch64-linux-gnu-
-          MATRIX
+        run: ci/ci.sh release-kernel build
 
-      # 包矩阵取自 190-distribution/01-rpm-packaging.md §3.1：tools 子包只在
-      # 目标架构与构建机一致时产出，交叉腿必须恰好没有它。
       - name: Verify kernel RPM matrix
-        run: |
-          set -euo pipefail
-          declare -A want=(
-            [x86_64]="core headers devel modules tools"
-            [aarch64]="core headers devel modules"
-            [riscv64]="core headers devel modules"
-            [loongarch64]="core headers devel modules"
-          )
-          total=0
-          for arch in x86_64 aarch64 riscv64 loongarch64; do
-            got="$(rpm -qp --queryformat '%{NAME} %{ARCH}\n' \
-              dist/rpm/"${arch}"/*.rpm | sort -u)"
-            expect="airymaxos-kernel"
-            for sub in ${want[${arch}]}; do
-              expect="${expect} airymaxos-kernel-${sub}"
-            done
-            for pkg in ${expect}; do
-              printf '%s\n' "${got}" | grep -qx "${pkg} ${arch}" ||
-                { echo "::error::${arch} 缺少 ${pkg}"; exit 1; }
-            done
-            set -- ${expect}
-            have="$(printf '%s\n' "${got}" | grep -c . || true)"
-            [ "${have}" -eq "$#" ] ||
-              { echo "::error::${arch} 包数 ${have}，期望 $#"; exit 1; }
-            echo "${arch}: $(printf '%s' "${got}" | tr '\n' ' ')"
-            total=$((total + have))
-          done
-          echo "内核 RPM 总数: ${total}"
+        run: ci/ci.sh release-kernel matrix
 
       - name: Build OCI base image
         env:
           SOURCE_DATE_EPOCH: ${{ steps.epoch.outputs.value }}
-        run: |
-          set -euo pipefail
-          tag="${{ steps.ver.outputs.tag }}"
-          docker build -f oci/Containerfile.agent-base \
-            --build-arg "SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}" \
-            --build-arg "AIRY_VERSION=${{ steps.ver.outputs.ver }}" \
-            --build-arg "RPM_ARCH=x86_64" \
-            --build-arg "TZ=UTC" --build-arg "LC_ALL=C" \
-            -t "${OCI_IMAGE}:${tag}" .
-          docker save "${OCI_IMAGE}:${tag}" -o "oci-image-${tag}.tar"
+        run: ci/ci.sh release-oci build --tag "${{ steps.ver.outputs.tag }}" --ver "${{ steps.ver.outputs.ver }}"
 
       - name: Sign release artifacts (GPG)
         env:
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
-        run: |
-          set -euo pipefail
-          mapfile -t files < <(find dist/rpm -name '*.rpm')
-          files+=("agent-linux-sdk-${{ steps.ver.outputs.ver }}.tar.gz")
-          files+=("airy-flash-${{ steps.ver.outputs.ver }}.pyz")
-          for f in "${files[@]}"; do
-            gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 \
-              --detach-sign --armor -o "${f}.asc" "$f" 3<<<"${GPG_PASSPHRASE}"
-          done
-          ls -l dist/rpm/*/
+        run: ci/ci.sh release-sign artifacts --ver "${{ steps.ver.outputs.ver }}"
 
-      # 物料 8/9（09-release-process.md §3.1）：以 tools/release-engineering 的
-      # 确定性实现产出校验和文件与精简 release notes，并即时 GPG 签名。
+      # 物料 8/9（09-release-process.md §3.1）：以 tools/release-engineering
+      # 的确定性实现产出校验和文件与精简 release notes，并即时 GPG 签名。
       # 命名规则：发布资产用 agent-linux-<ver>（§3.2），RPM 包名用 airymaxos-*（§3.3）。
       - name: Generate + sign checksums and release notes
         env:
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
-        run: |
-          set -euo pipefail
-          ver="${{ steps.ver.outputs.ver }}"
-          tag="${{ steps.ver.outputs.tag }}"
-          mapfile -t assets < <(
-            find dist/rpm -type f \( -name '*.rpm' -o -name '*.rpm.asc' \) | sort
-            printf '%s\n' \
-              "sbom-agent-linux-${ver}.spdx.json" \
-              "agent-linux-sdk-${ver}.tar.gz" \
-              "agent-linux-sdk-${ver}.tar.gz.asc" \
-              "airy-flash-${ver}.pyz" \
-              "airy-flash-${ver}.pyz.asc" \
-              "oci-image-${tag}.tar"
-          )
-          python3 tools/release-engineering/release_manifest.py --checksums \
-            --output "agent-linux-${ver}.sha256sum" "${assets[@]}"
-          python3 tools/release-engineering/release_manifest.py --notes \
-            --version "${ver}" \
-            --output "agent-linux-${ver}-release-notes.md"
-          for f in "agent-linux-${ver}.sha256sum" \
-                   "agent-linux-${ver}-release-notes.md"; do
-            gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 \
-              --detach-sign --armor -o "${f}.asc" "$f" 3<<<"${GPG_PASSPHRASE}"
-          done
-          ls -l "agent-linux-${ver}".sha256sum* "agent-linux-${ver}-release-notes.md"*
+        run: ci/ci.sh release-sign manifest --ver "${{ steps.ver.outputs.ver }}" --tag "${{ steps.ver.outputs.tag }}"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -357,19 +207,12 @@ jobs:
         env:
           COSIGN_KEY: ${{ secrets.COSIGN_KEY }}
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
-        run: |
-          set -euo pipefail
-          tag="${{ needs.build-and-sign.outputs.tag }}"
-          echo "${{ secrets.GITHUB_TOKEN }}" | \
-            docker login ghcr.io -u "${{ github.actor }}" --password-stdin
-          docker load -i "oci-image-${tag}.tar"
-          docker push "${OCI_IMAGE}:${tag}"
-          # cosign 必须在 push 之后签名，签名对象是已推送镜像的 digest
-          cosign sign --yes --key env://COSIGN_KEY "${OCI_IMAGE}:${tag}"
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ci/ci.sh release-oci publish --tag "${{ needs.build-and-sign.outputs.tag }}"
 
       # 同一个 tag 重发时，旧号 RPM（airymaxos-kernel-*-0.0.3-5.*）会与本次的
       # 新号包并排留在发布页上——glob 上传只增不删。写 Release 之前按摘要清单
-      # 把页面收回本次物料。单行 run 不占内联预算（ci/check-workflows.py）。
+      # 把页面收回本次物料。
       - name: Prune stale release assets
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
