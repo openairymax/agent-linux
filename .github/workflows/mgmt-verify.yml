@@ -10,6 +10,9 @@
 name: mgmt-verify
 on:
   pull_request:
+    # [SC] 共享契约头文件随 kernel gitlink 一起升级，而 gitlink 在 diff 里
+    # 只呈现为 `kernel` 一项，故 PR 侧必须列出它，否则 12 头与副本唯一性
+    # 在评审阶段静默漏检。
     paths:
       - '**.md'
       - '.gitmodules'
@@ -18,11 +21,12 @@ on:
       - 'CODEOWNERS'
       - 'tools/**'
       - '.github/**'
+      - 'kernel'
   push:
     branches: [main]
-    # push 与 pull_request 用同一份判据，并额外列出 9 个子仓的 path：
-    # gitlink 变更在 diff 里就是子仓目录本身，不列出就会漏掉依赖升级这一
-    # 最需要重跑叶子仓编排的场景。
+    # push 侧在 PR 判据之外再列出 8 个子仓 path：gitlink 变更在 diff 里就是
+    # 子仓目录本身，不列出就会漏掉依赖升级这一最需要重跑叶子仓编排的场景；
+    # PR 侧只列 kernel，因为它是唯一携带 [SC] 契约的子仓。
     paths:
       - '**.md'
       - '.gitmodules'

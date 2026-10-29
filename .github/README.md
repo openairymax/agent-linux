@@ -40,7 +40,7 @@ repeat it: the previous duplicate table drifted from the YAML and reported a
 - **Payload** — YAML stays a thin dispatch layer: checkout → `ci/ci.sh <gate>` → upload.
 - **Job count** — 2 per workflow.
 - **Branch protection** — L1/L3 review via GitHub rules (`require_code_owner_reviews`, 2 reviewers), not a CI job.
-- **Secrets** — `GPG_PRIVATE_KEY`, `GPG_PASSPHRASE`, `COSIGN_KEY`, `COSIGN_PASSWORD`, `AGENTRT_CI_TOKEN`. Never echo them.
+- **Secrets** — `GPG_PRIVATE_KEY`, `GPG_PASSPHRASE`, `COSIGN_KEY`, `COSIGN_PASSWORD`. Never echo them.
 
 Adding or renaming a workflow needs three coordinated edits: the file, its
 `name:`, and `ci/workflow-budgets.txt`; `./ci/lint.sh` rejects drift.

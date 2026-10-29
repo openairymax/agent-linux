@@ -8,6 +8,10 @@
 # dsl / farm）已经并入 os-chk-verify：它们的载荷本是同一份 Python 测试环境，
 # 拆成四条只会让一次工具改动排队四轮。
 #
+# sc-verify 已删除：它的 paths 全落在 kernel gitlink 内部，父仓 PR 永不匹配，
+# 是恒不触发的死流水线；12 头存在性与 ipc.h 副本唯一性并入 mgmt-files，pytest
+# 与 sc_tri_compile --check 由 os-chk-verify 承接。
+#
 # 本文件是「不许回退」的凭据：
 #   * 第一列  文件名
 #   * 第二列  允许的内联 run 块数上限（只许减，不许加）
@@ -26,5 +30,4 @@ mgmt-verify.yml                   0     2
 nightly.yml                       6     2
 os-chk-verify.yml                 0     1
 release.yml                      10     2
-sc-verify.yml                     7     2
 ssot-verify.yml                   0     2

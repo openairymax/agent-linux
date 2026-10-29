@@ -151,17 +151,16 @@ git submodule update --remote --checkout
 
 ## CI / CD Pipelines
 
-The management repository hosts **9 GitHub Actions workflows** (most capped at 2 jobs). All Python tool suites — abi-check, codegen, dsl, QEMU farm, flash, rollback — run inside `os-chk-verify.yml`: one dependency install, one pytest sweep, one verdict. Language-level CI is delegated to the leaf repositories' own `.github/workflows/`.
+The management repository hosts **8 GitHub Actions workflows** (most capped at 2 jobs). All Python tool suites — abi-check, codegen, dsl, QEMU farm, flash, rollback — run inside `os-chk-verify.yml`: one dependency install, one pytest sweep, one verdict. Language-level CI is delegated to the leaf repositories' own `.github/workflows/`.
 
 | Workflow | Trigger | Jobs | Purpose |
 |----------|---------|------|---------|
 | `kernel-verify.yml` | PR / push on `kernel/**` | `kernel-build` + `kernel-verify` | Kbuild matrix (31 configs) + checkpatch / sparse / Coccinelle / KUnit / kselftest |
 | `airy-verify.yml` | PR / push on Airymax paths | `airy-build` + `airy-static` | Airymax build on 4 arches + checkpatch `--strict` + SPDX audit + symbol-clash check |
 | `os-chk-verify.yml` | PR / push on `tools/**`, `sdk/**`, `ci/**`, gitlinks | `os-chk-verify` | OS-CHK unified gates (P0/P1 blocking) + every Python tool suite |
-| `mgmt-verify.yml` | PR / push on docs, `.gitmodules`, SSoT, governance files | `file-integrity` + `orchestrate-leaf-ci` | Verify 9 submodules, [SC] 12 shared headers, governance files; aggregate leaf CI status; markdownlint + copyright header |
+| `mgmt-verify.yml` | PR / push on docs, `.gitmodules`, SSoT, governance files, `kernel` | `file-integrity` + `orchestrate-leaf-ci` | Verify 9 submodules, [SC] 12 shared headers + single `ipc.h` copy, governance files; aggregate leaf CI status; markdownlint + copyright header |
 | `nightly.yml` | cron `0 2 * * *` / manual | `nightly-test-suite` + `nightly-revert-or-budget` | Formal verification (seL4-style) + 72h soak + chaos; auto-revert or CI budget check |
 | `release.yml` | tag `v*` / manual | `build-and-sign` + `publish-release` | SPDX SBOM + kernel/SDK build + GPG & cosign signing; publish dnf repo, OCI image, GitHub Release |
-| `sc-verify.yml` | PR on [SC] 12 shared headers | `sc-validate` + `sc-trigger-and-await` | Validate shared-contract headers, no duplicates; trigger & await agentrt mirror PR CI |
 | `ssot-verify.yml` | PR / push on `**.md`, `ssot-registry.yaml` | `ssot-syntax-and-rules` + `doc-links` | YAML syntax + rule-ID uniqueness; repository-owned markdown link integrity |
 
 ### [SC] Shared Contract Layer
@@ -183,7 +182,7 @@ The shared-contract (`[SC]`) layer is the single physical source of truth for ke
 | 11 | `lsm_types.h` | Pure-C LSM type definitions + `DEFINE_LSM(airy)` skeleton + capability cache structures |
 | 12 | `bpf_struct_ops.h` | eBPF struct_ops state machine (observability; non-core, H5 constraint) |
 
-Changes to any `[SC]` header require dual CI validation (agent-linux `sc-verify.yml` + agentrt mirror PR) per **OS-IRON-014**. The IPC ABI uses magic `0x41524531` (`'ARE1'`); the task descriptor magic is `0x41475453` (`'AGTS'`). Kernel-side functions use the `airy_*` prefix.
+Any change to a `[SC]` header must be mirrored into `agentrt/commons/include/airymax/` per **OS-IRON-014**. This repository validates the header set whenever the `kernel` gitlink moves: `mgmt-verify.yml` asserts presence and a single physical copy of `ipc.h`, `os-chk-verify.yml` runs the tri-path compile and layout check; the agentrt side is validated by the agentrt repository's own pipeline. The IPC ABI uses magic `0x41524531` (`'ARE1'`); the task descriptor magic is `0x41475453` (`'AGTS'`). Kernel-side functions use the `airy_*` prefix.
 
 ## Development Guide
 

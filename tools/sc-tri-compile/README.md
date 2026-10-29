@@ -161,8 +161,8 @@ python3 -m pytest tools/sc-tri-compile/tests/ -q
 
 ## CI 集成
 
-`sc-verify.yml` 的 `sc-validate` job 在 `[SC]` 头文件或本工具变更时先跑单
-元测试，再执行多路编译门禁：
+`os-chk-verify.yml` 在 `tools/**` 或所监听 gitlink 变更时跑完整 Python 套件，
+本工具的单测与多路编译门禁都在其中：
 
 ```yaml
 - name: "Run sc-tri-compile unit tests (pytest)"
@@ -172,8 +172,8 @@ python3 -m pytest tools/sc-tri-compile/tests/ -q
 ```
 
 校验脚本运行期不需要额外 Python 依赖（仅标准库）；仅供测试使用的 pytest
-依赖声明在 `requirements-dev.txt`，CI 通过 `pip install -r
-tools/sc-tri-compile/requirements-dev.txt` 安装。
+依赖声明在 `requirements-dev.txt`，CI 经 `ci/gates/python-verify.sh` 的 oschk
+剖面统一装齐。
 
 ## 与设计文档的关系
 
@@ -185,7 +185,7 @@ tools/sc-tri-compile/requirements-dev.txt` 安装。
   （`__KERNEL__` / `__linux__` / `#else` 三分支）。
 - syscall ABI 三源：`kernel/include/uapi/linux/airymax/syscalls.h`（契约头
   SSoT 形式）、`syscall.xml`（R-01 SSoT）、`syscall_gen.h`（`@generated`
-  生成产物），由 `sc-verify.yml` 的 `sc-validate` job 门禁收口（L-04 /
+  生成产物），由 `os-chk-verify.yml` 的 OS-CHK-DOC-04 门禁收口（L-04 /
   D-04）。
 
 ## 许可证
