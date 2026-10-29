@@ -31,8 +31,8 @@ set -uo pipefail
 readonly EINVAL=5
 # shellcheck source=../lib/log.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/log.sh"
-readonly GATE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
-readonly MIRROR_LIST="${GATE_ROOT}/distro/repo/mirrors.list"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
+readonly MIRROR_LIST="${ROOT}/distro/repo/mirrors.list"
 
 DIR=""
 BUDGET=2700
