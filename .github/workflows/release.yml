@@ -48,6 +48,10 @@ jobs:
     # 10min 余量，慢镜像即可吃光，故 job 预算提到 300min
     # （GitHub 托管 runner 上限 360min）。
     timeout-minutes: 300
+    # 步骤顺序按「失败代价递增」排列：静态门禁（秒）→ 版本与签名密钥自检
+    # （秒）→ 依赖安装与 SBOM/SDK（分钟）→ 内核四腿（小时）→ 签名与上传。
+    # 代价大的步骤排在不具依赖关系的廉价步骤之后，任何输入错误都在最便宜
+    # 的一步暴露，而不是在两小时后。
     outputs:
       tag: ${{ steps.ver.outputs.tag }}
       ver: ${{ steps.ver.outputs.ver }}
@@ -82,6 +86,29 @@ jobs:
           fi
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           echo "ver=${ver}" >> "$GITHUB_OUTPUT"
+
+      # 签名密钥是唯一「几秒就能证伪、却只在发布末尾才被发现」的输入：
+      # 私钥缺席或口令错误时，此前要跑满内核四腿（210 分钟）＋SDK＋OCI
+      # 才在签名步暴露。import 只保证私钥进入 keyring，不保证无交互可用，
+      # 因此在任何长步骤之前先做一次真实签名自检。
+      - name: Import GPG signing key
+        uses: crazy-max/ghaction-import-gpg@v6
+        with:
+          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+          passphrase: ${{ secrets.GPG_PASSPHRASE }}
+
+      - name: Verify GPG signing capability
+        env:
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          probe="$(mktemp)"
+          echo "airymaxos signing probe" > "${probe}"
+          gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 \
+            --detach-sign --armor -o "${probe}.asc" "${probe}" \
+            3<<<"${GPG_PASSPHRASE}"
+          gpg --verify "${probe}.asc" "${probe}"
+          rm -f "${probe}" "${probe}.asc"
 
       - name: Install syft
         uses: anchore/sbom-action/download-syft@v0
@@ -138,6 +165,14 @@ jobs:
           command -v aarch64-linux-gnu-strip riscv64-linux-gnu-strip \
             loongarch64-linux-gnu-strip >/dev/null || {
             echo '::error::缺少交叉 strip，内核 RPM 的 brp-strip 无法完成'; exit 1; }
+
+      # SDK 与烧录工具同出一门：打包、确定性比对、pyz 实跑自检都在 gate 里，
+      # 单行 run 不占内联预算（ci/check-workflows.py）。它与内核构建互不依赖，
+      # 因此排在内核四腿之前：pyz 自检失败时只花一分钟，而不是等到最后一腿。
+      - name: Pack SDK and airy-flash
+        env:
+          SOURCE_DATE_EPOCH: ${{ steps.epoch.outputs.value }}
+        run: ci/ci.sh tool-pack --out . --version "${{ steps.ver.outputs.ver }}"
 
       # 4 架构内核 RPM：单 job 内顺序构建（管理仓 2 job 铁律，不得引入 matrix job）。
       # 与 ISO 路径共用 distro/scripts/build-kernel.sh 与同一份配方：源码归档、
@@ -206,35 +241,6 @@ jobs:
             total=$((total + have))
           done
           echo "内核 RPM 总数: ${total}"
-
-      - name: Import GPG signing key
-        uses: crazy-max/ghaction-import-gpg@v6
-        with:
-          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
-          passphrase: ${{ secrets.GPG_PASSPHRASE }}
-
-      # import 只保证私钥进入 keyring，不保证后续无交互签名可用。此处在
-      # 耗时的 SDK/OCI/签名步骤之前做一次真实签名自检，密钥口令错误或缺
-      # 席时立即失败，避免跑完一小时后才在发布末尾暴露。
-      - name: Verify GPG signing capability
-        env:
-          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
-        run: |
-          set -euo pipefail
-          probe="$(mktemp)"
-          echo "airymaxos signing probe" > "${probe}"
-          gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 \
-            --detach-sign --armor -o "${probe}.asc" "${probe}" \
-            3<<<"${GPG_PASSPHRASE}"
-          gpg --verify "${probe}.asc" "${probe}"
-          rm -f "${probe}" "${probe}.asc"
-
-      # SDK 与烧录工具同出一门：打包、确定性比对、pyz 实跑自检都在 gate 里，
-      # 单行 run 不占内联预算（ci/check-workflows.py）。
-      - name: Pack SDK and airy-flash
-        env:
-          SOURCE_DATE_EPOCH: ${{ steps.epoch.outputs.value }}
-        run: ci/ci.sh tool-pack --out . --version "${{ steps.ver.outputs.ver }}"
 
       - name: Build OCI base image
         env:
