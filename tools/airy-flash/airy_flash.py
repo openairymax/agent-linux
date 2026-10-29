@@ -84,6 +84,8 @@ __all__ = [
     "human_bytes",
     "human_duration",
     "main",
+    "ledger_from_ref",
+    "ledger_of",
     "parse_oci",
     "parse_sums",
     "probe_device",
@@ -105,6 +107,10 @@ CRITICAL_MOUNTS = ("/", "/boot", "/boot/efi", "/usr", "/var")
 BLOCK_SECTOR = 512
 SPACE_SLACK = 64 << 20   # 取回时除镜像本体外还给目录留出的余量
 OCI_KEYS = ("ref", "tag", "name", "sha256", "size", "chunk_size", "chunks")
+# 清单注解前缀与 layer 标题键：ci/gates/iso-publish.sh 以同一组键推送，
+# 取件侧只按这组键读，避免两侧各自发明字段名。
+ANN = "org.openairymax.iso"
+TITLE = "org.opencontainers.image.title"
 
 
 # ─── 人读格式化 ──────────────────────────────────────────────────────────────
@@ -307,6 +313,132 @@ def parse_oci(path: Path) -> OciLedger:
         chunk_size=_oci_int(fields["chunk_size"], "chunk_size", path),
         parts=tuple(parts),
     )
+
+
+def _ann(ann: dict[str, str], key: str, ref: str) -> str:
+    """注解缺一即拒：早于分块实现的 tag 只有 created，按它取件必然错位。"""
+    value = str(ann.get(f"{ANN}.{key}") or "").strip()
+    if not value:
+        raise FlashError(
+            EXIT_CHECK,
+            f"{ref} 缺少注解 {ANN}.{key}",
+            hint="该 tag 早于分块实现；按发布页给出的 tag 重新取件",
+        )
+    return value
+
+
+def _positive(raw: str, label: str, ref: str) -> int:
+    """正整数解析：块大小与块数错一个数量级都会拼出损坏镜像。"""
+    try:
+        number = int(raw, 10)
+    except ValueError:
+        raise FlashError(EXIT_CHECK, f"{ref} 的 {label} 不是整数: {raw}") from None
+    if number <= 0:
+        raise FlashError(EXIT_CHECK, f"{ref} 的 {label} 必须为正: {raw}")
+    return number
+
+
+def _ann_int(ann: dict[str, str], key: str, ref: str) -> int:
+    return _positive(_ann(ann, key, ref), f"{ANN}.{key}", ref)
+
+
+def _digest(value: str, ref: str) -> str:
+    """layer digest → 裸 sha256；算法或长度不对当场拒，不猜「大概是它」。"""
+    algo, _, hexd = value.partition(":")
+    hexd = hexd.lower()
+    plain = len(hexd) == 64 and all(c in "0123456789abcdef" for c in hexd)
+    if algo != "sha256" or not plain:
+        raise FlashError(EXIT_CHECK, f"{ref} 的 layer digest 不是 sha256: {value}")
+    return hexd
+
+
+def _split_ref(ref: str) -> tuple[str, str]:
+    """ghcr.io/o/i:v0.0.3 → (ghcr.io/o/i, v0.0.3)；tag 缺省时为空串。"""
+    head, sep, tail = ref.rpartition(":")
+    if not sep or "/" in tail:
+        return ref, ""
+    return head, tail
+
+
+def ledger_of(ref: str, text: str) -> OciLedger:
+    """把 OCI 清单读成账本：tag 自身就是账本，不再依赖外部文件分发。
+
+    公开面只有 OCI 清单（注解 + layer）。账本文件此前只作为需登录的
+    Actions 制品上传，外部用户无从取件。此处以注解为元数据来源、以 layer
+    的标题与 digest 为逐块账本，使 --ref 与 --oci 得到同一份结论。
+    """
+    try:
+        doc = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise FlashError(EXIT_CHECK, f"{ref} 的清单不是合法 JSON: {exc}") from None
+    ann = doc.get("annotations") or {}
+    name = _ann(ann, "name", ref)
+    sha = _ann(ann, "sha256", ref).lower()
+    plain = len(sha) == 64 and all(c in "0123456789abcdef" for c in sha)
+    if not plain:
+        raise FlashError(EXIT_CHECK, f"{ref} 的 {ANN}.sha256 格式不对")
+    size = _ann_int(ann, "size", ref)
+    chunk = _ann_int(ann, "chunk-size", ref)
+    chunks = _ann_int(ann, "chunks", ref)
+    layers = doc.get("layers") or []
+    if len(layers) != chunks:
+        raise FlashError(EXIT_CHECK, f"{ref} 声明 {chunks} 块却列出 {len(layers)} 层")
+    parts: list[OciPart] = []
+    for index, layer in enumerate(layers):
+        title = str((layer.get("annotations") or {}).get(TITLE) or "").strip()
+        raw_size = str(layer.get("size") or "")
+        if not raw_size:
+            raise FlashError(EXIT_CHECK, f"{ref} 的第 {index} 层缺少 size")
+        parts.append(
+            OciPart(
+                index,
+                _digest(str(layer.get("digest") or ""), ref),
+                _positive(raw_size, f"layer[{index}].size", ref),
+                title,
+            )
+        )
+    if [part.name for part in parts] != sorted(part.name for part in parts):
+        raise FlashError(
+            EXIT_CHECK,
+            f"{ref} 的 layer 顺序与块序不一致",
+            hint="清单被重排过；改用发布页给出的 tag",
+        )
+    joined = sum(part.size for part in parts)
+    if joined != size:
+        raise FlashError(
+            EXIT_CHECK,
+            f"{ref} 分块合计 {human_bytes(joined)} ≠ 声明 {human_bytes(size)}",
+        )
+    if any(part.size != chunk for part in parts[:-1]):
+        raise FlashError(EXIT_CHECK, f"{ref} 的块大小与 {ANN}.chunk-size 不一致")
+    repo, tag = _split_ref(ref)
+    return OciLedger(
+        ref=repo,
+        tag=tag,
+        name=name,
+        sha256=sha,
+        size=size,
+        chunk_size=chunk,
+        parts=tuple(parts),
+    )
+
+
+def ledger_from_ref(ref: str, oras: str) -> OciLedger:
+    """取远端清单再解析；网络或凭据问题归 IO，清单不自洽归校验。"""
+    proc = subprocess.run(
+        [oras, "manifest", "fetch", "--format", "json", ref],
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0:
+        tail = (proc.stderr or proc.stdout).strip().splitlines()
+        detail = tail[-1] if tail else f"退出 {proc.returncode}"
+        raise FlashError(
+            EXIT_IO,
+            f"oras manifest fetch 失败: {detail}",
+            hint="仓库或网络不可达；换镜像站后重试同一条命令",
+        )
+    return ledger_of(ref, proc.stdout)
 
 
 def sha256_file(
@@ -1279,12 +1411,12 @@ def _fetch_checks(
 
 
 def _banner_fetch(
-    ledger: OciLedger, oci: Path, dest: Path, renderer: Renderer, fetched: bool
+    ledger: OciLedger, source: str, dest: Path, renderer: Renderer, fetched: bool
 ) -> None:
     """取回的三行身份：清单、来源、目标，与 write 的头部一一对应。"""
     renderer.field(
         "清单",
-        str(oci),
+        source,
         f"{ledger.chunks} 块 x {human_bytes(ledger.chunk_size)}"
         f"  sha256 {short_digest(ledger.sha256)}",
     )
@@ -1317,12 +1449,25 @@ def _fetch_steps(
     ]
 
 
+def _ledger_arg(args: argparse.Namespace) -> tuple[OciLedger, str]:
+    """两个取件入口二选一：账本文件可离线复盘，--ref 免去文件分发。"""
+    if bool(args.oci) == bool(args.ref):
+        raise FlashError(
+            EXIT_USAGE,
+            "--oci 与 --ref 必须且只能给一个",
+            hint="有账本用 --oci FILE；只知 tag 用 "
+            "--ref ghcr.io/openairymax/airymaxos-iso:v0.0.3",
+        )
+    if args.oci:
+        return parse_oci(Path(args.oci)), str(Path(args.oci))
+    return ledger_from_ref(args.ref, args.oras), args.ref
+
+
 def _run_fetch(
     args: argparse.Namespace, report: Report, renderer: Renderer
 ) -> None:
     """取回：清单 → 预检 → 分段执行，收尾与 write 走同一条路径。"""
-    oci = Path(args.oci)
-    ledger = parse_oci(oci)
+    ledger, source = _ledger_arg(args)
     report.oci = ledger
     out = Path(args.out)
     try:
@@ -1336,10 +1481,10 @@ def _run_fetch(
         not args.force and dest.is_file() and dest.stat().st_size == ledger.size
     )
     image = ImageFacts(
-        path=dest, size=ledger.size, expected=ledger.sha256, sums_file=str(oci)
+        path=dest, size=ledger.size, expected=ledger.sha256, sums_file=source
     )
     report.image = image
-    _banner_fetch(ledger, oci, dest, renderer, fetched)
+    _banner_fetch(ledger, source, dest, renderer, fetched)
     _verdict(
         report,
         renderer,
@@ -1447,6 +1592,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--image", help="ISO 或 raw 镜像路径")
     parser.add_argument("--oci", help="fetch：发布清单 iso-oci.txt 路径")
+    parser.add_argument(
+        "--ref",
+        help="fetch：OCI 引用（如 ghcr.io/openairymax/airymaxos-iso:v0.0.3），"
+        "清单本身即账本，无需外部文件",
+    )
     parser.add_argument("--out", default=".", help="fetch：输出目录（默认当前目录）")
     parser.add_argument(
         "--force", action="store_true", help="fetch：忽略本地已存在的镜像，重新取回"

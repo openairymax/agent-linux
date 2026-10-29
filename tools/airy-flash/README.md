@@ -31,7 +31,7 @@ EFI 镜像，顺序写入即可双固件引导；另造一套分区/引导引擎
 | 内容 | 出处 |
 |------|------|
 | 发布物组成（ISO + `.sha256` + `iso-manifest.txt`） | `.github/workflows/image-build.yml` |
-| 发行 ISO 的取件通道与摘要 | `desktop/iso/iso-oci.txt`（由 `ci/ci.sh iso-publish` 写入：整体 sha256、块大小、块数与逐块 digest） |
+| 发行 ISO 的取件通道与摘要 | `desktop/iso/iso-oci.txt`（由 `ci/ci.sh iso-publish` 写入：整体 sha256、块大小、块数与逐块 digest）。该文件不是唯一入口：清单注解与逐层 digest 已含同样内容，`fetch --ref` 只凭 tag 即可取件 |
 | 取件通道的不可变性断言 | `ci/gates/iso-publish.sh`（每块 layer digest 必须等于该块 sha256，拼接后必须等于整体 sha256） |
 | BIOS + UEFI 双固件冷启动验收 | `ci/ci.sh accept --firmware both` |
 | 装机后桌面就绪标记 `AIRYMAX-DESKTOP-READY` | 同上，产品 ISO 断言 |
@@ -55,7 +55,7 @@ Actions 的 `airymaxos-image` artifact 只保留 7 天，仅用于调试，不�
 
 | 步骤 | 动作 | 失败即停 |
 |------|------|----------|
-| 1 | `airy-flash fetch --oci airymaxos-0.0.3-x86_64.iso.iso-oci.txt --out releases/v0.0.3`：拉取分块 → 逐块核对 → 拼接 → 整体核对 | 是 |
+| 1 | `airy-flash fetch --ref ghcr.io/openairymax/airymaxos-iso:v0.0.3 --out releases/v0.0.3`：按 tag 读清单 → 拉取分块 → 逐块核对 → 拼接 → 整体核对；已有账本文件时改传 `--oci FILE`，两者结论一致 | 是 |
 | 2 | 插入 U 盘，用 `lsblk` 找到**整盘**节点（如 `/dev/sdb`，不是 `/dev/sdb1`） | 是 |
 | 3 | `plan` 只预检：核对系统盘、挂载、只读、容量、摘要来源 | 是 |
 | 4 | `write --yes`：校验镜像 → 写入 → `fsync` → 回读比对 | 是 |
@@ -133,7 +133,7 @@ U 盘不会自动出现在 Linux 侧；不先做直通，`lsblk` 里根本看不
 
 | 子命令 | 作用 | 是否写设备 |
 |--------|------|------------|
-| `fetch` | 按 `iso-oci.txt` 取回分块、逐块核对、拼接并核对整体摘要 | 否 |
+| `fetch` | 按 tag 或 `iso-oci.txt` 取回分块、逐块核对、拼接并核对整体摘要（`--ref` 免账本文件，`--oci` 供离线复盘） | 否 |
 | `plan` | 预检 + 校验镜像摘要（默认子命令） | 否 |
 | `write` | 预检 → 校验 → 写入 → 刷盘 → 回读 | 是 |
 | `verify` | 只回读已写入的设备并与镜像比对 | 否 |
@@ -148,9 +148,11 @@ U 盘不会自动出现在 Linux 侧；不先做直通，`lsblk` 里根本看不
 # 环境自检
 python3 airy-flash-0.0.3.pyz check
 
-# 取回发行 ISO：清单是唯一账本，块错位或字节不符当场停下
+# 取回发行 ISO：清单是唯一账本，块错位或字节不符当场停下。
+# 发布面的清单本身就是账本（注解 + 逐层 digest），所以只给 tag 即可取件；
+# 已拿到 iso-oci.txt 的离线场景改用 --oci FILE，两条路径结论一致。
 python3 airy-flash-0.0.3.pyz fetch \
-    --oci airymaxos-0.0.3-x86_64.iso.iso-oci.txt --out releases/v0.0.3
+    --ref ghcr.io/openairymax/airymaxos-iso:v0.0.3 --out releases/v0.0.3
 
 # 只预检（不碰目标设备）
 sudo python3 airy-flash-0.0.3.pyz plan \
