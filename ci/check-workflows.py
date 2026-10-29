@@ -27,6 +27,12 @@
 9. PR 触发的 workflow 必须有 ``concurrency:`` 且按 PR 取消旧轮。
    两次 push 间隔短于 job 时长时，旧 run 的结论对新 HEAD 没有意义，
    却会和它抢同一批并发额度，排障时也容易读到旧 run 的日志。
+10. ``pull_request`` 的 paths 必须是 ``push`` 的 paths 子集。PR 侧多出来的
+   判据意味着该文件合并后不再被校验：门禁脚本自己改了、评审阶段看不到
+   结论，只能在 main 上事后发现（ssot-verify 曾如此）。
+11. paths 不得落进子模块内部（``<gitlink>/**``）。父仓 diff 里子模块只
+   呈现为目录名一项，内部 glob 永远不命中，写上去只是让人以为覆盖了
+   （kernel-verify 的 ``kernel/**`` 就是这样一条死判据）。
 
 为什么需要它：这些约束此前只存在于文档里，没有执行者。78 段内联 shell
 就是这样一段段长出来的——每一次单看都合理，合起来就没有人能在本地验证。
@@ -179,6 +185,65 @@ def head_inline(name: str) -> int | None:
     return count_inline(blob)
 
 
+def trigger_paths(text: str, key: str) -> list[str]:
+    """取出某个触发器下 ``paths:`` 的条目。
+
+    只认同级缩进的键切换，不引入 YAML 解析器：workflow 的实际形态是手写的
+    四空格缩进，PyYAML 会把 ``on`` 读成布尔真值，反而多一层歧义。
+    """
+    lines = text.splitlines()
+    try:
+        start = next(i for i, s in enumerate(lines)
+                     if re.match(rf"^  {key}:\s*$", s))
+    except StopIteration:
+        return []
+    out: list[str] = []
+    in_paths = False
+    for s in lines[start + 1:]:
+        if not s.strip() or s.lstrip().startswith("#"):
+            continue
+        if not s.startswith("  ") or re.match(r"^  \S", s):
+            break
+        if re.match(r"^\s+paths:\s*$", s):
+            in_paths = True
+            continue
+        if re.match(r"^\s+[\w-]+:", s):
+            in_paths = False
+            continue
+        m = re.match(r"^\s+-\s*'?([^'\s]+)'?\s*$", s)
+        if in_paths and m:
+            out.append(m.group(1))
+    return out
+
+
+def check_triggers(name: str, text: str) -> list[str]:
+    """PR 判据必须是 post-merge 判据的子集，且不得落进子模块内部。"""
+    pr = trigger_paths(text, "pull_request")
+    push = trigger_paths(text, "push")
+    errors = [
+        f"{name}: pull_request 判据 {p} 未进入 push 判据（合并后不再校验）"
+        for p in pr if push and p not in push
+    ]
+    for key, paths in (("pull_request", pr), ("push", push)):
+        for p in paths:
+            for d in submodule_paths():
+                # 列子模块目录名本身是对的（gitlink 指针变化就长这样），
+                # 错的只有伸进内部的 glob。
+                if p.startswith(d + "/"):
+                    errors.append(
+                        f"{name}: {key} 判据 {p} 落在子模块 {d} 内部，"
+                        "父仓 diff 只呈现目录名，该 glob 永不命中")
+    return errors
+
+
+def submodule_paths() -> list[str]:
+    """父仓子模块目录名：.gitmodules 是唯一事实源。"""
+    path = ROOT / ".gitmodules"
+    if not path.exists():
+        return []
+    return re.findall(r"^\s*path\s*=\s*(\S+)\s*$", path.read_text(), re.MULTILINE)
+
+
 def check_name(name: str, text: str) -> list[str]:
     """命名约定：kebab-case 文件名，且顶层 ``name:`` 与文件同名词。"""
     if not NAME_FILE.match(name):
@@ -233,6 +298,7 @@ def main() -> int:
         text = (WORKFLOWS / name).read_text()
         errors.extend(check_name(name, text))
         errors.extend(check_policy(name, text))
+        errors.extend(check_triggers(name, text))
         inline = count_inline(text)
         jobs = count_jobs(text)
         total += inline
