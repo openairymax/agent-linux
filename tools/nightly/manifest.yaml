@@ -52,7 +52,7 @@ permissions:
   contents: read
 
 runner:
-  label: ubuntu-latest
+  label: ubuntu-24.04
   hosted_ceiling_minutes: 360
 
 jobs:
