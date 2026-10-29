@@ -36,7 +36,7 @@ a leftover build directory instead of waiting for a cloud job.
 ├── README.md                    # This file
 ├── workflows/                   # 8 GitHub Actions workflows
 │   ├── kernel-verify.yml        # Kernel build matrix + static analysis + tests
-│   ├── airy-verify.yml          # Airymax build (4 arches) + checkpatch + SPDX + symbol integrity
+│   ├── airy-verify.yml          # Airymax build (4 arches) + SPDX + symbol integrity
 │   ├── os-chk-verify.yml        # OS-CHK unified gate orchestration (P0/P1 blocking)
 │   ├── mgmt-verify.yml          # Governance file integrity + leaf CI orchestration
 │   ├── image-build.yml          # Desktop ISO assembly + install/cold-boot acceptance
@@ -52,7 +52,7 @@ a leftover build directory instead of waiting for a cloud job.
 | Workflow | Jobs | Trigger |
 |----------|------|---------|
 | `kernel-verify.yml` | `kernel-build` — Kbuild matrix (4 configs × 4 arches × 2 compilers − 4 excluded cells = 28, `max-parallel: 8`) with `W=2` zero-warning gate; `kernel-verify` — checkpatch `--strict`, sparse `C=2`, Coccinelle, KUnit on UML, kselftest on QEMU | PR / push on `kernel/**` |
-| `airy-verify.yml` | `airy-build` — `airy_defconfig` build matrix on 4 arches (x86_64/arm64/riscv/loongarch) + Airymax CONFIG gate + BTF embedded + `.o` artifact check + symbol-clash check between `security/airy/` and `kernel/superv/`; `airy-static` — checkpatch `--strict` plus the Airymax extension rules, SPDX identifier audit (`[SC]` = BSD-3-Clause OR GPL-2.0, else GPL-2.0-only), and SSoT manifest checks (defconfig matrix / BTF / Kbuild version injection) | PR / push on Airymax paths |
+| `airy-verify.yml` | `airy-build` — `airy_defconfig` build matrix on 4 arches (x86_64/arm64/riscv/loongarch), then `ci/ci.sh kernel-airy --kind assert`: Airymax CONFIGs, BTF embedded, six `built-in.a` artifacts, symbol-clash check between `security/airy/` and `kernel/superv/`; `airy-static` — SPDX identifier audit only. checkpatch, the extension rules and the SSoT manifest checks are covered by `kernel-verify.yml` and `os-chk-verify.yml` | PR / push on `kernel` gitlink, `ci/gates/kernel-*.sh`, `ci/lib/**` |
 | `os-chk-verify.yml` | `os-chk-verify` — resolve `gates.yaml`, dispatch registered OS-CHK executors, aggregate reports and block on P0/P1 findings. Also carries the entire Python tool-suite payload (abi-check / codegen / dsl / farm / flash / rollback …): one dependency install, one pytest sweep, so a tool change no longer queues four near-identical workflows | PR / push on `tools/**`, `sdk/**`, `ci/**`, the four audited gitlinks |
 | `mgmt-verify.yml` | `file-integrity` — verify submodule dirs derived from `.gitmodules` (9 entries), `[SC]` 12 shared headers, single physical copy of `*/airymax/ipc.h`, 12 governance files, no `airymaxos-` prefix; `orchestrate-leaf-ci` — aggregate leaf CI statuses, markdownlint repository-owned markdown, copyright header check | PR on `**.md`, `.gitmodules`, `ssot-registry.yaml`, `MAINTAINERS`, `CODEOWNERS`, `tools/**`, `.github/**`, `kernel` / push on `main` |
 | `image-build.yml` | `assemble` — build the desktop ISO from a pinned openEuler netinst base inside a privileged official container, then verify the assembly manifest and ISO checksum; `accept` — install the ISO in QEMU under BIOS and UEFI, cold-boot to `AIRYMAX-DESKTOP-READY` (or `AIRYMAX-SMOKE-PASS` with `acceptance=true`), publish TAP and serial logs. Both jobs are 12 one-line `ci/ci.sh` calls; all logic lives in `ci/gates/` | `workflow_dispatch` (release gate, not a PR gate) |

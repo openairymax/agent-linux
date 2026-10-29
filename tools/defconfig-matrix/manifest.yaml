@@ -13,8 +13,9 @@
 #   docs/docs-linux/70-build-system/03-ci-cd-pipeline.md（编译验证矩阵）
 #
 # 铁律：本清单是「支持架构 × airy_defconfig 形态 × CI 构建矩阵 × 必备
-#      CONFIG」的唯一事实源。.github/workflows/airy-verify.yml 与 kernel-verify.yml
-#      的构建矩阵、必备 CONFIG 清单必须与本表逐项相等；任何一侧漂移由
+#      CONFIG」的唯一事实源。.github/workflows/airy-verify.yml 与
+#      kernel-verify.yml 的构建矩阵、ci/gates/kernel-*.sh 的必备 CONFIG 清单
+#      必须与本表逐项相等；任何一侧漂移由
 #      tools/defconfig-matrix/defconfig_matrix.py --check 检出。
 #      新增架构时，先在本表登记，再落地 arch/<kdir>/configs/airy_defconfig。
 #
@@ -64,8 +65,8 @@ architectures:
     configs: arch/sw_64/configs/airy_defconfig
 
 # 必备 CONFIG：每个 airy_defconfig 必须含有的基线开关（Airymax 专属项 +
-# 桌面运行时依赖项），须与 airy-verify.yml 的 required=(...) 以及 kernel 腿
-# gate（ci/gates/kernel-refbuild.sh）的 REQUIRED_CONF 清单逐项相等，
+# 桌面运行时依赖项），须与 ci/gates/kernel-airy.sh 与 kernel-refbuild.sh 的
+# REQUIRED_CONF 清单逐项相等，
 # 并与 kernel/security/airy/Kconfig 的声明一致。
 required_configs:
   - CONFIG_SECURITY=y

@@ -77,6 +77,7 @@ btf_artifacts:
 ci_workflows:
   # kernel-verify.yml 的 airy_defconfig 矩阵构建 x86_64，airy-verify.yml 的 airy-build
   # 构建全部 4 架构 airy_defconfig：二者均开启 CONFIG_DEBUG_INFO_BTF，
-  # 故都须提供 pahole 并断言 vmlinux 的 .BTF 段。
+  # 故都须提供 pahole 并断言 vmlinux 的 .BTF 段（断言落在 ci/gates/*.sh，
+  # 本工具按 `ci/ci.sh <gate>` 调用把门禁脚本正文一并纳入受检文本）。
   - .github/workflows/kernel-verify.yml
   - .github/workflows/airy-verify.yml

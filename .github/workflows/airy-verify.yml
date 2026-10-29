@@ -1,16 +1,19 @@
 # ===========================================================================
 # agent-linux (AirymaxOS) Airymax-Specific CI Pipeline
-# 专门验证 Airymax 专属代码（security/airy + kernel/superv + corekern 等）
-# 重组为 2 jobs：airy-build（airy_defconfig 4 架构构建 + 配置/产物/BTF/符号门禁）
-#                airy-static（checkpatch + 定制扩展规则 + SPDX 许可证审计
-#                             + defconfig 构建矩阵一致性 + BTF 基线一致性
-#                             + Kbuild 版本注入一致性）
+#
+# 只保留「没有别的门禁在查」的东西。Airymax 专属代码的配置、编译、checkpatch、
+# 扩展规则、defconfig 矩阵、BTF 基线与 Kbuild 版本注入已分别由 kernel-verify.yml
+# 与 os-chk-verify.yml（tools/os-chk/gates.yaml）承接；这里补的是：
+#   airy-build  —— airy_defconfig 在 4 个架构上真的构建成功，且产物确实由
+#                  security/airy、kernel/superv… 六个目录构成
+#                  （ci/ci.sh kernel-airy --kind assert）
+#   airy-static —— Airymax 文件的 SPDX 归属
+#                  （ci/ci.sh kernel-airy --kind style）
+#
 # Authority: docs/docs-linux/70-build-system/03-ci-cd-pipeline.md
 # Constraint: 管理仓每个 workflow 最多 2 条流水线
-# Rules: OS-STD-TOOL-160（checkpatch）/ OS-STD-TOOL-161（矩阵）
-#        OS-BUILD-026 / OS-BUILD-028（defconfig 基线 / 每架构 defconfig）
-#        OS-KER-106 / OS-OBS-012（eBPF / BTF 基线，需 pahole 且须断言 BTF 产物）
-#        OS-STD-049 / OS-BUILD-010（版本四元组与 version.h filechk 注入）
+# Rules: OS-BUILD-026 / OS-BUILD-028（defconfig 基线 / 每架构 defconfig）
+#        OS-KER-106 / OS-OBS-012（BTF 基线）
 #        IRON-3（所有 Airymax 增强代码必须在新增目录中）
 # ===========================================================================
 
@@ -18,37 +21,21 @@ name: airy-verify
 on:
   pull_request:
     paths:
-      - 'kernel/security/airy/**'
-      - 'kernel/kernel/superv/**'
-      - 'kernel/kernel/syscalls/**'
-      - 'kernel/kernel/corekern/**'
-      - 'kernel/kernel/log/**'
-      - 'kernel/kernel/ipc/**'
-      - 'kernel/include/uapi/linux/airymax/**'
-      - 'kernel/arch/*/configs/airy_defconfig'
+      # kernel 是 gitlink：子模块指针变化才会出现在这里，路径过滤只能匹配
+      # 父仓真实存在的路径，写进 gitlink 内部的 glob 永远不会命中。
       - 'kernel'
-      - 'tools/defconfig-matrix/**'
-      - 'tools/btf-integration/**'
-      - 'tools/kbuild-version/**'
+      - 'ci/gates/kernel-*.sh'
+      - 'ci/lib/**'
       - '.github/workflows/airy-verify.yml'
   push:
     branches: [main]
     paths:
-      - 'kernel/security/airy/**'
-      - 'kernel/kernel/superv/**'
-      - 'kernel/kernel/syscalls/**'
-      - 'kernel/kernel/corekern/**'
-      - 'kernel/kernel/log/**'
-      - 'kernel/kernel/ipc/**'
-      - 'kernel/include/uapi/linux/airymax/**'
-      - 'kernel/arch/*/configs/airy_defconfig'
       - 'kernel'
-      - 'tools/defconfig-matrix/**'
-      - 'tools/btf-integration/**'
-      - 'tools/kbuild-version/**'
+      - 'ci/gates/kernel-*.sh'
+      - 'ci/lib/**'
       - '.github/workflows/airy-verify.yml'
 
-# 最小权限：本 workflow 只读源码，构建与测试产物走 artifact 与缓存。
+# 最小权限：本 workflow 只读源码，构建与测试产物走 artifact。
 permissions:
   contents: read
 
@@ -67,7 +54,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # kdir 是 $ARCH 映射后的内核源码架构目录名（x86_64 -> x86）
+          # kdir 是 $ARCH 映射后的内核源码架构目录名（x86_64 -> x86）。
+          # 这张表是 tools/defconfig-matrix 的比对对象，增删项须同步
+          # manifest.yaml，否则 OS-BUILD-MATRIX 变红。
           - arch: x86_64
             kdir: x86
             cross: ""
@@ -82,266 +71,35 @@ jobs:
             cross: "loongarch64-linux-gnu-"
     env:
       CROSS_COMPILE: ${{ matrix.cross }}
-      # 交叉工具链单次 apt_install 要拉数十 MB 的 .deb（cpp-13、gcc-13、libc6-dev
-      # 各数 MB 到 21 MB）。共享镜像源出现重传时，默认 1200s 的整条命令硬超时
-      # 会被打满而误判为失败（run 40296052499 的 arm64 格即如此）。本矩阵 job
-      # 预算 90min，把上限放宽到 2400s；acquire 级超时与重试仍由 ci/lib/apt.sh
-      # 控制，镜像无响应时不会无限等待。
+      # 交叉工具链单次 apt_install 要拉数十 MB 的 .deb（cpp-13、gcc-13、
+      # libc6-dev 各数 MB 到 21 MB）。共享镜像源出现重传时，默认 900s 的
+      # 整条命令硬超时会被打满而误判失败。本 job 预算 90min，放宽到 2400s；
+      # acquire 级超时与重试仍由 ci/lib/apt.sh 控制，镜像无响应时不会无限等待。
       APT_TIMEOUT: "2400"
     steps:
       - uses: actions/checkout@v4
         with: { submodules: recursive }
       - name: Install build dependencies and cross toolchain
-        run: |
-          set -euo pipefail
-          . ci/lib/apt.sh
-          apt_sync
-          apt_install flex bison libelf-dev libssl-dev bc cpio dwarves
-          case "${{ matrix.arch }}" in
-            x86_64) ;;
-            arm64)     apt_install gcc-aarch64-linux-gnu ;;
-            riscv)     apt_install gcc-riscv64-linux-gnu ;;
-            loongarch)
-              # noble 仅提供带版本号的 loongarch64 交叉 gcc，而 CROSS_COMPILE
-              # 期望无版本号的驱动名，这里补齐该别名。
-              apt_install gcc-13-loongarch64-linux-gnu
-              sudo ln -sf "$(command -v loongarch64-linux-gnu-gcc-13)" \
-                /usr/local/bin/loongarch64-linux-gnu-gcc
-              ;;
-          esac
-      - name: Configure airy_defconfig
-        run: |
-          set -euo pipefail
-          cd kernel
-          make ARCH=${{ matrix.arch }} defconfig
-          ./scripts/kconfig/merge_config.sh -m .config \
-            arch/${{ matrix.kdir }}/configs/airy_defconfig
-          make ARCH=${{ matrix.arch }} olddefconfig
-      - name: Verify Airymax CONFIGs are enabled
-        run: |
-          set -euo pipefail
-          cd kernel
-          required=(
-            'CONFIG_SECURITY=y'
-            'CONFIG_SECURITY_AIRY=y'
-            'CONFIG_AIRY_SYSCALL=y'
-            'CONFIG_AIRY_COREKERN=y'
-            'CONFIG_AIRY_LOG=y'
-            'CONFIG_AIRY_IPC=y'
-            'CONFIG_AIRY_AGENT_TRACING=y'
-            'CONFIG_AIRY_CAP_TABLE_SIZE=1024'
-            'CONFIG_IO_URING=y'
-            'CONFIG_USER_NS=y'
-          )
-          for want in "${required[@]}"; do
-            grep -qx "$want" .config || {
-              echo "::error::missing $want in airy_defconfig output"
-              exit 1
-            }
-          done
-          lsm="$(sed -n 's/^CONFIG_LSM="\(.*\)"$/\1/p' .config)"
-          case ",${lsm}," in
-            *,airy,*) echo "OK: airy present in CONFIG_LSM=${lsm}" ;;
-            *)
-              echo "::error::airy missing from CONFIG_LSM=${lsm}"
-              exit 1
-              ;;
-          esac
-      - name: Build kernel with airy_defconfig
-        run: |
-          set -euo pipefail
-          cd kernel
-          make ARCH=${{ matrix.arch }} -j"$(nproc)" 2>&1 | tee build.log
-          if grep -E "error:" build.log; then
-            echo "::error::build emitted compiler errors"
-            exit 1
-          fi
-          airy_re='security/airy/|kernel/(superv|syscalls|corekern|log|ipc)/|/airymax/'
-          if grep -E "warning:" build.log > warnings.log; then
-            if grep -E "${airy_re}" warnings.log; then
-              echo "::error::Airymax code emitted compiler warnings"
-              exit 1
-            fi
-            echo "NOTE: upstream warnings present, none in Airymax paths"
-          else
-            echo "OK: no compiler warnings emitted"
-          fi
-      - name: Verify BTF is embedded in vmlinux
-        run: |
-          set -euo pipefail
-          cd kernel
-          # OS-KER-106 / OS-OBS-012：airy_defconfig 开启 CONFIG_DEBUG_INFO_BTF，
-          # Linux 6.6 由 scripts/link-vmlinux.sh 的 gen_btf() 把 BTF 以 .BTF 段
-          # 内嵌进 vmlinux（不产出独立的 vmlinux.btf 文件），故断言段存在。
-          readelf -S vmlinux | grep -q '\.BTF' || {
-            echo "::error::vmlinux 缺少 .BTF 段（CONFIG_DEBUG_INFO_BTF 未生效）"
-            exit 1
-          }
-          echo "OK: vmlinux carries the .BTF section"
-      - name: Verify Airymax build artifacts
-        run: |
-          set -euo pipefail
-          cd kernel
-          for a in security/airy/built-in.a \
-                   kernel/superv/built-in.a \
-                   kernel/syscalls/built-in.a \
-                   kernel/corekern/built-in.a \
-                   kernel/log/built-in.a \
-                   kernel/ipc/built-in.a; do
-            test -f "$a" || { echo "::error::missing artifact $a"; exit 1; }
-          done
-          echo "All Airymax build artifacts verified"
-      - name: Verify symbol integrity (x86_64)
-        if: matrix.arch == 'x86_64'
-        run: |
-          set -euo pipefail
-          cd kernel
-          objs=(security/airy/airy_cap_check.o
-                kernel/superv/airy_cap_check_superv.o)
-          for o in "${objs[@]}"; do
-            test -f "$o" || { echo "::error::missing object $o"; exit 1; }
-          done
-          # security/airy 与 kernel/superv 的全局符号必须互不冲突
-          # （重命名后 *_superv 变体不得与宿主模块同名导出）
-          nm -g --defined-only "${objs[0]}" | awk '{print $3}' | sort -u > a.sym
-          nm -g --defined-only "${objs[1]}" | awk '{print $3}' | sort -u > b.sym
-          if comm -12 a.sym b.sym | grep -q .; then
-            echo "::error::clashing global symbols between the two objects:"
-            comm -12 a.sym b.sym
-            exit 1
-          fi
-          echo "Symbol integrity verified: no clashes between the two objects"
+        run: ci/ci.sh kernel-deps --kind build --arch ${{ matrix.arch }}
+      - name: Build airy_defconfig
+        run: ci/ci.sh kernel-build --config airy_defconfig --arch ${{ matrix.arch }} --compiler gcc --log "$RUNNER_TEMP/build.log"
+      - name: Assert Airymax ownership of the build
+        run: ci/ci.sh kernel-airy --kind assert --arch ${{ matrix.arch }}
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: airy-build-${{ matrix.arch }}
+          path: ${{ runner.temp }}/build.log
+          retention-days: 7
+          if-no-files-found: ignore
 
   airy-static:
-    name: Airymax style and SPDX audit
+    name: Airymax SPDX audit
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with: { submodules: recursive }
-      - name: Run checkpatch.pl on Airymax-specific files
-        run: |
-          set -uo pipefail
-          cd kernel
-          dirs=(
-            security/airy
-            kernel/superv
-            kernel/syscalls
-            kernel/corekern
-            kernel/log
-            kernel/ipc
-            include/uapi/linux/airymax
-            include/airymax
-          )
-          mapfile -t files < <(
-            find "${dirs[@]}" -type f \( -name '*.c' -o -name '*.h' \) |
-              LC_ALL=C sort
-          )
-          echo "checkpatch targets: ${#files[@]} files"
-          # checkpatch 在 --strict 下只要有 ERROR/WARNING/CHECK 就返回 1，
-          # 因此门禁不能依赖退出码，必须解析 total 行中的 errors 计数。
-          # 定级：ERROR 阻断，WARNING/CHECK 仅报告（L-11 归一化）。
-          err_total=0
-          warn_total=0
-          chk_total=0
-          for f in "${files[@]}"; do
-            out="$(LC_ALL=C scripts/checkpatch.pl --strict --no-tree -f "$f" 2>&1 || true)"
-            total="$(printf '%s\n' "$out" | grep -m1 '^total:' || true)"
-            errs="$(printf '%s\n' "$total" | sed -n 's/^total: \([0-9]\{1,\}\) errors.*/\1/p')"
-            warns="$(printf '%s\n' "$total" | sed -n 's/.*, \([0-9]\{1,\}\) warnings.*/\1/p')"
-            chks="$(printf '%s\n' "$total" | sed -n 's/.*, \([0-9]\{1,\}\) checks.*/\1/p')"
-            err_total=$((err_total + ${errs:-0}))
-            warn_total=$((warn_total + ${warns:-0}))
-            chk_total=$((chk_total + ${chks:-0}))
-            if [ "${errs:-0}" -gt 0 ]; then
-              echo "::error file=$f::checkpatch reported ${errs} errors"
-              printf '%s\n' "$out" | grep '^ERROR:'
-            fi
-          done
-          echo "checkpatch totals: ${err_total} errors, ${warn_total} warnings, ${chk_total} checks"
-          if [ "$err_total" -gt 0 ]; then
-            echo "::error::checkpatch gate failed (${err_total} errors)"
-            exit 1
-          fi
-          echo "checkpatch gate passed (ERROR level only; warnings are reported)"
-      - name: Run Airymax custom checkpatch extension rules
-        run: |
-          set -uo pipefail
-          # 上游 checkpatch.pl 之上的 AirymaxOS 子系统架构约束
-          # （AIRY-CHECKPATCH-001~011）。规则逻辑唯一落在
-          # kernel/scripts/airy_checkpatch_ext.pl，与 tools/airy-checkpatch/
-          # 的 pytest 集成套件同源，避免两处漂移（OS-TEST-066 / OS-KER-120）。
-          # 引擎仅在 error 级别非零退出：ERROR 阻断，WARNING 报告。
-          LC_ALL=C perl kernel/scripts/airy_checkpatch_ext.pl
-      - name: Verify SPDX identifiers on Airymax-specific files
-        shell: bash
-        run: |
-          set -uo pipefail
-          cd kernel
-          fail=0
-          # 期望值依据 docs/docs-linux/50-engineering-standards/05-development-process.md
-          # Part IV：UAPI/[SC] 头 -> Linux-syscall-note；内核态 .c/.h -> GPL-2.0-only；
-          # 构建脚本 Kbuild -> GPL-2.0。
-          check_spdx() {
-            local expected="$1"
-            shift
-            local f
-            for f in "$@"; do
-              if ! head -1 "$f" | grep -qF "SPDX-License-Identifier: ${expected}"; then
-                echo "::error file=$f::must declare 'SPDX-License-Identifier: ${expected}'"
-                fail=1
-              fi
-            done
-          }
-          mapfile -t uapi_h < <(find include/uapi/linux/airymax -maxdepth 1 -name '*.h')
-          mapfile -t airy_c < <(
-            find security/airy kernel/superv kernel/syscalls kernel/corekern \
-              kernel/log kernel/ipc -type f -name '*.c'
-          )
-          mapfile -t airy_h < <(
-            find security/airy kernel/superv kernel/syscalls kernel/corekern \
-              kernel/log kernel/ipc include/airymax -type f -name '*.h'
-          )
-          mapfile -t kbuild < <(
-            find security/airy kernel/superv kernel/syscalls kernel/corekern \
-              kernel/log kernel/ipc -type f -name 'Kbuild'
-          )
-          check_spdx 'GPL-2.0-only WITH Linux-syscall-note' "${uapi_h[@]}"
-          check_spdx 'GPL-2.0-only' "${airy_c[@]}"
-          check_spdx 'GPL-2.0-only' "${airy_h[@]}"
-          check_spdx 'GPL-2.0-only' "${kbuild[@]}"
-          check_spdx 'GPL-2.0' include/uapi/linux/airymax/Kbuild
-          echo "SPDX audit: ${#uapi_h[@]} uapi headers, ${#airy_c[@]} .c, ${#airy_h[@]} .h, ${#kbuild[@]} Kbuild"
-          if [ "$fail" -ne 0 ]; then
-            echo "::error::SPDX audit failed"
-            exit 1
-          fi
-          echo "SPDX audit passed"
-      - name: Verify defconfig build matrix (SSoT manifest)
-        run: |
-          set -uo pipefail
-          # manifest.yaml 是架构 / 必备 CONFIG / LSM / CI 构建矩阵的唯一事实源，
-          # defconfig_matrix.py --check 对其做 8 项交叉校验：清单↔文件系统双向
-          # 一致、defconfig 头部格式、必备 CONFIG、CONFIG_LSM、CI 矩阵架构同步、
-          # CI required=() 同步、Kconfig 声明闭合（OS-BUILD-026 / OS-BUILD-028）。
-          python3 -c 'import yaml' 2>/dev/null || \
-            python3 -m pip install --quiet 'pyyaml>=6.0,<7.0'
-          python3 tools/defconfig-matrix/defconfig_matrix.py --check
-      - name: Verify BTF / eBPF baseline (SSoT manifest)
-        run: |
-          set -uo pipefail
-          # manifest.yaml 是 eBPF 基线 / BTF 基线（含互斥项与 DWARF 形态）/
-          # BPF_EVENTS tracing 链路 / pahole 供给 / BTF 产物断言的唯一事实源，
-          # btf_integration.py --check 对其做 6 项交叉校验（OS-KER-106 / OS-OBS-012）。
-          python3 -c 'import yaml' 2>/dev/null || \
-            python3 -m pip install --quiet 'pyyaml>=6.0,<7.0'
-          python3 tools/btf-integration/btf_integration.py --check
-      - name: Verify Kbuild version injection (SSoT manifest)
-        run: |
-          set -uo pipefail
-          # manifest.yaml 是版本四元组 / kernel/Makefile.airymaxos / 顶层 Makefile
-          # 的 include 与 filechk_version.h 注入宏 / 契约快照的唯一事实源，
-          # kbuild_version.py --check 对其做 7 项交叉校验（OS-STD-049 / OS-BUILD-010）。
-          python3 -c 'import yaml' 2>/dev/null || \
-            python3 -m pip install --quiet 'pyyaml>=6.0,<7.0'
-          python3 tools/kbuild-version/kbuild_version.py --check
+      - name: Audit SPDX identifiers
+        run: ci/ci.sh kernel-airy --kind style

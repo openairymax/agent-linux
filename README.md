@@ -156,7 +156,7 @@ The management repository hosts **8 GitHub Actions workflows** (most capped at 2
 | Workflow | Trigger | Jobs | Purpose |
 |----------|---------|------|---------|
 | `kernel-verify.yml` | PR / push on `kernel/**` | `kernel-build` + `kernel-verify` | Kbuild matrix (31 configs) + checkpatch / sparse / Coccinelle / KUnit / kselftest |
-| `airy-verify.yml` | PR / push on Airymax paths | `airy-build` + `airy-static` | Airymax build on 4 arches + checkpatch `--strict` + SPDX audit + symbol-clash check |
+| `airy-verify.yml` | PR / push on `kernel` gitlink, `ci/gates/kernel-*.sh`, `ci/lib/**` | `airy-build` + `airy-static` | Airymax build on 4 arches; `kernel-airy --kind assert` (CONFIGs / BTF / built-in.a / symbol clash) + `--kind style` (SPDX) |
 | `os-chk-verify.yml` | PR / push on `tools/**`, `sdk/**`, `ci/**`, gitlinks | `os-chk-verify` | OS-CHK unified gates (P0/P1 blocking) + every Python tool suite |
 | `mgmt-verify.yml` | PR / push on docs, `.gitmodules`, SSoT, governance files, `kernel` | `file-integrity` + `orchestrate-leaf-ci` | Verify 9 submodules, [SC] 12 shared headers + single `ipc.h` copy, governance files; aggregate leaf CI status; markdownlint + copyright header |
 | `nightly.yml` | cron `0 2 * * *` / manual | `nightly-test-suite` + `nightly-revert-or-budget` | Formal verification (seL4-style) + 72h soak + chaos; auto-revert or CI budget check |

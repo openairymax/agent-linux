@@ -71,13 +71,12 @@ def _manifest_text(arches, required, lsm_entry="airy", version="1.0.0") -> str:
     return "\n".join(lines) + "\n"
 
 
-def _airy_verify_text(arches, required) -> str:
+def _airy_verify_text(arches) -> str:
     include = "".join(
         f"          - arch: {arch['arch']}\n"
         f"            kdir: {_kdir(arch['configs'])}\n"
         f'            cross: "{arch["cross"]}"\n'
         for arch in arches)
-    req = "".join(f"            '{item}'\n" for item in required)
     return (
         "jobs:\n"
         "  airy-build:\n"
@@ -88,10 +87,7 @@ def _airy_verify_text(arches, required) -> str:
         "  airy-static:\n"
         "    steps:\n"
         "      - name: verify\n"
-        "        run: |\n"
-        "          required=(\n"
-        f"{req}"
-        "          )\n"
+        "        run: ci/ci.sh kernel-airy --kind style\n"
     )
 
 
@@ -110,7 +106,7 @@ def _kernel_verify_text(arches) -> str:
     )
 
 
-def _kernel_gate_text(required) -> str:
+def _gate_conf_text(required) -> str:
     req = "".join(f"    '{item}'\n" for item in required)
     return (
         "#!/usr/bin/env bash\n"
@@ -135,14 +131,16 @@ def write_repo(tmp_path, arches=None, required=None,
     workflows.mkdir(parents=True, exist_ok=True)
     build_arches = [arch for arch in arches if arch["build"]]
     (workflows / "airy-verify.yml").write_text(
-        _airy_verify_text(build_arches, required), encoding="utf-8")
+        _airy_verify_text(build_arches), encoding="utf-8")
     (workflows / "kernel-verify.yml").write_text(
         _kernel_verify_text(arches), encoding="utf-8")
 
     gates = tmp_path / "ci" / "gates"
     gates.mkdir(parents=True, exist_ok=True)
+    (gates / "kernel-airy.sh").write_text(
+        _gate_conf_text(required), encoding="utf-8")
     (gates / "kernel-refbuild.sh").write_text(
-        _kernel_gate_text(required), encoding="utf-8")
+        _gate_conf_text(required), encoding="utf-8")
 
     manifest = tmp_path / "tools" / "defconfig-matrix" / "manifest.yaml"
     manifest.parent.mkdir(parents=True, exist_ok=True)
@@ -389,9 +387,9 @@ class TestCiRequiredSync:
 
     def test_missing_item(self, tmp_path):
         manifest = dm.load_manifest(write_repo(tmp_path))
-        path = tmp_path / ".github" / "workflows" / "airy-verify.yml"
+        path = tmp_path / "ci" / "gates" / "kernel-airy.sh"
         path.write_text(path.read_text(encoding="utf-8").replace(
-            "            'CONFIG_IO_URING=y'\n", ""), encoding="utf-8")
+            "    'CONFIG_IO_URING=y'\n", ""), encoding="utf-8")
         result = dm.check_ci_required_sync(manifest, tmp_path)
         assert not result.passed
         assert "缺少清单项" in result.details
@@ -414,15 +412,22 @@ class TestCiRequiredSync:
         assert not result.passed
         assert "kernel-refbuild.sh" in result.details
 
+    def test_missing_airy_gate(self, tmp_path):
+        manifest = dm.load_manifest(write_repo(tmp_path))
+        (tmp_path / "ci" / "gates" / "kernel-airy.sh").unlink()
+        result = dm.check_ci_required_sync(manifest, tmp_path)
+        assert not result.passed
+        assert "kernel-airy.sh" in result.details
+
     def test_missing_block(self, tmp_path):
         manifest = dm.load_manifest(write_repo(tmp_path))
-        path = tmp_path / ".github" / "workflows" / "airy-verify.yml"
+        path = tmp_path / "ci" / "gates" / "kernel-airy.sh"
         text = path.read_text(encoding="utf-8")
-        path.write_text(text[:text.index("          required=(")],
+        path.write_text(text[:text.index("REQUIRED_CONF=(")],
                         encoding="utf-8")
         result = dm.check_ci_required_sync(manifest, tmp_path)
         assert not result.passed
-        assert "未找到 required=" in result.details
+        assert "未找到 REQUIRED_CONF=" in result.details
 
 
 # ─── Kconfig 声明闭合 ──────────────────────────────────────────────────────
