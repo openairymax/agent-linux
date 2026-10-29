@@ -12,11 +12,10 @@
 # 断言放在装包之后、构建之前：交叉 strip 与 clang 缺席时，rpmspec 要到
 # %install 或 tools 子包的 bpftool skeleton 阶段才报错，代价是几十分钟。
 #
-# 退出码: 0 通过；1 安装失败或缺工具；5 参数不满足。
+# 退出码: 0 通过；1 安装失败或缺工具。本 gate 不接受参数，故无 5 号用法错误。
 # ===========================================================================
 set -uo pipefail
 
-readonly EINVAL=5
 readonly NATIVE_DEPS=(
     flex bison libelf-dev libssl-dev libdw-dev libtraceevent-dev
     libcap-dev libnuma-dev systemtap-sdt-dev python3-dev zlib1g-dev
