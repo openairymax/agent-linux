@@ -23,7 +23,7 @@
 # apt-get install qemu、AIRYMAX-TAP| 解析），防止把逻辑再抄回 YAML。
 #
 # file                       inline  jobs
-airy-verify.yml                  13     2
+airy-verify.yml                   0     2
 image-build.yml                   0     2
 kernel-verify.yml                 0     2
 mgmt-verify.yml                   0     2

@@ -5,8 +5,9 @@ defconfig_matrix.py — AirymaxOS defconfig 矩阵一致性检查器
 
 以 tools/defconfig-matrix/manifest.yaml 为唯一事实源（SSoT），静态校验
 「支持架构 × airy_defconfig 形态 × CI 构建矩阵 × 必备 CONFIG × Kbuild 引用」
-五者彼此一致，把分散在 .github/workflows/airy-verify.yml 与 kernel-verify.yml 的
-重复映射收敛到一处清单，并由本工具检出任何一侧的漂移。
+五者彼此一致，把分散在 airy-verify.yml / kernel-verify.yml 的架构映射与
+ci/gates/kernel-*.sh 的必备 CONFIG 断言收敛到一处清单，并由本工具检出
+任何一侧的漂移。
 
 设计原则（与项目铁律一致）：
   * 清单是唯一事实源；CI 的构建矩阵与必备 CONFIG 清单必须与之逐项相等。
@@ -20,7 +21,7 @@ defconfig_matrix.py — AirymaxOS defconfig 矩阵一致性检查器
   4. 必备 CONFIG 齐备（OS-BUILD-026）
   5. CONFIG_LSM 含清单登记的 LSM 名
   6. CI 构建矩阵与清单一致（airy-verify 精确匹配 / kernel-verify 登记子集）
-  7. CI 必备 CONFIG 清单与清单一致（OS-BUILD-026）
+  7. 门禁的必备 CONFIG 清单与清单一致（OS-BUILD-026）
   8. obj-$(CONFIG_*) 引用均有 Kconfig 声明（OS-KER-025）
 
 权威依据：
@@ -62,8 +63,10 @@ DEFAULT_MANIFEST_REL = "tools/defconfig-matrix/manifest.yaml"
 DEFAULT_KERNEL_DIR = "kernel"
 CI_AIRY_REL = ".github/workflows/airy-verify.yml"
 CI_KERNEL_REL = ".github/workflows/kernel-verify.yml"
-# kernel 腿的必备 CONFIG 断言已抽成 gate（kernel-verify.yml 只留一行调用），
-# 清单因此落在该脚本的 REQUIRED_CONF 数组里，而不是 workflow 内联块。
+# 必备 CONFIG 断言落在门禁脚本里而非 workflow 内联块：workflow 只留一行
+# 调用。airy 腿由 kernel-airy.sh --kind assert 承担，kernel 腿由
+# kernel-refbuild.sh 承担，两者的清单都必须与 manifest 逐项相等。
+CI_AIRY_GATE_REL = "ci/gates/kernel-airy.sh"
 CI_KERNEL_GATE_REL = "ci/gates/kernel-refbuild.sh"
 
 EXIT_PASS = 0
@@ -78,7 +81,7 @@ MANIFEST_KEYS = frozenset(
     {"version", "architectures", "required_configs", "lsm_entry"})
 ARCH_KEYS = frozenset({"arch", "cross", "kind", "build", "configs"})
 
-# Airymax 专属源码落点（与 airy-verify.yml / SPDX 审计保持一致）。
+# Airymax 专属源码落点（与 ci/gates/kernel-airy.sh 的 SPDX 审计保持一致）。
 AIRY_KBUILD_DIRS = (
     "security/airy",
     "kernel/superv",
@@ -93,7 +96,6 @@ CONFIG_SET_RE = re.compile(r"^# (CONFIG_[A-Za-z0-9_]+) is not set$")
 CONFIG_REF_RE = re.compile(r"\$\((CONFIG_[A-Za-z0-9_]+)\)")
 KCONFIG_DECL_RE = re.compile(
     r"^\s*(?:menuconfig|config)\s+([A-Za-z0-9_]+)\s*$", re.MULTILINE)
-REQUIRED_BLOCK_RE = re.compile(r"required=\((.*?)\)", re.DOTALL)
 REQUIRED_ARRAY_RE = re.compile(r"REQUIRED_CONF=\((.*?)^\s*\)", re.DOTALL | re.MULTILINE)
 REQUIRED_ITEM_RE = re.compile(r"'([^']+)'")
 
@@ -408,7 +410,7 @@ def check_ci_required_sync(manifest, repo_root):
     want = set(manifest.get("required_configs", []))
     problems = []
     carriers = (
-        (CI_AIRY_REL, REQUIRED_BLOCK_RE, "required=(...)"),
+        (CI_AIRY_GATE_REL, REQUIRED_ARRAY_RE, "REQUIRED_CONF=(...)"),
         (CI_KERNEL_GATE_REL, REQUIRED_ARRAY_RE, "REQUIRED_CONF=(...)"),
     )
     for rel, pattern, label in carriers:
