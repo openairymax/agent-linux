@@ -817,6 +817,298 @@ def test_heartbeat_keeps_idle_stage_visible() -> None:
     assert "已等待" in stream.getvalue()
 
 
+# ─── 发布清单与取回 ─────────────────────────────────────────────────────────
+
+
+def write_oci(root: Path, *, payload: bytes, chunk: int, name: str = "airymaxos.iso") -> Path:
+    """按 iso-publish.sh 的格式写一份清单，分块落在 root/fixtures/。"""
+    fixtures = root / "fixtures"
+    fixtures.mkdir(exist_ok=True)
+    lines = [
+        "ref=ghcr.io/openairymax/airymaxos-iso",
+        "tag=v0.0.3",
+        f"name={name}",
+        f"sha256={hashlib.sha256(payload).hexdigest()}",
+        f"size={len(payload)}",
+        f"chunk_size={chunk}",
+        f"chunks={(len(payload) + chunk - 1) // chunk}",
+    ]
+    for index, start in enumerate(range(0, len(payload), chunk)):
+        blob = payload[start : start + chunk]
+        part = f"{name}.part{index:04d}"
+        (fixtures / part).write_bytes(blob)
+        digest = hashlib.sha256(blob).hexdigest()
+        lines.append(
+            f"part={index:04d} sha256={digest} size={len(blob)} name={part}"
+        )
+    lines.append("pull=oras pull ghcr.io/openairymax/airymaxos-iso:v0.0.3 -o .")
+    lines.append(f"join=cat {name}.part* > {name}")
+    oci = root / "iso-oci.txt"
+    oci.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return oci
+
+
+def stub_oras(root: Path, *, code: int = 0) -> Path:
+    """假 oras：把 fixtures/ 下的分块拷进 -o 目录；code≠0 时模拟拉取失败。"""
+    script = root / "oras-stub"
+    script.write_text(
+        "#!/bin/sh\n"
+        'out=""\n'
+        'prev=""\n'
+        'for arg in "$@"; do\n'
+        '    [ "$prev" = "-o" ] && out="$arg"\n'
+        '    prev="$arg"\n'
+        "done\n"
+        f"exit_code={code}\n"
+        'if [ "$exit_code" -ne 0 ]; then\n'
+        '    echo "pull failed" >&2\n'
+        '    exit "$exit_code"\n'
+        "fi\n"
+        'cp "$(dirname "$0")"/fixtures/* "$out"/\n'
+        'touch "$(dirname "$0")/called"\n',
+        encoding="utf-8",
+    )
+    script.chmod(0o755)
+    return script
+
+
+def drop_line(text: str, key: str) -> str:
+    return "".join(row for row in text.splitlines(True) if not row.startswith(f"{key}="))
+
+
+def test_parse_oci_reads_ledger(tmp_path: Path) -> None:
+    oci = write_oci(tmp_path, payload=b"0123456789" * 60, chunk=200)
+    ledger = af.parse_oci(oci)
+    assert ledger.target == "ghcr.io/openairymax/airymaxos-iso:v0.0.3"
+    assert ledger.name == "airymaxos.iso"
+    assert (ledger.size, ledger.chunk_size, ledger.chunks) == (600, 200, 3)
+    assert [part.index for part in ledger.parts] == [0, 1, 2]
+    assert ledger.parts[0].name.endswith("part0000")
+    assert ledger.as_dict()["parts"][2]["bytes"] == 200
+
+
+def test_parse_oci_rejects_missing_file(tmp_path: Path) -> None:
+    with pytest.raises(FlashError) as excinfo:
+        af.parse_oci(tmp_path / "absent.txt")
+    assert excinfo.value.code == EXIT_USAGE
+
+
+@pytest.mark.parametrize("key", ["ref", "name", "sha256", "size", "chunk_size"])
+def test_parse_oci_requires_every_field(tmp_path: Path, key: str) -> None:
+    oci = write_oci(tmp_path, payload=b"x" * 400, chunk=200)
+    oci.write_text(drop_line(oci.read_text(encoding="utf-8"), key), encoding="utf-8")
+    with pytest.raises(FlashError) as excinfo:
+        af.parse_oci(oci)
+    assert excinfo.value.code == EXIT_CHECK
+    assert key in str(excinfo.value)
+
+
+def test_parse_oci_rejects_part_count_mismatch(tmp_path: Path) -> None:
+    oci = write_oci(tmp_path, payload=b"x" * 400, chunk=200)
+    text = "".join(
+        row for row in oci.read_text(encoding="utf-8").splitlines(True)
+        if not row.startswith("part=0001")
+    )
+    oci.write_text(text, encoding="utf-8")
+    with pytest.raises(FlashError) as excinfo:
+        af.parse_oci(oci)
+    assert excinfo.value.code == EXIT_CHECK
+    assert "声明 2 块却列出 1 块" in str(excinfo.value)
+
+
+def test_parse_oci_rejects_size_sum_mismatch(tmp_path: Path) -> None:
+    oci = write_oci(tmp_path, payload=b"x" * 400, chunk=200)
+    text = oci.read_text(encoding="utf-8").replace("size=400\n", "size=401\n")
+    oci.write_text(text, encoding="utf-8")
+    with pytest.raises(FlashError) as excinfo:
+        af.parse_oci(oci)
+    assert excinfo.value.code == EXIT_CHECK
+    assert "分块合计" in str(excinfo.value)
+
+
+def test_parse_oci_rejects_out_of_order_parts(tmp_path: Path) -> None:
+    oci = write_oci(tmp_path, payload=b"x" * 400, chunk=200)
+    text = oci.read_text(encoding="utf-8").replace("part=0001", "part=0002")
+    oci.write_text(text, encoding="utf-8")
+    with pytest.raises(FlashError) as excinfo:
+        af.parse_oci(oci)
+    assert excinfo.value.code == EXIT_CHECK
+    assert "序号" in str(excinfo.value)
+
+
+def test_cli_fetch_assembles_and_cleans_parts(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    payload = b"A" * 200 + b"B" * 200 + b"C" * 50
+    oci = write_oci(tmp_path, payload=payload, chunk=200)
+    out = tmp_path / "iso"
+    report = tmp_path / "fetch.json"
+
+    code = af.main(
+        [
+            "fetch",
+            "--oci",
+            str(oci),
+            "--out",
+            str(out),
+            "--oras",
+            str(stub_oras(tmp_path)),
+            "--report",
+            str(report),
+            "--no-progress",
+        ]
+    )
+    text = capsys.readouterr().out
+    assert code == EXIT_OK
+    assert (out / "airymaxos.iso").read_bytes() == payload
+    assert not list(out.glob("*.part*"))
+    assert text.splitlines()[-1].startswith("AIRY-FLASH-PASS command=fetch ")
+
+    payload_json = json.loads(report.read_text(encoding="utf-8"))
+    assert [s["name"] for s in payload_json["stages"]] == [
+        "拉取分块",
+        "校验分块",
+        "拼接镜像",
+        "校验镜像",
+    ]
+    assert payload_json["oci"]["chunks"] == 3
+    assert payload_json["oci"]["parts"][2]["bytes"] == 50
+    assert payload_json["image"]["sha256"] == payload_json["oci"]["sha256"]
+
+
+def test_cli_fetch_skips_pull_when_image_is_complete(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    payload = b"Z" * 400
+    oci = write_oci(tmp_path, payload=payload, chunk=200)
+    out = tmp_path / "iso"
+    out.mkdir()
+    (out / "airymaxos.iso").write_bytes(payload)
+
+    code = af.main(
+        [
+            "fetch",
+            "--oci",
+            str(oci),
+            "--out",
+            str(out),
+            "--oras",
+            str(tmp_path / "absent-oras"),
+            "--no-progress",
+        ]
+    )
+    text = capsys.readouterr().out
+    assert code == EXIT_OK
+    assert "已存在且字节数一致" in text
+    assert "[SKIP] oras" in text
+    assert "拉取分块" not in text
+
+
+def test_cli_fetch_force_repulls(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    payload = b"Y" * 400
+    oci = write_oci(tmp_path, payload=payload, chunk=200)
+    out = tmp_path / "iso"
+    out.mkdir()
+    (out / "airymaxos.iso").write_bytes(payload)
+
+    code = af.main(
+        [
+            "fetch",
+            "--oci",
+            str(oci),
+            "--out",
+            str(out),
+            "--oras",
+            str(stub_oras(tmp_path)),
+            "--force",
+            "--no-progress",
+        ]
+    )
+    assert code == EXIT_OK
+    assert (tmp_path / "called").is_file()
+    assert (out / "airymaxos.iso").read_bytes() == payload
+    capsys.readouterr()
+
+
+def test_cli_fetch_surfaces_oras_failure(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    oci = write_oci(tmp_path, payload=b"Q" * 400, chunk=200)
+    code = af.main(
+        [
+            "fetch",
+            "--oci",
+            str(oci),
+            "--out",
+            str(tmp_path / "iso"),
+            "--oras",
+            str(stub_oras(tmp_path, code=4)),
+            "--no-progress",
+        ]
+    )
+    text = capsys.readouterr().out
+    assert code == EXIT_IO
+    assert "oras pull 失败" in text
+    assert "AIRY-FLASH-FAIL command=fetch " in text
+
+
+def test_cli_fetch_rejects_tampered_part(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    payload = b"T" * 400
+    oci = write_oci(tmp_path, payload=payload, chunk=200)
+    tampered = tmp_path / "fixtures" / "airymaxos.iso.part0001"
+    tampered.write_bytes(b"X" * 200)
+
+    code = af.main(
+        [
+            "fetch",
+            "--oci",
+            str(oci),
+            "--out",
+            str(tmp_path / "iso"),
+            "--oras",
+            str(stub_oras(tmp_path)),
+            "--no-progress",
+        ]
+    )
+    text = capsys.readouterr().out
+    assert code == EXIT_CHECK
+    assert "第 1 块 sha256 不符" in text
+    assert not (tmp_path / "iso" / "airymaxos.iso").exists()
+
+
+def test_cli_fetch_rejects_inconsistent_chunk_size(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    payload = b"W" * 400
+    oci = write_oci(tmp_path, payload=payload, chunk=200)
+    text = oci.read_text(encoding="utf-8").replace("chunk_size=200\n", "chunk_size=100\n")
+    oci.write_text(text, encoding="utf-8")
+
+    code = af.main(
+        [
+            "fetch",
+            "--oci",
+            str(oci),
+            "--out",
+            str(tmp_path / "iso"),
+            "--oras",
+            str(stub_oras(tmp_path)),
+            "--no-progress",
+        ]
+    )
+    out = capsys.readouterr().out
+    assert code == EXIT_CHECK
+    assert "预检未通过" in out and "分块尺寸" in out
+
+
+def test_cli_fetch_requires_oci_manifest() -> None:
+    with pytest.raises(SystemExit) as excinfo:
+        af.main(["fetch"])
+    assert excinfo.value.code == EXIT_USAGE
+
+
 def test_write_report_key_value_format(tmp_path: Path) -> None:
     image, digest = make_image(tmp_path)
     report = af.Report(

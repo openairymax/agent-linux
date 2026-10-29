@@ -55,7 +55,7 @@ Actions 的 `airymaxos-image` artifact 只保留 7 天，仅用于调试，不�
 
 | 步骤 | 动作 | 失败即停 |
 |------|------|----------|
-| 1 | `oras pull ghcr.io/openairymax/airymaxos-iso:<tag> -o .` 取 `*.partNNNN`，按序号 `cat` 拼接为 `*.iso`，`sha256sum -c *.iso.sha256` 校验，并与 `iso-oci.txt` 的 `sha256=` 对账 | 是 |
+| 1 | `airy-flash fetch --oci airymaxos-0.0.3-x86_64.iso.iso-oci.txt --out releases/v0.0.3`：拉取分块 → 逐块核对 → 拼接 → 整体核对 | 是 |
 | 2 | 插入 U 盘，用 `lsblk` 找到**整盘**节点（如 `/dev/sdb`，不是 `/dev/sdb1`） | 是 |
 | 3 | `plan` 只预检：核对系统盘、挂载、只读、容量、摘要来源 | 是 |
 | 4 | `write --yes`：校验镜像 → 写入 → `fsync` → 回读比对 | 是 |
@@ -64,10 +64,10 @@ Actions 的 `airymaxos-image` artifact 只保留 7 天，仅用于调试，不�
 
 第 1 步的四重核对各有分工：`iso-oci.txt` 的逐块 `sha256=` 证明每块字节就
 是发布时那一块，`oras` 自己的 layer digest 证明 registry 端的 blob 与清单一
-致，拼接后再算的 `.sha256` 证明块序与块边界没有被动过，`iso-oci.txt` 的
-`sha256=` 证明拿到的就是这个 tag 当初发布的整体字节。任一不符即中止，不进入
-烧录。`iso-oci.txt` 同时带 `pull=` 与 `join=` 两行，可直接复制执行，避免手抄
-tag、包名与拼接顺序。
+致，拼接后再算的整体 `sha256` 证明块序与块边界没有被动过，清单里的
+`sha256=` 证明拿到的就是这个 tag 当初发布的整体字节。任一不符即中止，不进
+入烧录。`iso-oci.txt` 里的 `pull=` 与 `join=` 两行保留了原生 `oras` 与 `cat`
+的等价写法，供没有本工具的环境照抄执行。
 
 `plan` 与 `write` 共用同一套预检，所以「预检通过」是「可以写」的充分条件；
 `plan` 已经算过完整 sha256，`write` 会再算一次，避免两次操作之间镜像被替换。
@@ -133,6 +133,7 @@ U 盘不会自动出现在 Linux 侧；不先做直通，`lsblk` 里根本看不
 
 | 子命令 | 作用 | 是否写设备 |
 |--------|------|------------|
+| `fetch` | 按 `iso-oci.txt` 取回分块、逐块核对、拼接并核对整体摘要 | 否 |
 | `plan` | 预检 + 校验镜像摘要（默认子命令） | 否 |
 | `write` | 预检 → 校验 → 写入 → 刷盘 → 回读 | 是 |
 | `verify` | 只回读已写入的设备并与镜像比对 | 否 |
@@ -146,6 +147,10 @@ U 盘不会自动出现在 Linux 侧；不先做直通，`lsblk` 里根本看不
 ```bash
 # 环境自检
 python3 airy-flash-0.0.3.pyz check
+
+# 取回发行 ISO：清单是唯一账本，块错位或字节不符当场停下
+python3 airy-flash-0.0.3.pyz fetch \
+    --oci airymaxos-0.0.3-x86_64.iso.iso-oci.txt --out releases/v0.0.3
 
 # 只预检（不碰目标设备）
 sudo python3 airy-flash-0.0.3.pyz plan \
@@ -251,6 +256,10 @@ AIRY-FLASH-PASS command=write host=airymax-build image=/path/airymaxos-0.0.3-x86
   失败同样落盘（含 `error=`/`hint=`）。
 - `check` 与烧录共用同一套报告、版式与标记，只是没有映像与设备字段。
 - `plan` 成功也会给出下一步（加 `--yes` 执行写入），避免把预检通过误当成已写入。
+- `fetch` 沿用同一套版式：身份段换成 清单 / 来源 / 目标，预检为三条
+  （`oras` 在位、磁盘余量、分块尺寸），阶段为 拉取分块 / 校验分块 /
+  拼接镜像 / 校验镜像。目录里已有字节数一致的镜像时只跑「校验镜像」一段，
+  `--force` 才重取；拼接边拼边删块，峰值占用是镜像 + 一个块，不是两份镜像。
 
 ## 装机后核对
 
@@ -272,6 +281,10 @@ AIRY-FLASH-PASS command=write host=airymax-build image=/path/airymaxos-0.0.3-x86
 
 | 现象 | 原因 | 处理 |
 |------|------|------|
+| `oras pull 失败` | 仓库或网络不可达 | 换镜像站后重试；离线环境用 `--oras` 指定本机可执行文件 |
+| `缺少 N 块（首块 …）` | 发布物与清单不是同一份 | 重新取 `iso-oci.txt`，不要手改块名 |
+| `第 N 块 sha256 不符` | 该块下载残缺或被替换 | 删掉该块后重跑 `fetch` |
+| `声明 N 块却列出 M 块` / `分块合计 …` | 清单自相矛盾 | 重新取清单，勿手工编辑 |
 | `目标既不是块设备也不是普通文件` | 传了分区或不存在路径 | `lsblk` 取整盘节点 |
 | `非系统盘 [FAIL]` | 目标是当前系统所在盘 | 立即停止，换盘 |
 | `未挂载 [FAIL]` | 桌面自动挂载了 U 盘 | `umount /dev/sdb*` 后重跑 |
@@ -299,8 +312,9 @@ python3 -m pytest tools/airy-flash/tests/ -q
 测试用临时目录合成 sysfs 树、挂载表与镜像侧车文件，以 `S_ISBLK`/`S_ISREG`
 替身替掉 `stat` 判定，因此**不需要 root、不需要真实块设备**；覆盖摘要解析
 五个来源、系统盘父盘回溯（含 `nvme0n1p2`）、六类预检、抽检窗口划分、
-写入与 `ftruncate`、回读篡改定位、四个子命令的退出码与 `--json`/`--report`
-载荷。
+写入与 `ftruncate`、回读篡改定位、清单解析与取回全链路（假 `oras` 拉取、
+块篡改、清单不自洽、幂等与 `--force`）、五个子命令的退出码与
+`--json`/`--report` 载荷。
 
 ## 维护清单
 
