@@ -5,8 +5,8 @@
 #
 # 用法: ci/gates/qemu-setup.sh [--firmware both|bios]
 #
-# 已在宿主装齐就跳过，不做无条件 apt-get update：B50 现场机离线时不希望
-# 一次门禁触发整轮源同步。ovmf 缺失不致命——install-test.sh 的 --firmware
+# 已在宿主装齐就跳过，不做无条件 apt-get update：离线环境里不希望一次
+# 门禁触发整轮源同步。ovmf 缺失不致命——install-test.sh 的 --firmware
 # both 会在缺 UEFI 固件时降级为 BIOS 腿，此处同样只告警。
 #
 # 退出码: 0 就绪（含降级）；1 缺 qemu 且装不上；5 参数不满足。
