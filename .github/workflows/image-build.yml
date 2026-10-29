@@ -108,6 +108,18 @@ jobs:
       - name: Fetch fixed openEuler media
         run: ci/ci.sh media-fetch --dir "$RUNNER_TEMP/media" --budget 5400 --floor 900 "$OE_ISO_NAME" ISO/x86_64 "$OE_ISO_SHA256" "$OE_IMG_NAME" docker_img/x86_64 "$OE_IMG_SHA256"
 
+      # 工具链 34 个直接依赖会解析出 1273 个包，全部跨公网取。这一步的耗时
+      # 由镜像站状态决定而非代码决定：同一棵树在 run 40818193756 是 14 分钟，
+      # 在 run 40866231339 涨到两小时并烧穿 job 预算。缓存按工具链清单的
+      # 摘要做键——清单不变则包集合不变，命中后 dnf 只做本地事务安装。
+      # 键里不含产物内容：缓存只影响「装得快不快」，不影响 ISO 字节。
+      - name: Restore dnf toolchain cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/dnf-cache
+          key: dnf-${{ hashFiles('ci/container/build-packages.txt') }}
+          restore-keys: dnf-
+
       - name: Load build container image
         run: ci/ci.sh container-load --file "$RUNNER_TEMP/media/$OE_IMG_NAME"
 
@@ -124,7 +136,7 @@ jobs:
       - name: Build desktop ISO in container
         env:
           ACCEPTANCE: ${{ inputs.acceptance }}
-        run: ci/ci.sh assemble --image "$AIRYMAX_BUILD_IMAGE" --src "$GITHUB_WORKSPACE" --out "$RUNNER_TEMP/out" --media "$RUNNER_TEMP/media" --iso-base "$OE_ISO_NAME"
+        run: ci/ci.sh assemble --image "$AIRYMAX_BUILD_IMAGE" --src "$GITHUB_WORKSPACE" --out "$RUNNER_TEMP/out" --media "$RUNNER_TEMP/media" --iso-base "$OE_ISO_NAME" --dnf-cache "$RUNNER_TEMP/dnf-cache"
 
       - name: Show build logs on failure
         if: failure()
