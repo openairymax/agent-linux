@@ -110,8 +110,8 @@ python3 tools/codegen/run_codegen.py --repo-root /path/to/agent-linux
 
 ## CI 集成
 
-[`.github/workflows/codegen-verify.yml`](../../.github/workflows/codegen-verify.yml)
-在契约源或生成产物变更时触发（`paths` 含 `tools/codegen/**`、`sdk/**`、
+[`os-chk-verify.yml`](../../.github/workflows/os-chk-verify.yml)
+在契约源或生成产物变更时触发（`paths` 含 `tools/**`、`sdk/**`、
 `kernel`、`security`），执行：
 
 ```bash

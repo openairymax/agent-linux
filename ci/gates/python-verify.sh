@@ -11,6 +11,11 @@
 # 同一份依赖装在 4 处各写一遍，改一处要跑 4 条云端流水线才能确认，本地
 # 无法复现。收进 gate 后，runner 与开发者执行的是同一条命令。
 #
+# abi / codegen / dsl / farm 四个 kind 保留给本地定向调试（只装一份依赖、
+# 只跑一组用例）；CI 一律走 oschk，由它收全部工具套件与统一门禁。此前四者
+# 各占一个 workflow，同一套 checkout + setup-python + pip 在四条流水线里
+# 各写一遍，改一行 gate 要等四轮云端排队才能确认。
+#
 # oschk 同时收集 system 子仓的单元测试：那些用例断言的是装机后的启动
 # 契约（unit 排序、首次启动闸门、健康自检分档），与 OS 门禁同类，却是
 # 全仓唯一只能手工执行的一组，长期没有进入任何流水线。
@@ -47,6 +52,18 @@ TESTS=()
 CHECK=()
 HINT=""
 
+# 登记一个工具目录：依赖清单与用例目录各自按存在与否收录，这样复用上游
+# 依赖（如 dsl 借 codegen 的环境）或缺清单的工具不必逐个特判。
+add_tool()
+{
+    local dir="tools/$1"
+
+    [ -d "${dir}" ] || { err "工具目录不存在: ${dir}"; return 1; }
+    [ -f "${dir}/requirements-dev.txt" ] && REQS+=("${dir}/requirements-dev.txt")
+    [ -d "${dir}/tests" ] && TESTS+=("${dir}/tests/")
+    return 0
+}
+
 case "${KIND}" in
     abi)
         REQS=(tools/abi-check/requirements-dev.txt)
@@ -75,35 +92,16 @@ case "${KIND}" in
         ;;
     oschk)
         # OS-CHK 的检查器逐个复用下列工具的入口；缺任一依赖，对应门禁在
-        # CI 恒为 ERROR 而本地不可见，故依赖必须在此装齐。
-        REQS=(
-            tools/os-chk/requirements-dev.txt
-            tools/codegen/requirements-dev.txt
-            tools/defconfig-matrix/requirements-dev.txt
-            tools/ci-matrix/requirements-dev.txt
-            tools/btf-integration/requirements-dev.txt
-            tools/kbuild-version/requirements-dev.txt
-            tools/release-engineering/requirements-dev.txt
-            tools/nightly/requirements-dev.txt
-            tools/repo-scaffold/requirements-dev.txt
-            tools/airy-rollback/requirements-dev.txt
-            tools/airy-flash/requirements-dev.txt
-        )
-        TESTS=(
-            tools/os-chk/tests/
-            tools/airy-checkpatch/tests/
-            tools/defconfig-matrix/tests/
-            tools/ci-matrix/tests/
-            tools/btf-integration/tests/
-            tools/kbuild-version/tests/
-            tools/release-engineering/tests/
-            tools/nightly/tests/
-            tools/repo-scaffold/tests/
-            tools/airy-rollback/tests/
-            tools/airy-flash/tests/
-            tools/osaccrt/tests/
-            system/tests/
-        )
+        # CI 恒为 ERROR 而本地不可见，故依赖必须在此装齐。集合以目录为单位
+        # 声明，新增工具只加一行，不再维护两份平行清单。
+        for tool in os-chk codegen abi-check dsl sc-tri-compile airy-qemu \
+                    airy-checkpatch defconfig-matrix ci-matrix btf-integration \
+                    kbuild-version release-engineering nightly repo-scaffold \
+                    airy-rollback airy-flash osaccrt; do
+            add_tool "${tool}" || die "工具目录缺失: tools/${tool}"
+        done
+        # system 子仓只有用例没有依赖清单。
+        TESTS+=(system/tests/)
         CHECK=(python3 tools/os-chk/os_chk.py --check)
         HINT="OS-CHK 统一门禁（P0/P1 阻断）：python3 tools/os-chk/os_chk.py --verbose"
         ;;
