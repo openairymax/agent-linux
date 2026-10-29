@@ -72,7 +72,7 @@ jobs:
       # 先检查门禁自己：workflow 是否仍满足薄化约束、ci/ 下脚本能否被
       # bash -n 解析、shellcheck 是否过。门禁脚本的改动此前无人验证。
       - name: Lint gate scripts and workflows
-        run: ci/lint.sh
+        run: ci/ci.sh lint
 
       # distro 子仓的规则与单测此前只在本地手动执行：子仓内改坏一条断言
       # 不触发任何流水线，要等下一次组装镜像才暴露。入口交给子仓自己的
