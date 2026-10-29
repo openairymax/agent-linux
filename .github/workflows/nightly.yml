@@ -33,7 +33,7 @@ jobs:
   # ─── Job 1: 契约自校验 + 每夜测试套件 ──────────────────────────────
   nightly-test-suite:
     name: Nightly Test Suite (Formal + Soak + Chaos)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 360   # 托管 runner 单 job 硬上限（6 小时）
     steps:
       - uses: actions/checkout@v4
@@ -78,7 +78,7 @@ jobs:
   # ─── Job 2: 回滚或预算检查 ─────────────────────────────────────────
   nightly-revert-or-budget:
     name: Auto-Revert or CI Budget Check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: nightly-test-suite
     if: always()
     timeout-minutes: 30

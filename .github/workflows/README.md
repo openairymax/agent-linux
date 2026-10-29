@@ -64,7 +64,7 @@ a leftover build directory instead of waiting for a cloud job.
 
 Every workflow obeys one naming scheme so that the Actions list, `gh workflow
 run`, and this document can never disagree. The rules are enforced by
-`ci/check-workflows.py` (rules 1–9), which runs from `ci/lint.sh` in
+`ci/check-workflows.py` (rules 1–11), which runs from `ci/lint.sh` in
 `os-chk-verify.yml` — a convention that is not checked is not a convention.
 
 | Aspect | Rule | Rationale |
@@ -79,6 +79,9 @@ run`, and this document can never disagree. The rules are enforced by
 | `permissions:` | Top-level, explicit, never `write-all` or `*` | The default token scope drifts with repository settings; only the workflow file can pin it |
 | `concurrency:` | Top-level on every PR-triggered workflow, `cancel-in-progress: true` | A superseded run's verdict no longer describes the current tree; queuing it only burns runners |
 | `timeout-minutes:` | Required on every job | The 360-minute default is no limit at all; a hung job holds the runner until the queue gives up |
+| Runner image | Pinned (`ubuntu-24.04`), never `ubuntu-latest` | A floating label silently changes compiler, shellcheck and Python versions; the gate result then depends on the day it ran |
+| Trigger parity | `pull_request` paths ⊆ `push` paths | A PR-only path is a file that stops being validated once merged — the gate script edits itself, no one sees the verdict until `main` goes red |
+| Gitlink paths | List the submodule directory (`kernel`), never `kernel/**` | A submodule appears in the parent diff as one directory entry; an inner glob can never match |
 
 Adding or renaming a workflow therefore requires three coordinated edits: the
 file, its `name:`, and `ci/workflow-budgets.txt`; `./ci/lint.sh` rejects the
