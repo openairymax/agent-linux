@@ -5,6 +5,7 @@ airy_flash.py — AirymaxOS 烧录工具
 
 把「下载好的 ISO → U 盘/整块设备」这件事收敛成一条可复现、可取证的命令：
 
+  airy-flash fetch  --oci X.iso-oci.txt --out DIR        # 取回分块并拼成 ISO
   airy-flash plan   --image X.iso --device /dev/sdX     # 只预检，不碰设备
   airy-flash write  --image X.iso --device /dev/sdX --yes
   airy-flash verify --image X.iso --device /dev/sdX      # 只回读比对
@@ -12,6 +13,9 @@ airy_flash.py — AirymaxOS 烧录工具
 
 设计要点：
   * 预检与写入分离。plan 不打开目标设备写句柄，可先对着实机跑到全绿。
+  * fetch 把发布清单当唯一账本：iso-oci.txt 里的逐块 sha256 既是下载参数，
+    也是校验依据；分块逐个核对后按序拼接，再核对整体 sha256，最后与
+    write 共用同一条 .sha256 解析链，因此「取回」与「烧录」之间不留空档。
   * 目标设备用 sysfs 判定：块设备类型、容量、只读、挂载点、是否系统盘。
     「系统盘」按 /proc/mounts 里 /、/boot、/boot/efi、/usr、/var 的来源
     反查父磁盘，而不是靠名字猜 sdX。
@@ -39,8 +43,10 @@ import hashlib
 import io
 import json
 import os
+import shutil
 import socket
 import stat
+import subprocess
 import sys
 import threading
 import time
@@ -63,6 +69,8 @@ from flash_types import (
     FlashError,
     ImageFacts,
     Mount,
+    OciLedger,
+    OciPart,
     Report,
     Stage,
 )
@@ -76,6 +84,7 @@ __all__ = [
     "human_bytes",
     "human_duration",
     "main",
+    "parse_oci",
     "parse_sums",
     "probe_device",
     "probe_image",
@@ -94,6 +103,8 @@ CHUNK = 4 << 20          # 单次读写块，4 MiB：对 U 盘与页缓存都友
 SAMPLE_WINDOW = 16 << 20  # 抽检窗口
 CRITICAL_MOUNTS = ("/", "/boot", "/boot/efi", "/usr", "/var")
 BLOCK_SECTOR = 512
+SPACE_SLACK = 64 << 20   # 取回时除镜像本体外还给目录留出的余量
+OCI_KEYS = ("ref", "tag", "name", "sha256", "size", "chunk_size", "chunks")
 
 
 # ─── 人读格式化 ──────────────────────────────────────────────────────────────
@@ -194,6 +205,108 @@ def resolve_expected(
                 EXIT_CHECK, f"{candidate} 中没有 {image.name} 的摘要"
             )
     return "", ""
+
+
+# ─── 发布清单 ───────────────────────────────────────────────────────────────
+
+
+def _oci_int(value: str, label: str, path: Path) -> int:
+    try:
+        number = int(value, 10)
+    except ValueError:
+        raise FlashError(
+            EXIT_CHECK, f"{path.name} 的 {label} 不是整数: {value}"
+        ) from None
+    if number <= 0:
+        raise FlashError(EXIT_CHECK, f"{path.name} 的 {label} 必须为正: {value}")
+    return number
+
+
+def _oci_part(index: int, rest: str, path: Path) -> OciPart:
+    """解析一行 `part=0000 sha256=… size=… name=…`，序号须与出现位置一致。
+
+    拼接按清单顺序进行，序号错位就是块错位，因此这里不看序号只看位置是
+    不行的：必须逐行相等，否则 3.4 GiB 会拼出一份静默损坏的镜像。
+    """
+    fields = rest.split()
+    if not fields or not fields[0].isdigit() or int(fields[0]) != index:
+        raise FlashError(
+            EXIT_CHECK, f"{path.name} 的 part 序号应从 0 连续递增（第 {index + 1} 行不符）"
+        )
+    tokens: dict[str, str] = {}
+    for token in fields[1:]:
+        key, sep, value = token.partition("=")
+        if sep:
+            tokens[key] = value
+    missing = [key for key in ("sha256", "size", "name") if not tokens.get(key)]
+    if missing:
+        raise FlashError(
+            EXIT_CHECK, f"{path.name} 第 {index} 块缺少 {', '.join(missing)}"
+        )
+    digest = tokens["sha256"].strip().lower()
+    if len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
+        raise FlashError(EXIT_CHECK, f"{path.name} 第 {index} 块 sha256 格式不对")
+    size = _oci_int(tokens["size"], f"part[{index}].size", path)
+    return OciPart(index, digest, size, tokens["name"])
+
+
+def parse_oci(path: Path) -> OciLedger:
+    """把 iso-oci.txt 读成账本；分块不自洽当场拦下，不做半懂不懂的猜测。"""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise FlashError(
+            EXIT_USAGE,
+            f"读不到发布清单 {path}: {exc.strerror or exc}",
+            hint="从发布页取回与镜像同名的 .iso-oci.txt",
+        ) from exc
+    fields: dict[str, str] = {}
+    parts: list[OciPart] = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        key, sep, rest = line.partition("=")
+        if not sep:
+            continue
+        key = key.strip()
+        if key == "part":
+            parts.append(_oci_part(len(parts), rest, path))
+        elif key in OCI_KEYS:
+            fields[key] = rest.strip()
+
+    missing = [
+        key for key in ("ref", "name", "sha256", "size", "chunk_size")
+        if not fields.get(key)
+    ]
+    if missing:
+        raise FlashError(EXIT_CHECK, f"{path.name} 缺少字段 {', '.join(missing)}")
+    if not parts:
+        raise FlashError(EXIT_CHECK, f"{path.name} 没有 part= 行")
+    digest = fields["sha256"].lower()
+    if len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
+        raise FlashError(EXIT_CHECK, f"{path.name} 的 sha256 格式不对")
+    size = _oci_int(fields["size"], "size", path)
+    declared = _oci_int(fields.get("chunks") or str(len(parts)), "chunks", path)
+    if declared != len(parts):
+        raise FlashError(
+            EXIT_CHECK, f"{path.name} 声明 {declared} 块却列出 {len(parts)} 块"
+        )
+    joined = sum(part.size for part in parts)
+    if joined != size:
+        raise FlashError(
+            EXIT_CHECK,
+            f"{path.name} 分块合计 {human_bytes(joined)} ≠ 声明 {human_bytes(size)}",
+        )
+    return OciLedger(
+        ref=fields["ref"],
+        tag=fields.get("tag", ""),
+        name=fields["name"],
+        sha256=digest,
+        size=size,
+        chunk_size=_oci_int(fields["chunk_size"], "chunk_size", path),
+        parts=tuple(parts),
+    )
 
 
 def sha256_file(
@@ -575,6 +688,10 @@ NEXT_STEPS["check"] = (
     "2. 确认无误后写入：把 plan 换成 write，并追加 --yes",
 )
 NEXT_STEPS["verify"] = ("回读一致即可插机引导；不一致请重做 U 盘",)
+NEXT_STEPS["fetch"] = (
+    "1. 预检目标盘：airy-flash plan --image X.iso --device /dev/sdX",
+    "2. 确认无误后写入：把 plan 换成 write，并追加 --yes",
+)
 
 MODES = {"plan": "只预检（不写设备）", "write": "写入 + 回读", "verify": "只回读"}
 
@@ -816,7 +933,10 @@ def execute(args: argparse.Namespace) -> tuple[Report, int]:
     clock = time.monotonic()
     renderer.title(f"AirymaxOS 烧录工具 {TOOL_VERSION}  ({args.command})")
     try:
-        _run(args, report, renderer)
+        if args.command == "fetch":
+            _run_fetch(args, report, renderer)
+        else:
+            _run(args, report, renderer)
         code = EXIT_OK
     except FlashError as exc:
         report.error, report.hint = exc.message, exc.hint
@@ -968,22 +1088,32 @@ def _preflight(
     source: str,
 ) -> None:
     """先渲染逐条判定，再对失败项抛错：预检未过即不触碰设备。"""
-    report.checks = preflight(
+    checks = preflight(
         image,
         device,
         expected=expected,
         source=source,
         allow_unverified=args.allow_unverified,
     )
+    _verdict(report, renderer, checks, "预检未通过，未触碰目标设备")
+
+
+def _verdict(
+    report: Report,
+    renderer: Renderer,
+    checks: list[Check],
+    block: str,
+    hint: str = "",
+) -> None:
+    """预检的公共收尾：逐条渲染后统一判死，两种子命令共用一套输出。"""
+    report.checks = checks
     renderer.checks_header()
-    for check in report.checks:
+    for check in checks:
         renderer.check(check)
-    failed = [c.name for c in report.checks if not c.ok and not c.skipped]
+    failed = [c.name for c in checks if not c.ok and not c.skipped]
     if failed:
         raise FlashError(
-            EXIT_CHECK,
-            "预检未通过，未触碰目标设备",
-            hint=f"先处理 {', '.join(failed)}",
+            EXIT_CHECK, block, hint or f"先处理 {', '.join(failed)}"
         )
 
 
@@ -1037,6 +1167,189 @@ def _readback(
         detail,
         hint="换数据线或换 USB 口重试；仍不一致则重做 U 盘",
     )
+
+
+# ─── 取回（OCI 分块） ───────────────────────────────────────────────────────
+
+
+def _offset(task: Progress, base: int, total: int) -> Callable[[int, int], None]:
+    """把单块进度换算成整份镜像的进度，避免进度条在块边界回跳。"""
+
+    def advance(done: int, _size: int) -> None:
+        task(base + done, total)
+
+    return advance
+
+
+def _pull_parts(ledger: OciLedger, out: Path, oras: str) -> tuple[str, str]:
+    """一次 oras pull 取回全部层；齐不齐看清单，不看 oras 的措辞。"""
+    for part in ledger.parts:
+        (out / part.name).unlink(missing_ok=True)
+    proc = subprocess.run(
+        [oras, "pull", ledger.target, "-o", str(out)],
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0:
+        tail = (proc.stderr or proc.stdout).strip().splitlines()
+        detail = tail[-1] if tail else f"退出 {proc.returncode}"
+        raise FlashError(
+            EXIT_IO,
+            f"oras pull 失败: {detail}",
+            hint="仓库或网络不可达；换镜像站后重试同一条命令",
+        )
+    missing = [part.name for part in ledger.parts if not (out / part.name).is_file()]
+    if missing:
+        raise FlashError(
+            EXIT_CHECK,
+            f"缺少 {len(missing)} 块（首块 {missing[0]}）",
+            hint="发布物与清单不一致：重新取 iso-oci.txt 后重试",
+        )
+    return OK, f"{ledger.chunks} 块 {human_bytes(ledger.size)}"
+
+
+def _check_parts(ledger: OciLedger, out: Path, task: Progress) -> tuple[str, str]:
+    """逐块核对：字节数与 sha256 都对得上，才允许拼接。"""
+    done = 0
+    for part in ledger.parts:
+        path = out / part.name
+        if path.stat().st_size != part.size:
+            raise FlashError(
+                EXIT_CHECK,
+                f"第 {part.index} 块字节数不符",
+                hint=f"删除 {path.name} 后重跑 fetch",
+            )
+        if sha256_file(path, progress=_offset(task, done, ledger.size)) != part.digest:
+            raise FlashError(
+                EXIT_CHECK,
+                f"第 {part.index} 块 sha256 不符",
+                hint=f"删除 {path.name} 后重跑 fetch",
+            )
+        done += part.size
+    return OK, f"{ledger.chunks} 块逐一一致"
+
+
+def _join_parts(ledger: OciLedger, dest: Path, task: Progress) -> tuple[str, str]:
+    """按序拼接，边拼边删已用完的块：峰值只多占一个块，不是又一份镜像。"""
+    done = 0
+    with dest.open("wb") as sink:
+        for part in ledger.parts:
+            source = dest.parent / part.name
+            with source.open("rb") as src:
+                while True:
+                    buf = src.read(CHUNK)
+                    if not buf:
+                        break
+                    sink.write(buf)
+                    done += len(buf)
+                    task(done, ledger.size)
+            source.unlink()
+        os.fsync(sink.fileno())
+    return OK, f"{ledger.chunks} 块拼接完成"
+
+
+def _fetch_checks(
+    ledger: OciLedger, out: Path, oras: str, fetched: bool
+) -> list[Check]:
+    """取回前的三条判定：oras 在位、目录余量够、分块尺寸自洽。"""
+    sizes = [part.size for part in ledger.parts]
+    even = all(size == ledger.chunk_size for size in sizes[:-1])
+    even = even and 0 < sizes[-1] <= ledger.chunk_size
+    located = shutil.which(oras)
+    if fetched:
+        tool = Check("oras", True, "已取回，本次不需要", skipped=True)
+    else:
+        tool = Check("oras", bool(located), located or f"{oras} 不在 PATH 中")
+    free = shutil.disk_usage(out).free
+    need = ledger.size + ledger.chunk_size + SPACE_SLACK
+    if fetched:
+        room = Check("磁盘余量", True, f"可用 {human_bytes(free)}", skipped=True)
+    else:
+        room = Check(
+            "磁盘余量", free >= need, f"可用 {human_bytes(free)}，需要 {human_bytes(need)}"
+        )
+    shape = Check(
+        "分块尺寸",
+        even,
+        f"{ledger.chunks} 块 x {human_bytes(ledger.chunk_size)}"
+        if even
+        else "块尺寸与清单的 chunk_size 不一致",
+    )
+    return [tool, room, shape]
+
+
+def _banner_fetch(
+    ledger: OciLedger, oci: Path, dest: Path, renderer: Renderer, fetched: bool
+) -> None:
+    """取回的三行身份：清单、来源、目标，与 write 的头部一一对应。"""
+    renderer.field(
+        "清单",
+        str(oci),
+        f"{ledger.chunks} 块 x {human_bytes(ledger.chunk_size)}"
+        f"  sha256 {short_digest(ledger.sha256)}",
+    )
+    renderer.field("来源", ledger.target, human_bytes(ledger.size))
+    renderer.field(
+        "目标",
+        str(dest),
+        "已存在且字节数一致，只做校验" if fetched else "待取回",
+    )
+
+
+def _fetch_steps(
+    report: Report,
+    image: ImageFacts,
+    ledger: OciLedger,
+    dest: Path,
+    fetched: bool,
+    oras: str,
+) -> list[tuple[str, Task]]:
+    """已取回只走校验；否则拉取、逐块核对、拼接、整体核对四段。"""
+    if fetched:
+        return [
+            ("校验镜像", lambda task: _hash(image, report, ledger.sha256, task)),
+        ]
+    return [
+        ("拉取分块", lambda _task: _pull_parts(ledger, dest.parent, oras)),
+        ("校验分块", lambda task: _check_parts(ledger, dest.parent, task)),
+        ("拼接镜像", lambda task: _join_parts(ledger, dest, task)),
+        ("校验镜像", lambda task: _hash(image, report, ledger.sha256, task)),
+    ]
+
+
+def _run_fetch(
+    args: argparse.Namespace, report: Report, renderer: Renderer
+) -> None:
+    """取回：清单 → 预检 → 分段执行，收尾与 write 走同一条路径。"""
+    oci = Path(args.oci)
+    ledger = parse_oci(oci)
+    report.oci = ledger
+    out = Path(args.out)
+    try:
+        out.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise FlashError(
+            EXIT_USAGE, f"建不了输出目录 {out}: {exc.strerror or exc}"
+        ) from exc
+    dest = out / ledger.name
+    fetched = (
+        not args.force and dest.is_file() and dest.stat().st_size == ledger.size
+    )
+    image = ImageFacts(
+        path=dest, size=ledger.size, expected=ledger.sha256, sums_file=str(oci)
+    )
+    report.image = image
+    _banner_fetch(ledger, oci, dest, renderer, fetched)
+    _verdict(
+        report,
+        renderer,
+        _fetch_checks(ledger, out, args.oras, fetched),
+        "预检未通过，未取回任何数据",
+    )
+    renderer.stages_header()
+    steps = _fetch_steps(report, image, ledger, dest, fetched, args.oras)
+    for index, (name, body) in enumerate(steps, 1):
+        _stage(renderer, report, index, len(steps), name, body)
 
 
 def _close(
@@ -1098,6 +1411,14 @@ def write_report(report: Report, path: Path) -> None:
         rows.append(f"device.bytes={report.device.size}")
         rows.append(f"device.model={report.device.model}")
         rows.append(f"device.serial={report.device.serial}")
+    if report.oci:
+        rows.append(f"oci.target={report.oci.target}")
+        rows.append(f"oci.name={report.oci.name}")
+        rows.append(f"oci.sha256={report.oci.sha256}")
+        rows.append(f"oci.chunks={report.oci.chunks}")
+        rows.append(f"oci.chunk_bytes={report.oci.chunk_size}")
+        for part in report.oci.parts:
+            rows.append(f"oci.part.{part.index}={part.digest} {part.size} {part.name}")
     for check in report.checks:
         rows.append(
             f"check.{check.name}={SKIP if check.skipped else ('pass' if check.ok else 'fail')}"
@@ -1120,10 +1441,19 @@ def build_parser() -> argparse.ArgumentParser:
         "command",
         nargs="?",
         default="plan",
-        choices=("plan", "write", "verify", "check"),
-        help="plan 只预检（默认）；write 写入；verify 只回读；check 环境自检",
+        choices=("fetch", "plan", "write", "verify", "check"),
+        help="fetch 取回分块；plan 只预检（默认）；write 写入；verify 只回读；"
+        "check 环境自检",
     )
     parser.add_argument("--image", help="ISO 或 raw 镜像路径")
+    parser.add_argument("--oci", help="fetch：发布清单 iso-oci.txt 路径")
+    parser.add_argument("--out", default=".", help="fetch：输出目录（默认当前目录）")
+    parser.add_argument(
+        "--force", action="store_true", help="fetch：忽略本地已存在的镜像，重新取回"
+    )
+    parser.add_argument(
+        "--oras", default="oras", help="fetch：oras 可执行文件（默认取自 PATH）"
+    )
     parser.add_argument("--device", help="目标块设备，如 /dev/sdb")
     parser.add_argument("--sha256", default="", help="直接给出期望的 sha256")
     parser.add_argument("--sums", default="", help="sha256sum 文件路径")
@@ -1191,9 +1521,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     args.argv = list(argv) if argv is not None else None
     if args.command == "check":
         report, code = _check(args)
+    elif args.command == "fetch":
+        if not args.oci:
+            parser.error("fetch 需要 --oci <iso-oci.txt>")
+        report, code = execute(args)
     else:
         if not args.image or not args.device:
-            parser.error("需要 --image 与 --device（check 子命令除外）")
+            parser.error("需要 --image 与 --device（check/fetch 子命令除外）")
         report, code = execute(args)
     if args.json:
         sys.stdout.write(

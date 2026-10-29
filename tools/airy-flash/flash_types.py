@@ -126,6 +126,58 @@ class ImageFacts:
 
 
 @dataclass(frozen=True)
+class OciPart:
+    """发布清单里的一行分块：序号、该块 sha256、字节数、落盘文件名。"""
+
+    index: int
+    digest: str
+    size: int
+    name: str
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "index": self.index,
+            "sha256": self.digest,
+            "bytes": self.size,
+            "name": self.name,
+        }
+
+
+@dataclass(frozen=True)
+class OciLedger:
+    """iso-oci.txt 的完整语义：拉取参数与逐块校验账本是同一份文件。"""
+
+    ref: str
+    tag: str
+    name: str
+    sha256: str
+    size: int
+    chunk_size: int
+    parts: tuple[OciPart, ...]
+
+    @property
+    def chunks(self) -> int:
+        return len(self.parts)
+
+    @property
+    def target(self) -> str:
+        return f"{self.ref}:{self.tag}" if self.tag else self.ref
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "ref": self.ref,
+            "tag": self.tag,
+            "target": self.target,
+            "name": self.name,
+            "sha256": self.sha256,
+            "bytes": self.size,
+            "chunk_bytes": self.chunk_size,
+            "chunks": self.chunks,
+            "parts": [p.as_dict() for p in self.parts],
+        }
+
+
+@dataclass(frozen=True)
 class Stage:
     """一个可展示的阶段结论。detail 是该阶段的人读摘要。"""
 
@@ -155,6 +207,7 @@ class Report:
     finished: str = ""
     image: ImageFacts | None = None
     device: DeviceFacts | None = None
+    oci: OciLedger | None = None
     checks: list[Check] = field(default_factory=list)
     stages: list[Stage] = field(default_factory=list)
     argv: list[str] = field(default_factory=list)
@@ -180,6 +233,7 @@ class Report:
             "warnings": list(self.warnings),
             "image": self.image.as_dict() if self.image else None,
             "device": self.device.as_dict() if self.device else None,
+            "oci": self.oci.as_dict() if self.oci else None,
             "checks": [c.as_dict() for c in self.checks],
             "stages": [s.as_dict() for s in self.stages],
         }
