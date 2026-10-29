@@ -440,10 +440,14 @@ def check_runner(man: Mapping[str, Any],
 
 def check_timeout(man: Mapping[str, Any],
                   wf: Mapping[str, Any]) -> CheckResult:
-    """校验 job 超时：与清单相等且不超过托管 runner 硬上限。"""
-    runner = man["runner"]
-    hosted = runner["label"].endswith("-latest")
-    ceiling = runner["hosted_ceiling_minutes"]
+    """校验 job 超时：与清单相等且不超过托管 runner 硬上限。
+
+    上限无条件生效。曾经用 label 是否以 ``-latest`` 结尾来推断「托管」，
+    于是把标签换成固定版本号（``ubuntu-24.04``）后整条约束静默失效——
+    托管 runner 的标签本来就有两种合法写法，而 self-hosted 的硬上限同样
+    不该被越过。上限是清单声明的输入，不该再从标签形状反推。
+    """
+    ceiling = man["runner"]["hosted_ceiling_minutes"]
     jobs = _jobs(wf)
     problems: list[str] = []
     for spec in man["jobs"]:
@@ -455,7 +459,7 @@ def check_timeout(man: Mapping[str, Any],
             problems.append(
                 f"{spec['name']}.timeout-minutes 期望 "
                 f"{spec['timeout_minutes']}，实际 {actual}")
-        if hosted and actual > ceiling:
+        if actual > ceiling:
             problems.append(
                 f"{spec['name']}.timeout-minutes 超过托管 runner 上限 "
                 f"{ceiling}")
