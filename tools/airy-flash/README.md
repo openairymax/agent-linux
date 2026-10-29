@@ -105,8 +105,8 @@ USB 硬盘盒、NVMe 转接盘）都走同一套预检与写入路径，节点�
 
 ### WSL2 上的设备接入
 
-本次验证机跑在 WSL2 里，`/dev/sd*` 只有 WSL 自己的虚拟磁盘，插在主机上的
-U 盘不会自动出现在 Linux 侧；不先做直通，`lsblk` 中不会出现目标设备。
+WSL2 的 `/dev/sd*` 只有 WSL 自己的虚拟磁盘，插在主机上的 U 盘不会自动
+出现在 Linux 侧；不先做直通，`lsblk` 中不会出现目标设备。
 
 1. 管理员 PowerShell 列出设备并记下 BUSID：`usbipd list`
 2. 绑定一次即可长期有效：`usbipd bind --busid <BUSID>`
