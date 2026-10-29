@@ -71,13 +71,10 @@ env:
   OE_ISO_SHA256: 291c1a2ad7ceb74e2b5308ca58f8aaa0206a0520c39145792af08f8adbbb6199
   OE_IMG_NAME: openEuler-docker.x86_64.tar.xz
   OE_IMG_SHA256: c152f7cf7e6966dcf5819890db5f277a303d462c2982e423d5935b33a47d6a05
-  # 介质只按 sha256 认定，源可替换：官方源跨洋链路曾整段停滞（run
+  # 镜像只按 sha256 认定，源可替换：官方源跨洋链路曾整段停滞（run
   # 39543892713 在 Fetch 卡满 55 分钟），国内镜像作等价回退，摘要不符即弃。
-  # 未设 --mirror 时 media-fetch.sh 使用同一组三源（官方 → 清华 → 华为云）。
-  OE_MIRRORS: |
-    https://repo.openeuler.org/openEuler-24.03-LTS-SP2
-    https://mirrors.tuna.tsinghua.edu.cn/openeuler/openEuler-24.03-LTS-SP2
-    https://mirrors.huaweicloud.com/openeuler/openEuler-24.03-LTS-SP2
+  # 镜像根的唯一声明处是 distro/repo/mirrors.list，media-fetch.sh 与闭包
+  # 收割都读它，此处不再复制一份（此前 OE_MIRRORS 无消费者，已删除）。
 
 jobs:
   # ─── Job 1: RPM + 内核 + ISO 组装（源码只读，产物出源码区） ─────────────

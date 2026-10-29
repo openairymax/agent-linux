@@ -31,6 +31,8 @@ set -uo pipefail
 readonly EINVAL=5
 # shellcheck source=../lib/log.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/log.sh"
+readonly GATE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
+readonly MIRROR_LIST="${GATE_ROOT}/distro/repo/mirrors.list"
 
 DIR=""
 BUDGET=2700
@@ -50,7 +52,7 @@ usage()
   --budget SECS   介质总预算，默认 2700
   --cap SECS      单次尝试上限，默认 3000
   --floor SECS    每项保底预算，默认 600
-  --mirror URL    镜像根（可重复）；缺省用内置三源
+  --mirror URL    镜像根（可重复）；缺省读 distro/repo/mirrors.list
   NAME PATH SHA256  依次给出介质文件名、镜像内相对目录、期望摘要
 EOF
 }
@@ -77,12 +79,12 @@ ITEMS=("$@")
     err "介质三元组不完整: 需要 NAME PATH SHA256 三的倍数"; exit "${EINVAL}"; }
 
 if [ "${#MIRRORS[@]}" -eq 0 ]; then
-    # 顺序即优先级：官方源优先，跨洋链路停滞时自动落到国内镜像。
-    MIRRORS=(
-        https://repo.openeuler.org/openEuler-24.03-LTS-SP2
-        https://mirrors.tuna.tsinghua.edu.cn/openeuler/openEuler-24.03-LTS-SP2
-        https://mirrors.huaweicloud.com/openeuler/openEuler-24.03-LTS-SP2
-    )
+    # 顺序即优先级：官方源优先，跨洋链路停滞时自动落到国内镜像。镜像根
+    # 只在 distro/repo/mirrors.list 声明一次，装机镜像与闭包收割读同一份。
+    [ -f "$MIRROR_LIST" ] || die "镜像根表缺失: $MIRROR_LIST"
+    mapfile -t MIRRORS < <(sed -e 's/#.*//' -e 's/[[:space:]]//g' \
+        "$MIRROR_LIST" | grep -v '^$' || true)
+    [ "${#MIRRORS[@]}" -gt 0 ] || die "镜像根表为空: $MIRROR_LIST"
 fi
 
 need_cmd curl sha256sum
