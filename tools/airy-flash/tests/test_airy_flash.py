@@ -114,9 +114,16 @@ def test_human_bytes(value: int, expect: str) -> None:
 
 @pytest.mark.parametrize(
     ("value", "expect"),
-    [(0, "0s"), (42, "42s"), (66, "1m06s"), (3720, "1h02m")],
+    [
+        (0, "0.0s"),
+        (0.4, "0.4s"),
+        (9.94, "9.9s"),
+        (42, "42s"),
+        (66, "1m06s"),
+        (3720, "1h02m"),
+    ],
 )
-def test_human_duration(value: int, expect: str) -> None:
+def test_human_duration(value: float, expect: str) -> None:
     assert af.human_duration(value) == expect
 
 
@@ -143,7 +150,7 @@ def test_non_tty_progress_is_quarter_step_and_ansi_free() -> None:
         renderer.stage_progress(step, 100, 1024.0, 0.0)
     renderer.stage_end(af.Stage(1, 4, "写入设备", af.OK, "1.00 KiB"))
     text = stream.getvalue()
-    assert re.findall(r"(\d+)%", text) == ["0", "25", "50", "75", "100"]
+    assert re.findall(r"(\d+)%", text) == ["0", "25", "50", "75"]
     assert "\x1b" not in text and "\r" not in text
     # 结束行是阶段的唯一总结，必须落在最后一行。
     assert text.splitlines()[-1].strip().endswith("1.00 KiB")

@@ -128,7 +128,13 @@ def human_bytes(value: float) -> str:
 
 
 def human_duration(seconds: float) -> str:
-    """秒 → "42s" / "1m06s" / "1h02m"。"""
+    """秒 → "0.4s" / "42s" / "1m06s" / "1h02m"。
+
+    十秒以内保留一位小数：整秒取整会把亚秒阶段压成 "0s"，
+    令 fsync、单块校验这类快阶段在报告里看起来像没有执行。
+    """
+    if seconds < 9.95:
+        return f"{seconds:.1f}s"
     total = int(round(seconds))
     if total < 60:
         return f"{total}s"
@@ -914,7 +920,9 @@ class Renderer:
             self._bar_open = True
             return
         bucket = int(ratio * self.MILESTONES)
-        if bucket != self._last_bucket:
+        # 100% 里程碑与紧随其后的 stage_end 结果行重复，日志里两行同义；
+        # 仅保留 0/25/50/75 四个过程刻度。
+        if bucket < self.MILESTONES and bucket != self._last_bucket:
             self._last_bucket = bucket
             self._write(
                 f"  [ .. ] {head} {bucket * 100 // self.MILESTONES:3d}% "
