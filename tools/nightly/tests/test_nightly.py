@@ -274,8 +274,9 @@ def test_vars_rejects_undefined_commit():
 def test_vars_accepts_inline_assignment():
     wf = _wf()
     del wf["jobs"][JOB_REVERT]["env"]
-    steps = _steps(wf, JOB_REVERT)
-    steps[1]["run"] = "COMMIT=$(git rev-parse HEAD)\n" + steps[1]["run"]
+    step = next(s for s in _steps(wf, JOB_REVERT)
+                if "create-revert-pr" in s.get("run", ""))
+    step["run"] = "COMMIT=$(git rev-parse HEAD)\n" + step["run"]
     assert nt.check_vars(_man(), wf).passed
 
 
@@ -400,19 +401,86 @@ def test_helpers_reject_missing_call(tmp_path):
     assert "未调用" in result.details
 
 
+def _gated(tmp_path, rel: str = "ci/gates/h.sh") -> dict:
+    """构造「守卫住在门禁脚本」的清单与门禁文件。"""
+    man = _mini()
+    gate = tmp_path / rel
+    gate.parent.mkdir(parents=True, exist_ok=True)
+    gate.write_text(_guarded(), encoding="utf-8")
+    man["helper_gate"] = rel
+    return man
+
+
+def test_helpers_accept_gate_call(tmp_path):
+    man = _gated(tmp_path)
+    wf = _wf_run("ci/ci.sh nightly-helpers h\n")
+    assert nt.check_helpers(man, wf, tmp_path).passed
+
+
+def test_helpers_reject_missing_gate_call(tmp_path):
+    man = _gated(tmp_path)
+    result = nt.check_helpers(man, _wf_run("echo hello\n"), tmp_path)
+    assert not result.passed
+    assert "nightly-helpers h" in result.details
+
+
+def test_helpers_reject_unreadable_gate(tmp_path):
+    man = _mini()
+    man["helper_gate"] = "ci/gates/absent.sh"
+    result = nt.check_helpers(man, _wf_run("ci/ci.sh nightly-helpers h\n"),
+                              tmp_path)
+    assert not result.passed
+    assert "无法读取 helper 门禁" in result.details
+
+
+def test_helpers_reject_gate_contract_drift(tmp_path):
+    man = _gated(tmp_path)
+    (tmp_path / "ci/gates/h.sh").write_text("echo hi\n", encoding="utf-8")
+    result = nt.check_helpers(man, _wf_run("ci/ci.sh nightly-helpers h\n"),
+                              tmp_path)
+    assert not result.passed
+    assert "未调用 tools/h.py" in result.details
+
+
 # ─── CI budget ─────────────────────────────────────────────────────────────
 
 
+def _budget_man(tmp_path, value: str = "60") -> dict:
+    gate = tmp_path / "ci/gates/b.sh"
+    gate.parent.mkdir(parents=True, exist_ok=True)
+    gate.write_text(
+        "if [ -f tools/b.py ]; then\n"
+        f"  python3 tools/b.py --max-minutes {value}\n"
+        "else\n"
+        '  echo "SKIP: b.py not yet implemented"\n'
+        "fi\n", encoding="utf-8")
+    return {
+        "helper_gate": "ci/gates/b.sh",
+        "jobs": [{"name": "j", "timeout_minutes": 1, "needs": [],
+                  "helpers": ["b"]}],
+        "helpers": {"b": {"path": "tools/b.py", "status": "deferred",
+                          "argv": ["--max-minutes"]}},
+        "budget": {"max_minutes": 60, "helper": "b",
+                   "argv": ["--max-minutes", "60"]},
+    }
+
+
+def _budget_wf(call: str = "ci/ci.sh nightly-helpers b\n") -> dict:
+    return {"jobs": {"j": {"steps": [{"run": call}]}}}
+
+
 def test_budget_accepts_real_workflow():
-    assert nt.check_budget(_man(), _wf()).passed
+    assert nt.check_budget(_man(), _wf(), REPO_ROOT).passed
 
 
-def test_budget_rejects_value_drift():
-    wf = _wf()
-    step = _steps(wf, JOB_REVERT)[-1]
-    step["run"] = step["run"].replace("--max-minutes 60",
-                                      "--max-minutes 90")
-    result = nt.check_budget(_man(), wf)
+def test_budget_accepts_gate_call(tmp_path):
+    assert nt.check_budget(_budget_man(tmp_path), _budget_wf(),
+                           tmp_path).passed
+
+
+def test_budget_rejects_value_drift(tmp_path):
+    result = nt.check_budget(_budget_man(tmp_path, "90"), _budget_wf(),
+                             tmp_path)
     assert not result.passed
     assert "--max-minutes 60" in result.details
 
@@ -420,7 +488,7 @@ def test_budget_rejects_value_drift():
 def test_budget_rejects_missing_call():
     wf = _wf()
     wf["jobs"][JOB_REVERT]["steps"] = []
-    assert not nt.check_budget(_man(), wf).passed
+    assert not nt.check_budget(_man(), wf, REPO_ROOT).passed
 
 
 # ─── CLI ───────────────────────────────────────────────────────────────────

@@ -12,7 +12,8 @@
 #   * 托管 runner 单 job 硬上限 6 小时，超时预算不得超过 360 分钟。
 #   * formal-verify / soak-runner / chaos-runner / auto-bisect /
 #     create-revert-pr / ci-budget-check 尚未落地，清单登记为 deferred；
-#     脚本一旦存在，manifests 与守卫必须同步转为 available，否则 gate 失败。
+#     helper 的存在性守卫与调用参数收在 ci/gates/nightly-helpers.sh，
+#     本文件只保留 `ci/ci.sh nightly-helpers <key>` 一行，逻辑可在本地重放。
 # ===========================================================================
 
 name: nightly
@@ -40,40 +41,16 @@ jobs:
         with: { submodules: recursive }
 
       - name: Validate nightly contract
-        run: |
-          python3 -m pip install --quiet pyyaml
-          python3 tools/nightly/nightly.py --check
+        run: python3 -m pip install --quiet pyyaml && python3 tools/nightly/nightly.py --check
 
       - name: Formal verification (seL4-style)
-        run: |
-          if [ -f tools/formal-verify.py ]; then
-            for target in kernel/sched/core.c \
-                          drivers/airymax/ipc/airy_ipc.c \
-                          mm/share_pool.c; do
-              python3 tools/formal-verify.py --target "$target"
-            done
-          else
-            echo "SKIP: formal-verify.py not yet implemented"
-          fi
+        run: ci/ci.sh nightly-helpers formal-verify
 
-      # 72h soak 需要 self-hosted runner（托管 runner 上限 6 小时），
-      # soak-runner.py 落地时须同步调整 runner 与清单。
       - name: 72h soak test (memory leak / refcount drift)
-        run: |
-          if [ -f tools/soak-runner.py ]; then
-            python3 tools/soak-runner.py --duration 72h --workload \
-              agent-busy-loop
-          else
-            echo "SKIP: soak-runner.py not yet implemented"
-          fi
+        run: ci/ci.sh nightly-helpers soak-runner
 
       - name: Chaos injection (hotplug / hotremove / I/O / net partition)
-        run: |
-          if [ -f tools/chaos-runner.py ]; then
-            python3 tools/chaos-runner.py --profile full
-          else
-            echo "SKIP: chaos-runner.py not yet implemented"
-          fi
+        run: ci/ci.sh nightly-helpers chaos-runner
 
   # ─── Job 2: 回滚或预算检查 ─────────────────────────────────────────
   nightly-revert-or-budget:
@@ -87,25 +64,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Auto-revert on regression (if nightly-test-suite failed)
+      - name: Auto-bisect regression window (if nightly-test-suite failed)
         if: needs.nightly-test-suite.result == 'failure'
-        run: |
-          if [ -f tools/auto-bisect.py ]; then
-            python3 tools/auto-bisect.py --baseline last-green
-          else
-            echo "SKIP: auto-bisect.py not yet implemented"
-          fi
-          if [ -f tools/create-revert-pr.py ]; then
-            python3 tools/create-revert-pr.py --regression-commit $COMMIT
-          else
-            echo "SKIP: create-revert-pr.py not yet implemented"
-          fi
+        run: ci/ci.sh nightly-helpers auto-bisect
+
+      - name: Open revert PR for the regression commit
+        if: needs.nightly-test-suite.result == 'failure'
+        run: ci/ci.sh nightly-helpers create-revert-pr "$COMMIT"
 
       - name: Check CI total budget (60min gate, OS-STD-TEST-011)
         if: always()
-        run: |
-          if [ -f tools/ci-budget-check.py ]; then
-            python3 tools/ci-budget-check.py --max-minutes 60
-          else
-            echo "SKIP: ci-budget-check.py not yet implemented"
-          fi
+        run: ci/ci.sh nightly-helpers ci-budget-check

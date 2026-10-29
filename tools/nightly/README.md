@@ -50,8 +50,14 @@ nightly 流水线承担 PR 无法覆盖的长时验证：形式化验证、72h s
 
 | 状态 | 要求 |
 |------|------|
-| `deferred` | job 脚本内必须有 `if [ -f <path> ]` 守卫与 `SKIP:` 标记，且文件不得存在于磁盘 |
+| `deferred` | 载体正文内必须有 `if [ -f <path> ]` 守卫与 `SKIP:` 标记，且文件不得存在于磁盘 |
 | `available` | 文件必须存在，且不得被存在性守卫包裹 |
+
+契约的载体由顶层 `helper_gate` 决定：登记后守卫、argv 与 `SKIP:` 分支住在
+该门禁脚本里，workflow 只保留 `ci/ci.sh nightly-helpers <key>` 一行，逻辑可
+在本地重放；未登记时退回「workflow 内联守卫」形态。两种形态下都要求 workflow
+文本出现 `nightly-helpers <key>`（内联形态则要求出现真实调用），门禁登记却
+不可读、或调用与门禁脱钩，均判失败。
 
 脚本一旦落地而清单仍标 `deferred`，检查直接失败并提示转为 `available`；
 反向漂移同样失败。该约束保证「未实现即显式跳过、已实现即真实执行」，
@@ -86,8 +92,9 @@ python3 tools/nightly/nightly.py --check --manifest tools/nightly/manifest.yaml
   job 定义与 `needs` 拓扑，随后运行 `--check` 确认无漂移。
 - **新增 helper**：在 `helpers` 段登记路径、状态与必要参数，在
   `tools/README.md` 的 helper surface 表登记 basename，再接入对应 job。
-- **helper 落地**：把 `status` 改为 `available`，移除 `if [ -f ... ]`
-  守卫与 `SKIP:` 分支，并确认 `os-chk-verify.yml` 已纳入其测试。
+- **helper 落地**：把 `status` 改为 `available`，在 `helper_gate` 指向的门禁
+  脚本里移除 `if [ -f ... ]` 守卫与 `SKIP:` 分支（未登记门禁则改 job 脚本），
+  并确认 `os-chk-verify.yml` 已纳入其测试。
 - **调整预算**：修改 `budget.argv` 时须同步 job 2 的调用，且不得超过
   `OS-STD-TEST-011` 的 60 分钟上限。
 
