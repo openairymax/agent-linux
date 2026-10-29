@@ -244,21 +244,24 @@ if [ "${publish}" -eq 1 ]; then
     parts_from_files
     endgroup
 
+    # layer 参数只写文件名，并在 ${WORK} 里执行：oras 1.3 起默认拒绝绝对路径
+    # （absolute file path detected），且 layer 标题取文件名。关掉校验
+    # （--disable-path-validation）等于放弃这条防线，故改为切换工作目录。
     push_args=()
     while IFS= read -r part_name; do
-        push_args+=("${WORK}/${part_name}:${LAYER_TYPE}")
+        push_args+=("${part_name}:${LAYER_TYPE}")
     done < <(cut -d' ' -f4 "${WORK}/parts.txt")
     parts_ann="$(awk '{printf "%s%s", sep, $2; sep = ","}' "${WORK}/parts.txt")"
 
     group "oras push ${target}"
-    oras push --artifact-type "${ARTIFACT_TYPE}" \
+    ( cd "${WORK}" && oras push --artifact-type "${ARTIFACT_TYPE}" \
         --annotation "${ANN}.name=${name}" \
         --annotation "${ANN}.sha256=${sum}" \
         --annotation "${ANN}.size=${size}" \
         --annotation "${ANN}.chunk-size=${CHUNK}" \
         --annotation "${ANN}.chunks=${count}" \
         --annotation "${ANN}.parts=${parts_ann}" \
-        "${target}" "${push_args[@]}" || die "oras push 失败: ${target}"
+        "${target}" "${push_args[@]}" ) || die "oras push 失败: ${target}"
     endgroup
 
     fetch_remote || die "推送后无法读取远端清单: ${target}"
