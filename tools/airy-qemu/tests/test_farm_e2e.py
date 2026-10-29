@@ -295,18 +295,18 @@ def test_report_is_byte_identical_across_runs(
 def test_ci_hook_runs_farm_tests(repo_root: Path) -> None:
     """CI 必须真实挂载农场测试与依赖。
 
-    farm-verify.yml 只保留一行 gate 调用（内联 run 块无法在本地重放），
+    os-chk-verify.yml 只保留一行 gate 调用（内联 run 块无法在本地重放），
     依赖清单与 pytest 目录因此落在 gate 里：workflow 断言接线，gate 断言
     载荷，两者缺一都算红。
     """
-    workflow = repo_root / ".github" / "workflows" / "farm-verify.yml"
-    assert "ci/ci.sh python-verify --kind farm" in workflow.read_text(encoding="utf-8")
+    workflow = repo_root / ".github" / "workflows" / "os-chk-verify.yml"
+    assert "ci/ci.sh python-verify --kind oschk" in workflow.read_text(encoding="utf-8")
 
     gate = repo_root / "ci" / "gates" / "python-verify.sh"
     text = gate.read_text(encoding="utf-8")
 
-    assert "tools/airy-qemu/requirements-dev.txt" in text
-    assert "tools/airy-qemu/tests/" in text
+    # 农场目录必须留在 oschk 的工具集合里，否则它的用例会静默退出 CI。
+    assert "airy-qemu" in text
 
 
 def test_readme_documents_contract(farm_dir: Path) -> None:

@@ -7,101 +7,43 @@
 # Design: tools/os-chk/os_chk.py 只做注册表解析、调度、汇总与门禁判定，
 #         检查本体由既有执行器承担；gates.yaml 为门禁唯一事实源。
 # ---------------------------------------------------------------------------
-# 说明：os_chk.py 会依次调用 abi-check / sc-tri-compile / validate-ssot /
-# codegen / dsl / check-copyright / airy-checkpatch / defconfig-matrix /
-# btf-integration / kbuild-version / release-engineering 等既有工具，故本
-# workflow 除监听 tools/os-chk/** 外，同时监听上述执行器与其受检对象的路径，
-# 任一改动破坏门禁即可被捕获。默认 --fail-on P1（P0+P1 阻断），对齐规范。
-# kernel 为本仓 gitlink，其子模块指针变动即触发（OS-TEST-066 的 Perl 引擎位于
-# kernel/scripts/；OS-BUILD-MATRIX 的 defconfig 受检对象位于
-# kernel/arch/*/configs/；OS-BUILD-BTF 的受检片段与其 CI 供给位于
-# kernel/arch/*/configs/airy_defconfig 与 .github/workflows/；
-# OS-BUILD-KBUILD-VERSION 的受检对象 kernel/Makefile.airymaxos 与
-# kernel/Makefile 亦位于该 gitlink 内）。
-# OS-BUILD-RELEASE 的受检对象为 tools/release-engineering/manifest.yaml 与
-# .github/workflows/release.yml，故两者亦纳入监听。
-# OS-BUILD-NIGHTLY 的受检对象为 tools/nightly/manifest.yaml 与
-# .github/workflows/nightly.yml，故两者亦纳入监听。
-# OS-BUILD-REPO-SCAFFOLD 的受检对象为 tools/repo-scaffold/manifest.yaml、
-# .gitmodules 与八子仓检出目录，故 tools/repo-scaffold/** 与 .gitmodules
-# 亦纳入监听。
-# OS-OPS-ROLLBACK 的受检对象为 tools/airy-rollback/manifest.yaml 及其编排
-# 器，故 tools/airy-rollback/** 亦纳入监听。
-# OS-ACC-RT 验收工具 tools/osaccrt/ 以 pytest 单元测试作为 L0 门禁，其用例
-# 落在 tools/osaccrt/tests/，故该目录亦纳入监听与测试清单。
-# 烧录工具 tools/airy-flash/ 与上述工具共用同一套 Python 测试环境，用例同样
-# 挂在 --kind oschk 下执行，避免再开一条只装 pytest 的流水线。
-# 门禁实现自身（ci/）与 system 子仓此前不在任何 workflow 的 paths 里：改
-# ci/gates/*.sh 或 ci/ci.sh 不会触发任何流水线，等于门禁改动无人验证。system
-# 的单元测试自 0.0.3 起挂在本 kind 下，其指针变动必须重跑。故 ci/**、system
-# 与本 workflow 自身纳入监听，并在 job 内先跑 ci/lint.sh（workflow 薄化约束
-# ＋ bash 语法 ＋ shellcheck），让门禁脚本的改动由门禁自己把关。
-# distro 子仓同理：spec / kickstart / 组件清单的规则与工具单测只在组装镜像
-# 时才跑，子仓内改坏一条断言不会触发任何流水线。故 distro gitlink 纳入监听，
-# 由 ci/ci.sh distro-lint 调用子仓自己的 run-lint.sh。
+# 监听面按「受检对象」划定，而不是按子目录逐条枚举：os_chk.py 会调用 tools/
+# 下的全部执行器，逐个列举曾漏掉 airy-qemu、sdk 与 security，新工具加入后
+# 也不会自动纳入。四个 gitlink 各有受检对象——kernel 供 defconfig / BTF /
+# kbuild 版本检查，system 供装机后启动契约的单测，distro 供 spec 与
+# kickstart 规则，security 供 LSM 用例——指针一动即重跑。ci/** 与
+# .github/workflows/** 是为了让门禁脚本和 workflow 自身也受门禁约束：此前
+# 改 ci/gates/*.sh 不触发任何流水线，等于改动无人验证。
+# 默认 --fail-on P1（P0+P1 阻断），对齐 05-development-process.md Part III。
 # ===========================================================================
 
 name: os-chk-verify
 on:
   pull_request:
     paths:
-      - 'tools/osaccrt/**'
-      - 'tools/os-chk/**'
-      - 'tools/check-copyright.py'
-      - 'tools/validate-ssot.py'
-      - 'tools/sc-tri-compile/**'
-      - 'tools/abi-check/**'
-      - 'tools/codegen/**'
-      - 'tools/dsl/**'
-      - 'tools/airy-checkpatch/**'
-      - 'tools/defconfig-matrix/**'
-      - 'tools/ci-matrix/**'
-      - 'tools/btf-integration/**'
-      - 'tools/kbuild-version/**'
-      - 'tools/release-engineering/**'
-      - '.github/workflows/release.yml'
-      - 'tools/nightly/**'
-      - '.github/workflows/nightly.yml'
-      - 'tools/repo-scaffold/**'
-      - 'tools/airy-rollback/**'
-      - 'tools/airy-flash/**'
-      - '.gitmodules'
+      - 'tools/**'
+      - 'sdk/**'
+      - 'ci/**'
       - 'ssot-registry.yaml'
+      - '.gitmodules'
       - 'kernel'
       - 'system'
       - 'distro'
-      - 'ci/**'
-      - '.github/workflows/os-chk-verify.yml'
+      - 'security'
+      - '.github/workflows/**'
   push:
     branches: [main, develop]
     paths:
-      - 'tools/osaccrt/**'
-      - 'tools/os-chk/**'
-      - 'tools/check-copyright.py'
-      - 'tools/validate-ssot.py'
-      - 'tools/sc-tri-compile/**'
-      - 'tools/abi-check/**'
-      - 'tools/codegen/**'
-      - 'tools/dsl/**'
-      - 'tools/airy-checkpatch/**'
-      - 'tools/defconfig-matrix/**'
-      - 'tools/ci-matrix/**'
-      - 'tools/btf-integration/**'
-      - 'tools/kbuild-version/**'
-      - 'tools/release-engineering/**'
-      - '.github/workflows/release.yml'
-      - 'tools/nightly/**'
-      - '.github/workflows/nightly.yml'
-      - 'tools/repo-scaffold/**'
-      - 'tools/airy-rollback/**'
-      - 'tools/airy-flash/**'
-      - '.gitmodules'
+      - 'tools/**'
+      - 'sdk/**'
+      - 'ci/**'
       - 'ssot-registry.yaml'
+      - '.gitmodules'
       - 'kernel'
       - 'system'
       - 'distro'
-      - 'ci/**'
-      - '.github/workflows/os-chk-verify.yml'
+      - 'security'
+      - '.github/workflows/**'
 
 # 最小权限：本 workflow 全程只读，显式声明后不再依赖仓库默认设置。
 permissions:

@@ -34,14 +34,10 @@ a leftover build directory instead of waiting for a cloud job.
 ```text
 .github/
 ├── README.md                    # This file
-├── workflows/                   # 13 GitHub Actions workflows
+├── workflows/                   # 9 GitHub Actions workflows
 │   ├── kernel-verify.yml        # Kernel build matrix + static analysis + tests
 │   ├── airy-verify.yml          # Airymax build (4 arches) + checkpatch + SPDX + symbol integrity
-│   ├── abi-verify.yml           # syscall ABI four-source + baseline snapshot check
-│   ├── dsl-verify.yml           # Policy DSL (.adl → C tables) zero-drift gate
-│   ├── farm-verify.yml          # QEMU test-farm unit and end-to-end tests
 │   ├── os-chk-verify.yml        # OS-CHK unified gate orchestration (P0/P1 blocking)
-│   ├── codegen-verify.yml       # Codegen SSoT drift gate (contract sources → generated outputs)
 │   ├── mgmt-verify.yml          # Governance file integrity + leaf CI orchestration
 │   ├── image-build.yml          # Desktop ISO assembly + install/cold-boot acceptance
 │   ├── nightly.yml              # Nightly test suite + auto-revert/budget check
@@ -52,17 +48,14 @@ a leftover build directory instead of waiting for a cloud job.
 └── PULL_REQUEST_TEMPLATE.md     # Pull request template
 ```
 
-## CI Workflows (13 workflows)
+## CI Workflows (9 workflows)
 
 | Workflow | Jobs | Trigger |
 |----------|------|---------|
 | `kernel-verify.yml` | `kernel-build` — Kbuild matrix (4 configs × 4 arches × 2 compilers − 4 excluded cells = 28, `max-parallel: 8`) with `W=2` zero-warning gate; `kernel-verify` — checkpatch `--strict`, sparse `C=2`, Coccinelle, KUnit on UML, kselftest on QEMU | PR / push on `kernel/**` |
 | `airy-verify.yml` | `airy-build` — `airy_defconfig` build matrix on 4 arches (x86_64/arm64/riscv/loongarch) + Airymax CONFIG gate + BTF embedded + `.o` artifact check + symbol-clash check between `security/airy/` and `kernel/superv/`; `airy-static` — checkpatch `--strict` plus the Airymax extension rules, SPDX identifier audit (`[SC]` = BSD-3-Clause OR GPL-2.0, else GPL-2.0-only), and SSoT manifest checks (defconfig matrix / BTF / Kbuild version injection) | PR / push on Airymax paths |
 | `abi-verify.yml` | `abi-verify` — `abi-check` unit tests plus four-source consistency (SSoT registry / UAPI `unistd.h` / `syscall_64.tbl` / `[SC]` `syscalls.h`) against `abi_baseline.json` (OS-IRON-001) | PR / push on `tools/abi-check/**`, ABI sources |
-| `dsl-verify.yml` | `dsl-verify` — `tools/dsl` unit tests plus `dsl_compile.py --check` content compare, proving `.adl` contract sources and generated C tables stay in sync (IRON-9) | PR / push on `tools/dsl/**`, `tools/codegen/**` |
-| `farm-verify.yml` | `farm-verify` — QEMU test-farm unit and end-to-end pytest suite; executors are substituted so no host KVM or real QEMU is required | PR / push on `tools/airy-qemu/**` |
-| `os-chk-verify.yml` | `os-chk-verify` — resolve `gates.yaml`, dispatch registered OS-CHK executors, aggregate reports and block on P0/P1 findings | PR / push on `tools/**` executors and their audited objects |
-| `codegen-verify.yml` | `codegen-diff-check` — run `tools/codegen/run_codegen.py --check` (content compare, works across submodules) as the zero-drift SSoT gate (IRON-9) | PR / push on `tools/codegen/**`, `sdk/**`, `kernel`, `security` |
+| `os-chk-verify.yml` | `os-chk-verify` — resolve `gates.yaml`, dispatch registered OS-CHK executors, aggregate reports and block on P0/P1 findings. Also carries the entire Python tool-suite payload (abi-check / codegen / dsl / farm / flash / rollback …): one dependency install, one pytest sweep, so a tool change no longer queues four near-identical workflows | PR / push on `tools/**`, `sdk/**`, `ci/**`, the four audited gitlinks |
 | `mgmt-verify.yml` | `file-integrity` — verify submodule dirs derived from `.gitmodules` (9 entries), `[SC]` 12 shared headers, 12 governance files, no `airymaxos-` prefix; `orchestrate-leaf-ci` — aggregate leaf CI statuses, markdownlint repository-owned markdown, copyright header check | PR on `**.md`, `.gitmodules`, `ssot-registry.yaml`, `MAINTAINERS`, `CODEOWNERS`, `tools/**`, `.github/**` / push on `main` |
 | `image-build.yml` | `assemble` — build the desktop ISO from a pinned openEuler netinst base inside a privileged official container, then verify the assembly manifest and ISO checksum; `accept` — install the ISO in QEMU under BIOS and UEFI, cold-boot to `AIRYMAX-DESKTOP-READY` (or `AIRYMAX-SMOKE-PASS` with `acceptance=true`), publish TAP and serial logs. Both jobs are 12 one-line `ci/ci.sh` calls; all logic lives in `ci/gates/` | `workflow_dispatch` (release gate, not a PR gate) |
 | `nightly.yml` | `nightly-test-suite` — seL4-style formal verification, 72h soak test, chaos injection (CPU hotplug / mem hotremove / I/O error / net partition); `nightly-revert-or-budget` — auto-revert on regression via `auto-bisect`, or CI budget check (60 min steady, 90 min kernel cold-cache fallback, OS-STD-TEST-011) | cron `0 2 * * *` / `workflow_dispatch` |
@@ -81,7 +74,7 @@ run`, and this document can never disagree. The rules are enforced by
 |--------|------|-----------|
 | File name | kebab-case `^[a-z0-9]+(-[a-z0-9]+)*\.yml$` | Case- and locale-insensitive on every filesystem; sorts predictably |
 | `name:` | Identical to the file stem | The UI label and the file path are one single source of truth |
-| `-verify` suffix | Reserved for gating workflows (the 10 SSoT/build gates) | A reader immediately knows the workflow fails the build on violation |
+| `-verify` suffix | Reserved for gating workflows (the 6 SSoT/build gates) | A reader immediately knows the workflow fails the build on violation |
 | Lifecycle names | `image-build` / `nightly` / `release` | Named after the lifecycle stage they own, not the tool they call |
 | Payload | YAML is a thin dispatch layer — checkout, `ci/ci.sh <gate>`, upload | All assertions live in `ci/`, replayable locally |
 | Job count | 2 capped per workflow | Keeps the DAG readable and the critical path short |

@@ -151,13 +151,13 @@ git submodule update --remote --checkout
 
 ## CI / CD Pipelines
 
-The management repository hosts **8 GitHub Actions workflows** (most capped at 2 jobs; `airy-verify.yml` fans out into 4 focused jobs). Language-level CI is delegated to the leaf repositories' own `.github/workflows/`.
+The management repository hosts **9 GitHub Actions workflows** (most capped at 2 jobs). All Python tool suites — abi-check, codegen, dsl, QEMU farm, flash, rollback — run inside `os-chk-verify.yml`: one dependency install, one pytest sweep, one verdict. Language-level CI is delegated to the leaf repositories' own `.github/workflows/`.
 
 | Workflow | Trigger | Jobs | Purpose |
 |----------|---------|------|---------|
 | `kernel-verify.yml` | PR / push on `kernel/**` | `kernel-build` + `kernel-verify` | Kbuild matrix (31 configs) + checkpatch / sparse / Coccinelle / KUnit / kselftest |
-| `airy-verify.yml` | PR / push on Airymax paths | `airy-defconfig-verify` + `airy-checkpatch` + `airy-spdx-audit` + `airy-symbol-integrity` | Airymax build on 4 arches + checkpatch `--strict` + SPDX audit + symbol-clash check |
-| `codegen-verify.yml` | PR / push on `tools/codegen/**`, contract sources | `codegen-diff-check` | Codegen SSoT drift gate (`run_codegen.py --check`) |
+| `airy-verify.yml` | PR / push on Airymax paths | `airy-build` + `airy-static` | Airymax build on 4 arches + checkpatch `--strict` + SPDX audit + symbol-clash check |
+| `os-chk-verify.yml` | PR / push on `tools/**`, `sdk/**`, `ci/**`, gitlinks | `os-chk-verify` | OS-CHK unified gates (P0/P1 blocking) + every Python tool suite |
 | `mgmt-verify.yml` | PR / push on docs, `.gitmodules`, SSoT, governance files | `file-integrity` + `orchestrate-leaf-ci` | Verify 9 submodules, [SC] 12 shared headers, governance files; aggregate leaf CI status; markdownlint + copyright header |
 | `nightly.yml` | cron `0 2 * * *` / manual | `nightly-test-suite` + `nightly-revert-or-budget` | Formal verification (seL4-style) + 72h soak + chaos; auto-revert or CI budget check |
 | `release.yml` | tag `v*` / manual | `build-and-sign` + `publish-release` | SPDX SBOM + kernel/SDK build + GPG & cosign signing; publish dnf repo, OCI image, GitHub Release |
