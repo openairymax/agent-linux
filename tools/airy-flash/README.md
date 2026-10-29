@@ -1,6 +1,6 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0 -->
 
-# airy-flash — AirymaxOS 可复现烧录工具
+# airy-flash：AirymaxOS 可复现烧录工具
 
 Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 
@@ -9,8 +9,8 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 ## 用途
 
 AirymaxOS 的发布物是一个 isohybrid ISO（BIOS 与 UEFI 双固件可引导），
-装机只需要把镜像顺序写到整块设备。真正出问题的不是 `dd` 本身，而是它周围
-没人做的四件事：**写错盘**（把系统盘或已挂载的盘当 U 盘）、**写坏包**
+装机只需要把镜像顺序写到整块设备。真正容易出错的并非 `dd` 命令本身，而是其
+外围长期缺失的四项保障：**写错盘**（把系统盘或已挂载的盘当 U 盘）、**写坏包**
 （拿到残缺或篡改的 ISO 却没发现）、**写完不知道成没成**（没有回读比对）、
 **事后无法复盘**（只有一段滚动的终端输出，没有结构化记录）。
 
@@ -18,7 +18,7 @@ AirymaxOS 的发布物是一个 isohybrid ISO（BIOS 与 UEFI 双固件可引导
 刷盘同步 → 回读校验 → 落报告**，每一步都有固定顺序的机器可读输出，
 末尾一行 `AIRY-FLASH-PASS|FAIL` 供 CI 与日志检索直接断言。
 
-工具**不自己实现分区与引导**：ISO 由 `mkksiso` 保留 isohybrid 分区表与
+工具**不自行实现分区与引导**：ISO 由 `mkksiso` 保留 isohybrid 分区表与
 EFI 镜像，顺序写入即可双固件引导；另造一套分区/引导引擎只会引入第二处
 事实源。工具的职责边界是**判定这台设备能不能写、这个包是不是发布物、
 写完是否逐字节一致、以及把过程留成证据**。
@@ -40,7 +40,7 @@ EFI 镜像，顺序写入即可双固件引导；另造一套分区/引导引擎
 
 ## 烧录方案
 
-发布物只从流水线取，不从本地构建目录取——本地构建的 ISO 与发行 `.sha256`
+发布物只从流水线取，不从本地构建目录取：本地构建的 ISO 与发行 `.sha256`
 不是同一个文件，混用会让「可复现」失效。
 
 发行 ISO 约 3.4 GiB，超过 GitHub Release 单资产 2 GiB 与 AtomGit 网关 3 GiB
@@ -48,7 +48,7 @@ EFI 镜像，顺序写入即可双固件引导；另造一套分区/引导引擎
 它与 `release.yml` 的基础镜像分属两个包、互不覆盖 tag。
 
 ISO 按 192 MiB 切成定长 layer 推送：镜像站对 registry blob 的 Range 支持不
-一致，有的站点忽略 Range 且单连接到 314 MB 就断流，整文件单层取件无法续传。
+一致，有的站点忽略 Range，且单连接传输至 314 MB 即断流，整文件单层取件无法续传。
 分块后每块 digest 由 registry 按内容计算，逐块可校验、可单块重取；manifest
 annotation 记录整体 sha256、块大小与块数，取件侧据此确认块边界未被改动。
 Actions 的 `airymaxos-image` artifact 只保留 7 天，仅用于调试，不作为发行取件来源。
@@ -64,7 +64,7 @@ Actions 的 `airymaxos-image` artifact 只保留 7 天，仅用于调试，不�
 
 第 1 步的四重核对各有分工：`iso-oci.txt` 的逐块 `sha256=` 证明每块字节就
 是发布时那一块，`oras` 自己的 layer digest 证明 registry 端的 blob 与清单一
-致，拼接后再算的整体 `sha256` 证明块序与块边界没有被动过，清单里的
+致，拼接后再算的整体 `sha256` 证明块序与块边界未被改动，清单里的
 `sha256=` 证明拿到的就是这个 tag 当初发布的整体字节。任一不符即中止，不进
 入烧录。`iso-oci.txt` 里的 `pull=` 与 `join=` 两行保留了原生 `oras` 与 `cat`
 的等价写法，供没有本工具的环境照抄执行。
@@ -74,8 +74,8 @@ Actions 的 `airymaxos-image` artifact 只保留 7 天，仅用于调试，不�
 
 ### 适用平台与介质
 
-工具只依赖 POSIX 用户态与 Linux 的 sysfs / `/proc/mounts`，里面没有验证机、
-目录布局或介质品牌的判定分支：任何在 Linux 上以块设备出现的介质（U 盘、SD 卡、
+工具只依赖 POSIX 用户态与 Linux 的 sysfs / `/proc/mounts`，内不设按机器型号、
+目录布局或介质品牌分支的判定逻辑：任何在 Linux 上以块设备出现的介质（U 盘、SD 卡、
 USB 硬盘盒、NVMe 转接盘）都走同一套预检与写入路径，节点名不做假设，
 整盘与系统盘一律按 sysfs 语义反查。
 
@@ -86,11 +86,11 @@ USB 硬盘盒、NVMe 转接盘）都走同一套预检与写入路径，节点�
 | macOS | 是 | 本工具无 macOS 构建，改用系统自带件按同一顺序：`shasum -a 256 -c *.iso.sha256` 校验 → `diskutil unmountDisk /dev/diskN` → `dd if=*.iso of=/dev/rdiskN bs=4m` → `dd if=/dev/rdiskN bs=4m \| cmp - *.iso` 回读比对 |
 | Windows | 是 | 同上，用平台自带工具：`CertUtil -hashfile *.iso SHA256` 校验，再以 DD/原始镜像模式整盘写入（如 Rufus「DD 镜像」模式），写完回读比对 |
 
-`N` 是整盘号，取自 `diskutil list` 的 `/dev/diskN`，不是 `/dev/diskN sM` 分区号——
-写成分区就是半截写入。非 Linux 平台没有 sysfs 与 `/proc/mounts`，
+`N` 是整盘号，取自 `diskutil list` 的 `/dev/diskN`，不是 `/dev/diskN sM` 分区号：
+误用分区节点只会造成半截写入。非 Linux 平台没有 sysfs 与 `/proc/mounts`，
 系统盘反查不成立，写前必须由操作者自行确认整盘身份；写错盘的后果与 Linux 侧相同。
 
-本工具不宣称覆盖这些平台，也不为「看起来通用」给非 Linux 路径加桩分支：
+本工具不宣称覆盖这些平台，也不为「表面上的通用性」在非 Linux 路径添加桩分支：
 发行取件与写入顺序是跨平台不变的部分，能在目标平台用原生工具等价复现即可。
 
 ### 设备判定
@@ -106,15 +106,15 @@ USB 硬盘盒、NVMe 转接盘）都走同一套预检与写入路径，节点�
 ### WSL2 上的设备接入
 
 本次验证机跑在 WSL2 里，`/dev/sd*` 只有 WSL 自己的虚拟磁盘，插在主机上的
-U 盘不会自动出现在 Linux 侧；不先做直通，`lsblk` 里根本看不到目标设备。
+U 盘不会自动出现在 Linux 侧；不先做直通，`lsblk` 中不会出现目标设备。
 
 1. 管理员 PowerShell 列出设备并记下 BUSID：`usbipd list`
 2. 绑定一次即可长期有效：`usbipd bind --busid <BUSID>`
 3. 每次插入 U 盘后接进 WSL：`usbipd attach --wsl --busid <BUSID>`
 4. 回到 WSL 用 `lsblk` 确认新出现的整盘节点，再走上面的 `plan` / `write`
-5. 写完先 `usbipd detach --busid <BUSID>` 再拔盘，避免页缓存没落盘
+5. 写完先 `usbipd detach --busid <BUSID>` 再拔盘，避免页缓存未落盘
 
-直通过来的是块设备，系统盘反查照常生效（WSL 的根盘是它自己的虚拟盘，
+直通接入后呈现为块设备，系统盘反查照常生效（WSL 的根盘是它自己的虚拟盘，
 不会和新接入的 U 盘混淆）。`write` 需要 root，WSL 里的 `sudo` 必须由操作者本人在交互
 终端输入口令，工具只做预检与写入，不代替提权。
 
@@ -148,7 +148,7 @@ U 盘不会自动出现在 Linux 侧；不先做直通，`lsblk` 里根本看不
 # 环境自检
 python3 airy-flash-0.0.3.pyz check
 
-# 取回发行 ISO：清单是唯一账本，块错位或字节不符当场停下。
+# 取回发行 ISO：清单是唯一账本，块错位或字节不符即行中止。
 # 发布面的清单本身就是账本（注解 + 逐层 digest），所以只给 tag 即可取件；
 # 已拿到 iso-oci.txt 的离线场景改用 --oci FILE，两条路径结论一致。
 python3 airy-flash-0.0.3.pyz fetch \
@@ -177,7 +177,7 @@ sudo python3 airy-flash-0.0.3.pyz write ... --json
 
 摘要来源按 `--sha256` → 镜像同目录 `<iso>.sha256` → 同目录 `SHA256SUMS` →
 `--sums` 指定文件的顺序解析；同一 `SHA256SUMS` 里出现多条同镜像记录时报
-`EXIT_CHECK`，不做「随便挑一条」的猜测。
+`EXIT_CHECK`，不做任意择一的猜测。
 
 ### 预检项
 
@@ -202,7 +202,7 @@ sudo python3 airy-flash-0.0.3.pyz write ... --json
 ### 输出结构
 
 人读输出固定七段（标题 → 身份 → 预检 → 阶段 → 结果 → 下一步 → 标记），
-顺序不随结果变化：失败时只少「下一步」，其余段落位置不变，便于肉眼扫描与
+顺序不随结果变化：失败时只少「下一步」，其余段落位置不变，便于人工浏览与
 日志切片。
 
 ```text
@@ -248,9 +248,9 @@ AIRY-FLASH-PASS command=write host=airymax-build image=/path/airymaxos-0.0.3-x86
   标签按显示宽度补齐（CJK 记 2 列），续行缩进固定，中英混排不错位。
 - 非 TTY 时进度按 25% 桶输出整行（`0/25/50/75/100`），不写 `\r`，日志可直接 `grep`。
 - 每个阶段都有心跳：超过 5 秒没有新进度就补一行 `已等待 Ns`，fsync 与
-  回读这类无字节计数的阶段也不会在屏幕上静止。
+  回读这类无字节计数的阶段也不会长时间无输出。
 - 失败时 `结果` 段追加 `原因` 与 `建议`，报告写失败降级为 `提示` 而不掩盖原始结论；
-  标记行的 `sha256=` 用**期望值**兜底，保证这一行仍能把日志对回发布物。
+  标记行的 `sha256=` 用**期望值**兜底，保证凭该行仍可将日志对应到发布物。
 - 标记行只写已有事实（`command=`/`host=` 恒有，`image=`/`sha256=`/`device=`
   按已探测到的内容出现），早期失败不会留下空字段。
 - `--json` 时 stdout 只有 JSON 对象，人读内容全部抑制；`--report` 支持
@@ -265,7 +265,7 @@ AIRY-FLASH-PASS command=write host=airymax-build image=/path/airymaxos-0.0.3-x86
 
 ## 装机后核对
 
-烧录成功只证明「盘上的字节是对的」，不证明「系统起来了」。装完必须逐项核对：
+烧录成功只证明「盘上字节正确」，不证明「系统可以正常启动」。装完必须逐项核对：
 
 | 项 | 命令 | 期望 |
 |----|------|------|
