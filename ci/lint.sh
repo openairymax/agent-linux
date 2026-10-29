@@ -5,11 +5,18 @@
 #
 # 用法: ci/lint.sh
 #
-# 检查四件事：
+# 检查五件事：
 #   1. workflow 薄化与命名约束（ci/check-workflows.py）；
 #   2. ci/ 下每个脚本可被 bash -n 解析；
 #   3. 验收剖面归一化的行为（ci/lib/profile.sh）；
-#   4. 有 shellcheck 就用上，没有只告警——本地开发者不该被工具缺失拦住。
+#   4. 门禁脚本里「声明后从未使用」的 readonly 常量（无外部依赖）；
+#   5. 有 shellcheck 就用上，没有只告警——本地开发者不该被工具缺失拦住。
+#
+# 第 4 项是第 5 项的兜底：本地没有 shellcheck 时 SC2034 不会报，CI 的
+# ubuntu-22.04 自带 shellcheck 会报，于是出现「本地全绿、CI 红」（0.0.3
+# 的 release-deps.sh 就是这样挂掉的）。只查 ci/gates 下的叶子脚本：这些
+# 文件不被 source，常量必须自用，判定无歧义；ci/lib 的常量供他人引用，
+# 不能按同一条规则判。
 #
 # 与 distro/ci/run-lint.sh 的分工：后者管 distro 子模块自己的单元测试与
 # 打包脚本；本文件只覆盖仓库根这一层（门禁 + workflow）。
@@ -58,6 +65,24 @@ false|0
 CASES
 if [ "${bad}" -eq 0 ]; then
     say "6 组输入归一正确"
+else
+    rc=1
+fi
+endgroup
+
+group "门禁常量自用"
+# grep -c 按行计：声明那一行算一次，任何一处使用都会让结果大于 1。
+dead=0
+while IFS= read -r f; do
+    while IFS= read -r name; do
+        [ -n "${name}" ] || continue
+        uses="$(grep -c "\<${name}\>" "${f}")"
+        [ "${uses}" -gt 1 ] || { err "声明后未使用: ${name} (${f#"${ROOT}/"})"; dead=1; }
+    done < <(grep -oE '^[[:space:]]*readonly[[:space:]]+[A-Za-z_][A-Za-z0-9_]*=' "${f}" |
+             sed -E 's/^.*readonly[[:space:]]+//; s/=.*$//')
+done < <(find "${ROOT}/ci/gates" -type f -name '*.sh' | sort)
+if [ "${dead}" -eq 0 ]; then
+    say "门禁常量均有使用"
 else
     rc=1
 fi
