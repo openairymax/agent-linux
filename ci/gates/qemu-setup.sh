@@ -40,13 +40,11 @@ done
 case "${FIRMWARE}" in both|bios) ;; *)
     err "--firmware 只接受 both|bios"; exit "${EINVAL}" ;; esac
 
-# 固件落点随发行版而变：Debian/Ubuntu 在 /usr/share/OVMF，Fedora 系在
-# /usr/share/edk2/ovmf。install-test.sh 探测同一组路径，两处必须一致，
-# 否则这里判「已就绪」而装机段仍降级。
+# 固件枚举只在 ci/lib/host.sh，本门禁不另立一份：装机段对同一组模式下判据，
+# 两边一旦分叉就会出现「这里说已就绪、装机段却降级成 BIOS」。
 fw_present()
 {
-    [ -e /usr/share/OVMF/OVMF_CODE.fd ] ||
-        [ -e /usr/share/edk2/ovmf/OVMF_CODE.fd ]
+    uefi_fw_code >/dev/null
 }
 
 have_qemu=0
@@ -74,9 +72,10 @@ if [ "${FIRMWARE}" = both ]; then
     fi
     fw_present || {
         err "缺少 UEFI 固件（ovmf）：装机段会降级成只跑 BIOS 腿，拒绝放行"
+        err "已探测: $(uefi_fw_paths | tr '\n' ' ')"
         exit 1
     }
-    say "UEFI 固件就绪"
+    say "UEFI 固件就绪: $(uefi_fw_code)"
 fi
 
 # 加速器与固件同在装机段的前置：分开成两步只会让「qemu 装了但没权限」在

@@ -28,6 +28,37 @@ free_disk()
     endgroup
 }
 
+# UEFI 固件的落点随发行版与包版本而变，枚举只写在这里：
+#   * Ubuntu 24.04 起 ovmf 只提供 4M 形态（OVMF_CODE_4M.fd），不带 4M 的
+#     OVMF_CODE.fd 已从包里删除——曾按旧名判定，装完仍报「缺少 UEFI 固件」；
+#   * Debian 的 ovmf 另给合并镜像 /usr/share/ovmf/OVMF.fd（无 VARS 分离）；
+#   * Fedora 系在 /usr/share/edk2/ovmf，qemu 自带一份在 /usr/share/qemu。
+# 用 glob 而不是枚举文件名：固件命名还会随 edk2 版本增删，判据只关心「有没有
+# 一份可读的 x86 UEFI code 镜像」。distro/scripts/install-test.sh 的装机段用
+# 同一组模式做探测，两处必须一致，否则这里判就绪而装机段仍降级。
+uefi_fw_paths()
+{
+    printf '%s\n' \
+        /usr/share/OVMF/OVMF_CODE*.fd \
+        /usr/share/ovmf/OVMF.fd \
+        /usr/share/edk2/ovmf/OVMF_CODE*.fd \
+        /usr/share/qemu/OVMF.fd
+}
+
+# 输出第一份可读固件的路径；都没有返回 1。未命中的 glob 保持字面量，
+# [ -r ] 自然判负，不需要 nullglob。
+uefi_fw_code()
+{
+    local p
+
+    while IFS= read -r p; do
+        [ -r "${p}" ] || continue
+        printf '%s\n' "${p}"
+        return 0
+    done < <(uefi_fw_paths)
+    return 1
+}
+
 # 托管 runner 的 /dev/kvm 存在但默认只有 root 可读写。可写时直接使用，
 # 不可写再尝试 chmod；两处都失败不算错误——install-test.sh 会自行回退
 # TCG，只是耗时上升。
