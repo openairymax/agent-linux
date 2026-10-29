@@ -5,10 +5,10 @@
 #
 # 用法: ci/gates/mgmt-files.sh
 #
-# 五项断言此前是 mgmt-verify.yml 里的 5 段内联 shell：子模块目录、子模块
-# 检出状态、[SC] 12 头文件、治理文件清单、废弃前缀。它们只读工作树、不
-# 触碰宿主，属于典型的「同一判据要在本地先跑一遍」的逻辑，因此下沉到本
-# gate；YAML 只剩一次分派。
+# 六项断言此前是 mgmt-verify.yml 与 sc-verify.yml 里的内联 shell：子模块
+# 目录、子模块检出状态、[SC] 12 头文件、[SC] ipc.h 唯一物理副本、治理文件
+# 清单、废弃前缀。它们只读工作树、不触碰宿主，属于典型的「同一判据要在
+# 本地先跑一遍」的逻辑，因此下沉到本 gate；YAML 只剩一次分派。
 #
 # 子模块清单只有 .gitmodules 一个来源，不在此复制 9 个路径——复制就会在
 # 新增子仓时静默漏检。
@@ -78,6 +78,24 @@ sc_headers()
     say "[SC] 共享契约头文件齐备: ${#SC_HEADERS[@]} 个"
 }
 
+sc_unique()
+{
+    local -a hits
+    local n
+
+    # 判据是「被 git 跟踪的路径」：kernel 是完整 Linux 树，自带上百个同名
+    # ipc.h（linux/、apparmor/、selftests/ …），必须限定到 airymax/；而
+    # kernel/usr/include/ 是 headers_install 的构建产物，本地与 CI 都可能
+    # 残留，用工作树扫描会把它误判成第二份源码副本。
+    mapfile -t hits < <(git ls-files --recurse-submodules -- '*/airymax/ipc.h')
+    n="${#hits[@]}"
+    if [ "${n}" -ne 1 ]; then
+        printf '  %s\n' "${hits[@]}" >&2
+        die "[SC] ipc.h 物理副本数应为 1，实际 ${n}"
+    fi
+    say "[SC] ipc.h 唯一物理副本: ${hits[0]}"
+}
+
 gov_files()
 {
     local f
@@ -101,6 +119,7 @@ main()
     sub_dirs
     sub_state
     sc_headers
+    sc_unique
     gov_files
     no_prefix
     endgroup

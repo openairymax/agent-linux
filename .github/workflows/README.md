@@ -34,7 +34,7 @@ a leftover build directory instead of waiting for a cloud job.
 ```text
 .github/
 ├── README.md                    # This file
-├── workflows/                   # 9 GitHub Actions workflows
+├── workflows/                   # 8 GitHub Actions workflows
 │   ├── kernel-verify.yml        # Kernel build matrix + static analysis + tests
 │   ├── airy-verify.yml          # Airymax build (4 arches) + checkpatch + SPDX + symbol integrity
 │   ├── os-chk-verify.yml        # OS-CHK unified gate orchestration (P0/P1 blocking)
@@ -42,25 +42,22 @@ a leftover build directory instead of waiting for a cloud job.
 │   ├── image-build.yml          # Desktop ISO assembly + install/cold-boot acceptance
 │   ├── nightly.yml              # Nightly test suite + auto-revert/budget check
 │   ├── release.yml              # Build + SBOM + sign + publish release
-│   ├── sc-verify.yml            # [SC] header validation + agentrt mirror CI
 │   └── ssot-verify.yml          # SSoT YAML syntax + cross-reference validation
 ├── ISSUE_TEMPLATE/              # GitHub issue templates
 └── PULL_REQUEST_TEMPLATE.md     # Pull request template
 ```
 
-## CI Workflows (9 workflows)
+## CI Workflows (8 workflows)
 
 | Workflow | Jobs | Trigger |
 |----------|------|---------|
 | `kernel-verify.yml` | `kernel-build` — Kbuild matrix (4 configs × 4 arches × 2 compilers − 4 excluded cells = 28, `max-parallel: 8`) with `W=2` zero-warning gate; `kernel-verify` — checkpatch `--strict`, sparse `C=2`, Coccinelle, KUnit on UML, kselftest on QEMU | PR / push on `kernel/**` |
 | `airy-verify.yml` | `airy-build` — `airy_defconfig` build matrix on 4 arches (x86_64/arm64/riscv/loongarch) + Airymax CONFIG gate + BTF embedded + `.o` artifact check + symbol-clash check between `security/airy/` and `kernel/superv/`; `airy-static` — checkpatch `--strict` plus the Airymax extension rules, SPDX identifier audit (`[SC]` = BSD-3-Clause OR GPL-2.0, else GPL-2.0-only), and SSoT manifest checks (defconfig matrix / BTF / Kbuild version injection) | PR / push on Airymax paths |
-| `abi-verify.yml` | `abi-verify` — `abi-check` unit tests plus four-source consistency (SSoT registry / UAPI `unistd.h` / `syscall_64.tbl` / `[SC]` `syscalls.h`) against `abi_baseline.json` (OS-IRON-001) | PR / push on `tools/abi-check/**`, ABI sources |
 | `os-chk-verify.yml` | `os-chk-verify` — resolve `gates.yaml`, dispatch registered OS-CHK executors, aggregate reports and block on P0/P1 findings. Also carries the entire Python tool-suite payload (abi-check / codegen / dsl / farm / flash / rollback …): one dependency install, one pytest sweep, so a tool change no longer queues four near-identical workflows | PR / push on `tools/**`, `sdk/**`, `ci/**`, the four audited gitlinks |
-| `mgmt-verify.yml` | `file-integrity` — verify submodule dirs derived from `.gitmodules` (9 entries), `[SC]` 12 shared headers, 12 governance files, no `airymaxos-` prefix; `orchestrate-leaf-ci` — aggregate leaf CI statuses, markdownlint repository-owned markdown, copyright header check | PR on `**.md`, `.gitmodules`, `ssot-registry.yaml`, `MAINTAINERS`, `CODEOWNERS`, `tools/**`, `.github/**` / push on `main` |
+| `mgmt-verify.yml` | `file-integrity` — verify submodule dirs derived from `.gitmodules` (9 entries), `[SC]` 12 shared headers, single physical copy of `*/airymax/ipc.h`, 12 governance files, no `airymaxos-` prefix; `orchestrate-leaf-ci` — aggregate leaf CI statuses, markdownlint repository-owned markdown, copyright header check | PR on `**.md`, `.gitmodules`, `ssot-registry.yaml`, `MAINTAINERS`, `CODEOWNERS`, `tools/**`, `.github/**`, `kernel` / push on `main` |
 | `image-build.yml` | `assemble` — build the desktop ISO from a pinned openEuler netinst base inside a privileged official container, then verify the assembly manifest and ISO checksum; `accept` — install the ISO in QEMU under BIOS and UEFI, cold-boot to `AIRYMAX-DESKTOP-READY` (or `AIRYMAX-SMOKE-PASS` with `acceptance=true`), publish TAP and serial logs. Both jobs are 12 one-line `ci/ci.sh` calls; all logic lives in `ci/gates/` | `workflow_dispatch` (release gate, not a PR gate) |
 | `nightly.yml` | `nightly-test-suite` — seL4-style formal verification, 72h soak test, chaos injection (CPU hotplug / mem hotremove / I/O error / net partition); `nightly-revert-or-budget` — auto-revert on regression via `auto-bisect`, or CI budget check (60 min steady, 90 min kernel cold-cache fallback, OS-STD-TEST-011) | cron `0 2 * * *` / `workflow_dispatch` |
 | `release.yml` | `build-and-sign` — SPDX SBOM (syft per submodule + merge), kernel RPM build, GPG + cosign signing, SDK tarball; `publish-release` — verify signed artifacts, push OCI image to ghcr, prune stale assets, create GitHub Release with artifacts | tag `v*` / `v*-rc*` / `workflow_dispatch` |
-| `sc-verify.yml` | `sc-validate` — verify `[SC]` 12 shared headers exist under `kernel/include/uapi/linux/airymax/`, no physical duplicates (OS-IRON-014); `sc-trigger-and-await` — export header patches, create mirror PR in agentrt repo, poll mirror CI status (30 min timeout) | PR touching any `[SC]` header |
 | `ssot-verify.yml` | `ssot-syntax-and-rules` — PyYAML syntax check, rule-ID count + uniqueness (OS-IRON-015), `validate-ssot.py` cross-ref; `doc-links` — repository-owned relative-path markdown link integrity | PR on `**.md`, `ssot-registry.yaml`, `tools/validate-ssot.py` / push on `main` |
 
 ## Naming & Structure Conventions
@@ -74,7 +71,7 @@ run`, and this document can never disagree. The rules are enforced by
 |--------|------|-----------|
 | File name | kebab-case `^[a-z0-9]+(-[a-z0-9]+)*\.yml$` | Case- and locale-insensitive on every filesystem; sorts predictably |
 | `name:` | Identical to the file stem | The UI label and the file path are one single source of truth |
-| `-verify` suffix | Reserved for gating workflows (the 6 SSoT/build gates) | A reader immediately knows the workflow fails the build on violation |
+| `-verify` suffix | Reserved for gating workflows (the 5 SSoT/build gates) | A reader immediately knows the workflow fails the build on violation |
 | Lifecycle names | `image-build` / `nightly` / `release` | Named after the lifecycle stage they own, not the tool they call |
 | Payload | YAML is a thin dispatch layer — checkout, `ci/ci.sh <gate>`, upload | All assertions live in `ci/`, replayable locally |
 | Job count | 2 capped per workflow | Keeps the DAG readable and the critical path short |
@@ -90,15 +87,17 @@ change if any of them drift apart. Declaring `permissions:` and
 
 ## `[SC]` Shared-Contract Headers
 
-The `sc-verify.yml` and `mgmt-verify.yml` workflows guard the `[SC]` layer —
-the single physical source of truth for the kernel↔agentrt ABI, located at
+The `mgmt-verify.yml` and `os-chk-verify.yml` workflows guard the `[SC]` layer
+— the single physical source of truth for the kernel↔agentrt ABI, located at
 `kernel/include/uapi/linux/airymax/`:
 
 **12 [SC] headers** (per OS-IRON-014) — 10 core plus 2 supplementary:
 `error.h`, `log_types.h`, `ipc.h`, `sched.h`, `memory_types.h`, `security_types.h`, `cognition_types.h`, `syscalls.h`, `syscall_gen.h`, `uapi_compat.h`, `lsm_types.h`, `bpf_struct_ops.h`
 
-Any change to a `[SC]` header requires dual CI (agent-linux + agentrt
-mirror) per OS-IRON-014.
+`mgmt-verify` asserts presence and a single physical copy of the headers on the
+parent-repo side; `os-chk-verify` runs the tri-path compile and layout check
+(`OS-CHK-DOC-04`). Both trigger on the `kernel` gitlink, which is the only shape
+a header change takes in this repository.
 
 ## Issue & PR Templates
 
@@ -139,8 +138,7 @@ mirror) per OS-IRON-014.
 - **Branch protection** — L1/L3 review is enforced via GitHub branch protection
   rules (`require_code_owner_reviews` + 2 required reviewers), not via a CI job.
 - **Secrets** — release signing uses `GPG_PRIVATE_KEY`, `GPG_PASSPHRASE`,
-  `COSIGN_KEY`, `COSIGN_PASSWORD`; agentrt mirror uses `AGENTRT_CI_TOKEN`. Never
-  log or echo these values.
+  `COSIGN_KEY`, `COSIGN_PASSWORD`. Never log or echo these values.
 
 ## License
 

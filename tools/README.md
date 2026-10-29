@@ -26,8 +26,6 @@ tools/
 ├── kunit-tap-diff.py            # KUnit KTAP case-count monotonicity gate
 ├── kunit-tap-baseline.tap       # Committed KUnit KTAP ratchet baseline (OS-TEST-012)
 ├── parse-tap.py                 # kselftest TAP parser
-├── create-agentrt-mirror-pr.py  # agentrt mirror PR creator ([SC] dual CI)
-├── await-agentrt-ci.py          # agentrt mirror CI poller
 ├── codegen/                     # Contract code generator (contracts → outputs)
 │   ├── run_codegen.py           # Entry point (`--check` zero-drift gate)
 │   ├── cap_gen.py               # Capability-ID generator
@@ -147,12 +145,10 @@ tools/
 | `check-copyright.py` | Verify that repository-owned `.md` files carry a `Copyright`/`SPDX-License-Identifier` on line 1 (`--root .`) | `mgmt-verify.yml` (`orchestrate-leaf-ci`) |
 | `kunit-tap-diff.py` | KUnit KTAP case-count monotonicity gate — parses nested KTAP (`--raw_output=kunit`) and fails when the leaf-case total regresses, a baseline suite disappears, or a new `not ok` appears; the ratchet lives in `kunit-tap-baseline.tap` and is updated explicitly with `--update` (OS-TEST-012) | `kernel-verify.yml` (`kernel-verify`) |
 | `parse-tap.py` | Parse kselftest TAP output and fail on `not ok` | `kernel-verify.yml` (`kernel-verify`) |
-| `create-agentrt-mirror-pr.py` | Create a mirror PR in the agentrt repository for `[SC]` header changes | `sc-verify.yml` (`sc-trigger-and-await`) |
-| `await-agentrt-ci.py` | Poll the agentrt mirror PR CI status to completion | `sc-verify.yml` (`sc-trigger-and-await`) |
 | `codegen/run_codegen.py` | Contract code generator; `--check` performs a content compare as the zero-drift SSoT gate (IRON-9) | `os-chk-verify.yml`, `tools/codegen/Makefile` |
 | `dsl/dsl_compile.py` | Policy DSL (`.adl`) compiler — lexer/parser/semantics/IR → pure C decision table header; `--check` is the zero-drift gate for policy tables (IRON-9, K-1 mechanism/policy split) | `os-chk-verify.yml`, `tools/dsl/Makefile` |
 | `abi-check/abi_check.py` | Syscall ABI stability checker — three-way consistency + baseline immutability (OS-IRON-001) | `kernel-verify.yml` (`kernel-verify`) |
-| `sc-tri-compile/sc_tri_compile.py` | `[SC]` header tri-compile & layout checker — compiles every `kernel/include/uapi/linux/airymax/*.h` under kernel / Linux-user / third-party paths and asserts fixed-width type sizes and struct field offsets are identical across all three; `--check` is the CI gate (OS-IRON-014); pytest suite in `tests/` | `sc-verify.yml` (`sc-validate`) |
+| `sc-tri-compile/sc_tri_compile.py` | `[SC]` header tri-compile & layout checker — compiles every `kernel/include/uapi/linux/airymax/*.h` under kernel / Linux-user / third-party paths and asserts fixed-width type sizes and struct field offsets are identical across all three; `--check` is the CI gate (OS-IRON-014); pytest suite in `tests/` | `os-chk-verify.yml` (`os-chk-verify`) |
 | `airy-checkpatch/` (integration tests) | AirymaxOS custom checkpatch extension rules (`AIRY-CHECKPATCH-001`~`011`: log interface, naming prefixes, concurrency memory order, IPC entry, LSM registration, DMA usage, config black/white lists, file-header convention). Rule logic lives solely in `kernel/scripts/airy_checkpatch_ext.pl`; this directory holds only the pytest integration suite and docs, so the rules never drift across two copies (OS-TEST-066 / OS-KER-120 / OS-STD-STY-007) | `airy-verify.yml` (`airy-static`), `os-chk-verify.yml`, `tools/os-chk/gates.yaml` (OS-TEST-066) |
 | `defconfig-matrix/defconfig_matrix.py` | defconfig build-matrix SSoT checker — reads `manifest.yaml` (the only source of truth for architectures, mandatory configs, LSM entry, and the CI matrix) and verifies manifest↔filesystem consistency, `airy_defconfig` header format, mandatory `CONFIG_*` presence, `CONFIG_LSM` entry, CI build-matrix arch equality, CI `required=()` equality, and Kconfig declaration closure; `--check` is the CI gate (OS-BUILD-026 / OS-BUILD-028) | `airy-verify.yml` (`airy-static`), `os-chk-verify.yml`, `tools/os-chk/gates.yaml` (OS-BUILD-MATRIX) |
 | `ci-matrix/ci_matrix.py` | CI build-matrix SSoT checker — reads `manifest.yaml` (the only source of truth for configs, compilers, the loongarch×clang exclusion, the 28-cell expectation, `fail-fast`/`max-parallel`, the 60-minute job budget, the compile-gate tokens, and failure attribution) and verifies manifest schema, architecture source (`defconfig-matrix/manifest.yaml` build entries), workflow/job presence, dimension equality, cell count, exclusion validity, scheduler constraints, timeout budget, job count, and gate-token supply; `--list` expands the expected cells and `--summary` attributes per-cell results to a `ci-fail-*` label; `--check` is the CI gate (OS-STD-TOOL-161 / OS-STD-TEST-011) | `kernel-verify.yml` (`kernel-verify`), `os-chk-verify.yml`, `tools/os-chk/gates.yaml` (OS-BUILD-CI-MATRIX) |
@@ -211,8 +207,8 @@ rule-ID patterns, including range forms (`OS-TEST-001~012`) and suffix variants
   2. Return proper exit codes (`0` success, `1` content failure, `2` input/parse error).
   3. Be referenced in this README and in the relevant workflow.
 - Python tools follow PEP 8 (enforced by `ruff`); shell helpers pass `shellcheck`.
-- Tools that consume CI secrets (`AGENTRT_CI_TOKEN`, `COSIGN_KEY`, `GPG_*`,
-  `DNF_REPO_HOST`) must read them from the environment and never log or echo them.
+- Tools that consume CI secrets (`COSIGN_KEY`, `GPG_*`, `DNF_REPO_HOST`) must
+  read them from the environment and never log or echo them.
 - Keep the management-repo 2-job-per-workflow cap when wiring a tool into CI.
 
 ## License
