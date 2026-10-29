@@ -42,7 +42,7 @@ env:
 jobs:
   build-and-sign:
     name: Build + SBOM + Sign (L7)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # 上限由内核构建步的 210min 决定：前置 checkout/apt 实测 5.3min，
     # 构建后还有 SDK、OCI 与签名约 15min，合计约 230min；240min 只剩
     # 10min 余量，慢镜像即可吃光，故 job 预算提到 300min
@@ -312,7 +312,7 @@ jobs:
 
   publish-release:
     name: Publish + GitHub Release (L7)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # 上传制品与写 Release 都是短操作，60 分钟足够；不给默认 360 分钟。
     timeout-minutes: 60
     needs: build-and-sign
