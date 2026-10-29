@@ -68,8 +68,8 @@ EXIT_FAIL = 1
 EXIT_USAGE = 2
 
 MANIFEST_KEYS = frozenset({
-    "version", "workflow", "helper_surface", "triggers", "concurrency",
-    "permissions", "runner", "jobs", "helpers", "budget",
+    "version", "workflow", "helper_gate", "helper_surface", "triggers",
+    "concurrency", "permissions", "runner", "jobs", "helpers", "budget",
 })
 TRIGGER_KEYS = frozenset({"cron", "workflow_dispatch", "forbidden"})
 FLIGHT_KEYS = frozenset({"group", "cancel_in_progress"})
@@ -317,6 +317,9 @@ def check_schema(man: Mapping[str, Any]) -> CheckResult:
     for key in ("version", "workflow", "helper_surface"):
         if key in man and (not isinstance(man[key], str) or not man[key]):
             problems.append(f"{key} 必须是非空字符串")
+    if "helper_gate" in man and (not isinstance(man["helper_gate"], str)
+                                 or not man["helper_gate"]):
+        problems.append("helper_gate 必须是非空字符串")
     sections = (
         ("triggers", _schema_trigger),
         ("concurrency", _schema_flight),
@@ -524,22 +527,53 @@ def check_surface(man: Mapping[str, Any],
     return _result(NAME_SURFACE, problems)
 
 
+def read_gate(man: Mapping[str, Any], root: Path) -> str | None:
+    """读取 helper 门禁正文；未登记或不可读时返回 None。"""
+    rel = man.get("helper_gate")
+    if not isinstance(rel, str) or not rel:
+        return None
+    try:
+        return (root / rel).read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+
 def check_helpers(man: Mapping[str, Any],
                   wf: Mapping[str, Any], root: Path) -> CheckResult:
-    """校验 helper 的调用、守卫、SKIP 标记与落地状态。"""
+    """校验 helper 的调用、守卫、SKIP 标记与落地状态。
+
+    登记了 ``helper_gate`` 时，守卫与调用参数住在门禁脚本里，workflow 只保留
+    ``ci/ci.sh nightly-helpers <key>``；未登记时退回「workflow 内联守卫」的
+    旧形态，便于尚未迁移的清单继续受检。
+    """
     jobs = _jobs(wf)
+    gate_rel = man.get("helper_gate")
+    gate = read_gate(man, root)
+    if isinstance(gate_rel, str) and gate_rel and gate is None:
+        return CheckResult(NAME_HELPERS, False, f"无法读取 helper 门禁 {gate_rel}")
     problems: list[str] = []
     for spec in man["jobs"]:
-        text = _text(jobs.get(spec["name"], {}))
+        wf_text = _text(jobs.get(spec["name"], {}))
+        text = wf_text if gate is None else gate
         for key in spec["helpers"]:
             entry = man["helpers"].get(key)
             if entry is None:
                 problems.append(
                     f"{spec['name']} 引用了未登记的 helper: {key}")
                 continue
+            if gate is not None:
+                problems.extend(_call_probs(spec["name"], key, wf_text))
             problems.extend(
                 _helper_probs(spec["name"], entry, text, root))
     return _result(NAME_HELPERS, problems)
+
+
+def _call_probs(job: str, key: str, text: str) -> list[str]:
+    """校验 workflow 以门禁形态调用了 helper。"""
+    call = f"nightly-helpers {key}"
+    if call not in text:
+        return [f"{job} 未通过门禁调用 {key}（期望 {call}）"]
+    return []
 
 
 def _helper_probs(job: str, entry: Mapping[str, Any],
@@ -571,21 +605,25 @@ def _helper_probs(job: str, entry: Mapping[str, Any],
     return problems
 
 
-def check_budget(man: Mapping[str, Any],
-                 wf: Mapping[str, Any]) -> CheckResult:
+def check_budget(man: Mapping[str, Any], wf: Mapping[str, Any],
+                 root: Path | None = None) -> CheckResult:
     """校验 CI 总时长检测的调用契约（OS-STD-TEST-011）。"""
     rules = man["budget"]
-    entry = man["helpers"][rules["helper"]]
+    key = rules["helper"]
+    entry = man["helpers"][key]
     job = _budget_job(man, wf)
-    lines = [line for line in _text(job).splitlines()
-             if entry["path"] in line]
-    if not lines:
-        return CheckResult(NAME_BUDGET, False,
-                           f"未调用预算检测 {entry['path']}")
-    expected = " ".join(rules["argv"])
-    if expected not in " ".join(lines):
-        return _result(NAME_BUDGET, [f"预算检测参数不匹配: {expected}"])
-    return _result(NAME_BUDGET, [])
+    gate = read_gate(man, root) if root is not None else None
+    problems: list[str] = []
+    if gate is not None:
+        problems.extend(_call_probs("预算检测", key, _text(job)))
+    text = _text(job) if gate is None else gate
+    if entry["path"] not in text:
+        problems.append(f"未调用预算检测 {entry['path']}")
+    else:
+        expected = " ".join(rules["argv"])
+        if expected not in text:
+            problems.append(f"预算检测参数不匹配: {expected}")
+    return _result(NAME_BUDGET, problems)
 
 
 def _budget_job(man: Mapping[str, Any],
@@ -616,7 +654,7 @@ def build_checks(man: Mapping[str, Any], wf: Mapping[str, Any],
         check_vars(man, wf),
         check_surface(man, wf, root),
         check_helpers(man, wf, root),
-        check_budget(man, wf),
+        check_budget(man, wf, root),
     ]
 
 

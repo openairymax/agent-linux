@@ -19,6 +19,8 @@
 #
 # 字段：
 #   workflow        受检 workflow（相对仓库根）
+#   helper_gate     deferred helper 的守卫与调用所在的调度门禁；本文件登记
+#                   helper 的路径/argv/状态，门禁登记实际调用形态，二者必须一致
 #   helper_surface  helper 脚本登记表（tools/README.md）
 #   triggers.cron   schedule 唯一 cron（每日 02:00 UTC）
 #   triggers.forbidden 禁止的触发方式（nightly 不得阻断 PR）
@@ -34,6 +36,7 @@
 version: "1.0.0"
 
 workflow: .github/workflows/nightly.yml
+helper_gate: ci/gates/nightly-helpers.sh
 helper_surface: tools/README.md
 
 triggers:
