@@ -155,12 +155,13 @@ The management repository hosts **8 GitHub Actions workflows** (most capped at 2
 
 | Workflow | Trigger | Jobs | Purpose |
 |----------|---------|------|---------|
-| `kernel-verify.yml` | PR / push on `kernel/**` | `kernel-build` + `kernel-verify` | Kbuild matrix (31 configs) + checkpatch / sparse / Coccinelle / KUnit / kselftest |
-| `airy-verify.yml` | PR / push on `kernel` gitlink, `ci/gates/kernel-*.sh`, `ci/lib/**` | `airy-build` + `airy-static` | Airymax build on 4 arches; `kernel-airy --kind assert` (CONFIGs / BTF / built-in.a / symbol clash) + `--kind style` (SPDX) |
+| `kernel-verify.yml` | PR / push on the `kernel` gitlink, `ci/gates/kernel-*.sh`, `ci/lib/**` | `kernel-build` + `kernel-verify` | Kbuild matrix (4 configs × 4 arches × 2 compilers, 4 excluded cells) + checkpatch / sparse / Coccinelle / KUnit / kselftest |
+| `airy-verify.yml` | PR / push on the `kernel` gitlink, `ci/gates/kernel-*.sh`, `ci/lib/**`, `tools/defconfig-matrix/**` | `airy-build` + `airy-static` | Airymax build on 4 arches; `kernel-airy --kind assert` (CONFIGs / BTF / built-in.a / symbol clash) + `--kind style` (SPDX) |
 | `os-chk-verify.yml` | PR / push on `tools/**`, `sdk/**`, `ci/**`, gitlinks | `os-chk-verify` | OS-CHK unified gates (P0/P1 blocking) + every Python tool suite |
 | `mgmt-verify.yml` | PR / push on docs, `.gitmodules`, SSoT, governance files, `kernel` | `file-integrity` + `orchestrate-leaf-ci` | Verify 9 submodules, [SC] 12 shared headers + single `ipc.h` copy, governance files; aggregate leaf CI status; markdownlint + copyright header |
+| `image-build.yml` | manual (`workflow_dispatch`) | `assemble` + `accept` | Desktop ISO assembled against a pinned openEuler base, then installed and cold-booted in QEMU under BIOS and UEFI; the ISO reaches `ghcr.io` only after both firmwares pass |
 | `nightly.yml` | cron `0 2 * * *` / manual | `nightly-test-suite` + `nightly-revert-or-budget` | Formal verification (seL4-style) + 72h soak + chaos; auto-revert or CI budget check |
-| `release.yml` | tag `v*` / manual | `build-and-sign` + `publish-release` | SPDX SBOM + kernel/SDK build + GPG & cosign signing; publish dnf repo, OCI image, GitHub Release |
+| `release.yml` | tag `v*` / manual | `build-and-sign` + `publish-release` | SPDX SBOM + kernel/SDK build + GPG & cosign signing; publish OCI image and GitHub Release |
 | `ssot-verify.yml` | PR / push on `**.md`, `ssot-registry.yaml` | `ssot-syntax-and-rules` + `doc-links` | YAML syntax + rule-ID uniqueness; repository-owned markdown link integrity |
 
 ### [SC] Shared Contract Layer
