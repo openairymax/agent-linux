@@ -196,7 +196,7 @@ jobs:
         run: ci/ci.sh iso-checksum --dir "$RUNNER_TEMP/image"
 
       # 真机安装介质是 U 盘：固件按 MBR/GPT 找到 ESP，与 -cdrom 的 El Torito
-      # 通路完全无关。0.0.3 的 B50 装机失败正是前者错位、后者照常通过。这条
+      # 通路完全无关。0.0.3 的实机装机失败正是前者错位、后者照常通过。这条
       # 腿放在双固件全量之前，介质布局缺陷在此就地暴露，不必等两个固件都跑完。
       - name: Install and cold boot (UEFI, USB media)
         env:
