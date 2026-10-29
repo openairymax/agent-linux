@@ -22,6 +22,10 @@ on:
       - 'tools/**'
       - '.github/**'
       - 'kernel'
+      # 本 workflow 的两个 job 由 ci/gates/mgmt-*.sh 承担：改门禁自身必须
+      # 先过 PR，否则「校验者不受校验」。
+      - 'ci/gates/mgmt-*.sh'
+      - 'ci/lib/**'
   push:
     branches: [main]
     # push 侧在 PR 判据之外再列出 8 个子仓 path：gitlink 变更在 diff 里就是
@@ -36,6 +40,10 @@ on:
       - 'tools/**'
       - '.github/**'
       - 'kernel'
+      # 本 workflow 的两个 job 由 ci/gates/mgmt-*.sh 承担：改门禁自身必须
+      # 先过 PR，否则「校验者不受校验」。
+      - 'ci/gates/mgmt-*.sh'
+      - 'ci/lib/**'
       - 'memory'
       - 'security'
       - 'cognition'
@@ -61,7 +69,7 @@ jobs:
   # 合并原 file-integrity + submodule-status 两个 job
   file-integrity:
     name: Governance File & Submodule Integrity
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -75,7 +83,7 @@ jobs:
   # 合并原 subrepo-status + doc-format 两个 job
   orchestrate-leaf-ci:
     name: Orchestrate Leaf Submodule CI
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     needs: file-integrity
     steps:
