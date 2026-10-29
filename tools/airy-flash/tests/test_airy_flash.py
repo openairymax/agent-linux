@@ -1131,3 +1131,53 @@ def test_write_report_key_value_format(tmp_path: Path) -> None:
     assert "result=pass" in text
     assert f"image.sha256={digest}" in text
     assert "check.非系统盘=pass" in text
+
+
+def _manifest_text(parts, **extra):
+    """按 iso-publish.sh 的注解键造清单，供 --ref 纯函数路径的用例使用。"""
+    ann = {
+        "org.openairymax.iso.name": "demo.iso",
+        "org.openairymax.iso.sha256": "a" * 64,
+        "org.openairymax.iso.size": str(sum(size for size, _ in parts)),
+        "org.openairymax.iso.chunk-size": str(parts[0][0]),
+        "org.openairymax.iso.chunks": str(len(parts)),
+    }
+    ann.update(extra)
+    layers = [
+        {
+            "digest": "sha256:" + digest,
+            "size": size,
+            "annotations": {
+                "org.opencontainers.image.title": f"demo.iso.part{index:04d}"
+            },
+        }
+        for index, (size, digest) in enumerate(parts)
+    ]
+    return json.dumps({"annotations": ann, "layers": layers})
+
+
+def test_ledger_of_reads_annotations_and_layers():
+    text = _manifest_text([(10, "b" * 64), (4, "c" * 64)])
+    ledger = af.ledger_of("ghcr.io/openairymax/airymaxos-iso:v0.0.3", text)
+    assert (ledger.ref, ledger.tag) == (
+        "ghcr.io/openairymax/airymaxos-iso",
+        "v0.0.3",
+    )
+    assert (ledger.size, ledger.chunk_size) == (14, 10)
+    assert [part.size for part in ledger.parts] == [10, 4]
+    assert ledger.parts[1].digest == "c" * 64
+
+
+def test_ledger_of_rejects_missing_chunks():
+    text = _manifest_text([(10, "b" * 64)], **{"org.openairymax.iso.chunks": ""})
+    with pytest.raises(af.FlashError, match="org.openairymax.iso.chunks"):
+        af.ledger_of("ghcr.io/openairymax/airymaxos-iso:v1", text)
+
+
+def test_ledger_of_rejects_short_chunk_before_last():
+    text = _manifest_text([(10, "b" * 64), (4, "c" * 64)])
+    doc = json.loads(text)
+    doc["layers"][0]["size"] = 9
+    doc["annotations"]["org.openairymax.iso.size"] = "13"
+    with pytest.raises(af.FlashError, match="chunk-size"):
+        af.ledger_of("ghcr.io/openairymax/airymaxos-iso:v1", json.dumps(doc))
