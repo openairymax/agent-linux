@@ -54,6 +54,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          # 手动触发时 github.ref 是默认分支，不指定 ref 会拿分支头顶着
+          # 某个 tag 的版本号去构建：tag 指向的提交与产物不再对应，事后
+          # 无法用 tag 复现这次发布。tag 推送事件下两者等值，写成显式
+          # ref 对两种入口都成立。
+          ref: ${{ env.RELEASE_TAG }}
           # 全量历史保证 SOURCE_DATE_EPOCH 可取到确定性提交时间（§3.7）；
           # 递归子模块供 SBOM 扫描与内核构建使用。
           fetch-depth: 0
@@ -323,7 +328,11 @@ jobs:
       # -rc/-beta 后缀才是预发布，正式 tag 直接成为 latest；不在发布后人工改状态
       PRE_REL: ${{ contains(needs.build-and-sign.outputs.tag, '-rc') || contains(needs.build-and-sign.outputs.tag, '-beta') }}
     steps:
+      # 发布侧同样按 tag 检出：release-verify 读的是 ci/ 与模板，
+      # 用默认分支的版本去校验 tag 的产物，等于换了判据。
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
 
       - name: Download build artifacts
         uses: actions/download-artifact@v4
