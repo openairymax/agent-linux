@@ -29,7 +29,6 @@ on:
   pull_request:
     paths:
       - 'kernel'
-      - 'kernel/**'
       - 'tools/ci-matrix/**'
       - 'tools/kunit-tap-*.tap'
       - 'tools/kunit-tap-diff.py'
@@ -40,7 +39,6 @@ on:
     branches: [main]
     paths:
       - 'kernel'
-      - 'kernel/**'
       - 'tools/ci-matrix/**'
       - 'tools/kunit-tap-*.tap'
       - 'tools/kunit-tap-diff.py'
@@ -62,7 +60,7 @@ concurrency:
 jobs:
   kernel-build:
     name: Kbuild Matrix (28 configs)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # 稳态预算 40 分钟（03-ci-cd-pipeline.md §9.4），冷缓存兜底 90 分钟。
     # allmodconfig 的全量模块面（实测约 9.4k 对象）在标准运行器上需要 90 分钟
     # 以上，按 §9.4「超时子集必须拆分」处理：PR 门禁只保留 allmodconfig 的
@@ -112,7 +110,7 @@ jobs:
 
   kernel-verify:
     name: Static Analysis + Runtime Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: kernel-build
     timeout-minutes: 60
     env:

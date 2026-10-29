@@ -12,14 +12,16 @@ name: ssot-verify
 on:
   pull_request:
     branches: [main]
+    # 与 push 侧同一份判据：判据本身（门禁脚本与本文件）也必须先过 PR，
+    # 否则改坏校验器只能在合并后的 push 上暴露，评审阶段看不到结论。
     paths:
       - '**.md'
       - 'ssot-registry.yaml'
       - 'tools/validate-ssot.py'
+      - 'ci/gates/ssot-verify.sh'
+      - '.github/workflows/ssot-verify.yml'
   push:
     branches: [main]
-    # 与 pull_request 侧同一份判据：只有 SSoT 事实源或校验器本身变了才重跑，
-    # 否则每次 push 都排一轮 2 job 的文档校验，纯属队列噪音。
     paths:
       - '**.md'
       - 'ssot-registry.yaml'
@@ -40,7 +42,7 @@ jobs:
   # 合并原 doc-format 的 YAML 校验部分
   ssot-syntax-and-rules:
     name: SSoT YAML Syntax & Rule ID Validation
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -59,7 +61,7 @@ jobs:
   # 仅扫描被 git 跟踪的本仓 .md；跨仓（../）与外链（http）交由各仓自检
   doc-links:
     name: Repo-Owned Markdown Link Integrity
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     needs: ssot-syntax-and-rules
     steps:

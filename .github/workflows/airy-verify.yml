@@ -26,6 +26,9 @@ on:
       - 'kernel'
       - 'ci/gates/kernel-*.sh'
       - 'ci/lib/**'
+      # 矩阵表与 kernel-airy 的 REQUIRED_CONF 互为比对对象（见下）：
+      # 矩阵源改了就重编，否则 defconfig 漂移要等下一次内核升级才暴露。
+      - 'tools/defconfig-matrix/**'
       - '.github/workflows/airy-verify.yml'
   push:
     branches: [main]
@@ -33,6 +36,9 @@ on:
       - 'kernel'
       - 'ci/gates/kernel-*.sh'
       - 'ci/lib/**'
+      # 矩阵表与 kernel-airy 的 REQUIRED_CONF 互为比对对象（见下）：
+      # 矩阵源改了就重编，否则 defconfig 漂移要等下一次内核升级才暴露。
+      - 'tools/defconfig-matrix/**'
       - '.github/workflows/airy-verify.yml'
 
 # 最小权限：本 workflow 只读源码，构建与测试产物走 artifact。
@@ -48,7 +54,7 @@ concurrency:
 jobs:
   airy-build:
     name: airy_defconfig build (${{ matrix.arch }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -96,7 +102,7 @@ jobs:
 
   airy-static:
     name: Airymax SPDX audit
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
