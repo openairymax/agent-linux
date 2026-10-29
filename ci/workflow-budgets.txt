@@ -29,5 +29,5 @@ kernel-verify.yml                 0     2
 mgmt-verify.yml                   0     2
 nightly.yml                       0     2
 os-chk-verify.yml                 0     1
-release.yml                      10     2
+release.yml                       0     2
 ssot-verify.yml                   0     2

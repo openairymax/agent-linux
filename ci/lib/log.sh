@@ -96,3 +96,16 @@ env_set()
         printf 'export %s=%s\n' "${key}" "${val}" >&2
     fi
 }
+
+# out_set KEY VALUE —— 写入 GitHub Actions 的 step 输出文件；本地运行时只打印。
+# 输出名与写入格式只在这里定义，gate 不再各自拼 "$GITHUB_OUTPUT"。
+out_set()
+{
+    local key="$1" val="$2" file="${GITHUB_OUTPUT:-}"
+
+    if [ -n "${file}" ]; then
+        printf '%s=%s\n' "${key}" "${val}" >>"${file}"
+    else
+        printf 'output %s=%s\n' "${key}" "${val}" >&2
+    fi
+}
