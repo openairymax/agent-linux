@@ -37,10 +37,13 @@
 #   * 官方源是跨洋链路，实测单件 ISO 需 43 分钟。介质目录按摘要键缓存，
 #     命中即跳过下载；未命中时总预算 5400 秒、每项保底 900 秒，避免先下
 #     的大件把后一项挤成零头（run 40485745100）。
-#   * 安装闭包（约 2.5 GB RPM）另走一块滚动缓存池。键以镜像根表与配方的
-#     摘要为前缀，后缀取 run_id：恢复按前缀命中上一轮，保存永远落新键。
-#     actions/cache 的条目不可变，若用固定键，第一轮超时留下的半份池会被
-#     永久固化，后续轮次既不命中新包也无法更新，等于没有缓存。
+#   * 安装闭包（约 2.5 GB RPM）另走一块滚动缓存池。actions/cache 的条目
+#     不可变，键的设计要同时避开两种坏结局：固定键让第一轮超时留下的半份
+#     池被永久固化；纯 run_id 键则每轮落一份完整副本、十 GiB 配额只够存
+#     三轮。键的前缀取闭包定义的摘要（镜像根表 + 配方），后缀取池内容的
+#     摘要（ci/gates/pool-state.sh），于是同一份池只存一次，池长大才有新
+#     条目；空池一律不保存，否则早退轮次会把空条目钉在前缀最新的位置，
+#     后续每轮都从零开始（run 41056762297 起连续复现的形态）。
 #   * acceptance=true 组装验收 ISO（自动登录 + 会话内冒烟），accept 断言
 #     AIRYMAX-SMOKE-PASS；false 时断言产品 ISO 的 AIRYMAX-DESKTOP-READY。
 #   * release_tag 非空时，内核包取自对应 Release（下载并校验发行
@@ -167,6 +170,9 @@ jobs:
           path: ${{ runner.temp }}/dnf-cache
           key: dnf-${{ hashFiles('ci/container/build-packages.txt') }}
 
+      # 键分两段：前缀是闭包定义的摘要（镜像根表 + 配方），后缀是池内容的
+      # 摘要。前者让「闭包定义没变」的轮次优先命中同一代，后者让同一份池
+      # 只存一份。第一段缺席时（首次播种）按 closure- 回落到旧代的池。
       - name: Restore closure RPM pool
         id: pool
         uses: actions/cache/restore@v4
@@ -175,6 +181,7 @@ jobs:
           key: closure-${{ hashFiles('distro/repo/mirrors.list', 'distro/kickstart/airymaxos-workstation.ks') }}-${{ github.run_id }}
           restore-keys: |
             closure-${{ hashFiles('distro/repo/mirrors.list', 'distro/kickstart/airymaxos-workstation.ks') }}-
+            closure-
 
       # step 级时限必须小于 job 时限（300）：job 超时是强制取消，取消态下
       # `if: failure()` 的 log-dump 与 `if: always()` 的产物上传都不会执行，
@@ -190,12 +197,22 @@ jobs:
 
       # 与 dnf 缓存同理：不看 job 成功态。本步跑在中止的轮次里时，已下载并
       # 通过摘要校验的 RPM 仍然有价值，下一轮只补差异。
-      - name: Save closure RPM pool
+      #
+      # 两条判据缺一不可：空池不保存（否则一次早退的轮次会把空条目钉在
+      # restore 前缀的最新位置，后续每轮都从零开始），键取内容摘要（同一份
+      # 池不重复落盘，键已存在时保存必然报错，故失败不计入 job 状态）。
+      - name: Closure pool state
+        id: poolstate
         if: always()
+        run: ci/ci.sh pool-state --dir "$RUNNER_TEMP/closure-cache"
+
+      - name: Save closure RPM pool
+        if: always() && steps.poolstate.outputs.count != '0'
+        continue-on-error: true
         uses: actions/cache/save@v4
         with:
           path: ${{ runner.temp }}/closure-cache
-          key: ${{ steps.pool.outputs.cache-primary-key }}
+          key: closure-${{ hashFiles('distro/repo/mirrors.list', 'distro/kickstart/airymaxos-workstation.ks') }}-${{ steps.poolstate.outputs.digest }}
 
       - name: Show build logs on failure
         if: failure()
