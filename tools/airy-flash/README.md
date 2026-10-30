@@ -293,10 +293,10 @@ AIRY-FLASH-PASS command=write host=airymax-build image=/path/airymaxos-0.0.3-x86
 
 | 项 | 命令 | 期望 |
 |----|------|------|
-| 主机名 | `hostnamectl --static` | `airymaxos` |
+| 主机名 | `hostnamectl --static` | `AIRYMAX_PC`（下划线是产品口径，运行期由 `sysctl.d/99-airymax-hostname.conf` 写回） |
 | 内核归属 | `uname -r` | 以 `-alk` 结尾（Airymax Linux Kernel） |
 | 品牌 | `cat /etc/os-release` | `NAME="AirymaxOS"`、`VERSION_ID="0.0.3"` |
-| 用户免密 | `su - airymax -c true`、SSH 登录 | 均不提示口令 |
+| 用户免密 | `su - Airymax -c true`、SSH 以 `Airymax` 登录 | 均不提示口令 |
 | root 口令 | `ssh root@<host>` | 口令 `00000000` |
 | 桌面 | 图形会话 | 进入 UKUI 桌面，无回退到文本控制台 |
 | 桌面就绪 | `journalctl -b \| grep AIRYMAX-DESKTOP-READY` | 有该标记 |
