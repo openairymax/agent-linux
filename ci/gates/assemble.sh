@@ -100,10 +100,21 @@ envs=(-e ACCEPTANCE="$(airy_profile)" -e ISO_BASE="${ISO_BASE}")
 if [ -n "${CLOSURE_CACHE}" ]; then
     mounts+=(-v "${CLOSURE_CACHE}:/var/cache/airymax-closure:rw")
     envs+=(-e CLOSURE_POOL=/var/cache/airymax-closure)
-    # 清单随源码提交，只有池挂上时才可能命中：池与清单逐项吻合时完全
-    # 离线重放，连元数据都不取；缺项或摘要不符则自行回落在线求解。
-    if [ -f "${SRC}/distro/repo/closure-24.03-${ARCH}.lock" ]; then
-        envs+=(-e CLOSURE_LOCK="/src/distro/repo/closure-24.03-${ARCH}.lock")
+    # 清单有两个来源，优先级从高到低：源码树里人工钉住并 review 过的那一份
+    # （只读挂载，永不覆盖），以及池目录里由上一轮成功求解写出的一份（可写，
+    # 随池缓存保存）。池与清单逐项吻合时完全离线重放，连远端元数据都不取；
+    # 缺项或摘要不符则自行回落在线求解。
+    #
+    # 此前只认源码树那一种，而仓库里既没有该文件、也没有任何一步生成它，
+    # 于是每一轮都在线求解：跨境镜像对托管运行商限速到 10–20 KiB/s 时，
+    # 2.5 GB 闭包在 180 分钟的组装预算内永远下不完。缓存池已经把包收齐了，
+    # 缺的只是「钉住上一轮那次事务」的这一步。
+    lock_name="closure-24.03-${ARCH}.lock"
+    if [ -f "${SRC}/distro/repo/${lock_name}" ]; then
+        envs+=(-e CLOSURE_LOCK="/src/distro/repo/${lock_name}")
+    else
+        envs+=(-e CLOSURE_LOCK="/var/cache/airymax-closure/${lock_name}")
+        envs+=(-e CLOSURE_LOCK_WRITE=1)
     fi
 fi
 args=(--out /out --iso-base "/media/${ISO_BASE}"
