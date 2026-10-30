@@ -25,11 +25,13 @@
 #     否则强制取消态下 log-dump 与产物上传都不会执行。
 #     内核模块数两千余（openeuler_defconfig），在 4 核 runner 上明显长于
 #     x86_64_defconfig（run 40025896195 的 12.2 分钟不再可比）。
-#   * accept 的时限不是拍定值，而由装机腿数推导：双固件各装一次，每腿
-#     装机上限 3600 秒、冷启动上限 900 秒，2×(3600+900) 秒加固定开销仍
-#     小于 300 分钟。装机腿失败时该轮启动腿跳过，最坏 2×3600 秒。托管
-#     runner 实测提供 /dev/kvm（run 39371790961 记录的加速器为 kvm），
-#     预算仍按 TCG 最坏情况保留，避免 runner 形态变化导致 job 被中途取消。
+#   * accept 的时限不是拍定值，而由装机腿数推导：U 盘一条腿、CD-ROM 两条
+#     固件腿，三条腿各自成步且各带 80 分钟 step 时限（> 装机 3600 秒 +
+#     冷启动 900 秒），累计 240 分钟仍小于 job 的 360 分钟。分步的用意是
+#     归因：合成一步时只有总耗时，卡在 BIOS 装机还是 UEFI 冷启动无从区分。
+#     主机没有对应固件时该腿直接跳过。托管 runner 实测提供 /dev/kvm
+#     （run 39371790961 记录的加速器为 kvm），预算仍按 TCG 最坏情况保留，
+#     避免 runner 形态变化导致 job 被中途取消。
 #   * 源码以只读方式挂载进构建容器，产物只落 $RUNNER_TEMP/out，不违反
 #     「严禁在 airymaxhub 源码区内构建」。
 #   * ISO 基线固定为 openEuler 24.03-LTS-SP2 netinst，容器镜像取官方
@@ -290,14 +292,28 @@ jobs:
       # 通路完全无关。0.0.3 的实机装机失败正是前者错位、后者照常通过。这条
       # 腿放在双固件全量之前，介质布局缺陷在此就地暴露，不必等两个固件都跑完。
       - name: Install and cold boot (UEFI, USB media)
+        timeout-minutes: 80
         env:
           ACCEPTANCE: ${{ inputs.acceptance }}
         run: ci/ci.sh accept --iso "$AIRYMAX_ISO" --out "$RUNNER_TEMP/install-usb" --firmware uefi --media usb --runs 1 --install-timeout 3600 --boot-timeout 900
 
-      - name: Install and cold boot (BIOS + UEFI, CD-ROM)
+      # 两条固件腿各自成步。合为一步时 Actions 只报一个总耗时，BIOS 装机
+      # 卡住与 UEFI 冷启动失败在界面上是同一行，只能靠事后翻 TAP 才分得清
+      # （run 41121955316 的 CD-ROM 腿跑了 70 分钟仍无法判断停在哪一条）。
+      # 分步后步骤名即结论；运行目录按 run-<fw>-<n> 命名，两腿互不覆盖。
+      # step 级时限 80 分钟 > 装机 3600 s + 冷启动 900 s，且累计仍小于 job
+      # 的 360 分钟，保证超限时先由 step 收尾而不是被 job 强制取消。
+      - name: Install and cold boot (BIOS, CD-ROM)
+        timeout-minutes: 80
         env:
           ACCEPTANCE: ${{ inputs.acceptance }}
-        run: ci/ci.sh accept --iso "$AIRYMAX_ISO" --out "$RUNNER_TEMP/install" --firmware both --runs 1 --install-timeout 3600 --boot-timeout 900
+        run: ci/ci.sh accept --iso "$AIRYMAX_ISO" --out "$RUNNER_TEMP/install" --firmware bios --media cdrom --runs 1 --install-timeout 3600 --boot-timeout 900
+
+      - name: Install and cold boot (UEFI, CD-ROM)
+        timeout-minutes: 80
+        env:
+          ACCEPTANCE: ${{ inputs.acceptance }}
+        run: ci/ci.sh accept --iso "$AIRYMAX_ISO" --out "$RUNNER_TEMP/install" --firmware uefi --media cdrom --runs 1 --install-timeout 3600 --boot-timeout 900
 
       - name: Annotate boot failures (USB)
         if: failure()
