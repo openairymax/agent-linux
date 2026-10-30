@@ -17,8 +17,8 @@
 # 数分钟，而 RPM 文件名即 NEVRA，同名同长只在内容被替换时才成立；闭包
 # 清单的 sha256 校验会在求解之前把这类包拦下，不会带进载荷。
 #
-# 输出: 设置 GITHUB_OUTPUT 时追加 count=<包数> 与 digest=<摘要>；否则
-#       打印到标准输出。空池的 digest 为空串，调用方据此跳过保存。
+# 输出: 设置 GITHUB_OUTPUT 时追加 count=<包数>、lock=<0|1> 与 digest=<摘要>；
+#       否则打印到标准输出。空池的 digest 为空串，调用方据此跳过保存。
 #
 # 退出码: 0 正常；5 参数不满足。
 # ===========================================================================
@@ -49,11 +49,22 @@ digest_of()
     # 完整度进摘要：只按 RPM 取名会让「半份池补齐成完整池」落回同一个键，
     # 保存时撞上已有条目直接报错，完成标记因此永远存不下来，下一轮又把
     # 2.3 GB 制品重拉一遍。complete 位一翻，键就是新的。
-    local complete=0
+    #
+    # 闭包清单同样进摘要：清单由上一轮成功求解写进池目录，是下一轮离线
+    # 重放的唯一依据。不进键就会撞上「RPM 集合没变、键也不变」，保存直接
+    # 报 already exists，清单存不下来，于是永远停在在线求解。
+    local complete=0 lockf=""
 
     [ -f "${DIR}/.seed-complete" ] && complete=1
+    lockf="$(find "${DIR}" -maxdepth 1 -type f -name 'closure-*.lock' \
+        -print -quit 2>/dev/null)"
     {
         printf 'complete=%s\n' "${complete}"
+        if [ -n "${lockf}" ]; then
+            printf 'lock=%s\n' "$(sha256sum "${lockf}" | cut -d' ' -f1)"
+        else
+            printf 'lock=none\n'
+        fi
         find "${DIR}" -type f -name '*.rpm' -printf '%f %s\n' 2>/dev/null
     } | LC_ALL=C sort | sha256sum | cut -d' ' -f1
 }
@@ -61,9 +72,15 @@ digest_of()
 count="$(count_of)"
 digest=""
 [ "${count}" -gt 0 ] && digest="$(digest_of)"
+# 清单是否已生成单独报出来：它是「这一轮能否离线重放」的唯一开关，藏在
+# 摘要里等于没有。0 表示尚未生成，此时本轮必然在线求解。
+lock=0
+[ -n "$(find "${DIR}" -maxdepth 1 -type f -name 'closure-*.lock' \
+    -print -quit 2>/dev/null)" ] && lock=1
 
 if [ -n "${GITHUB_OUTPUT:-}" ]; then
-    printf 'count=%s\ndigest=%s\n' "${count}" "${digest}" >>"${GITHUB_OUTPUT}"
+    printf 'count=%s\nlock=%s\ndigest=%s\n' "${count}" "${lock}" "${digest}" \
+        >>"${GITHUB_OUTPUT}"
 else
-    printf 'count=%s digest=%s\n' "${count}" "${digest}"
+    printf 'count=%s lock=%s digest=%s\n' "${count}" "${lock}" "${digest}"
 fi
