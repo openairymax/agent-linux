@@ -99,6 +99,16 @@ jobs:
         id: epoch
         run: echo "value=$(git log -1 --pretty=%ct)" >> "$GITHUB_OUTPUT"
 
+      # SDK 与烧录工具同出一门：打包、确定性比对、pyz 实跑自检都在 gate 里。
+      # 它只依赖源码与 SOURCE_DATE_EPOCH，与后面所有安装、编译步骤无关，
+      # 因此紧跟 epoch：pyz 自检失败时只花几秒，而不是在 60 分钟依赖安装
+      # 与 210 分钟内核四腿之后才暴露——0.0.3 发布页上那份与 tag 不同源的
+      # pyz 正是这类「最后一步才发现」的产物。
+      - name: Pack SDK and airy-flash
+        env:
+          SOURCE_DATE_EPOCH: ${{ steps.epoch.outputs.value }}
+        run: ci/ci.sh tool-pack --out . --version "${{ steps.ver.outputs.ver }}"
+
       - name: Generate + merge SPDX SBOM
         env:
           SOURCE_DATE_EPOCH: ${{ steps.epoch.outputs.value }}
@@ -111,14 +121,6 @@ jobs:
       - name: Install kernel build dependencies and cross toolchains
         timeout-minutes: 60
         run: ci/ci.sh release-deps
-
-      # SDK 与烧录工具同出一门：打包、确定性比对、pyz 实跑自检都在 gate 里。
-      # 它与内核构建互不依赖，因此排在内核四腿之前：pyz 自检失败时只花
-      # 一分钟，而不是等到最后一腿。
-      - name: Pack SDK and airy-flash
-        env:
-          SOURCE_DATE_EPOCH: ${{ steps.epoch.outputs.value }}
-        run: ci/ci.sh tool-pack --out . --version "${{ steps.ver.outputs.ver }}"
 
       # 4 架构内核 RPM：单 job 内顺序构建（管理仓 2 job 铁律，不得引入
       # matrix job）。实测 x86_64 60.6min、aarch64 57.5min、riscv64 16.7min，
