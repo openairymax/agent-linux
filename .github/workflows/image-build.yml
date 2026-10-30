@@ -133,7 +133,12 @@ jobs:
           TAG: ${{ inputs.release_tag }}
         run: ci/ci.sh release-rpms --tag "$TAG" --repo "$GITHUB_REPOSITORY" --dir "$RUNNER_TEMP/rel-rpms"
 
+      # step 级时限必须小于 job 时限（240）：job 超时是强制取消，取消态下
+      # `if: failure()` 的 log-dump 与 `if: always()` 的产物上传都不会执行，
+      # 等于跑满四小时后既没有 ISO 也没有日志（run 40997227280 的现象）。
+      # 留 60 分钟余量给 log-dump、manifest 校验与上传。
       - name: Build desktop ISO in container
+        timeout-minutes: 180
         env:
           ACCEPTANCE: ${{ inputs.acceptance }}
         run: ci/ci.sh assemble --image "$AIRYMAX_BUILD_IMAGE" --src "$GITHUB_WORKSPACE" --out "$RUNNER_TEMP/out" --media "$RUNNER_TEMP/media" --iso-base "$OE_ISO_NAME" --dnf-cache "$RUNNER_TEMP/dnf-cache"
