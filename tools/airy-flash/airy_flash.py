@@ -818,8 +818,8 @@ NEXT_STEPS = {
     "write": (
         "1. 安全弹出 U 盘，插入目标机，开机按 F12/F11/Esc 选择该 U 盘",
         "2. UEFI 固件请选带 UEFI 前缀的条目；BIOS 模式直接选 USB 设备",
-        '3. 装机后核对：hostname=airymaxos，uname -r 以 "-alk" 结尾',
-        "4. 核对登录策略：airymax 本地/SSH 免密，root 口令 00000000",
+        '3. 装机后核对：hostname=AIRYMAX_PC，uname -r 以 "-alk" 结尾',
+        "4. 核对登录策略：Airymax 本地/SSH 免密，root 口令 00000000",
     ),
 }
 NEXT_STEPS["check"] = (
