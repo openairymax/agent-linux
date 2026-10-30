@@ -99,6 +99,18 @@ jobs:
       - name: Free runner disk
         run: ci/ci.sh free-disk
 
+      # 发行资产里的内核包是 ISO 载荷的内核来源。只下载与校验，不重建：
+      # 只要 ISO 自己再编一次内核，载荷中同名包的哈希就与发行 .sha256sum
+      # 分叉，装机介质也就无法用发行校验和核验。
+      # 位置在整条链路的最前：tag 写错、资产缺失、摘要不符都只花一分钟，
+      # 而它排在工具链预热之后时，同样的错误要等 75 分钟才暴露。
+      - name: Fetch release kernel RPMs
+        if: inputs.release_tag != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.release_tag }}
+        run: ci/ci.sh release-rpms --tag "$TAG" --repo "$GITHUB_REPOSITORY" --dir "$RUNNER_TEMP/rel-rpms"
+
       # 介质由 sha256 固定、跨轮不变：整目录以摘要为键缓存。命中时 3.2 GiB
       # 下载（run 40485745100 的 ISO 单件就占 43 分钟）退化为本地解包，
       # 重复轮次不再受跨洋链路速率左右。
@@ -146,16 +158,6 @@ jobs:
         with:
           path: ${{ runner.temp }}/dnf-cache
           key: dnf-${{ hashFiles('ci/container/build-packages.txt') }}
-
-      # 发行资产里的内核包是 ISO 载荷的内核来源。只下载与校验，不重建：
-      # 只要 ISO 自己再编一次内核，载荷中同名包的哈希就与发行 .sha256sum
-      # 分叉，装机介质也就无法用发行校验和核验。
-      - name: Fetch release kernel RPMs
-        if: inputs.release_tag != ''
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ inputs.release_tag }}
-        run: ci/ci.sh release-rpms --tag "$TAG" --repo "$GITHUB_REPOSITORY" --dir "$RUNNER_TEMP/rel-rpms"
 
       # step 级时限必须小于 job 时限（240）：job 超时是强制取消，取消态下
       # `if: failure()` 的 log-dump 与 `if: always()` 的产物上传都不会执行，
