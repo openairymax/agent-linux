@@ -100,6 +100,11 @@ envs=(-e ACCEPTANCE="$(airy_profile)" -e ISO_BASE="${ISO_BASE}")
 if [ -n "${CLOSURE_CACHE}" ]; then
     mounts+=(-v "${CLOSURE_CACHE}:/var/cache/airymax-closure:rw")
     envs+=(-e CLOSURE_POOL=/var/cache/airymax-closure)
+    # 清单随源码提交，只有池挂上时才可能命中：池与清单逐项吻合时完全
+    # 离线重放，连元数据都不取；缺项或摘要不符则自行回落在线求解。
+    if [ -f "${SRC}/distro/repo/closure-24.03-${ARCH}.lock" ]; then
+        envs+=(-e CLOSURE_LOCK="/src/distro/repo/closure-24.03-${ARCH}.lock")
+    fi
 fi
 args=(--out /out --iso-base "/media/${ISO_BASE}"
       --profile desktop --arch "${ARCH}" --skip-install)
