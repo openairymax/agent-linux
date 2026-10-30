@@ -37,12 +37,19 @@ class FlashError(Exception):
 
 @dataclass(frozen=True)
 class Check:
-    """一条预检结论。skipped 用于「不适用」而非「通过」。"""
+    """一条预检结论。skipped 用于「不适用」而非「通过」。
+
+    fix 是这一条不通过时的处置动作。收尾把失败项的 fix 拼成「建议」行：
+    此前那里只有失败项的条目名，读出来是「先处理 非只读, 容量充足」——
+    说出了哪一条不通过，却没说该怎么办，而这正是现场卡住时最需要的
+    那一句。
+    """
 
     name: str
     ok: bool
     detail: str
     skipped: bool = False
+    fix: str = ""
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -50,6 +57,7 @@ class Check:
             "ok": self.ok,
             "skipped": self.skipped,
             "detail": self.detail,
+            "fix": self.fix,
         }
 
 
