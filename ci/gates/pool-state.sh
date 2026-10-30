@@ -46,8 +46,16 @@ count_of()
 
 digest_of()
 {
-    find "${DIR}" -type f -name '*.rpm' -printf '%f %s\n' 2>/dev/null \
-        | LC_ALL=C sort | sha256sum | cut -d' ' -f1
+    # 完整度进摘要：只按 RPM 取名会让「半份池补齐成完整池」落回同一个键，
+    # 保存时撞上已有条目直接报错，完成标记因此永远存不下来，下一轮又把
+    # 2.3 GB 制品重拉一遍。complete 位一翻，键就是新的。
+    local complete=0
+
+    [ -f "${DIR}/.seed-complete" ] && complete=1
+    {
+        printf 'complete=%s\n' "${complete}"
+        find "${DIR}" -type f -name '*.rpm' -printf '%f %s\n' 2>/dev/null
+    } | LC_ALL=C sort | sha256sum | cut -d' ' -f1
 }
 
 count="$(count_of)"
