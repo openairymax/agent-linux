@@ -20,13 +20,15 @@
 #
 # 播种端 runbook（一台有 dnf、createrepo_c、oras 的快机器）：
 #   1) ci/ci.sh closure-pool --out /var/tmp/closure-pool
-#   2) 打平铺 tar 并生成清单，然后推送：
+#   2) 打平铺 tar 并生成清单，然后推送（oras 只收相对路径，绝对路径会
+#      被拒绝且报错与传输无关，故先 cd 进目录）：
 #        cd /var/tmp/closure-pool/payload/airymax/Packages
 #        tar -cf /var/tmp/pool-24.03.tar .
 #        sha256sum *.rpm > /var/tmp/pool-manifest.txt
+#        cd /var/tmp
 #        oras push --artifact-type application/vnd.airymaxos.closure.v1 \
 #            ghcr.io/openairymax/airymaxos-closure:24.03-x86_64 \
-#            /var/tmp/pool-24.03.tar /var/tmp/pool-manifest.txt
+#            pool-24.03.tar pool-manifest.txt
 #      清单每行「<sha256>  <文件名>」，与 sha256sum -c 兼容；tar 内 RPM
 #      必须平铺在顶层（上面的 -C 隐式成立），路径与清单文件名一致。
 #   3) 播种端不得写闭包清单：CLOSURE_LOCK_WRITE 保持 0（closure-pool 已
