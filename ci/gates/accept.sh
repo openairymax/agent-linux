@@ -30,6 +30,8 @@ LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)"
 . "${LIB}/log.sh"
 # shellcheck source=../lib/profile.sh
 . "${LIB}/profile.sh"
+# shellcheck source=../lib/progress.sh
+. "${LIB}/progress.sh"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 RUNNER="${ROOT}/distro/scripts/install-test.sh"
@@ -70,12 +72,17 @@ marker=AIRYMAX-DESKTOP-READY
 mkdir -p "${OUT}"
 
 set -o pipefail
+# 装机腿每腿最多 3600 秒，串口 TAP 只在结束时成批落盘；期间没有任何一行
+# 输出能说明它在装机、冷启动还是已经挂死。心跳以产物目录里的日志为准。
+progress_start "${OUT}"
+trap progress_stop EXIT
 "${RUNNER}" --iso "${ISO}" --out "${OUT}" \
     --runs "${RUNS}" --firmware "${FIRMWARE}" --media "${MEDIA}" \
     --boot-marker "${marker}" \
     --install-timeout "${INSTALL_TIMEOUT}" --boot-timeout "${BOOT_TIMEOUT}" \
     | tee "${OUT}/tap.txt"
 rc=$?
+progress_stop
 
 [ "${rc}" -eq 0 ] || die "装机/冷启动失败（rc=${rc}），TAP 见 ${OUT}/tap.txt"
 say "验收通过: marker=${marker} firmware=${FIRMWARE} media=${MEDIA} runs=${RUNS}"

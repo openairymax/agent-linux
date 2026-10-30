@@ -32,6 +32,8 @@ LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)"
 . "${LIB}/log.sh"
 # shellcheck source=../lib/profile.sh
 . "${LIB}/profile.sh"
+# shellcheck source=../lib/progress.sh
+. "${LIB}/progress.sh"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 PKGS="${ROOT}/ci/container/build-packages.txt"
@@ -93,6 +95,10 @@ fi
 
 group "assemble in ${IMAGE}"
 say "工具链缓存: ${DNF_CACHE}"
+# 组装段 40 分钟起步，且内核模块数与闭包拉取都由远端决定，静默与挂死在
+# 控制台上同形。心跳只读 ${OUT} 下最新日志的元数据，不干扰容器。
+progress_start "${OUT}"
+trap progress_stop EXIT
 docker run --rm --privileged \
     -e ACCEPTANCE="$(airy_profile)" \
     -e ISO_BASE="${ISO_BASE}" \
@@ -121,6 +127,7 @@ docker run --rm --privileged \
         stamp "组装: run-image-ci 返回 0"
     ' airy "${args[@]}"
 rc=$?
+progress_stop
 endgroup
 
 if [ "${rc}" -ne 0 ]; then
