@@ -420,6 +420,29 @@ def test_preflight_rejects_mounted_and_read_only_and_small() -> None:
     assert failed == {"未挂载", "非只读", "容量充足"}
 
 
+def test_failed_checks_carry_a_remedy() -> None:
+    """每条可能失败的预检都要带处置动作，否则建议行只剩条目名。"""
+    checks = af.preflight(
+        _image(65536),
+        _device(system_disks=("sdb",), mountpoints=("/media/usb",), read_only=True),
+        expected="",
+        source="",
+    )
+    failed = [c for c in checks if not c.ok]
+    assert [c.name for c in failed] == ["非系统盘", "未挂载", "非只读", "容量充足", "校验和来源"]
+    assert all(c.fix for c in failed)
+    advice = af._advice(failed)
+    assert advice.startswith("非系统盘：")
+    assert all(f"{c.name}：" in advice for c in failed)
+
+
+def test_single_failure_advice_drops_the_label() -> None:
+    """只有一条失败时，「建议」直接给动作，不再重复条目名。"""
+    assert af._advice([Check("非只读", False, "ro", fix="关闭写保护开关")]) == (
+        "关闭写保护开关"
+    )
+
+
 def test_preflight_requires_digest_unless_allowed() -> None:
     strict = af.preflight(_image(), _device(), expected="", source="")
     assert [c.name for c in strict if not c.ok] == ["校验和来源"]

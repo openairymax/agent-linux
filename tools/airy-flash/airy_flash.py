@@ -671,6 +671,7 @@ def preflight(
                 f"承载 {', '.join(CRITICAL_MOUNTS)} 的磁盘: {hosts}"
                 if device.is_system_disk
                 else f"系统盘: {hosts}",
+                fix="换一块与系统盘无关的盘；写入会覆盖整盘",
             )
         )
     else:
@@ -685,6 +686,7 @@ def preflight(
                 if device.mountpoints
                 else "无挂载点"
             ),
+            fix="umount 该盘上的所有挂载点后重试",
         )
     )
 
@@ -696,6 +698,7 @@ def preflight(
                 "设备处于只读状态（写保护开关或 ro 属性）"
                 if device.read_only
                 else "可写",
+                fix="关闭写保护开关；卡式读卡器或 USB 写保护会置 ro",
             )
         )
     else:
@@ -708,6 +711,7 @@ def preflight(
             enough,
             f"{human_bytes(device.size)} {'≥' if enough else '<'} "
             f"{human_bytes(image.size)}",
+            fix=f"换用容量不小于 {human_bytes(image.size)} 的设备",
         )
     )
 
@@ -723,6 +727,7 @@ def preflight(
                 "校验和来源",
                 False,
                 "缺少发布 .sha256；用 --sha256/--sums 指定，或显式 --allow-unverified",
+                fix="从发布页取回同名 .sha256，或用 --sha256 直接给出摘要",
             )
         )
 
@@ -1281,6 +1286,17 @@ def _preflight(
     _verdict(report, renderer, checks, "预检未通过，未触碰目标设备")
 
 
+def _advice(failed: list[Check]) -> str:
+    """把失败项的处置动作拼成一句建议；没有 fix 的条目只报条目名。
+
+    单条失败时不带条目前缀——「关闭写保护开关」比「非只读：关闭写保护
+    开关」更符合现场语气，而多条并列时前缀是必要的分隔。
+    """
+    if len(failed) == 1:
+        return failed[0].fix or failed[0].name
+    return "；".join(f"{c.name}：{c.fix}" if c.fix else c.name for c in failed)
+
+
 def _verdict(
     report: Report,
     renderer: Renderer,
@@ -1293,11 +1309,9 @@ def _verdict(
     renderer.checks_header()
     for check in checks:
         renderer.check(check)
-    failed = [c.name for c in checks if not c.ok and not c.skipped]
+    failed = [c for c in checks if not c.ok and not c.skipped]
     if failed:
-        raise FlashError(
-            EXIT_CHECK, block, hint or f"先处理 {', '.join(failed)}"
-        )
+        raise FlashError(EXIT_CHECK, block, hint or _advice(failed))
 
 
 def _hash(
