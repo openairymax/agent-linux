@@ -5,14 +5,15 @@
 #
 # 用法: ci/lint.sh
 #
-# 检查五件事：
+# 检查六件事：
 #   1. workflow 薄化与命名约束（ci/check-workflows.py）；
 #   2. ci/ 下每个脚本可被 bash -n 解析；
 #   3. 验收剖面归一化的行为（ci/lib/profile.sh）；
 #   4. 门禁脚本里「声明后从未使用」的 readonly 常量（无外部依赖）；
-#   5. 有 shellcheck 就用上，没有只告警——本地开发者不该被工具缺失拦住。
+#   5. ci/tests 下的门禁分支回归；
+#   6. 有 shellcheck 就用上，没有只告警——本地开发者不该被工具缺失拦住。
 #
-# 第 4 项是第 5 项的兜底：本地没有 shellcheck 时 SC2034 不会报，CI 的
+# 第 4 项是第 6 项的兜底：本地没有 shellcheck 时 SC2034 不会报，CI 的
 # ubuntu-22.04 自带 shellcheck 会报，于是出现「本地全绿、CI 红」（0.0.3
 # 的 release-deps.sh 就是这样挂掉的）。只查 ci/gates 下的叶子脚本：这些
 # 文件不被 source，常量必须自用，判定无歧义；ci/lib 的常量供他人引用，
@@ -86,6 +87,19 @@ if [ "${dead}" -eq 0 ]; then
 else
     rc=1
 fi
+endgroup
+
+group "门禁分支回归"
+# 回归脚本存在但不被执行，就会随门禁一起腐坏：pool-seed 的完整性判据从
+# 「目录非空」改成「完成标记」之后，ci/tests 里那条断言仍然按旧语义写，
+# 一直是红的却没人看见。放进 lint 的代价是几秒，收益是判据变更必须同时
+# 更新断言。
+n=0
+while IFS= read -r f; do
+    n=$(( n + 1 ))
+    bash "${f}" || { err "回归失败: ${f#"${ROOT}/"}"; rc=1; }
+done < <(find "${ROOT}/ci/tests" -type f -name 'test_*.sh' | sort)
+say "已运行 ${n} 个回归脚本"
 endgroup
 
 if command -v shellcheck >/dev/null 2>&1; then

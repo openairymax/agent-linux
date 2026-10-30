@@ -79,10 +79,19 @@ check()
     esac
 }
 
-mkdir -p "${tmp}/full"
-: >"${tmp}/full/fake-1.0-1.noarch.rpm"
-out="$(seed "${tmp}/full")"
-check "池非空跳过播种" 0 "$?" "${out}" "跳过播种"
+# 完整性判据是完成标记而不是「目录里有没有 RPM」：中止的轮次会把半份池
+# 存进缓存，下一轮 restore 命中的正是那份半份池，以非空判完整就会跳过
+# 播种（run 41075519752）。因此这两种形态必须分别断言。
+mkdir -p "${tmp}/marked"
+: >"${tmp}/marked/fake-1.0-1.noarch.rpm"
+: >"${tmp}/marked/.seed-complete"
+out="$(seed "${tmp}/marked")"
+check "完成标记存在时跳过播种" 0 "$?" "${out}" "池已完整播种"
+
+mkdir -p "${tmp}/half"
+: >"${tmp}/half/fake-1.0-1.noarch.rpm"
+out="$(FAKE_ART="" seed "${tmp}/half")"
+check "缺完成标记按清单补差" 0 "$?" "${out}" "缺完成标记"
 
 mkdir -p "${tmp}/empty"
 out="$(FAKE_ART="" seed "${tmp}/empty")"
