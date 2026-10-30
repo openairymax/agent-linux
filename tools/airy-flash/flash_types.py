@@ -75,6 +75,8 @@ class DeviceFacts:
     read_only: bool = False
     mountpoints: tuple[str, ...] = ()
     system_disks: tuple[str, ...] = ()
+    parts: tuple[str, ...] = ()
+    parts_bytes: int = 0
     note: str = ""
 
     @property
@@ -97,6 +99,8 @@ class DeviceFacts:
             "read_only": self.read_only,
             "mountpoints": list(self.mountpoints),
             "system_disks": list(self.system_disks),
+            "partitions": list(self.parts),
+            "partition_bytes": self.parts_bytes,
             "note": self.note,
         }
 

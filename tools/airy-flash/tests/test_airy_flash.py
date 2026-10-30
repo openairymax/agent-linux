@@ -60,6 +60,7 @@ def make_sysfs(
         real = devices / disk / part
         real.mkdir()
         (real / "partition").write_text("1\n", encoding="utf-8")
+        (real / "size").write_text(f"{sectors // 2}\n", encoding="utf-8")
         (sys_block / part).symlink_to(real)
 
     return sys_block
@@ -286,6 +287,17 @@ def test_parent_disk_strips_partition_suffix(tmp_path: Path) -> None:
     )
     assert af._parent_disk("nvme0n1p2", sys_block) == "nvme0n1"
     assert af._parent_disk("nvme0n1", sys_block) == "nvme0n1"
+
+
+def test_partitions_lists_existing_children(tmp_path: Path) -> None:
+    # 写入连同分区表一起覆盖，产出的分区清单必须来自 sysfs 而不是猜测。
+    sys_block = make_sysfs(
+        tmp_path, partitions=(("sdb", "sdb1"), ("sdb", "sdb2"))
+    )
+    names, total = af._partitions(sys_block / "sdb", "sdb")
+    assert names == ("sdb1", "sdb2")
+    assert total == 2048000 * 512
+    assert af._partitions(sys_block / "sdz", "sdz") == ((), 0)
 
 
 def test_probe_image_facts_and_errors(tmp_path: Path) -> None:
