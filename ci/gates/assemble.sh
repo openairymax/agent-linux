@@ -104,24 +104,48 @@ docker run --rm --privileged \
     -w /src \
     "${IMAGE}" bash -c '
         set -euo pipefail
-        # 工具链自上游镜像在线装，单次事务会因镜像侧 HTTP/2 抖动整体失败
-        # （run 40261523474：gtk3-devel 在 all mirrors tried 后事务级硬退）。
-        # 安装事务幂等，故刷元数据后有限重试；三次仍失败即硬退出，不掩盖真实
-        # 依赖缺失，也不把网络抖动伪装成组装缺陷。
-        for try in 1 2 3; do
-            if dnf -y install --setopt=keepcache=1 --setopt=timeout=60 \
-                --setopt=minrate=1000 --setopt=retries=6 \
-                --setopt=max_parallel_downloads=10 '"${pkgs}"'; then
-                break
-            fi
-            # 只刷元数据，不删已下好的包：工具链缓存是跨轮复用的凭据，
-            # 一次网络抖动就把它清空，等于下一轮从零开始。
-            echo "dnf install 第 ${try} 次未完成，刷新元数据后重试" >&2
-            dnf clean metadata >/dev/null 2>&1 || true
-            [ "${try}" -lt 3 ] || exit 1
-        done
+        # 每段带 UTC 时间戳：容器日志是这条链路唯一的排障证据，而 GitHub
+        # 在 job 运行期间不提供日志下载（jobs/<id>/logs 返回 BlobNotFound）。
+        # 没有时间戳时，事后只能看到「某一步花了 N 小时」，无法定位到具体段。
+        stamp() { printf "[%s] %s\n" "$(date -u +%H:%M:%SZ)" "$*"; }
+
+        # 工具链两段装：先纯离线，再在线。
+        #
+        # 离线段的前提是 actions/cache 把 /var/cache/dnf 整目录带过来了，里面
+        # 既有 keepcache=1 留下的 rpm，也有 repodata。命中时这一段的耗时只与
+        # 本地解包有关，与镜像站状态无关——这正是「同一棵树 14 分钟 / 2 小时」
+        # 差距的来源（run 40866231339 把 240 分钟预算烧穿时，瓶颈就在在线段）。
+        # 缓存冷时 --cacheonly 会在秒级失败，随后落到在线段，行为与旧版一致。
+        stamp "工具链: 尝试离线安装"
+        if timeout 900 dnf -y install --cacheonly --setopt=keepcache=1 \
+            '"${pkgs}"'; then
+            stamp "工具链: 离线安装完成"
+        else
+            stamp "工具链: 缓存不足以离线完成，转在线安装"
+            # 在线段沿用旧语义：镜像侧 HTTP/2 抖动会让整事务失败
+            # （run 40261523474：gtk3-devel 在 all mirrors tried 后硬退），
+            # 事务幂等，故刷元数据后有限重试；三次仍失败即硬退出，不掩盖
+            # 真实依赖缺失，也不把网络抖动伪装成组装缺陷。
+            for try in 1 2 3; do
+                if timeout 3600 dnf -y install --setopt=keepcache=1 \
+                    --setopt=timeout=60 --setopt=minrate=1000 \
+                    --setopt=retries=6 --setopt=max_parallel_downloads=10 \
+                    '"${pkgs}"'; then
+                    stamp "工具链: 在线安装完成（第 ${try} 次）"
+                    break
+                fi
+                # 只刷元数据，不删已下好的包：工具链缓存是跨轮复用的凭据，
+                # 一次网络抖动就把它清空，等于下一轮从零开始。
+                stamp "工具链: 第 ${try} 次在线安装未完成"
+                dnf clean metadata >/dev/null 2>&1 || true
+                [ "${try}" -lt 3 ] || exit 1
+            done
+        fi
+
+        stamp "组装: 进入 run-image-ci"
         git config --global --add safe.directory "*"
         distro/ci/run-image-ci.sh "$@"
+        stamp "组装: run-image-ci 返回 0"
     ' airy "${args[@]}"
 rc=$?
 endgroup
