@@ -25,11 +25,12 @@
 # 产物：DIR/payload/airymax/Packages/*.rpm 与 repodata/；打包与推送步骤见
 # ci/gates/pool-seed.sh 的头注释。
 #
-# 退出码: 0 成功；5 参数不满足；其余透传 build-desktop.sh。
+# 退出码: 0 成功；4 非 root；5 参数不满足；其余透传 build-desktop.sh。
 # ===========================================================================
 set -uo pipefail
 
 readonly EINVAL=5
+readonly EPERM=4
 LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)"
 # shellcheck source=../lib/log.sh
 . "${LIB}/log.sh"
@@ -60,6 +61,14 @@ done
 [ -f "${DRIVER}" ] || die "缺少构建驱动: ${DRIVER}"
 [ -f "${KS}" ] || die "kickstart 不存在: ${KS}"
 need_cmd dnf createrepo_c python3
+
+# dnf --installroot 要求超级用户，非 root 时每个镜像根都只回一行 Error 就
+# 退出（B50 首次收割的现象：六分钟、零下载、控制台看不出原因）。在入口处
+# 判定，代价一行，省掉的是一整轮「换根 × 重试」的时间。
+[ "$(id -u)" -eq 0 ] || {
+    err "收割需 root（dnf --installroot 要求超级用户），请用 sudo 运行"
+    exit "${EPERM}"
+}
 
 args=(--closure-only --out "${OUT}" --arch "${ARCH}" --ks "${KS}")
 for glob in "${SKIPS[@]}"; do
