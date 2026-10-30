@@ -18,6 +18,13 @@
 # sha256sum -c 通过之前一个 RPM 都不许进 DIR：先在临时目录校验，再整体
 # 移入，失败时 DIR 保持原样。
 #
+# 完整性判据是「完成标记」而不是「目录里有没有 RPM」：中止或超时的轮次会把
+# 半份池按内容摘要存进缓存，下一轮 restore 命中的正是那份半份池；以非空判
+# 完整就会跳过播种，缺的包只能回到跨境镜像上按 16–22 KiB/s 慢慢取，组装段
+# 随即烧穿 180 分钟（run 41075519752：缓存 564 MiB，制品 2321.7 MiB，播种
+# 0 秒跳过，构建段 40 分钟仍在拉包）。标记只在整份清单校验通过之后写入，
+# 半份池永远拿不到它；缺失时按清单补差注入，已存在的同名包不再重传。
+#
 # 播种端 runbook（一台有 dnf、createrepo_c、oras 的快机器）：
 #   1) ci/ci.sh closure-pool --out /var/tmp/closure-pool
 #   2) 打平铺 tar 并生成清单，然后推送（oras 只收相对路径，绝对路径会
@@ -38,13 +45,15 @@
 # 自然命中。其它失败（鉴权、网络、清单不符）必须让 job 失败，避免把
 # 「没播种」伪装成「播种成功」而拖到组装段超时。
 #
-# 退出码: 0 注入成功/池非空/制品未发布；1 拉取或校验失败；5 参数不满足。
+# 退出码: 0 注入成功/池已完整/制品未发布；1 拉取或校验失败；5 参数不满足。
 # ===========================================================================
 set -uo pipefail
 
 readonly EINVAL=5
 readonly REF_DEFAULT="ghcr.io/openairymax/airymaxos-closure:24.03-x86_64"
 readonly MANIFEST="pool-manifest.txt"
+# 完成标记随池一起进缓存：它存在就代表整份清单已在本机校验通过。
+readonly MARK=".seed-complete"
 LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)"
 # shellcheck source=../lib/log.sh
 . "${LIB}/log.sh"
@@ -70,13 +79,14 @@ done
 # shell（workflows 只允许单行 run）。
 mkdir -p "${DIR}" || die "无法创建池目录: ${DIR}"
 
-# 非空判据与 ci/gates/pool-state.sh 同源：池里只要有一个 *.rpm 就说明
-# 上一轮已经注入过，本轮不再碰网络。
-n="$(find "${DIR}" -type f -name '*.rpm' | wc -l | tr -d ' ')"
-if [ "${n}" -gt 0 ]; then
-    say "池非空（${n} 个 RPM），跳过播种"
+# 判据是完成标记，不是「有没有 RPM」：缓存里的半份池同样非空。
+if [ -f "${DIR}/${MARK}" ]; then
+    say "池已完整播种（${DIR}/${MARK}），跳过"
     exit 0
 fi
+
+n="$(find "${DIR}" -type f -name '*.rpm' | wc -l | tr -d ' ')"
+[ "${n}" -gt 0 ] && say "池缺完成标记（已有 ${n} 个 RPM），按清单补差"
 
 need_cmd oras sha256sum tar find
 
@@ -125,9 +135,22 @@ if ! ( cd "${stage}" &&
 fi
 
 moved=0
+kept=0
 while IFS= read -r rpm; do
+    name="${rpm##*/}"
+    # 半份池里已有的同名同长包不再搬：mv 会覆盖，徒增一次 2.5 GB 写盘。
+    if [ -f "${DIR}/${name}" ]; then
+        kept=$((kept + 1))
+        continue
+    fi
     mv "${rpm}" "${DIR}/" || die "注入失败: ${rpm}"
     moved=$((moved + 1))
 done < <(find "${stage}" -maxdepth 1 -type f -name '*.rpm' | sort)
-say "注入 ${moved} 个 RPM（${REF}）"
+
+# 标记在整份清单校验通过、且全部补齐之后写，且和池放在同一目录随缓存保存：
+# 半份池永远拿不到它，下一轮必定重走补差，而不是被非空判据骗过去。
+printf 'injected=%s\nkept=%s\nsource=%s\n' \
+    "${moved}" "${kept}" "${REF}" >"${DIR}/${MARK}" ||
+    die "无法写入完成标记: ${DIR}/${MARK}"
+say "注入 ${moved} 个 RPM，已存在 ${kept} 个（${REF}）"
 say "sha256 全部一致"
