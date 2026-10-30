@@ -13,14 +13,18 @@
 #   * 仅 workflow_dispatch：不进入 PR 门禁，不阻断日常提交（§3.6）。
 #   * 本流水线固定 assemble + accept 两个 job（上限 2，与 docs 一致）。
 #   * 60 分钟预算（OS-STD-TEST-011）只约束 PR 门禁；本流水线按 release.yml
-#     先例申请发布级例外，两个 job 分别为 240 / 300 分钟。
+#     先例申请发布级例外，两个 job 分别为 300 / 360 分钟。
 #     assemble 内部按职责分三步：工具链预热（受网络支配，75 分钟）、ISO
-#     组装（受 CPU/IO 支配，120 分钟）、收尾校验。三步各自计时，才能看出
+#     组装（受 CPU/IO 支配，180 分钟）、收尾校验。三步各自计时，才能看出
 #     一轮慢在网络还是慢在编译；混成一步时只有一个总耗时（run
 #     40997227280 烧穿 240 分钟而无从归因）。
-#     组装 120 分钟的依据：内核基线为 openeuler_defconfig，模块数两千余，
-#     在 4 核 runner 上明显长于 x86_64_defconfig（run 40025896195 的
-#     12.2 分钟不再可比）。
+#     组装 180 分钟的依据：闭包收割要在这一步里从公网取回 2.5 GB RPM，
+#     镜像站限速时单轮曾只有 29 KiB/s（run 41023530128 在 120 分钟时被
+#     强制取消）。跨轮缓存池把「每轮重取」降为「每轮补差」，180 分钟覆盖
+#     无缓存的首轮与有缓存的补齐两种形态；job 300 分钟必须大于 75+180，
+#     否则强制取消态下 log-dump 与产物上传都不会执行。
+#     内核模块数两千余（openeuler_defconfig），在 4 核 runner 上明显长于
+#     x86_64_defconfig（run 40025896195 的 12.2 分钟不再可比）。
 #   * accept 的时限不是拍定值，而由装机腿数推导：双固件各装一次，每腿
 #     装机上限 3600 秒、冷启动上限 900 秒，2×(3600+900) 秒加固定开销仍
 #     小于 300 分钟。装机腿失败时该轮启动腿跳过，最坏 2×3600 秒。托管
@@ -33,6 +37,10 @@
 #   * 官方源是跨洋链路，实测单件 ISO 需 43 分钟。介质目录按摘要键缓存，
 #     命中即跳过下载；未命中时总预算 5400 秒、每项保底 900 秒，避免先下
 #     的大件把后一项挤成零头（run 40485745100）。
+#   * 安装闭包（约 2.5 GB RPM）另走一块滚动缓存池。键以镜像根表与配方的
+#     摘要为前缀，后缀取 run_id：恢复按前缀命中上一轮，保存永远落新键。
+#     actions/cache 的条目不可变，若用固定键，第一轮超时留下的半份池会被
+#     永久固化，后续轮次既不命中新包也无法更新，等于没有缓存。
 #   * acceptance=true 组装验收 ISO（自动登录 + 会话内冒烟），accept 断言
 #     AIRYMAX-SMOKE-PASS；false 时断言产品 ISO 的 AIRYMAX-DESKTOP-READY。
 #   * release_tag 非空时，内核包取自对应 Release（下载并校验发行
@@ -84,7 +92,7 @@ jobs:
   assemble:
     name: Assemble ISO (L1)
     runs-on: ubuntu-24.04
-    timeout-minutes: 240
+    timeout-minutes: 300
     steps:
       - uses: actions/checkout@v4
         with:
@@ -159,17 +167,35 @@ jobs:
           path: ${{ runner.temp }}/dnf-cache
           key: dnf-${{ hashFiles('ci/container/build-packages.txt') }}
 
-      # step 级时限必须小于 job 时限（240）：job 超时是强制取消，取消态下
+      - name: Restore closure RPM pool
+        id: pool
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/closure-cache
+          key: closure-${{ hashFiles('distro/repo/mirrors.list', 'distro/kickstart/airymaxos-workstation.ks') }}-${{ github.run_id }}
+          restore-keys: |
+            closure-${{ hashFiles('distro/repo/mirrors.list', 'distro/kickstart/airymaxos-workstation.ks') }}-
+
+      # step 级时限必须小于 job 时限（300）：job 超时是强制取消，取消态下
       # `if: failure()` 的 log-dump 与 `if: always()` 的产物上传都不会执行，
-      # 等于跑满四小时后既没有 ISO 也没有日志（run 40997227280 的现象）。
-      # 工具链已移出本步，剩下的只有本地的内核编译与 ISO 组装：warm 75 分钟
-      # 加本步 120 分钟仍在 240 分钟之内，并给 log-dump、manifest 校验与
-      # 上传留出余量。
+      # 等于跑满五小时后既没有 ISO 也没有日志（run 40997227280 的现象）。
+      # 工具链已移出本步，剩下的只有本地的内核编译、闭包收割与 ISO 组装：
+      # warm 75 分钟加本步 180 分钟仍在 300 分钟之内，并给 log-dump、
+      # manifest 校验与上传留出余量。
       - name: Build desktop ISO in container
-        timeout-minutes: 120
+        timeout-minutes: 180
         env:
           ACCEPTANCE: ${{ inputs.acceptance }}
-        run: ci/ci.sh assemble --image "$AIRYMAX_BUILD_IMAGE" --src "$GITHUB_WORKSPACE" --out "$RUNNER_TEMP/out" --media "$RUNNER_TEMP/media" --iso-base "$OE_ISO_NAME" --dnf-cache "$RUNNER_TEMP/dnf-cache"
+        run: ci/ci.sh assemble --image "$AIRYMAX_BUILD_IMAGE" --src "$GITHUB_WORKSPACE" --out "$RUNNER_TEMP/out" --media "$RUNNER_TEMP/media" --iso-base "$OE_ISO_NAME" --dnf-cache "$RUNNER_TEMP/dnf-cache" --closure-cache "$RUNNER_TEMP/closure-cache"
+
+      # 与 dnf 缓存同理：不看 job 成功态。本步跑在中止的轮次里时，已下载并
+      # 通过摘要校验的 RPM 仍然有价值，下一轮只补差异。
+      - name: Save closure RPM pool
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/closure-cache
+          key: ${{ steps.pool.outputs.cache-primary-key }}
 
       - name: Show build logs on failure
         if: failure()

@@ -5,7 +5,8 @@
 #
 # 用法: ci/gates/assemble.sh --image IMG --src DIR --out DIR --media DIR
 #                            --iso-base NAME --dnf-cache DIR
-#                            [--arch ARCH] [--release-rpms DIR] [--acceptance]
+#                            [--closure-cache DIR] [--arch ARCH]
+#                            [--release-rpms DIR] [--acceptance]
 #
 # 约束（来自 docs 70-build-system/03-ci-cd-pipeline.md 与验收发行方案 §3）:
 #   * 源码以只读挂载进容器，产物只落 --out，不违反「严禁在源码区内构建」。
@@ -18,6 +19,10 @@
 # 说明缓存没预热，秒级失败比打公网两小时再烧穿预算有价值（run 40997227280
 # 就是两者混在一步、缓存又挂在 job 成功态上，取消即丢、下轮从零开始）。
 # 因此 --dnf-cache 是必填参数：没有它就不存在「可离线重放」的前提。
+#
+# --closure-cache 是可选第二块缓存：安装闭包（约 2.5 GB RPM）的跨轮复用池。
+# 它不参与工具链重放，只由 distro/scripts/lib/closure.sh 以 cost=1 的本地
+# 仓库参与求解。缺省时不挂载，行为与不带此参数的历史版本完全一致。
 #
 # 这个 gate 的日志是排障的主证据：容器内的 run-image-ci.sh 会把每段产物写进
 # --out，失败时由 ci/gates/log-dump.sh 统一摊开，所以这里不吞输出。
@@ -46,6 +51,7 @@ ISO_BASE=""
 ARCH="x86_64"
 REL_RPMS="${AIRYMAX_REL_RPMS:-}"
 DNF_CACHE=""
+CLOSURE_CACHE=""
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -57,9 +63,10 @@ while [ "$#" -gt 0 ]; do
         --arch)         ARCH="${2:-}"; shift 2 ;;
         --release-rpms) REL_RPMS="${2:-}"; shift 2 ;;
         --dnf-cache)    DNF_CACHE="${2:-}"; shift 2 ;;
+        --closure-cache) CLOSURE_CACHE="${2:-}"; shift 2 ;;
         --acceptance)   export ACCEPTANCE=1; shift ;;
         -h|--help)
-            echo "用法: ci/gates/assemble.sh --image IMG --src DIR --out DIR --media DIR --iso-base NAME"
+            echo "用法: ci/gates/assemble.sh --image IMG --src DIR --out DIR --media DIR --iso-base NAME --dnf-cache DIR [--closure-cache DIR]"
             exit 0 ;;
         *) die "未知参数: $1" ;;
     esac
@@ -80,9 +87,20 @@ pkgs="$(grep -vE '^[[:space:]]*(#|$)' "${PKGS}" | tr '\n' ' ')"
 [ -n "${pkgs}" ] || die "工具链清单为空: ${PKGS}"
 
 mkdir -p "${OUT}"
+# 缓存池目录由 runner 先建：不存在的宿主路径会被 docker 建成 root:root，
+# 后续 actions/cache/save 以 runner 身份读它时行为不可依赖。
+[ -n "${CLOSURE_CACHE}" ] && mkdir -p "${CLOSURE_CACHE}"
 
 mounts=(-v "${SRC}:/src:ro" -v "${OUT}:/out" -v "${MEDIA}:/media:ro"
         -v "${DNF_CACHE}:/var/cache/dnf:rw")
+envs=(-e ACCEPTANCE="$(airy_profile)" -e ISO_BASE="${ISO_BASE}")
+# 闭包缓存池是可选的：没有它照样能组装，只是每一轮都要把 2.5 GB 闭包
+# 从公网重取一遍（run 41023530128 因此撞上 step 时限）。有它就把池挂进
+# 容器，closure.sh 以 cost=1 的本地仓库参与求解，远端只补差异。
+if [ -n "${CLOSURE_CACHE}" ]; then
+    mounts+=(-v "${CLOSURE_CACHE}:/var/cache/airymax-closure:rw")
+    envs+=(-e CLOSURE_POOL=/var/cache/airymax-closure)
+fi
 args=(--out /out --iso-base "/media/${ISO_BASE}"
       --profile desktop --arch "${ARCH}" --skip-install)
 if [ -n "${REL_RPMS}" ]; then
@@ -100,8 +118,7 @@ say "工具链缓存: ${DNF_CACHE}"
 progress_start "${OUT}"
 trap progress_stop EXIT
 docker run --rm --privileged \
-    -e ACCEPTANCE="$(airy_profile)" \
-    -e ISO_BASE="${ISO_BASE}" \
+    "${envs[@]}" \
     "${mounts[@]}" \
     -w /src \
     "${IMAGE}" bash -c '
