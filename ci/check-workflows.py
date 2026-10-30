@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 """ci/check-workflows.py —— 守住 workflow 薄化与命名约束
 
-五条规则：
+十二条规则：
 
 1. 结构上限：每个 workflow 的 job 数 ≤ 预算，内联 ``run: |`` 块数 ≤ 预算
    （预算见 ci/workflow-budgets.txt，只许下调）。
@@ -33,6 +33,10 @@
 11. paths 不得落进子模块内部（``<gitlink>/**``）。父仓 diff 里子模块只
    呈现为目录名一项，内部 glob 永远不命中，写上去只是让人以为覆盖了
    （kernel-verify 的 ``kernel/**`` 就是这样一条死判据）。
+12. workflow 里调用的每个 ``ci/ci.sh <gate>`` 都必须在 ``ci/gates/<gate>.sh``
+   真实存在，且该脚本自带 ``# 用法:`` 头——分发器按文件名解析，名字写错
+   会在 checkout 与 runner 预热之后才以 exit 2 暴露，而 ``--list`` 的自动
+   登记表也会漏项。判据在本地一秒可查，没有理由留给云端。
 
 为什么需要它：这些约束此前只存在于文档里，没有执行者。78 段内联 shell
 就是这样一段段长出来的——每一次单看都合理，合起来就没有人能在本地验证。
@@ -85,6 +89,10 @@ TOP_CONC = re.compile(r"^concurrency:", re.MULTILINE)
 CANCEL_IN = re.compile(r"^  cancel-in-progress:\s*(.+?)\s*$", re.MULTILINE)
 PR_TRIGGER = re.compile(r"^  pull_request(?:_target)?:", re.MULTILINE)
 JOB_TIMEOUT = re.compile(r"^    timeout-minutes:\s*\S")
+
+# 门禁引用：ci/ci.sh 后面紧跟的门禁名（``--list``、``-h`` 等选项不算）。
+GATE_REF = re.compile(r"ci/ci\.sh\s+([a-z][a-z0-9-]*)")
+GATE_USAGE = re.compile(r"^# 用法:", re.MULTILINE)
 
 
 def count_inline(text: str) -> int:
@@ -281,6 +289,22 @@ def check_gate_libs() -> list[str]:
     return errors
 
 
+def check_gate_refs(name: str, text: str) -> list[str]:
+    """引用的门禁必须存在且自带 ``# 用法:`` 头（分发器按文件名解析）。"""
+    errors: list[str] = []
+    for gate in sorted(set(GATE_REF.findall(text))):
+        path = CIGATES / f"{gate}.sh"
+        if not path.exists():
+            errors.append(
+                f"{name}: 调用 ci/ci.sh {gate}，但 ci/gates/{gate}.sh 不存在"
+                "（分发器会以 exit 2 终止）")
+            continue
+        if not GATE_USAGE.search(path.read_text()):
+            errors.append(
+                f"{name}: 门禁 {gate} 缺少「# 用法:」头，ci/ci.sh --list 会漏项")
+    return errors
+
+
 def main() -> int:
     budgets = load_budgets()
     files = sorted(p.name for p in WORKFLOWS.glob("*.yml"))
@@ -299,6 +323,7 @@ def main() -> int:
         errors.extend(check_name(name, text))
         errors.extend(check_policy(name, text))
         errors.extend(check_triggers(name, text))
+        errors.extend(check_gate_refs(name, text))
         inline = count_inline(text)
         jobs = count_jobs(text)
         total += inline
