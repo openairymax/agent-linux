@@ -660,18 +660,21 @@ def preflight(
             Check("目标是块设备", True, f"{device.path}（普通文件，测试模式）", skipped=True)
         )
 
-    checks.append(
-        Check(
-            "非系统盘",
-            not device.is_system_disk,
-            (
-                f"承载 {', '.join(CRITICAL_MOUNTS)} 的磁盘: "
-                f"{', '.join(device.system_disks) or '（未识别）'}"
+    # 「非系统盘」只对块设备有定义：普通文件靶子上判「系统盘: （未识别）」
+    # 既非通过也非失败，读起来像结论，实际什么也没说。
+    if device.kind == "block":
+        hosts = ", ".join(device.system_disks) or "（未识别）"
+        checks.append(
+            Check(
+                "非系统盘",
+                not device.is_system_disk,
+                f"承载 {', '.join(CRITICAL_MOUNTS)} 的磁盘: {hosts}"
                 if device.is_system_disk
-                else f"系统盘: {', '.join(device.system_disks) or '（未识别）'}"
-            ),
+                else f"系统盘: {hosts}",
+            )
         )
-    )
+    else:
+        checks.append(Check("非系统盘", True, "普通文件靶子无系统盘概念", skipped=True))
 
     checks.append(
         Check(
