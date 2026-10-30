@@ -14,10 +14,13 @@
 #   * 本流水线固定 assemble + accept 两个 job（上限 2，与 docs 一致）。
 #   * 60 分钟预算（OS-STD-TEST-011）只约束 PR 门禁；本流水线按 release.yml
 #     先例申请发布级例外，两个 job 分别为 240 / 300 分钟。
-#     assemble 从 180 分钟上调的依据：内核基线改为 openeuler_defconfig 后
-#     模块数从数百涨到两千余，单次构建在 4 核 runner 上明显长于
-#     x86_64_defconfig（run 40025896195 的 12.2 分钟不再可比），180 分钟
-#     会在编译尾段取消 job，等于整轮白跑。
+#     assemble 内部按职责分三步：工具链预热（受网络支配，75 分钟）、ISO
+#     组装（受 CPU/IO 支配，120 分钟）、收尾校验。三步各自计时，才能看出
+#     一轮慢在网络还是慢在编译；混成一步时只有一个总耗时（run
+#     40997227280 烧穿 240 分钟而无从归因）。
+#     组装 120 分钟的依据：内核基线为 openeuler_defconfig，模块数两千余，
+#     在 4 核 runner 上明显长于 x86_64_defconfig（run 40025896195 的
+#     12.2 分钟不再可比）。
 #   * accept 的时限不是拍定值，而由装机腿数推导：双固件各装一次，每腿
 #     装机上限 3600 秒、冷启动上限 900 秒，2×(3600+900) 秒加固定开销仍
 #     小于 300 分钟。装机腿失败时该轮启动腿跳过，最坏 2×3600 秒。托管
@@ -113,7 +116,12 @@ jobs:
       # 在 run 40866231339 涨到两小时并烧穿 job 预算。缓存按工具链清单的
       # 摘要做键——清单不变则包集合不变，命中后 dnf 只做本地事务安装。
       # 键里不含产物内容：缓存只影响「装得快不快」，不影响 ISO 字节。
+      #
+      # 这里只做恢复，保存由后面显式的 cache/save 完成：actions/cache 的
+      # 保存挂在 job 成功态上，job 被取消或超时（run 40997227280）缓存就
+      # 永远不落盘，下一轮又从零下载，越慢越容易被取消，形成自锁环。
       - name: Restore dnf toolchain cache
+        id: dnf
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/dnf-cache
@@ -122,6 +130,22 @@ jobs:
 
       - name: Load build container image
         run: ci/ci.sh container-load --file "$RUNNER_TEMP/media/$OE_IMG_NAME"
+
+      # 工具链获取与 ISO 组装拆成两步：前者受网络支配、后者受 CPU/IO 支配，
+      # 混在一步时 Actions 只报一个总耗时，排障看不出瓶颈在哪。warm 收尾会
+      # 用干净容器自证缓存可离线安装，装配段因此能严格离线。
+      - name: Warm toolchain cache
+        timeout-minutes: 75
+        run: ci/ci.sh toolchain --image "$AIRYMAX_BUILD_IMAGE" --cache "$RUNNER_TEMP/dnf-cache"
+
+      # 显式保存且不看 job 成功态：warm 中途失败时，已下载的 rpm 仍有价值，
+      # 下一轮从这些包继续，而不是回到零。命中同键时保存会报错，故加判据。
+      - name: Save dnf toolchain cache
+        if: always() && steps.dnf.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/dnf-cache
+          key: dnf-${{ hashFiles('ci/container/build-packages.txt') }}
 
       # 发行资产里的内核包是 ISO 载荷的内核来源。只下载与校验，不重建：
       # 只要 ISO 自己再编一次内核，载荷中同名包的哈希就与发行 .sha256sum
@@ -136,9 +160,11 @@ jobs:
       # step 级时限必须小于 job 时限（240）：job 超时是强制取消，取消态下
       # `if: failure()` 的 log-dump 与 `if: always()` 的产物上传都不会执行，
       # 等于跑满四小时后既没有 ISO 也没有日志（run 40997227280 的现象）。
-      # 留 60 分钟余量给 log-dump、manifest 校验与上传。
+      # 工具链已移出本步，剩下的只有本地的内核编译与 ISO 组装：warm 75 分钟
+      # 加本步 120 分钟仍在 240 分钟之内，并给 log-dump、manifest 校验与
+      # 上传留出余量。
       - name: Build desktop ISO in container
-        timeout-minutes: 180
+        timeout-minutes: 120
         env:
           ACCEPTANCE: ${{ inputs.acceptance }}
         run: ci/ci.sh assemble --image "$AIRYMAX_BUILD_IMAGE" --src "$GITHUB_WORKSPACE" --out "$RUNNER_TEMP/out" --media "$RUNNER_TEMP/media" --iso-base "$OE_ISO_NAME" --dnf-cache "$RUNNER_TEMP/dnf-cache"
