@@ -124,7 +124,9 @@ done
 # 制品也可能直接推 RPM 而不打 tar，两种形态都要能播种。
 find "${tmp}/pull" -maxdepth 1 -type f -name '*.rpm' \
     -exec cp -p {} "${stage}/" \;
-[ -n "$(find "${stage}" -type f -name '*.rpm' | head -n 1)" ] ||
+# -quit 让 find 命中第一个就停，不用管道接 head：head 提前退出会给 find
+# 一个 EPIPE，日志里留下与判定无关的「Broken pipe / write error」噪声。
+[ -n "$(find "${stage}" -maxdepth 1 -type f -name '*.rpm' -print -quit)" ] ||
     die "制品内没有 RPM: ${REF}"
 
 if ! ( cd "${stage}" &&
