@@ -233,6 +233,8 @@ AirymaxOS 烧录工具 0.0.3  (write)
        3.40 GiB   sha256 1a2b3c4d…5e6f7a8b
 目标   /dev/sdb
        USB 3.0 Flash Disk, usb, 28.7 GiB, 可移动
+分区   已有 2 个 sdb1, sdb2
+       合计 3.21 GiB，写入后不可恢复
 模式   写入 + 回读
 
 预检

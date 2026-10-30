@@ -504,6 +504,27 @@ def _parent_disk(name: str, sys_block: Path) -> str:
     return name
 
 
+def _partitions(entry: Path, name: str) -> tuple[tuple[str, ...], int]:
+    """整盘上现有的分区名与字节合计，只读 sysfs。
+
+    写入会连同分区表一起覆盖，操作者却只能从盘符反推「这块盘原来装的是
+    什么」。sysfs 里属分区的子项带 `partition` 属性，据此区分 queue/等
+    目录项，不需要调 blkid（它要 root，且对未挂载的盘也不总给得出结果）。
+    """
+    if not entry.is_dir():
+        return (), 0
+    names: list[str] = []
+    total = 0
+    for child in sorted(entry.iterdir()):
+        if child.name == name or not (child / "partition").exists():
+            continue
+        sectors = _read_attr(child / "size")
+        names.append(child.name)
+        if sectors.isdigit():
+            total += int(sectors) * BLOCK_SECTOR
+    return tuple(names), total
+
+
 def system_disks(
     mounts: Iterable[Mount], sys_block: Path = Path("/sys/class/block")
 ) -> tuple[str, ...]:
@@ -571,6 +592,7 @@ def probe_device(
         entry = Path(sys_block) / target.name
         sectors = _read_attr(entry / "size")
         size = int(sectors) * BLOCK_SECTOR if sectors.isdigit() else 0
+        parts, parts_bytes = _partitions(entry, target.name)
         points = tuple(
             sorted(
                 {
@@ -592,6 +614,8 @@ def probe_device(
             read_only=_read_attr(entry / "ro") == "1",
             mountpoints=points,
             system_disks=system_disks(table, sys_block),
+            parts=parts,
+            parts_bytes=parts_bytes,
         )
 
     if stat.S_ISREG(info.st_mode):
@@ -1197,6 +1221,17 @@ def _banner(
         if part
     )
     renderer.field("目标", str(device.path), facts)
+    # 分区清单是「这块盘上现在有什么」的唯一可见事实：写入连同分区表一起
+    # 覆盖，事后无法回溯，事前又只能从盘符反推。
+    if device.parts:
+        listed = ", ".join(device.parts[:6])
+        if len(device.parts) > 6:
+            listed = f"{listed} 等 {len(device.parts)} 个"
+        renderer.field(
+            "分区",
+            f"已有 {len(device.parts)} 个 {listed}",
+            f"合计 {human_bytes(device.parts_bytes)}，写入后不可恢复",
+        )
     renderer.field("模式", MODES.get(command, command))
 
 
