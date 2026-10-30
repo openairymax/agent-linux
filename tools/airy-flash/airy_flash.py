@@ -6,9 +6,10 @@ airy_flash.py — AirymaxOS 烧录工具
 把「下载好的 ISO → U 盘/整块设备」这件事收敛成一条可复现、可取证的命令：
 
   airy-flash fetch  --oci X.iso-oci.txt --out DIR        # 取回分块并拼成 ISO
+  airy-flash fetch  --ref REG/REPO:TAG --out DIR         # 同上，清单即账本
   airy-flash plan   --image X.iso --device /dev/sdX     # 只预检，不碰设备
   airy-flash write  --image X.iso --device /dev/sdX --yes
-  airy-flash verify --image X.iso --device /dev/sdX      # 只回读比对
+  airy-flash verify --image X.iso --device /dev/sdX      # 校镜像 + 回读比对
   airy-flash check                                       # 环境自检
 
 设计要点：
@@ -831,7 +832,11 @@ NEXT_STEPS["fetch"] = (
     "2. 确认无误后写入：把 plan 换成 write，并追加 --yes",
 )
 
-MODES = {"plan": "只预检（不写设备）", "write": "写入 + 回读", "verify": "只回读"}
+MODES = {
+    "plan": "只预检（不写设备）",
+    "write": "写入 + 回读",
+    "verify": "校验镜像 + 回读（不写设备）",
+}
 
 
 def _tag(item: Check | Stage) -> str:
@@ -1121,7 +1126,7 @@ def _steps(
     device: DeviceFacts,
     expected: str,
 ) -> list[tuple[str, Task]]:
-    """按子命令排出阶段序列：plan 只校镜像，write 四段，verify 只回读。"""
+    """按子命令排出阶段序列：plan 只校镜像，write 四段，verify 校镜像 + 回读。"""
     steps: list[tuple[str, Task]] = [
         ("校验镜像", lambda task: _hash(image, report, expected, task)),
     ]
@@ -1595,8 +1600,8 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="?",
         default="plan",
         choices=("fetch", "plan", "write", "verify", "check"),
-        help="fetch 取回分块；plan 只预检（默认）；write 写入；verify 只回读；"
-        "check 环境自检",
+        help="fetch 取回分块；plan 只预检（默认）；write 写入；"
+        "verify 校验镜像并回读；check 环境自检",
     )
     parser.add_argument("--image", help="ISO 或 raw 镜像路径")
     parser.add_argument("--oci", help="fetch：发布清单 iso-oci.txt 路径")
@@ -1679,12 +1684,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     args.argv = list(argv) if argv is not None else None
     if args.command == "check":
         report, code = _check(args)
-    elif args.command == "fetch":
-        if not args.oci:
-            parser.error("fetch 需要 --oci <iso-oci.txt>")
-        report, code = execute(args)
     else:
-        if not args.image or not args.device:
+        # fetch 的两个取件入口（--oci / --ref）由 _ledger_arg 统一判定，
+        # 这里再拦一次只会让 --ref 永远走不到实现：清单本身就是账本，
+        # 发布制品过期后仍能按 tag 取回，这条路径不能只在源码里存在。
+        if args.command != "fetch" and not (args.image and args.device):
             parser.error("需要 --image 与 --device（check/fetch 子命令除外）")
         report, code = execute(args)
     if args.json:
