@@ -438,7 +438,11 @@ def test_preflight_marks_file_target_as_skipped_not_failed() -> None:
         expected="a" * 64,
         source="x.iso.sha256",
     )
-    assert [c.name for c in checks if c.skipped] == ["目标是块设备", "非只读"]
+    assert [c.name for c in checks if c.skipped] == [
+        "目标是块设备",
+        "非系统盘",
+        "非只读",
+    ]
     assert all(c.ok for c in checks)
 
 
