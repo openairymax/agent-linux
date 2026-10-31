@@ -378,6 +378,12 @@ def ledger_of(ref: str, text: str) -> OciLedger:
         doc = json.loads(text)
     except json.JSONDecodeError as exc:
         raise FlashError(EXIT_CHECK, f"{ref} 的清单不是合法 JSON: {exc}") from None
+    # oras 1.2 起 `manifest fetch --format json` 输出信封
+    # {reference, digest, size, content:{…}}，注解与 layers 都下沉到 content；
+    # 更早的 oras 直接吐裸 manifest。两种形态都认，否则取件在版本差异上
+    # 会误判成「tag 早于分块实现」。
+    if isinstance(doc.get("content"), dict):
+        doc = doc["content"]
     ann = doc.get("annotations") or {}
     name = _ann(ann, "name", ref)
     sha = _ann(ann, "sha256", ref).lower()
