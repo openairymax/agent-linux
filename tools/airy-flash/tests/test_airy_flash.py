@@ -1261,6 +1261,15 @@ def test_ledger_of_reads_annotations_and_layers():
     assert ledger.parts[1].digest == "c" * 64
 
 
+def test_ledger_of_accepts_oras_envelope():
+    """oras 1.2 的 --format json 把注解与 layers 放进 content 信封。"""
+    inner = json.loads(_manifest_text([(10, "b" * 64), (4, "c" * 64)]))
+    text = json.dumps({"reference": "ghcr.io/o/i@sha256:" + "d" * 64, "content": inner})
+    ledger = af.ledger_of("ghcr.io/openairymax/airymaxos-iso:v0.0.3", text)
+    assert [part.size for part in ledger.parts] == [10, 4]
+    assert ledger.parts[0].digest == "b" * 64
+
+
 def test_ledger_of_rejects_missing_chunks():
     text = _manifest_text([(10, "b" * 64)], **{"org.openairymax.iso.chunks": ""})
     with pytest.raises(af.FlashError, match="org.openairymax.iso.chunks"):
