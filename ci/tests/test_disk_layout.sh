@@ -3,9 +3,10 @@
 # ===========================================================================
 # ci/tests/test_disk_layout.sh — ci/gates/disk-layout.sh 的分支回归
 #
-# runner 上没有受测机器，门禁的常规入口是重放快照。这里用五份手工构造的
-# status 快照驱动全部分支：双盘与单盘两种合规形态、缺 /data、/data 非
-# 末位分区、快照本身不可读。断言只看退出码与稳定 token，不看措辞。
+# runner 上没有受测机器，门禁的常规入口是重放快照。这里用手工构造的
+# status 快照与 fstab 驱动全部分支：双盘与单盘两种合规形态、缺 /data、
+# /data 非末位分区、快照本身不可读，以及 fstab 用 UUID（持久）与按设备
+# 名写源（扩容改号后失挂）两例。断言只看退出码与稳定 token，不看措辞。
 #
 # 用法: bash ci/tests/test_disk_layout.sh
 # 退出码: 0 全部通过；1 有断言失败。
@@ -90,6 +91,20 @@ check "缺 /data 判拒绝" 1 "$?" "${out}" '"verdict": "no-data"'
 snap "${tmp}/tail.json" single "$(disk sda sata "${root},${data},${swap}")"
 out="$(run --snapshot "${tmp}/tail.json")"
 check "/data 非末位判拒绝" 1 "$?" "${out}" '"verdict": "not-last"'
+
+cat >"${tmp}/hold.fstab" <<'EOF'
+UUID=1111-1111  /      btrfs  defaults        0 0
+UUID=2222-2222  /data  xfs    defaults        0 2
+EOF
+out="$(run --snapshot "${tmp}/dual.json" --fstab "${tmp}/hold.fstab")"
+check "fstab 用 UUID 判可持久挂载" 0 "$?" "${out}" '"persist": "ok"'
+
+cat >"${tmp}/name.fstab" <<'EOF'
+UUID=1111-1111  /      btrfs  defaults        0 0
+/dev/sdc1       /data  xfs    defaults        0 2
+EOF
+out="$(run --snapshot "${tmp}/dual.json" --fstab "${tmp}/name.fstab")"
+check "fstab 按设备名写源判拒绝" 1 "$?" "${out}" '"persist": "unstable"'
 
 printf '{"schema":99}\n' >"${tmp}/old.json"
 out="$(run --snapshot "${tmp}/old.json")"
