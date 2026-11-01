@@ -212,7 +212,7 @@ materials:
     name: airy-flash 烧录工具
     format: .pyz
     signature: gpg
-    authority: docs/docs-closed/agent-linux-dev/0.0.3-验收发行方案.md §5.1 烧录工具唯一实现
+    authority: docs/docs-closed/agent-linux-dev/0.0.3-极境OS任务方案.md §14 §5.1 烧录工具唯一实现（工具设计见 §15）
     delivery: active
     evidence:
       - airy-flash-*.pyz

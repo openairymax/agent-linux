@@ -5,7 +5,7 @@ pick_image.py — 按提交认领已被验收的安装镜像
 
 安装镜像由 image-build.yml 在同一提交上组装并验收：A 轮产出产品 ISO 并断言
 AIRYMAX-DESKTOP-READY，B 轮产出验收 ISO 并断言 AIRYMAX-SMOKE-PASS。发行
-流程（0.0.3-验收发行方案 §3.6 方式 2）在 tag 前由发布负责人认领 A 轮产物
+流程（0.0.3-极境OS任务方案 §14 §3.6 方式 2）在 tag 前由发布负责人认领 A 轮产物
 并人工附加；若在 tag 上重新组装镜像，「发布的镜像」与「验收过的镜像」就不
 是同一份字节，G-ISO-1 与 G-UKUI-1 随之失去意义，且多花一小时以上构建时间。
 本工具把「认领哪一次运行」从人工辨认变为可复算的判据。
@@ -158,7 +158,7 @@ def pick(items: Sequence[Any], name: str, sha: str) -> dict[str, Any]:
     if not cand:
         raise MissError(
             f"提交 {sha} 上没有可认领的制品 {name}：发布前须先让 image-build 在"
-            f"同一提交上完成组装与验收（0.0.3-验收发行方案 §5.3 步骤 3）")
+            f"同一提交上完成组装与验收（0.0.3-极境OS任务方案 §14 §5.3 步骤 3）")
     return max(cand, key=lambda item: (str(item.get("created_at", "")), item["id"]))
 
 

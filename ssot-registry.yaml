@@ -712,7 +712,7 @@ plan_registry:
     release_tag: "v0.0.3"
     status: active
     authority_doc: "airymaxhub:docs/docs-closed/agent-linux-dev/0.0.3-极境OS任务方案.md"
-    acceptance_doc: "airymaxhub:docs/docs-closed/agent-linux-dev/0.0.3-验收发行方案.md"
+    acceptance_doc: "airymaxhub:docs/docs-closed/agent-linux-dev/0.0.3-极境OS任务方案.md"  # §14 验收与发行方案（收尾整合）
     roadmap_doc: "airymaxhub:docs/docs-closed/agent-linux-dev/agentrt-linux开发路线和进度.md"
     generator: "airymaxhub:docs/docs-closed/agent-linux-dev/scripts/bp_003_gen.py"
     scope_modules: ["L", "A", "B", "C", "K", "M", "P", "R1", "V"]
