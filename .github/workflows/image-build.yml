@@ -2,7 +2,7 @@
 # AirymaxOS 镜像流水线（L1 组装 + L2/L3 装机验收）
 # ===========================================================================
 # Authority: docs/docs-linux/70-build-system/03-ci-cd-pipeline.md
-#            docs/docs-closed/agent-linux-dev/0.0.3-验收发行方案.md §3/§4/§8
+#            docs/docs-closed/agent-linux-dev/0.0.3-极境OS任务方案.md §14 §3/§4/§8
 # Gate:      ci/ci.sh <gate>（实现在 ci/gates/，可在本地对着产物重放）
 #
 # 本文件只做三件事：checkout、调用门禁、上传产物。任何超过一行 shell 的
@@ -237,6 +237,12 @@ jobs:
 
       - name: Verify assembly manifest
         run: ci/ci.sh image-verify --out "$RUNNER_TEMP/out"
+
+      # 登录/锁屏/显示三段闭包：源在盘上不等于链路生效（dconf profile、
+      # PAM 顺序、checkpass setuid、gfxpayload）。静态模式不依赖镜像字节，
+      # 因此能在这一轮之前就拦住配方退化；产物侧由 --root 在验收腿补判。
+      - name: Verify session closure assets
+        run: ci/ci.sh session-closure --source .
 
       - name: Upload image artifacts
         if: always()
