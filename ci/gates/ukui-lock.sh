@@ -6,8 +6,9 @@
 # 用法:
 #   ci/gates/ukui-lock.sh [--source DIR] [--docs DIR]
 #
-# 背景：基底五段 repodata 中没有 ukui 元包、没有 ukui-shell，桌面闭包只能
-# 逐组件声明；0.0.3 把不存在的 ukui 列为 comps 必装，装机求解必然失败。
+# 背景：基底五段 repodata 中 UKUI 只在 EPOL/main 有，且没有 ukui-shell；
+# 元包 ukui 与 ukui-desktop-environment 有，但本版刻意不选。桌面闭包只能
+# 逐组件声明；0.0.3 的 comps 曾把元包列为必装，与基底实际内容不符。
 # 台账 lockfile/ukui-components.yaml 是包名与 NVRA 的唯一事实源，本门禁
 # 断言台账、comps、冻结输入（以及可选取证册）四者同源，任一环漂移即判红。
 #
