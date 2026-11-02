@@ -16,7 +16,12 @@
 #      与 key_id_len 必须为 0，sig_len 非零且签名段不吞掉模块正文；
 #   3. /proc/sys/kernel/tainted 的 8192 位（TAINT_UNSIGNED_MODULE）为 0。
 #
-# 退出码：0 通过；1 判定不通过；5 证据不可用（缺根、无模块、taint 不可读）。
+# 压缩模块（.ko.xz/.ko.gz/.ko.zst）不可离线判定：Kbuild 先签名后压缩，
+# 魔数被封在压缩流里，直接读文件尾部只会得到压缩帧。这类树按证据不可用
+# 处理并退 5，提示先解压，而不是把「读不到魔数」误报成「未签名」。
+#
+# 退出码：0 通过；1 判定不通过；5 证据不可用（缺根、无模块、压缩模块、
+# taint 不可读）。
 # ===========================================================================
 
 import argparse
@@ -28,6 +33,7 @@ MARKER = b"~Module signature appended~\n"
 STRUCT = 12
 MIN = STRUCT + len(MARKER)
 SUFFIX = (".ko", ".ko.xz", ".ko.gz", ".ko.zst")
+PACKED = (".ko.xz", ".ko.gz", ".ko.zst")
 PKCS7 = 2
 NOTE = 1
 UNSIGNED = 8192
@@ -107,6 +113,10 @@ def check_struct(root, kernel):
         return EINVAL
     if not mods:
         unavail("%s 下没有模块" % (root / "usr/lib/modules"))
+        return EINVAL
+    packed = [p for p in mods if p.name.endswith(PACKED)]
+    if packed:
+        unavail("%s 为压缩模块，须解压后判定" % packed[0])
         return EINVAL
     bad = 0
     for path in mods:
