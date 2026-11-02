@@ -210,6 +210,11 @@ jobs:
         timeout-minutes: 180
         env:
           ACCEPTANCE: ${{ inputs.acceptance }}
+          # 构建来源指纹（REL-03）：run id + 提交短 sha 写进 os-release 的
+          # BUILD_ID 与 /etc/airymaxos-build。同一版本号会随每次提交产出
+          # 不同镜像，没有这组锚点时装机现场只能回看流水线日志猜是哪一轮。
+          AIRYMAX_RUN_ID: ${{ github.run_id }}
+          AIRYMAX_COMMIT: ${{ github.sha }}
         run: ci/ci.sh assemble --image "$AIRYMAX_BUILD_IMAGE" --src "$GITHUB_WORKSPACE" --out "$RUNNER_TEMP/out" --media "$RUNNER_TEMP/media" --iso-base "$OE_ISO_NAME" --dnf-cache "$RUNNER_TEMP/dnf-cache" --closure-cache "$RUNNER_TEMP/closure-cache"
 
       # 与 dnf 缓存同理：不看 job 成功态。本步跑在中止的轮次里时，已下载并
@@ -257,6 +262,12 @@ jobs:
       # 注册表指向了不存在的文件，两种都只在桌面会话里表现为空背景。
       - name: Verify wallpaper set
         run: ci/ci.sh wallpaper-set --source .
+
+      # 来源指纹跨七处接线：模板、驱动、清单、配方、产物门禁、容器边界与
+      # 运行期探针。任何一处被「顺手简化」，构建照样成功，只有装机现场才
+      # 发现这台机器说不出自哪一轮，届时已无从补救。
+      - name: Verify build provenance wiring
+        run: ci/ci.sh build-provenance --source .
 
       # 基底选型以 lockfile/base.yaml 为唯一事实源：只取大 SP、EOL 覆盖
       # 收口日、合格候选里 GA 最晚。仓库地址、%oe_base、安装配方任一落伍
