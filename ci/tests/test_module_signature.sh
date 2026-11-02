@@ -222,6 +222,11 @@ taint "tainted"
 out="$(run --root "${IMG}" --kind taint)"
 check "污染位非整数退 5" 5 "$?" "${out}" "不是十进制整数"
 
+mkfix
+cp "${MOD}" "${MOD}.xz"
+out="$(run --root "${IMG}" --kind struct)"
+check "压缩模块退 5（须先解压）" 5 "$?" "${out}" "压缩模块"
+
 if [ "${fails}" -ne 0 ]; then
     printf 'test_module_signature: %d 项失败\n' "${fails}"
     exit 1
