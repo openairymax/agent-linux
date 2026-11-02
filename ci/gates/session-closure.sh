@@ -136,6 +136,11 @@ check_source()
     # 展示名一处定义、多处派生：/etc/issue 首行、引导菜单、system-release
     # 全部取自 PRETTY_NAME，改版只改 os-release 时其余落点必须跟着走。
     brand_sso "${d}"
+
+    # 主机名必须是合法 RFC 1123 标签：0.0.3 的下划线名被 systemd 剥成
+    # airymaxos，只能靠 sysctl.d 在内核层写回；0.0.4 由安装器直接落盘，
+    # 回写链整体删除。
+    host_sso "${d}"
 }
 
 # brand_sso DIR —— 命名 SSoT 静态断言。
@@ -174,6 +179,33 @@ brand_sso()
         "${d}/distro/specs" "${d}/distro/kickstart" \
         "${d}/distro/desktop" "${d}/distro/ci" 2>/dev/null)
     [ -z "${hits}" ] || bad "brand/dup-literal: 展示串被写死在 ${hits}"
+}
+
+# host_sso DIR —— 主机名静态断言。
+#
+# 两个剖面的主机名都由安装器的 network --hostname 落盘，%post 只读回校验。
+# 0.0.3 的 AIRYMAX_PC 含下划线，systemd 读取时按 RFC 1123 删除，配方于是
+# 手工写 /etc/hostname 再用 sysctl.d 在内核层写回，静态名与运行名常年分叉。
+# 判据只看可执行条款：注释与 changelog 里的历史叙述不算残留。
+host_sso()
+{
+    local d="$1"
+    local ws="${d}/distro/kickstart/airymaxos-workstation.ks"
+    local min="${d}/distro/kickstart/airymaxos-minimal.ks"
+    local spec="${d}/distro/specs/airymaxos-release.spec"
+
+    want_text "${ws}" '--hostname=airymax-pc' "host/kickstart-ws"
+    want_text "${min}" '--hostname=airymax-pc' "host/kickstart-min"
+    want_text "${ws}" '[ "$(cat /etc/hostname)" = airymax-pc ]' \
+        "host/kickstart-readback"
+
+    want_absent "${ws}" '--hostname=AIRYMAX_PC' "host/ws-underscore"
+    want_absent "${min}" '--hostname=AIRYMAX_PC' "host/min-underscore"
+    want_absent "${spec}" '^%config.*99-airymax-hostname' "host/spec-files"
+    want_absent "${spec}" 'install .*99-airymax-hostname' "host/spec-install"
+
+    [ ! -e "${d}/distro/boot/99-airymax-hostname.conf" ] ||
+        bad "host/sysctl-dropin: 内核层回写文件不应存在"
 }
 
 # ---------------------------------------------------------------------------

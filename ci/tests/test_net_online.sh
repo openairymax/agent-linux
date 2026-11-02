@@ -148,7 +148,7 @@ EOF
 ks()
 {
     w kickstart/min.ks <<'EOF'
-network --bootproto=dhcp --activate --hostname=AIRYMAX_PC
+network --bootproto=dhcp --activate --hostname=airymax-pc
 services --enabled=sshd,chronyd,NetworkManager
 EOF
     w kickstart/ws.ks <<'EOF'
