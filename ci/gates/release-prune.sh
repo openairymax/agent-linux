@@ -67,6 +67,10 @@ sums="$(find "${DIR}" -maxdepth 1 -type f -name 'agent-linux-*.sha256sum' | sort
 
 {
     printf '%s\n' "${sums##*/}"
+    # channel.json 由装配轮的验收制品取回，不登记在摘要清单里。它只在正式
+    # tag 上存在，故按存在与否决定保留：无条件保留会在预发布重发时留下上一
+    # 轮的通道清单，无条件删除则会在正式 tag 重发时删掉客户端唯一的发现入口。
+    [ -f "${DIR}/channel.json" ] && printf 'channel.json\n'
     want_of "${sums}"
 } | sort -u >"${work}/want"
 

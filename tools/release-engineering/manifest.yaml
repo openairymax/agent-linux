@@ -226,3 +226,16 @@ materials:
     delivery: active
     evidence:
       - oci-image-*.tar
+
+  # ── 补充物料：发行通道清单 ────────────────────────────────────────────
+  # 由装配轮的验收制品取回（ci/gates/channel-fetch.sh），不由本流水线重新
+  # 生成：清单声明的是 ISO 与内核包的字节，必须与线上产物同源。内容自带
+  # ISO/内核摘要，故不另设签名件——摘要本身就是可核验的凭据。
+  - id: update-channel
+    name: 发行通道清单
+    format: JSON
+    signature: none
+    authority: docs/docs-linux/190-distribution/04-update-mechanism.md §2.3
+    delivery: active
+    evidence:
+      - channel.json
