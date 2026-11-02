@@ -249,6 +249,12 @@ jobs:
       - name: Verify wallpaper set
         run: ci/ci.sh wallpaper-set --source .
 
+      # UKUI 包名与 NVRA 以台账为唯一事实源：基底不存在 ukui 元包，comps
+      # 或冻结输入一旦再写出它，装机求解必然失败，而这一步只读台账与
+      # 仓内文件，几毫秒即可给出结论。
+      - name: Verify UKUI component ledger
+        run: ci/ci.sh ukui-lock --source .
+
       - name: Upload image artifacts
         if: always()
         uses: actions/upload-artifact@v4
