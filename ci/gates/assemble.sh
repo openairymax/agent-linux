@@ -94,6 +94,12 @@ mkdir -p "${OUT}"
 mounts=(-v "${SRC}:/src:ro" -v "${OUT}:/out" -v "${MEDIA}:/media:ro"
         -v "${DNF_CACHE}:/var/cache/dnf:rw")
 envs=(-e ACCEPTANCE="$(airy_profile)" -e ISO_BASE="${ISO_BASE}")
+# 构建来源指纹随容器传入：流水线给 AIRYMAX_RUN_ID + AIRYMAX_COMMIT，本地
+# 显式传 AIRYMAX_BUILD_ID。三者缺省时驱动回落到 git 短 sha 或配方摘要，
+# 仍能产生可归因的指纹，故不在此处强制。
+for v in AIRYMAX_BUILD_ID AIRYMAX_RUN_ID AIRYMAX_COMMIT; do
+    [ -n "${!v:-}" ] && envs+=(-e "${v}=${!v}")
+done
 # 闭包缓存池是可选的：没有它照样能组装，只是每一轮都要把 2.5 GB 闭包
 # 从公网重取一遍（run 41023530128 因此撞上 step 时限）。有它就把池挂进
 # 容器，closure.sh 以 cost=1 的本地仓库参与求解，远端只补差异。

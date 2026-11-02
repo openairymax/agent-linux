@@ -13,7 +13,8 @@
 #   3. 清单记录的 ISO 摘要与磁盘文件一致，且同名 .sha256 存在；
 #   4. 给出 --release-rpms 时，载荷里每个内核包的摘要都必须命中发行
 #      .sha256sum，且至少 3 个——这是「ISO 与 Release 是同一份内核」的
-#      唯一判据。载荷再编一次内核就会同名包哈希分叉，此处必红。
+#      唯一判据。载荷再编一次内核就会同名包哈希分叉，此处必红；
+#   5. 镜像清单的构建来源指纹与 RPM 清单同值且非空（REL-03）。
 #
 # 之所以独立成 gate：这些断言此前内联在 image-build.yml 里，只能靠两小时的
 # 云端 job 验证。抽成脚本后可在任何一台留有产物的机器上重放（0.0.3 的
@@ -78,6 +79,21 @@ expect_line "stage rpm=pass"
 expect_line "stage iso=pass"
 expect_line "stage kernel=${EXPECT_KERNEL}"
 expect_line "result=pass"
+
+# 来源指纹：镜像清单与 RPM 清单必须同值且非空。空值意味着这次组装无法归因
+# 到具体构建，发布后与发行说明对不上；同值由 run-image-ci 保证搬运而非重算，
+# 这里复核它确实搬对了。
+bid="$(sed -n 's/^build_id=//p' "${man}" | head -n 1)"
+rman="${OUT}/rpms/build-manifest.txt"
+[ -f "${rman}" ] || die "缺少 RPM 清单: ${rman}"
+built="$(sed -n 's/^build_id=//p' "${rman}" | head -n 1)"
+if [ -z "${bid}" ] || [ "${bid}" = unset ]; then
+    die "镜像清单缺少构建来源指纹（build_id）"
+fi
+if [ "${bid}" != "${built}" ]; then
+    die "来源指纹不一致: 镜像 ${bid} RPM ${built:-空}"
+fi
+say "来源指纹一致: ${bid}"
 
 line="$(grep -m1 '^iso ' "${man}" || true)"
 [ -n "${line}" ] || die "清单缺少 ISO 记录"
