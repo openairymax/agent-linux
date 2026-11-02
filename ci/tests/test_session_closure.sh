@@ -73,6 +73,7 @@ ks()
 {
     w kickstart/airymaxos-workstation.ks <<EOF
 network --bootproto=dhcp --activate --hostname=airymax-pc
+bootloader --timeout=3 --append="console=tty0 console=ttyS0,115200 rhgb quiet"
 [ "\$(cat /etc/hostname)" = airymax-pc ] || exit 1
 user --name=amuser --groups=wheel
 passwd -d amuser
@@ -87,6 +88,7 @@ efi_brand.sh --esp /boot/efi
 EOF
     w kickstart/airymaxos-minimal.ks <<EOF
 network --bootproto=dhcp --activate --hostname=airymax-pc
+bootloader --timeout=3 --append="console=tty0 console=ttyS0,115200"
 user --name=amuser --groups=wheel
 EOF
 }
