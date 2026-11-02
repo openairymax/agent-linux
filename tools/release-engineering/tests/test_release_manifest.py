@@ -2,14 +2,14 @@
 """release_manifest 单元测试。
 
 覆盖三块能力：清单 schema 门禁、清单 ↔ 发布流水线双向一致、以及
-`--checksums` / `--notes` 两个发布辅助模式；并用合成仓库做端到端验证，
-避免任何桩路径。
+`--checksums` / `--notes` / `--channel` 三个发布辅助模式；并用合成仓库做
+端到端验证，避免任何桩路径。
 
 Author:
     SPHARX Ltd. - Airymax Team
 
 Version:
-    1.1.0
+    1.2.0
 """
 
 from __future__ import annotations
@@ -465,6 +465,138 @@ class TestCli:
         rc = rm.main(["--check", "--repo-root", str(tmp_path / "ghost")])
         assert rc == rm.EXIT_USAGE
         assert "仓库根不存在" in capsys.readouterr().err
+
+
+def write_channel_repo(tmp_path, release="3"):
+    """构造含 ISO、iso-oci.txt 与两枚 RPM 的合成发布仓库。"""
+    repo = make_repo(tmp_path / "repo")
+    iso_dir = repo / "desktop" / "iso"
+    iso_dir.mkdir(parents=True)
+    iso = iso_dir / "airymaxos-0.0.4.iso"
+    iso.write_bytes(b"iso-payload")
+
+    kernel_dir = repo / "dist" / "rpm" / "x86_64"
+    kernel_dir.mkdir(parents=True)
+    kernel = kernel_dir / f"airymaxos-kernel-0.0.4-{release}.x86_64.rpm"
+    kernel.write_bytes(b"kernel-payload")
+
+    rel_dir = repo / "dist" / "rpm" / "noarch"
+    rel_dir.mkdir(parents=True)
+    rel = rel_dir / f"airymaxos-release-0.0.4-{release}.noarch.rpm"
+    rel.write_bytes(b"release-payload")
+
+    # part= 行带的是分块摘要，必须被 read_ledger 忽略。
+    (iso_dir / "iso-oci.txt").write_text(
+        "ref=quay.io/airymax/iso\n"
+        "tag=0.0.4\n"
+        f"name={iso.name}\n"
+        f"sha256={rm.sha256_of(iso)}\n"
+        f"size={iso.stat().st_size}\n"
+        "chunk_size=1048576\n"
+        "chunks=1\n"
+        "part=0 sha256=" + "0" * 64 + " size=11 name=x.iso.part0000\n"
+        "pull=oras pull quay.io/airymax/iso:0.0.4 -o .\n",
+        encoding="utf-8")
+    return repo
+
+
+# ─── Channel ───────────────────────────────────────────────────────────────
+
+
+class TestChannel:
+    def test_payload_fields(self, tmp_path, capsys):
+        repo = write_channel_repo(tmp_path)
+        rc = rm.main(["--channel", "--version", "0.0.4", "--build", "3",
+                      "--released-at", "2026-11-20T00:00:00Z",
+                      "--repo-root", str(repo)])
+        assert rc == rm.EXIT_PASS
+        payload = rm.json.loads(capsys.readouterr().out)
+        assert list(payload) == ["schema_version", "channel", "version",
+                                 "build", "released_at", "iso", "kernel",
+                                 "notes_url"]
+        assert payload["schema_version"] == rm.CHANNEL_SCHEMA
+        assert payload["channel"] == rm.CHANNEL_NAME
+        assert payload["version"] == "0.0.4"
+        assert payload["build"] == 3
+        assert payload["released_at"] == "2026-11-20T00:00:00Z"
+        assert payload["iso"]["name"] == "airymaxos-0.0.4.iso"
+        assert payload["iso"]["size"] == len(b"iso-payload")
+        assert payload["kernel"]["nevra"] == \
+            "airymaxos-kernel-0.0.4-3.x86_64"
+        assert payload["notes_url"].startswith(rm.CHANNEL_DOMAIN)
+
+    def test_iso_digest_mismatch_fails_without_output(self, tmp_path, capsys):
+        repo = write_channel_repo(tmp_path)
+        (repo / "desktop" / "iso"
+         / "airymaxos-0.0.4.iso").write_bytes(b"ISO-PAYLOAD")
+        out = tmp_path / "channel.json"
+        rc = rm.main(["--channel", "--version", "0.0.4",
+                      "--repo-root", str(repo), "--output", str(out)])
+        assert rc == rm.EXIT_FAIL
+        assert "摘要" in capsys.readouterr().err
+        assert not out.exists()
+
+    def test_build_mismatch_fails(self, tmp_path, capsys):
+        repo = write_channel_repo(tmp_path)
+        rc = rm.main(["--channel", "--version", "0.0.4", "--build", "9",
+                      "--repo-root", str(repo)])
+        assert rc == rm.EXIT_FAIL
+        assert "构建号" in capsys.readouterr().err
+
+    def test_version_mismatch_fails(self, tmp_path, capsys):
+        repo = write_channel_repo(tmp_path)
+        rc = rm.main(["--channel", "--version", "0.0.5",
+                      "--repo-root", str(repo)])
+        assert rc == rm.EXIT_FAIL
+        assert "版本号" in capsys.readouterr().err
+
+    def test_missing_ledger_usage_error(self, tmp_path, capsys):
+        repo = make_repo(tmp_path / "repo")
+        rc = rm.main(["--channel", "--version", "0.0.4",
+                      "--repo-root", str(repo)])
+        assert rc == rm.EXIT_USAGE
+        assert "账本不存在" in capsys.readouterr().err
+
+    def test_requires_version(self, tmp_path, capsys):
+        rc = rm.main(["--channel", "--repo-root", str(tmp_path)])
+        assert rc == rm.EXIT_USAGE
+        assert "--version" in capsys.readouterr().err
+
+    def test_notes_url_outside_domain_usage_error(self, tmp_path, capsys):
+        repo = write_channel_repo(tmp_path)
+        rc = rm.main(["--channel", "--version", "0.0.4",
+                      "--repo-root", str(repo),
+                      "--notes-url", "https://evil.example/x"])
+        assert rc == rm.EXIT_USAGE
+        assert "notes_url" in capsys.readouterr().err
+
+    def test_ambiguous_kernel_rpm_usage_error(self, tmp_path, capsys):
+        repo = write_channel_repo(tmp_path)
+        (repo / "dist" / "rpm" / "x86_64"
+         / "airymaxos-kernel-0.0.5-4.x86_64.rpm").write_bytes(b"x")
+        rc = rm.main(["--channel", "--version", "0.0.4",
+                      "--repo-root", str(repo)])
+        assert rc == rm.EXIT_USAGE
+        assert "恰好一份" in capsys.readouterr().err
+
+
+class TestNevra:
+    def test_parse_splits_on_anchored_suffix(self):
+        nevra = rm.parse_nevra(
+            rm.Path("airymaxos-kernel-core-0.0.4-3.oe2403.x86_64.rpm"))
+        assert (nevra.name, nevra.version) == (
+            "airymaxos-kernel-core", "0.0.4")
+        assert nevra.build == 3
+        assert nevra.text() == \
+            "airymaxos-kernel-core-0.0.4-3.oe2403.x86_64"
+
+    def test_reject_non_rpm(self):
+        with pytest.raises(rm.ToolError):
+            rm.parse_nevra(rm.Path("kernel-0.0.4-3.x86_64.tar"))
+
+    def test_reject_non_numeric_release(self):
+        with pytest.raises(rm.ChannelMismatch):
+            rm.parse_nevra(rm.Path("pkg-1.0-rc1.x86_64.rpm")).build
 
 
 # ─── Real repository ───────────────────────────────────────────────────────
