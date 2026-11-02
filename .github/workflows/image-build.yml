@@ -244,6 +244,11 @@ jobs:
       - name: Verify session closure assets
         run: ci/ci.sh session-closure --source .
 
+      # 内置壁纸集合与台账同源：多一张是上游壁纸包漏进闭包，少一张是
+      # 注册表指向了不存在的文件，两种都只在桌面会话里表现为空背景。
+      - name: Verify wallpaper set
+        run: ci/ci.sh wallpaper-set --source .
+
       - name: Upload image artifacts
         if: always()
         uses: actions/upload-artifact@v4
