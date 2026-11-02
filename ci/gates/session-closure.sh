@@ -132,6 +132,48 @@ check_source()
     want_line "${saver}" 'lock-enabled=false' "screensaver-policy"
     want_line "${saver}" 'idle-lock-enabled=false' "screensaver-policy"
     want_text "${spec}" 'lock-enabled=false' "spec-check/screensaver"
+
+    # 展示名一处定义、多处派生：/etc/issue 首行、引导菜单、system-release
+    # 全部取自 PRETTY_NAME，改版只改 os-release 时其余落点必须跟着走。
+    brand_sso "${d}"
+}
+
+# brand_sso DIR —— 命名 SSoT 静态断言。
+#
+# PRETTY_NAME 是机器链的唯一展示串，形状固定为「ASCII 短名 + 空格 +
+# VERSION_ID」；NAME 可以含中文，但不能进入任何 ASCII-only 通道。派生点
+# 缺失或有人把完整展示串抄进配方，都说明出现了第二个事实源——那正是
+# 「展示名与账户名不一致」这类现场缺陷的来源。
+brand_sso()
+{
+    local d="$1"
+    local osrel="${d}/distro/release/os-release"
+    local spec="${d}/distro/specs/airymaxos-release.spec"
+    local iso="${d}/distro/scripts/build-iso.sh"
+    local pretty vid dist hits
+
+    [ -f "${osrel}" ] || { bad "brand/os-release: 缺少 ${osrel}"; return 0; }
+    pretty=$(sed -n 's/^PRETTY_NAME="\(.*\)"$/\1/p' "${osrel}")
+    vid=$(sed -n 's/^VERSION_ID="\(.*\)"$/\1/p' "${osrel}")
+    [ -n "${pretty}" ] || { bad "brand/os-release: 无 PRETTY_NAME"; return 0; }
+    [ -n "${vid}" ] || { bad "brand/os-release: 无 VERSION_ID"; return 0; }
+
+    dist="${pretty% *}"
+    if [ "${pretty}" != "${dist} ${vid}" ]; then
+        bad "brand/pretty-shape: PRETTY_NAME「${pretty}」不等于「${dist} ${vid}」"
+        return 0
+    fi
+    printf '%s' "${dist}" | LC_ALL=C grep -qxE '[ -~]+' ||
+        bad "brand/ascii: 短名「${dist}」含非 ASCII 或控制字符"
+
+    want_text "${iso}" 'PRETTY_NAME' "brand/build-iso"
+    want_text "${spec}" 'test "${airy_pretty}" = "${airy_dist} ${airy_vid}"' \
+        "brand/spec-invariant"
+
+    hits=$(grep -rIlF -- "${pretty}" "${d}/distro/scripts" \
+        "${d}/distro/specs" "${d}/distro/kickstart" \
+        "${d}/distro/desktop" "${d}/distro/ci" 2>/dev/null)
+    [ -z "${hits}" ] || bad "brand/dup-literal: 展示串被写死在 ${hits}"
 }
 
 # ---------------------------------------------------------------------------
