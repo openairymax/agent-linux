@@ -28,6 +28,7 @@ mkdir -p "${FX}/ci/gates" "${FX}/ci/lib" "${FX}/distro/lockfile" \
 cp "${GATE}" "${FX}/ci/gates/ukui-lock.sh"
 cp "${ROOT}/ci/lib/log.sh" "${FX}/ci/lib/log.sh"
 cp "${ROOT}/distro/lockfile/ukui_check.py" "${FX}/distro/lockfile/"
+cp "${ROOT}/distro/lockfile/lineyaml.py" "${FX}/distro/lockfile/"
 
 ok()
 {
@@ -63,7 +64,7 @@ check()
 ledger()
 {
     cat >"${FX}/distro/lockfile/ukui-components.yaml" <<'EOF'
-base: openEuler-24.03-LTS-SP2
+base: openEuler-24.03-LTS-SP3
 arch: x86_64
 segments:
   - OS
@@ -81,35 +82,35 @@ components:
   - name: ukui-kwin
     state: present
     segment: EPOL/main
-    nvra: ukui-kwin-0:1.0.5-8.oe2403sp2.x86_64
+    nvra: ukui-kwin-0:1.0.5-8.oe2403sp3.x86_64
   - name: ukui-panel
     state: present
     segment: EPOL/main
-    nvra: ukui-panel-0:3.1.0-14.oe2403sp2.x86_64
+    nvra: ukui-panel-0:3.1.0-14.oe2403sp3.x86_64
   - name: ukui-session-manager
     state: present
     segment: EPOL/main
-    nvra: ukui-session-manager-0:3.1.0-7.oe2403sp2.x86_64
+    nvra: ukui-session-manager-0:3.1.0-7.oe2403sp3.x86_64
   - name: ukui-control-center
     state: present
     segment: EPOL/main
-    nvra: ukui-control-center-0:3.1.2-33.oe2403sp2.x86_64
+    nvra: ukui-control-center-0:3.1.2-33.oe2403sp3.x86_64
   - name: ukui-menu
     state: present
     segment: EPOL/main
-    nvra: ukui-menu-0:3.1.1-14.oe2403sp2.x86_64
+    nvra: ukui-menu-0:3.1.1-14.oe2403sp3.x86_64
   - name: libpam-biometric
     state: present
     segment: EPOL/main
-    nvra: libpam-biometric-0:1.2.4-2.oe2403sp2.x86_64
+    nvra: libpam-biometric-0:1.2.4-2.oe2403sp3.x86_64
   - name: ukui-desktop-environment
     state: available
     segment: EPOL/main
-    nvra: ukui-desktop-environment-0:2.0.2-20.oe2403sp2.x86_64
+    nvra: ukui-desktop-environment-0:2.0.2-20.oe2403sp3.noarch
   - name: ukui
     state: available
     segment: EPOL/main
-    nvra: ukui-0:2.0.2-20.oe2403sp2.x86_64
+    nvra: ukui-0:2.0.2-20.oe2403sp3.noarch
   - name: ukui-shell
     state: absent
     segment: 五段均无
@@ -175,12 +176,12 @@ docs()
     {
         printf '# 差异清单\n\n'
         printf '| 组件 | NVRA |\n|---|---|\n'
-        printf '| kwin | `ukui-kwin-0:1.0.5-8.oe2403sp2.x86_64` |\n'
-        printf '| panel | `ukui-panel-0:3.1.0-14.oe2403sp2.x86_64` |\n'
-        printf '| session | `ukui-session-manager-0:3.1.0-7.oe2403sp2.x86_64` |\n'
-        printf '| ccc | `ukui-control-center-0:3.1.2-33.oe2403sp2.x86_64` |\n'
-        printf '| menu | `ukui-menu-0:3.1.1-14.oe2403sp2.x86_64` |\n'
-        printf '| bio | `libpam-biometric-0:1.2.4-2.oe2403sp2.x86_64` |\n\n'
+        printf '| kwin | `ukui-kwin-0:1.0.5-8.oe2403sp3.x86_64` |\n'
+        printf '| panel | `ukui-panel-0:3.1.0-14.oe2403sp3.x86_64` |\n'
+        printf '| session | `ukui-session-manager-0:3.1.0-7.oe2403sp3.x86_64` |\n'
+        printf '| ccc | `ukui-control-center-0:3.1.2-33.oe2403sp3.x86_64` |\n'
+        printf '| menu | `ukui-menu-0:3.1.1-14.oe2403sp3.x86_64` |\n'
+        printf '| bio | `libpam-biometric-0:1.2.4-2.oe2403sp3.x86_64` |\n\n'
         printf '```sh\ndnf -q repoquery --repo=epol "ukui-*"\n```\n'
     } >"${DOC}/ukui-delta.md"
     cat >"${DOC}/ukui-424-feasibility.md" <<'EOF'
@@ -192,8 +193,22 @@ docs()
 EOF
 }
 
+base()
+{
+    cat >"${FX}/distro/lockfile/base.yaml" <<'EOF'
+deadline: 2027-09-17
+selected: openEuler-24.03-LTS-SP3
+arch: x86_64
+kernel_line: 6.6
+policy:
+  kind: large-sp-only
+  eol-covers: 2027-09-17
+EOF
+}
+
 mkfix()
 {
+    base
     ledger
     comps
     seeds
@@ -223,10 +238,21 @@ check "缺少校验器退 5" 5 "$?" "${out}" "缺少校验器"
 mv "${tmp}/ukui_check.py" "${FX}/distro/lockfile/ukui_check.py"
 
 mkfix
-sed -i 's/^base: .*/base: openEuler-24.03-LTS-SP3/' \
+rm -f "${FX}/distro/lockfile/base.yaml"
+out="$(run --source "${FX}")"
+check "缺少基底台账判拒绝" 1 "$?" "${out}" "schema/base-missing"
+
+mkfix
+sed -i 's/^base: .*/base: openEuler-24.03-LTS-SP2/' \
     "${FX}/distro/lockfile/ukui-components.yaml"
 out="$(run --source "${FX}")"
 check "基底版本漂移判拒绝" 1 "$?" "${out}" "schema/base"
+
+mkfix
+sed -i 's/^    nvra: ukui-panel-0:3.1.0-14.oe2403sp3/    nvra: ukui-panel-0:3.1.0-14.oe2403sp2/' \
+    "${FX}/distro/lockfile/ukui-components.yaml"
+out="$(run --source "${FX}")"
+check "NVRA 发行标记漂移判拒绝" 1 "$?" "${out}" "ledger/tag"
 
 mkfix
 sed -i 's/^  generation: .*/  generation: 4.24/' \

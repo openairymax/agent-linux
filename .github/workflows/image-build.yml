@@ -34,7 +34,7 @@
 #     避免 runner 形态变化导致 job 被中途取消。
 #   * 源码以只读方式挂载进构建容器，产物只落 $RUNNER_TEMP/out，不违反
 #     「严禁在 airymaxhub 源码区内构建」。
-#   * ISO 基线固定为 openEuler 24.03-LTS-SP2 netinst，容器镜像取官方
+#   * ISO 基线固定为 openEuler 24.03-LTS-SP3 netinst，容器镜像取官方
 #     docker_img tar；URL 与 sha256 同时写死，禁止浮动 latest。
 #   * 官方源是跨洋链路，实测单件 ISO 需 43 分钟。介质目录按摘要键缓存，
 #     命中即跳过下载；未命中时总预算 5400 秒、每项保底 900 秒，避免先下
@@ -83,10 +83,10 @@ permissions:
   packages: write
 
 env:
-  OE_ISO_NAME: openEuler-24.03-LTS-SP2-netinst-x86_64-dvd.iso
-  OE_ISO_SHA256: 291c1a2ad7ceb74e2b5308ca58f8aaa0206a0520c39145792af08f8adbbb6199
+  OE_ISO_NAME: openEuler-24.03-LTS-SP3-netinst-x86_64-dvd.iso
+  OE_ISO_SHA256: 808aa41bb0b25bb56768c550625bec9e4982094b8d4024be64fa0c6517e22900
   OE_IMG_NAME: openEuler-docker.x86_64.tar.xz
-  OE_IMG_SHA256: c152f7cf7e6966dcf5819890db5f277a303d462c2982e423d5935b33a47d6a05
+  OE_IMG_SHA256: 0d3075e9d9f996726b9a7936593b2e00c96fd916aac3609f867342911664f1c5
   # 镜像只按 sha256 认定，源可替换：官方源跨洋链路曾整段停滞（run
   # 39543892713 在 Fetch 卡满 55 分钟），国内镜像作等价回退，摘要不符即弃。
   # 镜像根的唯一声明处是 distro/repo/mirrors.list，media-fetch.sh 与闭包
@@ -248,6 +248,12 @@ jobs:
       # 注册表指向了不存在的文件，两种都只在桌面会话里表现为空背景。
       - name: Verify wallpaper set
         run: ci/ci.sh wallpaper-set --source .
+
+      # 基底选型以 lockfile/base.yaml 为唯一事实源：只取大 SP、EOL 覆盖
+      # 收口日、合格候选里 GA 最晚。仓库地址、%oe_base、安装配方任一落伍
+      # 都会让装机闭包与冻结集分叉，而 dnf 只会在装机现场报缺仓库。
+      - name: Verify openEuler base selection
+        run: ci/ci.sh base-eol --source .
 
       # UKUI 包名与 NVRA 以台账为唯一事实源：基底不存在 ukui 元包，comps
       # 或冻结输入一旦再写出它，装机求解必然失败，而这一步只读台账与
