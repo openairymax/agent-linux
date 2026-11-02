@@ -103,11 +103,13 @@ components:
     segment: EPOL/main
     nvra: ukui-biometric-auth-0:1.2.4-2.oe2403sp2.x86_64
   - name: ukui-desktop-environment
-    state: absent
-    segment: 五段均无
+    state: available
+    segment: EPOL/main
+    nvra: ukui-desktop-environment-0:2.0.2-20.oe2403sp2.x86_64
   - name: ukui
-    state: absent
-    segment: 五段均无
+    state: available
+    segment: EPOL/main
+    nvra: ukui-0:2.0.2-20.oe2403sp2.x86_64
   - name: ukui-shell
     state: absent
     segment: 五段均无
@@ -266,6 +268,18 @@ mkfix
 sed -i '\|  - ukui-menu$|d' "${FX}/distro/lockfile/rpms.in.yaml"
 out="$(run --source "${FX}")"
 check "默认安装集未冻结判拒绝" 1 "$?" "${out}" "seeds/missing"
+
+mkfix
+sed -i '/name: ukui-desktop-environment/,/nvra:/{s/state: available/state: present/}' \
+    "${FX}/distro/lockfile/ukui-components.yaml"
+out="$(run --source "${FX}")"
+check "元包被选进闭包判拒绝" 1 "$?" "${out}" "ledger/available"
+
+mkfix
+sed -i '/name: ukui-shell/,/segment:/{s/state: absent/state: available/}' \
+    "${FX}/distro/lockfile/ukui-components.yaml"
+out="$(run --source "${FX}")"
+check "不存在的包被登记为可用判拒绝" 1 "$?" "${out}" "ledger/absent"
 
 mkfix
 sed -i 's/^  - ukui-menu$/  - ukui-menu\n  - ukui-shell/' \
