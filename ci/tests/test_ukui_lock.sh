@@ -98,10 +98,10 @@ components:
     state: present
     segment: EPOL/main
     nvra: ukui-menu-0:3.1.1-14.oe2403sp2.x86_64
-  - name: ukui-biometric-auth
+  - name: libpam-biometric
     state: present
     segment: EPOL/main
-    nvra: ukui-biometric-auth-0:1.2.4-2.oe2403sp2.x86_64
+    nvra: libpam-biometric-0:1.2.4-2.oe2403sp2.x86_64
   - name: ukui-desktop-environment
     state: available
     segment: EPOL/main
@@ -139,7 +139,7 @@ comps()
   <group>
     <id>airymax-desktop-extras</id>
     <packagelist>
-      <packagereq type="optional">ukui-biometric-auth</packagereq>
+      <packagereq type="optional">libpam-biometric</packagereq>
     </packagelist>
   </group>
   <environment>
@@ -180,7 +180,7 @@ docs()
         printf '| session | `ukui-session-manager-0:3.1.0-7.oe2403sp2.x86_64` |\n'
         printf '| ccc | `ukui-control-center-0:3.1.2-33.oe2403sp2.x86_64` |\n'
         printf '| menu | `ukui-menu-0:3.1.1-14.oe2403sp2.x86_64` |\n'
-        printf '| bio | `ukui-biometric-auth-0:1.2.4-2.oe2403sp2.x86_64` |\n\n'
+        printf '| bio | `libpam-biometric-0:1.2.4-2.oe2403sp2.x86_64` |\n\n'
         printf '```sh\ndnf -q repoquery --repo=epol "ukui-*"\n```\n'
     } >"${DOC}/ukui-delta.md"
     cat >"${DOC}/ukui-424-feasibility.md" <<'EOF'
