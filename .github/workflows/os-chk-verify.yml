@@ -83,6 +83,13 @@ jobs:
       - name: Distro submodule static gates
         run: ci/ci.sh distro-lint
 
+      # I-29：网络是装机验收的第一道门禁——网络不通时桌面、驱动、取证各项
+      # 都退化成「无法判定」而不是「不合格」。这里的声明面不依赖镜像根，
+      # 与 distro-lint 同源判定；实物面（--root）与联机面（--live）在装机
+      # 后由验收脚本调用。
+      - name: Network bring-up static gates
+        run: ci/ci.sh net-online
+
       # 依赖、pytest 与 os_chk.py --check 三步收进 ci/gates/python-verify.sh
       # 的 oschk 分支：此前 10 份依赖清单在本文件里各写一遍，本地无法复现，
       # 改动后只能在云端验证。现在 runner 与开发者跑的是同一条命令。
