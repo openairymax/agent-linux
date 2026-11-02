@@ -141,6 +141,10 @@ check_source()
     # airymaxos，只能靠 sysctl.d 在内核层写回；0.0.4 由安装器直接落盘，
     # 回写链整体删除。
     host_sso "${d}"
+
+    # 账户名一处定义、多处派生：0.0.3 的现场缺陷正是三处资产账户名不一致，
+    # 桌面永远等不到自动登录的用户。
+    acct_sso "${d}"
 }
 
 # brand_sso DIR —— 命名 SSoT 静态断言。
@@ -206,6 +210,43 @@ host_sso()
 
     [ ! -e "${d}/distro/boot/99-airymax-hostname.conf" ] ||
         bad "host/sysctl-dropin: 内核层回写文件不应存在"
+}
+
+# acct_sso DIR —— 交付账户名一处定义、多处派生。
+#
+# 账户名只在工作站配方的 user --name= 定义；最小剖面、座位、sudo 唯一规则、
+# spec %check 与配方 %post 全部同值。0.0.3 的现场缺陷正是三处资产账户名
+# 不一致，桌面永远等不到自动登录的用户，而这一点在装机现场只表现为
+# 「登录界面停住」。名必须是小写：大写名依赖各基底 NAME_REGEX 与大小写
+# 敏感文件系统的策略，家目录可能因此与账户自身分叉。
+acct_sso()
+{
+    local d="$1"
+    local ws="${d}/distro/kickstart/airymaxos-workstation.ks"
+    local min="${d}/distro/kickstart/airymaxos-minimal.ks"
+    local seat="${d}/distro/desktop/lightdm/50-airymax.conf"
+    local sudoers="${d}/distro/login/90-airymax-sudoers"
+    local spec="${d}/distro/specs/airymaxos-release.spec"
+    local name
+
+    [ -f "${ws}" ] || { bad "acct/kickstart-ws: 缺少 ${ws}"; return 0; }
+    name=$(sed -n 's/^user --name=\([^ ]*\).*/\1/p' "${ws}")
+    [ -n "${name}" ] || {
+        bad "acct/kickstart-name: ${ws} 无 user --name= 事实源"
+        return 0
+    }
+    printf '%s' "${name}" | LC_ALL=C grep -qxE '[a-z][a-z0-9]+' || {
+        bad "acct/name-lower: 账户名「${name}」不是小写标签"
+        return 0
+    }
+
+    want_text "${min}" "user --name=${name} " "acct/kickstart-min"
+    want_text "${ws}" "passwd -d ${name}" "acct/kickstart-unlock"
+    want_text "${ws}" "usermod -aG nopasswdlogin ${name}" "acct/kickstart-group"
+    want_line "${seat}" "autologin-user=${name}" "acct/seat"
+    want_line "${sudoers}" "${name} ALL=(ALL) NOPASSWD: ALL" "acct/sudoers"
+    want_text "${spec}" "session.autologin=${name}" "acct/spec-autologin"
+    want_text "${spec}" "autologin-user=${name}" "acct/spec-seat"
 }
 
 # ---------------------------------------------------------------------------
