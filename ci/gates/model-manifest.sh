@@ -68,7 +68,8 @@ check_unit()
     for want in 'ExecStart=/usr/bin/airy-model serve' \
                 'User=airy' \
                 'StateDirectory=airy-llm' \
-                'PartOf=agentrt.target'; do
+                'PartOf=agentrt.target' \
+                'ConditionPathExists=/var/lib/airy-llm/manifest.json'; do
         grep -qxF "${want}" "${UNIT}" ||
             die "单元缺少契约行: ${want}"
     done
