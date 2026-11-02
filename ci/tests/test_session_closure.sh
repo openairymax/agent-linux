@@ -25,8 +25,8 @@ fails=0
 FX="${tmp}/fx"
 mkdir -p "${FX}/ci/gates" "${FX}/ci/lib" \
     "${FX}/distro/kickstart" "${FX}/distro/specs" "${FX}/distro/desktop" \
-    "${FX}/distro/boot" "${FX}/distro/login" "${FX}/distro/release" \
-    "${FX}/distro/scripts"
+    "${FX}/distro/desktop/lightdm" "${FX}/distro/boot" "${FX}/distro/login" \
+    "${FX}/distro/release" "${FX}/distro/scripts"
 cp "${GATE}" "${FX}/ci/gates/session-closure.sh"
 cp "${ROOT}/ci/lib/log.sh" "${FX}/ci/lib/log.sh"
 
@@ -74,6 +74,9 @@ ks()
     w kickstart/airymaxos-workstation.ks <<EOF
 network --bootproto=dhcp --activate --hostname=airymax-pc
 [ "\$(cat /etc/hostname)" = airymax-pc ] || exit 1
+user --name=amuser --groups=wheel
+passwd -d amuser
+usermod -aG nopasswdlogin amuser
 printf 'user-db:user\\\\nsystem-db:local\\\\n' >"\${profile}"
 dconf update
 chmod 4755 "\${checkpass}"
@@ -84,6 +87,24 @@ efi_brand.sh --esp /boot/efi
 EOF
     w kickstart/airymaxos-minimal.ks <<EOF
 network --bootproto=dhcp --activate --hostname=airymax-pc
+user --name=amuser --groups=wheel
+EOF
+}
+
+# 账户名的两处派生点：座位与 sudo 唯一规则。
+seat()
+{
+    w desktop/lightdm/50-airymax.conf <<'EOF'
+[Seat:*]
+user-session=ukui
+autologin-user=amuser
+EOF
+}
+
+sudo()
+{
+    w login/90-airymax-sudoers <<'EOF'
+amuser ALL=(ALL) NOPASSWD: ALL
 EOF
 }
 
@@ -95,6 +116,8 @@ grep -qxF 'lock-enabled=false' "\${airy_saver}"
 printf '%s\n' "\${airy_grub}" | grep -qxF '  set gfxmode=${GFXMODE}'
 printf '%s\n' "\${airy_grub}" | grep -qxF '  set gfxpayload=keep'
 test "\${airy_pretty}" = "\${airy_dist} \${airy_vid}"
+grep -qxF 'AIRYMAX-OS session.autologin=amuser'
+grep -qxF 'autologin-user=amuser'
 EOF
 }
 
@@ -167,6 +190,8 @@ mkfix()
     rm -f "${FX}/distro/boot/99-airymax-hostname.conf"
     ks
     spec
+    seat
+    sudo
     frag
     brand
     mode
@@ -363,6 +388,33 @@ printf 'kernel.hostname = AIRYMAX_PC\n' \
     >"${FX}/distro/boot/99-airymax-hostname.conf"
 out="$(run --source "${FX}")"
 check "内核层回写文件复活判拒绝" 1 "$?" "${out}" "host/sysctl-dropin"
+
+# 账户名 SSoT：唯一事实源在小写 user --name=，座位、sudo 规则、最小剖面
+# 与 spec 全部同值。大写名会重新引入 NAME_REGEX 与大小写文件系统的分歧。
+mkfix
+sed -i 's/autologin-user=amuser/autologin-user=olduser/' \
+    "${FX}/distro/desktop/lightdm/50-airymax.conf"
+out="$(run --source "${FX}")"
+check "座位账户名与配方不一致判拒绝" 1 "$?" "${out}" "acct/seat"
+
+mkfix
+sed -i 's/user --name=amuser/user --name=Airymax/' \
+    "${FX}/distro/kickstart/airymaxos-workstation.ks"
+out="$(run --source "${FX}")"
+check "大写账户名回潮判拒绝" 1 "$?" "${out}" "acct/name-lower"
+
+mkfix
+sed -i 's/user --name=amuser/user --name=olduser/' \
+    "${FX}/distro/kickstart/airymaxos-minimal.ks"
+out="$(run --source "${FX}")"
+check "最小剖面账户名漏改判拒绝" 1 "$?" "${out}" \
+    "acct/kickstart-min"
+
+mkfix
+sed -i 's/^amuser ALL/olduser ALL/' \
+    "${FX}/distro/login/90-airymax-sudoers"
+out="$(run --source "${FX}")"
+check "sudo 规则账户名漏改判拒绝" 1 "$?" "${out}" "acct/sudoers"
 
 mkfix
 out="$(run --root "${ROOTDIR}")"

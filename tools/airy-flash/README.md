@@ -261,7 +261,7 @@ AirymaxOS 烧录工具 0.0.3  (write)
   1. 安全弹出 U 盘，插入目标机，开机按 F12/F11/Esc 选择该 U 盘
   2. UEFI 固件请选带 UEFI 前缀的条目；BIOS 模式直接选 USB 设备
   3. 装机后核对：hostname=airymax-pc，uname -r 以 "-alk" 结尾
-  4. 核对登录策略：Airymax 本地/SSH 免密，root 口令 00000000
+  4. 核对登录策略：amuser 本地/SSH 免密，root 口令 00000000
 
 AIRY-FLASH-PASS command=write host=airymax-build image=/path/airymaxos-0.0.3-x86_64.iso sha256=1a2b…7a8b device=/dev/sdb
 ```
@@ -296,7 +296,7 @@ AIRY-FLASH-PASS command=write host=airymax-build image=/path/airymaxos-0.0.3-x86
 | 主机名 | `hostnamectl --static` | `airymax-pc`（合法 RFC 1123 标签，由安装器直接落盘） |
 | 内核归属 | `uname -r` | 以 `-alk` 结尾（Airymax Linux Kernel） |
 | 品牌 | `cat /etc/os-release` | `PRETTY_NAME="OpenAirymax 0.0.4"`、`VERSION_ID="0.0.4"` |
-| 用户免密 | `su - Airymax -c true`、SSH 以 `Airymax` 登录 | 均不提示口令 |
+| 用户免密 | `su - amuser -c true`、SSH 以 `amuser` 登录 | 均不提示口令 |
 | root 口令 | `ssh root@<host>` | 口令 `00000000` |
 | 桌面 | 图形会话 | 进入 UKUI 桌面，无回退到文本控制台 |
 | 桌面就绪 | `journalctl -b \| grep AIRYMAX-DESKTOP-READY` | 有该标记 |
