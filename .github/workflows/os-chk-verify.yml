@@ -83,6 +83,11 @@ jobs:
       - name: Distro submodule static gates
         run: ci/ci.sh distro-lint
 
+      # K-21：入口、单元启动面与离线资产通道的 0/10/1 契约在同一处判定。
+      # 配方漏交付单元这类缺口此前要打完镜像、装完系统才发现。
+      - name: Local model asset channel gates
+        run: ci/ci.sh model-manifest
+
       # I-29：网络是装机验收的第一道门禁——网络不通时桌面、驱动、取证各项
       # 都退化成「无法判定」而不是「不合格」。这里的声明面不依赖镜像根，
       # 与 distro-lint 同源判定；实物面（--root）与联机面（--live）在装机
