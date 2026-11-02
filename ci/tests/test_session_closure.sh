@@ -72,6 +72,8 @@ w()
 ks()
 {
     w kickstart/airymaxos-workstation.ks <<EOF
+network --bootproto=dhcp --activate --hostname=airymax-pc
+[ "\$(cat /etc/hostname)" = airymax-pc ] || exit 1
 printf 'user-db:user\\\\nsystem-db:local\\\\n' >"\${profile}"
 dconf update
 chmod 4755 "\${checkpass}"
@@ -79,6 +81,9 @@ printf 'auth\tsufficient\tpam_succeed_if.so user ingroup nopasswdlogin\n' >>"\${
 printf 'GRUB_GFXPAYLOAD_LINUX=keep\n' >>/etc/default/grub
 grep -qxF '  set gfxpayload=keep' "\${grub_cfg}"
 efi_brand.sh --esp /boot/efi
+EOF
+    w kickstart/airymaxos-minimal.ks <<EOF
+network --bootproto=dhcp --activate --hostname=airymax-pc
 EOF
 }
 
@@ -159,6 +164,7 @@ saver()
 
 mkfix()
 {
+    rm -f "${FX}/distro/boot/99-airymax-hostname.conf"
     ks
     spec
     frag
@@ -329,6 +335,34 @@ mkfix
 printf '#!/bin/sh\n' >"${FX}/distro/scripts/build-iso.sh"
 out="$(run --source "${FX}")"
 check "构建脚本不派生展示名判拒绝" 1 "$?" "${out}" "brand/build-iso"
+
+# 主机名：两个剖面都必须交给安装器落盘，%post 只读回；旧下划线名与
+# sysctl.d 回写链都是 0.0.3 的缺陷形态，任一残留即判拒绝。
+mkfix
+sed -i 's/--hostname=airymax-pc/--hostname=AIRYMAX_PC/' \
+    "${FX}/distro/kickstart/airymaxos-workstation.ks"
+out="$(run --source "${FX}")"
+check "主机名回退到下划线旧名判拒绝" 1 "$?" "${out}" \
+    "host/ws-underscore"
+
+mkfix
+sed -i '/--hostname=airymax-pc/d' \
+    "${FX}/distro/kickstart/airymaxos-minimal.ks"
+out="$(run --source "${FX}")"
+check "最小剖面缺主机名判拒绝" 1 "$?" "${out}" "host/kickstart-min"
+
+mkfix
+sed -i '/cat \/etc\/hostname/d' \
+    "${FX}/distro/kickstart/airymaxos-workstation.ks"
+out="$(run --source "${FX}")"
+check "工作站剖面缺读回校验判拒绝" 1 "$?" "${out}" \
+    "host/kickstart-readback"
+
+mkfix
+printf 'kernel.hostname = AIRYMAX_PC\n' \
+    >"${FX}/distro/boot/99-airymax-hostname.conf"
+out="$(run --source "${FX}")"
+check "内核层回写文件复活判拒绝" 1 "$?" "${out}" "host/sysctl-dropin"
 
 mkfix
 out="$(run --root "${ROOTDIR}")"
