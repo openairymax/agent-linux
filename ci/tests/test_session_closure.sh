@@ -118,6 +118,9 @@ mode()
 {
     w desktop/display_mode.sh <<'EOF'
 LADDER="2880x1800 2560x1600 2240x1400 1920x1200 1920x1080"
+if (match($0, /[0-9]+mm x [0-9]+mm/)) {
+    edid = 1
+}
 EOF
 }
 
@@ -251,6 +254,24 @@ brand
 sed -i '/EFI\/airymaxos/d' "${FX}/distro/boot/efi_brand.sh"
 out="$(run --source "${FX}")"
 check "品牌副本目标缺失判拒绝" 1 "$?" "${out}" "brand-copy/target"
+
+# G-02：机型上限常数、EDID 判定、阶梯三条各自独立，缺任一条都会让策略
+# 退回「按某一台机器定分辨率」的形态。夹具先回到合规态，只破坏一条。
+mkfix
+printf 'CAP_W=2880\nCAP_H=1800\n' >>"${FX}/distro/desktop/display_mode.sh"
+out="$(run --source "${FX}")"
+check "机型上限常数判拒绝" 1 "$?" "${out}" "display-mode/no-cap"
+
+mkfix
+sed -i '/mm x /d' "${FX}/distro/desktop/display_mode.sh"
+out="$(run --source "${FX}")"
+check "缺 EDID 判定判拒绝" 1 "$?" "${out}" "display-mode/edid-probe"
+
+mkfix
+sed -i 's/^LADDER=.*/LADDER="1920x1080 1280x720"/' \
+    "${FX}/distro/desktop/display_mode.sh"
+out="$(run --source "${FX}")"
+check "阶梯缺高分段判拒绝" 1 "$?" "${out}" "display-mode/ladder"
 
 saver
 sed -i 's/^lock-enabled=false$/lock-enabled=true/' \

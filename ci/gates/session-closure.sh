@@ -76,6 +76,12 @@ want_text() { # want_text <文件> <固定串> <判据名>
     bad "$3: $1 不含「$2」"
 }
 
+want_absent() { # want_absent <文件> <扩展正则> <判据名>
+    [ -f "$1" ] || { bad "$3: 缺少 $1"; return 0; }
+    grep -qE -- "$2" "$1" || return 0
+    bad "$3: $1 含禁止的「$2」"
+}
+
 # ---------------------------------------------------------------------------
 # 仓库静态闭包
 # ---------------------------------------------------------------------------
@@ -114,8 +120,13 @@ check_source()
     want_text "${brand}" 'EFI/airymaxos' "brand-copy/target"
     want_text "${brand}" 'grub.cfg' "brand-copy/payload"
 
-    # 显示策略上限必须覆盖 285H 原生面板，否则 xrandr 收敛仍会压到 1080p。
-    want_text "${mode}" '2880x1800' "display-mode/ladder"
+    # 显示策略上限必须由 EDID 推导，不得回落成机型绑定值（G-02）。
+    # CAP_W=/CAP_H= 是 0.0.3 按 285H 定上限的形态，一旦重新出现，别的面板
+    # 都会被这个常数压掉；EDID 判定与阶梯是替代它的两条事实来源。
+    want_absent "${mode}" 'CAP_[WH]=' "display-mode/no-cap"
+    want_text "${mode}" 'mm x [0-9]+mm' "display-mode/edid-probe"
+    want_text "${mode}" 'LADDER="2880x1800 2560x1600 2240x1400' \
+        "display-mode/ladder"
 
     # 策略源本身与 spec 的键断言：任一被改回 true 都只在装机现场可见。
     want_line "${saver}" 'lock-enabled=false' "screensaver-policy"
