@@ -25,7 +25,8 @@ fails=0
 FX="${tmp}/fx"
 mkdir -p "${FX}/ci/gates" "${FX}/ci/lib" \
     "${FX}/distro/kickstart" "${FX}/distro/specs" "${FX}/distro/desktop" \
-    "${FX}/distro/boot" "${FX}/distro/login"
+    "${FX}/distro/boot" "${FX}/distro/login" "${FX}/distro/release" \
+    "${FX}/distro/scripts"
 cp "${GATE}" "${FX}/ci/gates/session-closure.sh"
 cp "${ROOT}/ci/lib/log.sh" "${FX}/ci/lib/log.sh"
 
@@ -88,6 +89,24 @@ spec()
 grep -qxF 'lock-enabled=false' "\${airy_saver}"
 printf '%s\n' "\${airy_grub}" | grep -qxF '  set gfxmode=${GFXMODE}'
 printf '%s\n' "\${airy_grub}" | grep -qxF '  set gfxpayload=keep'
+test "\${airy_pretty}" = "\${airy_dist} \${airy_vid}"
+EOF
+}
+
+# 命名 SSoT 的两处派生点：构建脚本读 PRETTY_NAME，配方自证同一条不变式。
+osrel()
+{
+    w release/os-release <<'EOF'
+NAME="OpenAirymax 开源极境"
+VERSION_ID="0.0.4"
+PRETTY_NAME="OpenAirymax 0.0.4"
+EOF
+}
+
+iso()
+{
+    w scripts/build-iso.sh <<'EOF'
+pretty=$(sed -n 's/^PRETTY_NAME="\(.*\)"$/\1/p' "${osrel}")
 EOF
 }
 
@@ -146,6 +165,8 @@ mkfix()
     brand
     mode
     saver
+    osrel
+    iso
 }
 
 ROOTDIR="${tmp}/root"
@@ -278,6 +299,36 @@ sed -i 's/^lock-enabled=false$/lock-enabled=true/' \
     "${FX}/distro/login/00-airymax-screensaver"
 out="$(run --source "${FX}")"
 check "策略源键为 true 判拒绝" 1 "$?" "${out}" "screensaver-policy"
+
+# 命名 SSoT：PRETTY_NAME 形状、ASCII 纯度、派生点存在、无第二事实源。
+mkfix
+w release/os-release <<'EOF'
+NAME="OpenAirymax 开源极境"
+VERSION_ID="0.0.4"
+PRETTY_NAME="OpenAirymax"
+EOF
+out="$(run --source "${FX}")"
+check "展示名缺版本号判拒绝" 1 "$?" "${out}" "brand/pretty-shape"
+
+mkfix
+w release/os-release <<'EOF'
+NAME="OpenAirymax 开源极境"
+VERSION_ID="0.0.4"
+PRETTY_NAME="开源极境 0.0.4"
+EOF
+out="$(run --source "${FX}")"
+check "非 ASCII 展示名判拒绝" 1 "$?" "${out}" "brand/ascii"
+
+mkfix
+printf '  menu label Install OpenAirymax 0.0.4\n' \
+    >>"${FX}/distro/kickstart/airymaxos-workstation.ks"
+out="$(run --source "${FX}")"
+check "展示串写死在配方判拒绝" 1 "$?" "${out}" "brand/dup-literal"
+
+mkfix
+printf '#!/bin/sh\n' >"${FX}/distro/scripts/build-iso.sh"
+out="$(run --source "${FX}")"
+check "构建脚本不派生展示名判拒绝" 1 "$?" "${out}" "brand/build-iso"
 
 mkfix
 out="$(run --root "${ROOTDIR}")"
