@@ -82,6 +82,19 @@ want_absent() { # want_absent <文件> <扩展正则> <判据名>
     bad "$3: $1 含禁止的「$2」"
 }
 
+# console_count FILE WANT NAME —— bootloader 追加行的 console= 项数。
+#
+# 控制台集合按架构展开后就是定值；项数漂移只有两种来路：把别的架构的
+# 控制台抄进来，或有人追加了第三条。两者都会让「最后注册者路由
+# /dev/console」不可读，因此在静态闭包阶段就按计数断言。
+console_count() { # console_count <文件> <期望项数> <判据名>
+    local line n
+    line=$(sed -n 's/^bootloader .*--append="\([^"]*\)".*/\1/p' "$1" | head -n 1)
+    [ -n "${line}" ] || { bad "$3: $1 无 bootloader --append"; return 0; }
+    n=$(printf '%s\n' "${line}" | tr ' ' '\n' | grep -c '^console=')
+    [ "${n}" -eq "$2" ] || bad "$3: console= 计数 ${n} != $2"
+}
+
 # ---------------------------------------------------------------------------
 # 仓库静态闭包
 # ---------------------------------------------------------------------------
@@ -89,6 +102,7 @@ check_source()
 {
     local d="$1"
     local ks="${d}/distro/kickstart/airymaxos-workstation.ks"
+    local min="${d}/distro/kickstart/airymaxos-minimal.ks"
     local spec="${d}/distro/specs/airymaxos-release.spec"
     local mode="${d}/distro/desktop/display_mode.sh"
     local frag="${d}/distro/desktop/01_airymax_display"
@@ -112,6 +126,16 @@ check_source()
     want_text "${frag}" "${GFXMODE}" "grub-fragment/gfxmode"
     want_text "${spec}" 'set gfxpayload=keep' "spec-check/gfxpayload"
     want_text "${spec}" "${GFXMODE}" "spec-check/gfxmode"
+
+    # 控制台集合按架构收敛（D-05）：本产品配方只产 x86_64，命令行就是
+    # tty0 + ttyS0。0.0.3 把 ARM64 的 ttyAMA0 抄进来，无该设备的机器上
+    # console= 会注册成幽灵项，systemd-vconsole-setup 随之失败；三项
+    # console= 也让「最后一项路由 /dev/console」的语义不可读。
+    want_absent "${ks}" 'console=ttyAMA0' "kickstart/console-arch"
+    want_absent "${min}" 'console=ttyAMA0' "kickstart-min/console-arch"
+    want_absent "${spec}" 'ttyAMA0' "spec-check/console-arch"
+    console_count "${ks}" 2 "kickstart/console-count"
+    console_count "${min}" 2 "kickstart-min/console-count"
 
     # 活动配置副本（D-07）：NVRAM 走 EFI/airymaxos，mkconfig 只写
     # EFI/openEuler，不同步品牌副本则改了完全不生效。判据落在「谁把
