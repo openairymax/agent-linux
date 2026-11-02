@@ -93,6 +93,11 @@ jobs:
       - name: Accelerator probe output gates
         run: ci/ci.sh llm-accel
 
+      # K-23：断网自检的退出码、逐项结论与阻塞语义，以及单元在缺清单时
+      # 跳过启动的条件。自检给不出归因要等装机后才暴露，代价最高。
+      - name: Offline self-test gates
+        run: ci/ci.sh llm-offline
+
       # I-29：网络是装机验收的第一道门禁——网络不通时桌面、驱动、取证各项
       # 都退化成「无法判定」而不是「不合格」。这里的声明面不依赖镜像根，
       # 与 distro-lint 同源判定；实物面（--root）与联机面（--live）在装机
