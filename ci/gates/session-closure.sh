@@ -24,6 +24,9 @@
 set -uo pipefail
 
 readonly EINVAL=5
+# 候选串是 GRUB 与 spec 的共同事实源：降序并集之后必须以 auto 兜底。
+# 两侧只比前缀的话，改动末位兜底不会被发现，故按整串逐字比对。
+readonly GFXMODE='2880x1800,2560x1600,2240x1400,1920x1200,1920x1080,1680x1050,1600x900,1280x1024,1024x768,auto'
 # shellcheck source=../lib/log.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/log.sh"
 
@@ -38,12 +41,18 @@ usage()
 EOF
 }
 
+need_dir()
+{
+    [ -n "$2" ] || { err "$1 需要目录路径"; exit "${EINVAL}"; }
+    [ -d "$2" ] || { err "$1 目录不存在: $2"; exit "${EINVAL}"; }
+}
+
 while [ "$#" -gt 0 ]; do
     case "$1" in
-        --source) SOURCE="${2:-}"; shift 2 ;;
-        --root)   ROOT="${2:-}"; shift 2 ;;
+        --source) need_dir "$1" "${2:-}"; SOURCE="$2"; shift 2 ;;
+        --root)   need_dir "$1" "${2:-}"; ROOT="$2"; shift 2 ;;
         -h|--help) usage; exit 0 ;;
-        *) die "未知参数: $1" ;;
+        *) err "未知参数: $1"; exit "${EINVAL}" ;;
     esac
 done
 
@@ -77,6 +86,7 @@ check_source()
     local spec="${d}/distro/specs/airymaxos-release.spec"
     local mode="${d}/distro/desktop/display_mode.sh"
     local frag="${d}/distro/desktop/01_airymax_display"
+    local brand="${d}/distro/boot/efi_brand.sh"
     local saver="${d}/distro/login/00-airymax-screensaver"
 
     say "静态闭包 ${d}"
@@ -93,13 +103,18 @@ check_source()
     want_text "${ks}" 'GRUB_GFXPAYLOAD_LINUX=keep' "kickstart/gfxpayload"
     want_text "${ks}" 'set gfxpayload=keep' "kickstart/gfxpayload-cfg"
     want_text "${frag}" 'set gfxpayload=keep' "grub-fragment/gfxpayload"
-    want_text "${frag}" '2880x1800,2560x1600,2240x1400' "grub-fragment/gfxmode"
+    want_text "${frag}" "${GFXMODE}" "grub-fragment/gfxmode"
     want_text "${spec}" 'set gfxpayload=keep' "spec-check/gfxpayload"
-    want_text "${spec}" '2880x1800,2560x1600,2240x1400' "spec-check/gfxmode"
+    want_text "${spec}" "${GFXMODE}" "spec-check/gfxmode"
+
+    # 活动配置副本（D-07）：NVRAM 走 EFI/airymaxos，mkconfig 只写
+    # EFI/openEuler，不同步品牌副本则改了完全不生效。判据落在「谁把
+    # grub.cfg 复制进品牌目录」，不钉复制函数的具体写法。
+    want_text "${ks}" 'efi_brand.sh' "kickstart/brand-copy"
+    want_text "${brand}" 'EFI/airymaxos' "brand-copy/target"
+    want_text "${brand}" 'grub.cfg' "brand-copy/payload"
 
     # 显示策略上限必须覆盖 285H 原生面板，否则 xrandr 收敛仍会压到 1080p。
-    want_text "${mode}" 'CAP_W=2880' "display-mode/cap-w"
-    want_text "${mode}" 'CAP_H=1800' "display-mode/cap-h"
     want_text "${mode}" '2880x1800' "display-mode/ladder"
 
     # 策略源本身与 spec 的键断言：任一被改回 true 都只在装机现场可见。
@@ -120,7 +135,7 @@ check_root()
     local sudoers="${r}/etc/sudoers.d/90-airymax"
     local seat="${r}/etc/lightdm/lightdm.conf.d/50-airymax.conf"
     local checkpass
-    local pam found
+    local pam found acct
 
     say "已安装树闭包 ${r}"
 
@@ -134,20 +149,30 @@ check_root()
         bad "root/screensaver-db: 缺少 ${db}（dconf update 未执行）"
     fi
 
-    # 2) 提权策略：文件、模式、唯一有效行。
-    if [ -f "${sudoers}" ]; then
-        [ "$(stat -c %a "${sudoers}")" = 440 ] ||
-            bad "root/sudo-policy-mode: $(stat -c %a "${sudoers}") != 440"
-        grep -qxF 'Airymax ALL=(ALL) NOPASSWD: ALL' "${sudoers}" ||
-            bad "root/sudo-policy-line: 规则不符"
-    else
-        bad "root/sudo-policy: 缺少 ${sudoers}"
+    # 2) 两份 grub.cfg 的模式行必须逐字一致：品牌副本才是 NVRAM 实际读取的
+    #    那一份，只更新 openEuler 副本时本机分辨率毫无变化（D-07）。
+    grub_pair "${r}"
+
+    # 3) 提权策略：账户名从座位取自 SSoT，改名不让门禁失效；有效行必须唯一，
+    #    多出的规则同样属于「源在盘上但语义被放大」。
+    acct=$(seat_user "${seat}")
+    if [ -n "${acct}" ]; then
+        if [ -f "${sudoers}" ]; then
+            [ "$(stat -c %a "${sudoers}")" = 440 ] ||
+                bad "root/sudo-policy-mode: $(stat -c %a "${sudoers}") != 440"
+            [ "$(awk 'NF && $1 !~ /^#/' "${sudoers}" | wc -l)" -eq 1 ] ||
+                bad "root/sudo-policy-lines: ${sudoers} 有效行不唯一"
+            grep -qxF "${acct} ALL=(ALL) NOPASSWD: ALL" "${sudoers}" ||
+                bad "root/sudo-policy-line: 规则与账户 ${acct} 不符"
+        else
+            bad "root/sudo-policy: 缺少 ${sudoers}"
+        fi
     fi
 
-    # 3) 座位：自动登录账户取自 lightdm 配置，作为后续账户判据的 SSoT。
+    # 4) 座位：自动登录账户必须存在，它同时是上面 sudoers 判据的账户来源。
     want_text "${seat}" 'autologin-user=' "root/lightdm-autologin"
 
-    # 4) 锁屏鉴权：setuid 位与 PAM 首行直通。二进制不存在时跳过（桌面版本
+    # 5) 锁屏鉴权：setuid 位与 PAM 首行直通。二进制不存在时跳过（桌面版本
     #    差异），但存在就必须是 4755——否则 account 阶段必然 EPERM。
     for checkpass in "${r}/usr/bin/ukui-screensaver-checkpass" \
         "${r}/usr/lib/ukui-screensaver/ukui-screensaver-checkpass"; do
@@ -170,6 +195,51 @@ check_root()
         ' "${pam}" || bad "root/screensaver-pam: ${pam} 的首行直通缺失或顺序错误"
     done
     [ "${found}" -eq 1 ] || note "未发现锁屏 PAM 服务文件，跳过顺序判定"
+}
+
+# seat_user FILE —— 从 lightdm 座位读自动登录账户。账户名只在这一处取值，
+# 命名调整（Airymax→amuser）不需要改门禁。
+seat_user()
+{
+    [ -f "$1" ] || return 0
+    sed -n 's/^[[:space:]]*autologin-user[[:space:]]*=[[:space:]]*//p' "$1" |
+        head -n 1 | tr -d '[:space:]'
+}
+
+# grub_set FILE KEY —— 取一份 grub.cfg 里 set KEY=VALUE 的 VALUE（首条）。
+grub_set()
+{
+    awk -v k="$2" '{
+        sub(/^[ \t]*set[ \t]+/, "")
+        if (index($0, k "=") == 1) {
+            sub(/^[^=]*=/, "")
+            print
+            exit
+        }
+    }' "$1"
+}
+
+# grub_pair ROOT —— 主配置与品牌副本的 gfxmode/gfxpayload 必须逐字一致。
+# NVRAM 实际读取品牌副本，只改主配置时重启后分辨率不会变化（D-07）。
+grub_pair()
+{
+    local r="$1" f k a b
+    local main="${r}/boot/grub2/grub.cfg"
+    local brand="${r}/boot/efi/EFI/airymaxos/grub.cfg"
+
+    for f in "${main}" "${brand}"; do
+        [ -f "${f}" ] || { bad "root/grub-pair: 缺少 ${f}"; return 0; }
+    done
+    for k in gfxmode gfxpayload; do
+        a=$(grub_set "${main}" "${k}")
+        b=$(grub_set "${brand}" "${k}")
+        if [ -z "${a}" ]; then
+            bad "root/grub-pair: ${main} 无 set ${k}="
+            continue
+        fi
+        [ "${a}" = "${b}" ] ||
+            bad "root/grub-pair: ${k} 不一致（${a} vs ${b}）"
+    done
 }
 
 [ -n "${SOURCE}" ] && check_source "${SOURCE}"
