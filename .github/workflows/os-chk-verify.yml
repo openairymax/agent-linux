@@ -88,6 +88,11 @@ jobs:
       - name: Local model asset channel gates
         run: ci/ci.sh model-manifest
 
+      # K-22：探测输出的字段集合、后端顺序与证据前缀是对外契约，行式与
+      # JSON 一旦漂移，监控与门禁的解析会静默失效——字符串还在，含义已变。
+      - name: Accelerator probe output gates
+        run: ci/ci.sh llm-accel
+
       # I-29：网络是装机验收的第一道门禁——网络不通时桌面、驱动、取证各项
       # 都退化成「无法判定」而不是「不合格」。这里的声明面不依赖镜像根，
       # 与 distro-lint 同源判定；实物面（--root）与联机面（--live）在装机
