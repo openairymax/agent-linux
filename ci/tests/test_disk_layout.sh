@@ -67,16 +67,20 @@ check()
     esac
 }
 
+# 分区名必须与所属盘一致：判定按内核名末尾的分区号排定次序，单盘里塞
+# 进别的盘的分区名，排序与拓扑自相矛盾，测的就不是真实装机形态了。
 root="$(part nvme0n1p2 btrfs '"/"' system)"
 data="$(part sdc1 xfs '"/data"' data)"
-swap="$(part sdc2 swap null swap)"
+sroot="$(part sda1 btrfs '"/"' system)"
+sdata="$(part sda2 xfs '"/data"' data)"
+sswap="$(part sda3 swap null swap)"
 
 snap "${tmp}/dual.json" multi \
     "$(disk nvme0n1 nvme "${root}"),$(disk sdc sata "${data}")"
 out="$(run --snapshot "${tmp}/dual.json")"
 check "双盘：/ 与 /data 各自独立" 0 "$?" "${out}" '"verdict": "ok"'
 
-snap "${tmp}/single.json" single "$(disk sda sata "${root},${data}")"
+snap "${tmp}/single.json" single "$(disk sda sata "${sroot},${sdata}")"
 out="$(run --snapshot "${tmp}/single.json")"
 check "单盘：同盘切分且 /data 末位" 0 "$?" "${out}" '"verdict": "ok"'
 case "${out}" in
@@ -84,11 +88,18 @@ case "${out}" in
 *) bad "单盘 token 不正确"; printf '%s\n' "${out}" >&2 ;;
 esac
 
-snap "${tmp}/bare.json" single "$(disk sda sata "${root}")"
+snap "${tmp}/bare.json" single "$(disk sda sata "${sroot}")"
 out="$(run --snapshot "${tmp}/bare.json")"
 check "缺 /data 判拒绝" 1 "$?" "${out}" '"verdict": "no-data"'
 
-snap "${tmp}/tail.json" single "$(disk sda sata "${root},${data},${swap}")"
+# 两位数分区号：文本顺序把 sda10 排在 sda2 之前，判定必须先按号归一，
+# 否则末号分区被当成 sda2，真实的 /data（sda10）反而判 not-last。
+snap "${tmp}/ten.json" single \
+    "$(disk sda sata "$(part sda10 xfs '"/data"' data),$(part sda2 btrfs '"/"' system)")"
+out="$(run --snapshot "${tmp}/ten.json")"
+check "分区号两位数按号归一后 /data 仍判末位" 0 "$?" "${out}" '"verdict": "ok"'
+
+snap "${tmp}/tail.json" single "$(disk sda sata "${sroot},${sdata},${sswap}")"
 out="$(run --snapshot "${tmp}/tail.json")"
 check "/data 非末位判拒绝" 1 "$?" "${out}" '"verdict": "not-last"'
 
