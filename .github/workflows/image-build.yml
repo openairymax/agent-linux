@@ -270,6 +270,22 @@ jobs:
       - name: Verify UKUI component ledger
         run: ci/ci.sh ukui-lock --source .
 
+      # 通道清单（channel.json）要在 ISO 发布账本写出之后才能生成，而账本
+      # 属于 accept。清单同时需要发行包与内核包自证 build 与载荷摘要，故在
+      # 这里把两份包随产物交给 accept：跨 job 不共享文件系统，缺这一步
+      # accept 就只能手写构建号，清单退回成一组看起来对的字符串。
+      # 两个制品根下载后层级不同，门禁按文件名递归取唯一一份。
+      - name: Upload release rpms
+        if: success() && inputs.release_tag != '' && !inputs.acceptance
+        uses: actions/upload-artifact@v4
+        with:
+          name: airymaxos-release-rpms
+          path: |
+            ${{ runner.temp }}/out/rpms/RPMS/*/airymaxos-release-*.noarch.rpm
+            ${{ runner.temp }}/rel-rpms/airymaxos-kernel*.x86_64.rpm
+          retention-days: 7
+          if-no-files-found: error
+
       - name: Upload image artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -387,6 +403,23 @@ jobs:
           TAG: ${{ inputs.release_tag }}
         run: ci/ci.sh iso-publish --out "$RUNNER_TEMP/image" --tag "$TAG" ${{ inputs.replace && '--force' || '' }}
 
+      # 清单只由产物推出：ISO 实测摘要对账本、build 对发行包 NEVRA，任一
+      # 不等即不产出（生成器退 1，本步红）。放在发布之后是因为账本由
+      # iso-publish 写出——提前生成等于给未经账本自证的字节发摘要。
+      - name: Download release rpms
+        if: success() && inputs.release_tag != '' && !inputs.acceptance
+        uses: actions/download-artifact@v4
+        with:
+          name: airymaxos-release-rpms
+          path: ${{ runner.temp }}/relch
+          merge-multiple: true
+
+      - name: Generate release channel manifest
+        if: success() && inputs.release_tag != '' && !inputs.acceptance
+        env:
+          TAG: ${{ inputs.release_tag }}
+        run: ci/ci.sh release-channel --out "$RUNNER_TEMP/image" --rpm-dir "$RUNNER_TEMP/relch" --version "${TAG#v}"
+
       - name: Upload acceptance evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -400,6 +433,7 @@ jobs:
             ${{ runner.temp }}/install-usb/install-manifest.txt
             ${{ runner.temp }}/install-usb/smoke-*.tap
             ${{ runner.temp }}/image/desktop/iso/iso-oci.txt
+            ${{ runner.temp }}/image/channel.json
             ${{ runner.temp }}/install/run-*/*.log
             ${{ runner.temp }}/install-usb/run-*/*.log
           retention-days: 7
