@@ -238,6 +238,15 @@ jobs:
       - name: Verify assembly manifest
         run: ci/ci.sh image-verify --out "$RUNNER_TEMP/out"
 
+      # 发行自证：ISO 摘要 ↔ 内核 RPM NEVRA 两侧同时给出并逐字相等（0.0.4
+      # J-13 / QG-12）。image-verify 只证明载荷包与发行 .sha256sum 同源，
+      # 不看版本号；0.0.3 的断裂恰好两侧各自成立却对不上同一版，故须另判
+      # NEVRA 与 spec 的 airy_version/airy_release。仅复用发行内核包时成立：
+      # 就地构建的轮次没有发行侧，无从对照。
+      - name: Verify ISO kernel NEVRA
+        if: success() && inputs.release_tag != ''
+        run: ci/ci.sh release-verify --iso-dir "$RUNNER_TEMP/out/desktop/iso" --payload "$RUNNER_TEMP/out/desktop/payload/airymax/payload-manifest.txt" --kernel-rpms "$AIRYMAX_REL_RPMS"
+
       # 登录/锁屏/显示三段闭包：源在盘上不等于链路生效（dconf profile、
       # PAM 顺序、checkpass setuid、gfxpayload）。静态模式不依赖镜像字节，
       # 因此能在这一轮之前就拦住配方退化；产物侧由 --root 在验收腿补判。
