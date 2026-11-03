@@ -34,6 +34,9 @@
 #     避免 runner 形态变化导致 job 被中途取消。
 #   * 源码以只读方式挂载进构建容器，产物只落 $RUNNER_TEMP/out，不违反
 #     「严禁在 airymaxhub 源码区内构建」。
+#   * 子模块由 ci/gates/submodules.sh 按需取：distro 与 system 是组装链的
+#     全部读点，kernel 只在复用 Release 内核包以外的路径上读。递归 checkout
+#     会多拉七棵树（kernel 1.5G），它们不进产物，只抬固定开销（W-1）。
 #   * ISO 基线固定为 openEuler 24.03-LTS-SP3 netinst，容器镜像取官方
 #     docker_img tar；URL 与 sha256 同时写死，禁止浮动 latest。
 #   * 官方源是跨洋链路，实测单件 ISO 需 43 分钟。介质目录按摘要键缓存，
@@ -99,9 +102,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 300
     steps:
+      # 子模块按需取：递归 checkout 要把九棵树全拉下来，其中 kernel 1.5G，
+      # 而组装只有「不复用 Release 内核包」时才读它，其余六棵在组装链里
+      # 没有读点。这份下载不影响产物字节，只把每轮固定开销抬高几分钟（W-1）。
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          submodules: recursive
+          submodules: false
 
       # 构建侧只看得到自己被 checkout 的那一份。本地有、镜像还没收的提交
       # 照样能编出校验和齐全的发行物，只是没有任何远程取得到它的源码，
@@ -111,6 +117,11 @@ jobs:
           REF: ${{ github.ref_name }}
           SHA: ${{ github.sha }}
         run: ci/ci.sh remote-sync --ref "$REF" --sha "$SHA" --remote origin
+
+      # 与后面 Fetch release kernel RPMs 同一判据：有发行包就不建内核，
+      # 也就不需要 kernel 源码树。条件写在参数里，门禁本身不猜。
+      - name: Checkout submodules
+        run: ci/ci.sh submodules ${{ inputs.release_tag == '' && '--need-kernel' || '' }}
 
       # 静态门禁必须先于组装：spec / comps / kickstart 改坏一条断言，代价
       # 是整轮 240 分钟组装白跑。此前 assemble 首步是 free-disk，静态不合格
