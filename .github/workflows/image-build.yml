@@ -126,8 +126,12 @@ jobs:
       # 静态门禁必须先于组装：spec / comps / kickstart 改坏一条断言，代价
       # 是整轮 240 分钟组装白跑。此前 assemble 首步是 free-disk，静态不合格
       # 的树照样能进到 ISO 阶段（0.0.4 清单 CI-06）。
+      # --no-tests 只跳过规则回归那一段：它判的是仓库内容，push 门禁已在同一
+      # 提交上全量跑过，组装再跑一遍不增加判据，却要付 111 秒（CI-16）。其余
+      # 五段合计不足两秒，留着——dispatch 可以指向任何历史提交，不必假设它
+      # 一定走过 push 门禁。
       - name: Static gates
-        run: ci/ci.sh distro-lint
+        run: ci/ci.sh distro-lint --no-tests
 
       - name: Free runner disk
         run: ci/ci.sh free-disk
