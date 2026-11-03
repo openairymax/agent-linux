@@ -18,7 +18,7 @@
 权威依据：
   docs-linux/80-testing/02-kselftest.md OS-TEST-014/015/021
   docs-linux/70-build-system/03-ci-cd-pipeline.md §2.3
-  tools/parse-tap.py（TAP 计数契约）
+  tools/tap/parse-tap.py（TAP 计数契约）
 
 Example:
     >>> result = judge_run(raw_run)

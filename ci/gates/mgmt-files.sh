@@ -12,7 +12,7 @@
 #
 # CODEOWNERS 一致性也在此校验：CODEOWNERS 头部声称「CI validates that
 # CODEOWNERS and MAINTAINERS stay in sync」，此前没有任何实现支撑，生成器
-# 还把 49 行文件覆盖成 4 行。现在由 tools/codeowners.py 投影，本 gate 只做
+# 还把 49 行文件覆盖成 4 行。现在由 tools/repo/codeowners.py 投影，本 gate 只做
 # 比对，漂移即失败。
 #
 # 子模块清单只有 .gitmodules 一个来源，不在此复制 9 个路径——复制就会在
@@ -120,7 +120,7 @@ no_prefix()
 
 owners_sync()
 {
-    python3 tools/codeowners.py --check ||
+    python3 tools/repo/codeowners.py --check ||
         die "CODEOWNERS 与 MAINTAINERS 不一致（make codeowners-sync）"
     say "CODEOWNERS 与 MAINTAINERS 同步"
 }

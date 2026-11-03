@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 # ===========================================================================
-# test_codeowners.py — tools/codeowners.py 的投影契约
+# test_codeowners.py — tools/repo/codeowners.py 的投影契约
 #
 # 守护三件事：仓库内 CODEOWNERS 与 MAINTAINERS 无漂移、缺 O: 的块被拒绝
 # （而不是生成无人认领的条目）、投影顺序与所有者逐行可预测。
@@ -13,7 +13,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[3]
 SPEC = importlib.util.spec_from_file_location(
-    "codeowners", ROOT / "tools" / "codeowners.py")
+    "codeowners", ROOT / "tools" / "repo" / "codeowners.py")
 CODEOWNERS = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(CODEOWNERS)
 

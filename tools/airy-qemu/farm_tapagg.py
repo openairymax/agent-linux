@@ -20,7 +20,7 @@ TAP 中完全没有结果时，该套件记为静默，其全部用例计入缺�
 本模块只做聚合，不做 PASS/FAIL 判定；判定策略留给门禁层。
 
 权威依据：
-  tools/parse-tap.py（计划行与结果行的解析契约）
+  tools/tap/parse-tap.py（计划行与结果行的解析契约）
   linux tools/testing/selftests/kselftest/runner.sh（run_many 输出格式）
   docs-linux/80-testing/02-kselftest.md OS-TEST-021（SKIP 单独计数）
 
@@ -64,7 +64,7 @@ __all__ = [
     "read_tap",
 ]
 
-# 4. TAP 行格式（与 tools/parse-tap.py 同源）
+# 4. TAP 行格式（与 tools/tap/parse-tap.py 同源）
 _PLAN_RE: Final[re.Pattern[str]] = re.compile(
     r"^\s*(\d+)\.\.(\d+)\s*(?:#.*)?$"
 )

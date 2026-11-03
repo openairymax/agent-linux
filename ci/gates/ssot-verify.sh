@@ -7,7 +7,7 @@
 #   ci/gates/ssot-verify.sh --kind syntax|links
 #
 #   syntax  ssot-registry.yaml 可解析，且登记的规则 ID 总数与解析结果一致
-#           （OS-IRON-015），随后交给 tools/validate-ssot.py 逐条核对。
+#           （OS-IRON-015），随后交给 tools/repo/validate-ssot.py 逐条核对。
 #   links   仅扫描 git 跟踪的本仓 .md，校验相对链接是否落到真实文件；
 #           跨仓（../）与外链（http/mailto）不在此判定。
 #
@@ -69,7 +69,7 @@ for key in ('agentrt_linux_rules', 'agentrt_rules'):
         total += len(g.get('individual_entries', []) or [])
 print(f'YAML valid. Registered rule IDs: {total}')
 PY
-        python3 tools/validate-ssot.py . ssot-registry.yaml ||
+        python3 tools/repo/validate-ssot.py . ssot-registry.yaml ||
             die "规则 ID 与注册表不一致（OS-IRON-015）"
         say "SSOT 注册表自洽"
         ;;

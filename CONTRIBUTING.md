@@ -176,7 +176,7 @@ git push origin my-feature-branch
 All PRs are validated by the SSoT validation CI:
 
 ```bash
-python3 tools/validate-ssot.py . ssot-registry.yaml
+python3 tools/repo/validate-ssot.py . ssot-registry.yaml
 ```
 
 This checks that every `OS-*-NNN` rule ID used in documentation is registered in the SSoT YAML registry (`ssot-registry.yaml` at the management repo root). Unregistered IDs cause CI failure.

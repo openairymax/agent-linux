@@ -30,8 +30,8 @@ on:
     paths:
       - 'kernel'
       - 'tools/ci-matrix/**'
-      - 'tools/kunit-tap-*.tap'
-      - 'tools/kunit-tap-diff.py'
+      - 'tools/tap/kunit-tap-*.tap'
+      - 'tools/tap/kunit-tap-diff.py'
       - '.github/workflows/kernel-verify.yml'
       - 'ci/gates/kernel-*.sh'
       - 'ci/lib/**'
@@ -40,8 +40,8 @@ on:
     paths:
       - 'kernel'
       - 'tools/ci-matrix/**'
-      - 'tools/kunit-tap-*.tap'
-      - 'tools/kunit-tap-diff.py'
+      - 'tools/tap/kunit-tap-*.tap'
+      - 'tools/tap/kunit-tap-diff.py'
       - '.github/workflows/kernel-verify.yml'
       - 'ci/gates/kernel-*.sh'
       - 'ci/lib/**'

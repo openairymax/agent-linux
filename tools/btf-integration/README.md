@@ -45,7 +45,7 @@ eBPF 基线 × BTF 基线 × tracing 链路 × CI 供给」五者彼此一致，
 并短路其余内容类检查（避免在脏数据上生成噪声结论）。
 
 > **SSoT 注册一致性不在此重复实现**：规则 ID 与文档的登记一致性由门禁
-> `OS-IRON-015`（`tools/validate-ssot.py`）统一保证，本工具只负责基线内容一致。
+> `OS-IRON-015`（`tools/repo/validate-ssot.py`）统一保证，本工具只负责基线内容一致。
 
 ## 使用方法
 

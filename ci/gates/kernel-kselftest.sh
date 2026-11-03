@@ -266,7 +266,7 @@ fi
 }
 
 group "解析 kselftest TAP（OS-TEST-022）"
-python3 "${REPO_ROOT}/tools/parse-tap.py" --input "${TAP}" --fail-on-not-ok
+python3 "${REPO_ROOT}/tools/tap/parse-tap.py" --input "${TAP}" --fail-on-not-ok
 rc=$?
 endgroup
 [ "${rc}" -eq 0 ] || die "kselftest TAP 解析发现 not ok"

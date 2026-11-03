@@ -35,7 +35,7 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 | OS-TEST-010/013~022（QEMU 运行 kselftest 与 TAP 门禁） | `docs/docs-linux/70-build-system/03-ci-cd-pipeline.md` §5.3 |
 | OS-TEST-014/015/021（KVM 回退、TAP 计数、SKIP 单独统计） | `docs/docs-linux/80-testing/02-kselftest.md` |
 | OS-STD-009（测试超时预算） | `docs/docs-linux/80-testing/02-kselftest.md` |
-| TAP 计数与退出码契约 | `tools/parse-tap.py` |
+| TAP 计数与退出码契约 | `tools/tap/parse-tap.py` |
 | virtme-ng 实际调用基线 | `.github/workflows/kernel-verify.yml` |
 
 ## 目录结构

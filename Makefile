@@ -16,12 +16,12 @@ help:
 ## codeowners-sync: 从 MAINTAINERS 生成 CODEOWNERS
 codeowners-sync:
 	@echo "  SYNC    CODEOWNERS from MAINTAINERS"
-	@python3 tools/codeowners.py > CODEOWNERS
+	@python3 tools/repo/codeowners.py > CODEOWNERS
 
 ## codeowners-check: 验证 CODEOWNERS 与 MAINTAINERS 一致
 codeowners-check:
 	@echo "  CHECK   CODEOWNERS consistency"
-	@python3 tools/codeowners.py --check || { \
+	@python3 tools/repo/codeowners.py --check || { \
 		echo "Error: CODEOWNERS out of sync. Run 'make codeowners-sync'."; \
 		exit 1; \
 	}

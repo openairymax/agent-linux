@@ -20,13 +20,17 @@ verification, build SBOMs, and orchestrate the `[SC]` dual-CI mirror flow.
 ```text
 tools/
 ├── README.md                    # This file
-├── validate-ssot.py             # SSoT rule-ID consistency validator
-├── aggregate-subrepo-ci.py      # Leaf-repo CI status aggregator
-├── check-copyright.py           # Copyright/SPDX header gate
-├── kunit-tap-diff.py            # KUnit KTAP case-count monotonicity gate
-├── kunit-tap-baseline.tap       # Committed KUnit KTAP ratchet baseline (OS-TEST-012)
-├── parse-tap.py                 # kselftest TAP parser
-├── codeowners.py                # MAINTAINERS → CODEOWNERS projection (`--check` drift gate)
+├── repo/                        # Repository-governance CLIs (no build inputs, only worktree state)
+│   ├── validate-ssot.py         # SSoT rule-ID consistency validator
+│   ├── aggregate-subrepo-ci.py  # Leaf-repo CI status aggregator
+│   ├── check-copyright.py       # Copyright/SPDX header gate
+│   ├── codeowners.py            # MAINTAINERS → CODEOWNERS projection (`--check` drift gate)
+│   └── README.md                # Tool-group documentation
+├── tap/                         # TAP toolchain (kselftest + KUnit evidence)
+│   ├── parse-tap.py             # kselftest TAP parser
+│   ├── kunit-tap-diff.py        # KUnit KTAP case-count monotonicity gate
+│   ├── kunit-tap-baseline.tap   # Committed KUnit KTAP ratchet baseline (OS-TEST-012)
+│   └── README.md                # Tool-group documentation
 ├── os-chk/                      # Unified gate orchestrator (OS-CHK registry driver)
 │   ├── os_chk.py                # Registry parse → schedule → summarise → verdict (`--check` gate)
 │   ├── gates.yaml               # Single source of truth for gate id/severity/executor argv
@@ -175,12 +179,12 @@ tools/
 
 | Tool | Description | Used by |
 |------|-------------|---------|
-| `validate-ssot.py` | SSoT rule-ID consistency validator — checks that every `OS-*-NNN` (agent-linux) and `*-NNN` (agentrt) rule ID referenced in documentation is registered in `ssot-registry.yaml`. Authority: OS-IRON-015. | `ssot-verify.yml` (`ssot-syntax-and-rules`), local contributor runs |
-| `codeowners.py` | GitHub CODEOWNERS projection of `MAINTAINERS` — the owner paths come from `F:` and the owners from `O:` (mail addresses in `M:`/`R:` are not valid CODEOWNERS owners, so a block with `F:` but no `O:` is rejected instead of emitting an unowned file); `--check` compares the working tree against the projection and prints a unified diff on drift. Authority: OS-STD-GOV-004. | `make codeowners-sync` / `make codeowners-check`, `ci/gates/mgmt-files.sh` |
-| `aggregate-subrepo-ci.py` | Aggregate the CI status of all leaf repositories, deriving the list from `.gitmodules` (`--fail-on-red`) | `mgmt-verify.yml` (`orchestrate-leaf-ci`) |
-| `check-copyright.py` | Verify that repository-owned `.md` files carry a `Copyright`/`SPDX-License-Identifier` on line 1 (`--root .`) | `mgmt-verify.yml` (`orchestrate-leaf-ci`) |
-| `kunit-tap-diff.py` | KUnit KTAP case-count monotonicity gate — parses nested KTAP (`--raw_output=kunit`) and fails when the leaf-case total regresses, a baseline suite disappears, or a new `not ok` appears; the ratchet lives in `kunit-tap-baseline.tap` and is updated explicitly with `--update` (OS-TEST-012) | `kernel-verify.yml` (`kernel-verify`) |
-| `parse-tap.py` | Parse kselftest TAP output and fail on `not ok` | `kernel-verify.yml` (`kernel-verify`) |
+| `repo/validate-ssot.py` | SSoT rule-ID consistency validator — checks that every `OS-*-NNN` (agent-linux) and `*-NNN` (agentrt) rule ID referenced in documentation is registered in `ssot-registry.yaml`. Authority: OS-IRON-015. | `ssot-verify.yml` (`ssot-syntax-and-rules`), local contributor runs |
+| `repo/codeowners.py` | GitHub CODEOWNERS projection of `MAINTAINERS` — the owner paths come from `F:` and the owners from `O:` (mail addresses in `M:`/`R:` are not valid CODEOWNERS owners, so a block with `F:` but no `O:` is rejected instead of emitting an unowned file); `--check` compares the working tree against the projection and prints a unified diff on drift. Authority: OS-STD-GOV-004. | `make codeowners-sync` / `make codeowners-check`, `ci/gates/mgmt-files.sh` |
+| `repo/aggregate-subrepo-ci.py` | Aggregate the CI status of all leaf repositories, deriving the list from `.gitmodules` (`--fail-on-red`) | `ci/gates/mgmt-leaves.sh`（`mgmt-verify.yml` 触发） |
+| `repo/check-copyright.py` | Verify that repository-owned `.md` files carry a `Copyright`/`SPDX-License-Identifier` on line 1 (`--root .`) | `ci/gates/mgmt-leaves.sh`（`mgmt-verify.yml` 触发） |
+| `tap/kunit-tap-diff.py` | KUnit KTAP case-count monotonicity gate — parses nested KTAP (`--raw_output=kunit`) and fails when the leaf-case total regresses, a baseline suite disappears, or a new `not ok` appears; the ratchet lives in `kunit-tap-baseline.tap` and is updated explicitly with `--update` (OS-TEST-012) | `ci/gates/kernel-kunit.sh`（`kernel-verify.yml` 触发） |
+| `tap/parse-tap.py` | Parse kselftest TAP output and fail on `not ok` | `ci/gates/kernel-kselftest.sh`（`kernel-verify.yml` 触发） |
 | `os-chk/os_chk.py` | Unified gate orchestrator — reads `gates.yaml` (the only source of truth for gate id/severity/executor argv) and performs registry parse → schedule → summarise → P0/P1/P2 verdict; the orchestrator implements no check of its own, so a rule lives in exactly one executor and cannot drift across two copies (OS-CHK numbering, §5.3 report format); `--check` is the CI gate | `os-chk-verify.yml` (`os-chk-verify`) |
 | `codegen/run_codegen.py` | Contract code generator; `--check` performs a content compare as the zero-drift SSoT gate (IRON-9) | `os-chk-verify.yml`, `tools/codegen/Makefile` |
 | `dsl/dsl_compile.py` | Policy DSL (`.adl`) compiler — lexer/parser/semantics/IR → pure C decision table header; `--check` is the zero-drift gate for policy tables (IRON-9, K-1 mechanism/policy split) | `os-chk-verify.yml`, `tools/dsl/Makefile` |
@@ -226,7 +230,7 @@ corresponding subsystem matures:
 pip install pyyaml
 
 # Run validation (from agent-linux management repo root)
-python3 tools/validate-ssot.py . ssot-registry.yaml
+python3 tools/repo/validate-ssot.py . ssot-registry.yaml
 ```
 
 `validate-ssot.py` exit codes:

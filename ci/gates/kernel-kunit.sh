@@ -11,7 +11,7 @@
 # 一条注释里，步骤一挪就静默失效（kunit.py 会报 kbuild 脏树或复用到旧
 # 配置）。现在把前提变成前置断言：树里有 .config / vmlinux 就明确报错。
 #
-# 基线比对的语义由 tools/kunit-tap-diff.py 决定：用例集合与期望状态必须
+# 基线比对的语义由 tools/tap/kunit-tap-diff.py 决定：用例集合与期望状态必须
 # 与基线一致，新增/消失/翻转都算漂移。
 #
 # 退出码: 0 通过；1 运行失败或与基线漂移；5 参数不满足。
@@ -27,7 +27,7 @@ SRC="${REPO_ROOT}/kernel"
 TAP="kunit.tap"
 # 棘轮基线用绝对路径：gate 会 cd 进内核子模块，diff.py 的相对默认值
 # 会在子模块内解析成 kernel/tools/...，必然读不到（0.0.3 矩阵实测）。
-BASELINE="${REPO_ROOT}/tools/kunit-tap-baseline.tap"
+BASELINE="${REPO_ROOT}/tools/tap/kunit-tap-baseline.tap"
 
 usage()
 {
@@ -70,7 +70,7 @@ endgroup
 [ "${rc}" -eq 0 ] || die "KUnit 运行失败（rc=${rc}）"
 
 group "KUnit TAP 基线比对（OS-TEST-012）"
-python3 "${REPO_ROOT}/tools/kunit-tap-diff.py" \
+python3 "${REPO_ROOT}/tools/tap/kunit-tap-diff.py" \
     --baseline-file "${BASELINE}" --current "${TAP}"
 rc=$?
 endgroup

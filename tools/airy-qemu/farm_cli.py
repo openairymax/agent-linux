@@ -13,7 +13,7 @@
   * 调度、执行与判定全部复用 farm_sched / farm_runner / farm_verdict，
     CLI 自身不复制任何门禁或 TAP 语义。
 
-退出码沿用 tools/parse-tap.py 的门禁约定：
+退出码沿用 tools/tap/parse-tap.py 的门禁约定：
 
   0 — 门禁通过（允许 SKIPPED，不允许 FAILED/TIMEOUT/ERROR）
   1 — 门禁失败
@@ -23,7 +23,7 @@
   docs-linux/70-build-system/03-ci-cd-pipeline.md §5.3
     OS-TEST-010/013~022（QEMU 运行 kselftest 与门禁）
   docs-linux/80-testing/02-kselftest.md（OS-TEST-021）
-  tools/parse-tap.py（退出码契约）
+  tools/tap/parse-tap.py（退出码契约）
 
 Example:
     >>> main(["--kernel", "x86_64=arch/x86/boot/bzImage",
