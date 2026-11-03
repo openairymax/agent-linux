@@ -26,6 +26,7 @@ tools/
 ├── kunit-tap-diff.py            # KUnit KTAP case-count monotonicity gate
 ├── kunit-tap-baseline.tap       # Committed KUnit KTAP ratchet baseline (OS-TEST-012)
 ├── parse-tap.py                 # kselftest TAP parser
+├── codeowners.py                # MAINTAINERS → CODEOWNERS projection (`--check` drift gate)
 ├── os-chk/                      # Unified gate orchestrator (OS-CHK registry driver)
 │   ├── os_chk.py                # Registry parse → schedule → summarise → verdict (`--check` gate)
 │   ├── gates.yaml               # Single source of truth for gate id/severity/executor argv
@@ -175,6 +176,7 @@ tools/
 | Tool | Description | Used by |
 |------|-------------|---------|
 | `validate-ssot.py` | SSoT rule-ID consistency validator — checks that every `OS-*-NNN` (agent-linux) and `*-NNN` (agentrt) rule ID referenced in documentation is registered in `ssot-registry.yaml`. Authority: OS-IRON-015. | `ssot-verify.yml` (`ssot-syntax-and-rules`), local contributor runs |
+| `codeowners.py` | GitHub CODEOWNERS projection of `MAINTAINERS` — the owner paths come from `F:` and the owners from `O:` (mail addresses in `M:`/`R:` are not valid CODEOWNERS owners, so a block with `F:` but no `O:` is rejected instead of emitting an unowned file); `--check` compares the working tree against the projection and prints a unified diff on drift. Authority: OS-STD-GOV-004. | `make codeowners-sync` / `make codeowners-check`, `ci/gates/mgmt-files.sh` |
 | `aggregate-subrepo-ci.py` | Aggregate the CI status of all leaf repositories, deriving the list from `.gitmodules` (`--fail-on-red`) | `mgmt-verify.yml` (`orchestrate-leaf-ci`) |
 | `check-copyright.py` | Verify that repository-owned `.md` files carry a `Copyright`/`SPDX-License-Identifier` on line 1 (`--root .`) | `mgmt-verify.yml` (`orchestrate-leaf-ci`) |
 | `kunit-tap-diff.py` | KUnit KTAP case-count monotonicity gate — parses nested KTAP (`--raw_output=kunit`) and fails when the leaf-case total regresses, a baseline suite disappears, or a new `not ok` appears; the ratchet lives in `kunit-tap-baseline.tap` and is updated explicitly with `--update` (OS-TEST-012) | `kernel-verify.yml` (`kernel-verify`) |

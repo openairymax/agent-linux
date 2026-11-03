@@ -8,7 +8,7 @@
 
 help:
 	@echo "agent-linux management repository targets:"
-	@echo "  codeowners-sync    Generate .github/CODEOWNERS from MAINTAINERS"
+	@echo "  codeowners-sync    Generate CODEOWNERS from MAINTAINERS"
 	@echo "  codeowners-check   Verify CODEOWNERS consistency with MAINTAINERS"
 	@echo "  codegen            Run the codegen pipeline (contracts -> generated)"
 	@echo "  all                Run codegen, then build the kernel submodule"
@@ -16,18 +16,15 @@ help:
 ## codeowners-sync: 从 MAINTAINERS 生成 CODEOWNERS
 codeowners-sync:
 	@echo "  SYNC    CODEOWNERS from MAINTAINERS"
-	@./scripts/airymax/maintainers_to_codeowners.pl \
-		MAINTAINERS > CODEOWNERS
+	@python3 tools/codeowners.py > CODEOWNERS
 
 ## codeowners-check: 验证 CODEOWNERS 与 MAINTAINERS 一致
 codeowners-check:
 	@echo "  CHECK   CODEOWNERS consistency"
-	@if ! diff -q CODEOWNERS \
-		<(./scripts/airymax/maintainers_to_codeowners.pl MAINTAINERS) \
-		> /dev/null 2>&1; then \
+	@python3 tools/codeowners.py --check || { \
 		echo "Error: CODEOWNERS out of sync. Run 'make codeowners-sync'."; \
 		exit 1; \
-	fi
+	}
 	@echo "  OK      CODEOWNERS consistent"
 
 # ===========================================================================
