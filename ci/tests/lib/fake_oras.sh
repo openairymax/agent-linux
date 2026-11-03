@@ -3,12 +3,15 @@
 # ===========================================================================
 # ci/tests/lib/fake_oras.sh — 把制品落在本地目录的假 oras（测试夹具）
 #
-# 发布与预热两个 gate 的回归都用它：真实 registry 不可达，oras 也不保证
-# 安装。存储布局是 FAKE_STORE 下每个 tag 一个目录，push 复制文件、pull 反向
-# 复制、manifest fetch 以目录是否存在作答——判据与 gate 用到的子集一一对应。
+# 发布、预热与回收三个 gate 的回归都用它：真实 registry 不可达，oras 也不
+# 保证安装。存储布局是 FAKE_STORE 下每个 tag 一个目录，push 复制文件、pull
+# 反向复制、manifest fetch 以目录是否存在作答、repo tags 以目录名反解 tag
+# ——判据与 gate 用到的子集一一对应。注解另存在 .meta/<key>.json，回收端靠
+# 它读创建时间。
 #
 # FAKE_CORRUPT=1 让 push 之后把载荷层多写一个字节，用于模拟「tag 存在但字节
-# 取回后不一致」。
+# 取回后不一致」；FAKE_DELETE_FAIL=1 让 manifest delete 失败，用于模拟删除
+# 被拒（配额或权限），回收端必须据此报错而不是当作已删。
 #
 # 用法: . ci/tests/lib/fake_oras.sh; fake_oras_install DIR
 # ===========================================================================
@@ -30,6 +33,20 @@ login)
     cat >/dev/null
     exit 0
     ;;
+repo)
+    sub="$1"
+    shift
+    case "$sub" in
+    tags)
+        [ -d "${store}" ] || exit 1
+        base="$(key "$1")"
+        for d in "${store}/${base}_"*; do
+            [ -d "${d}" ] || continue
+            printf '%s\n' "${d#"${store}/${base}_"}"
+        done | sort
+        ;;
+    esac
+    ;;
 manifest)
     sub="$1"
     shift
@@ -46,6 +63,7 @@ manifest)
         fi
         ;;
     delete)
+        [ -z "${FAKE_DELETE_FAIL:-}" ] || exit 1
         rm -rf "${store}/$(key "$2")" "${store}/.meta/$(key "$2").json"
         ;;
     esac

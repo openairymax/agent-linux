@@ -183,4 +183,113 @@ run probe --arch riscv64 --check --ref "ghcr.io/x/y" --output "${tmp}/c2" >/dev/
     ok "层缺失时 probe 报告需要预热" ||
     bad "层缺失时 missing 不为 1（$(missing_of "${tmp}/c2")）"
 
+# ─── 回收（§18.8.5）：seed 层按架构留最近 KEEP 个，build- 层一个不删 ───
+mkdir -p "${tmp}/gcstore/.meta"
+
+gd()
+{
+    printf '%s/gcstore/%s' "${tmp}" "$(printf '%s' "ghcr.io/x/y:$1" | tr '/:' '__')"
+}
+
+# 直接摆 store 而不走 push：回收只读 manifest 注解与 tag 列表，用推送造样本
+# 会让全部层落在同一秒里，先后次序不可断言。
+seed_layer()
+{
+    local tag="$1" at="${2:-}" meta
+    mkdir -p "$(gd "${tag}")"
+    [ -n "${at}" ] || return 0
+    meta="${tmp}/gcstore/.meta/$(printf '%s' "ghcr.io/x/y:${tag}" | tr '/:' '__').json"
+    printf '{"annotations":{"org.openairymax.payload.created":"%s"},"layers":[]}\n' \
+        "${at}" >"${meta}"
+}
+
+build_layer()
+{
+    mkdir -p "$(gd "$1")"
+}
+
+gc_run()
+{
+    FAKE_STORE="${tmp}/gcstore" FAKE_DELETE_FAIL="${FAKE_DELETE_FAIL:-}" \
+        PATH="${tmp}/bin:${PATH}" bash "${GATE}" gc --ref "ghcr.io/x/y" "$@" 2>&1
+}
+
+n=0
+while [ "${n}" -lt 6 ]; do
+    seed_layer "seed-x86_64-000000000000000${n}" "2026-11-0$((n + 1))T00:00:00Z"
+    n=$((n + 1))
+done
+seed_layer seed-aarch64-00000000000000aa 2026-10-01T00:00:00Z
+seed_layer seed-aarch64-00000000000000bb 2026-10-02T00:00:00Z
+build_layer build-0.0.4-00000000000000c1
+build_layer build-0.0.3-00000000000000c2
+
+out="$(gc_run --dry-run)"
+if [ "$?" = "0" ] && [ -d "$(gd seed-x86_64-0000000000000000)" ] &&
+    case "${out}" in *待删*) true ;; *) false ;; esac; then
+    ok "dry-run 只报告待删，不动任何层"
+else
+    bad "dry-run 改动或未报告待删"
+    printf '%s\n' "${out}" >&2
+fi
+
+out="$(gc_run)"
+rc=$?
+if [ "${rc}" = "0" ] &&
+    [ ! -d "$(gd seed-x86_64-0000000000000000)" ] &&
+    [ ! -d "$(gd seed-x86_64-0000000000000001)" ] &&
+    [ -d "$(gd seed-x86_64-0000000000000002)" ] &&
+    [ -d "$(gd seed-x86_64-0000000000000005)" ]; then
+    ok "每架构留最近 4 个 seed 层"
+else
+    bad "seed 层保留不符（rc=${rc}）"
+    printf '%s\n' "${out}" >&2
+fi
+
+if [ -d "$(gd seed-aarch64-00000000000000aa)" ] &&
+    [ -d "$(gd seed-aarch64-00000000000000bb)" ]; then
+    ok "架构之间互不影响"
+else
+    bad "aarch64 的层被 x86_64 的配额牵连"
+fi
+
+if [ -d "$(gd build-0.0.4-00000000000000c1)" ] &&
+    [ -d "$(gd build-0.0.3-00000000000000c2)" ]; then
+    ok "build- 层不参与回收"
+else
+    bad "build- 层被删除"
+fi
+
+# 没有创建时间注解的层排在同架构最后：无法证明新鲜的层先让位。
+n=0
+while [ "${n}" -lt 4 ]; do
+    seed_layer "seed-riscv64-00000000000000r${n}" "2026-11-0$((n + 1))T00:00:00Z"
+    n=$((n + 1))
+done
+seed_layer seed-riscv64-00000000000000r9
+out="$(gc_run)"
+if [ "$?" = "0" ] && [ ! -d "$(gd seed-riscv64-00000000000000r9)" ] &&
+    [ -d "$(gd seed-riscv64-00000000000000r0)" ]; then
+    ok "无注解的层优先被回收"
+else
+    bad "无注解层的处理不符"
+    printf '%s\n' "${out}" >&2
+fi
+
+mkdir -p "${tmp}/gcstore2"
+n=0
+while [ "${n}" -lt 5 ]; do
+    mkdir -p "${tmp}/gcstore2/$(printf '%s' "ghcr.io/x/y:seed-x86_64-fffffffffffffff${n}" | tr '/:' '__')"
+    n=$((n + 1))
+done
+out="$(FAKE_DELETE_FAIL=1 FAKE_STORE="${tmp}/gcstore2" PATH="${tmp}/bin:${PATH}" \
+    bash "${GATE}" gc --ref "ghcr.io/x/y" --keep 2 2>&1)"
+rc=$?
+if [ "${rc}" = "1" ] && case "${out}" in *"删除失败"*) true ;; *) false ;; esac; then
+    ok "删除被拒时回收报错而不是静默通过"
+else
+    bad "删除失败未报错（rc=${rc}）"
+    printf '%s\n' "${out}" >&2
+fi
+
 exit "${fails}"
