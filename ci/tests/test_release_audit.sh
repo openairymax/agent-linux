@@ -112,6 +112,18 @@ STUB_CODE=404
 check "Release 不存在退 3" 3 "不存在"
 
 STUB_CODE=200
+# 无令牌时匿名 GET 会先撞上 runner 共享出口 IP 的配额，403 会被读成「读不到
+# 页面」而不是「缺件」。对账必须显式带令牌，缺令牌在本地就退 5。
+out="$(env -u TOKEN -u GITHUB_TOKEN -u GH_TOKEN bash "${FX}/ci/gates/release-audit.sh" \
+    --tag v0.0.4 --repo o/r --dir "${FX}" 2>&1)"
+rc=$?
+if [ "${rc}" -eq 5 ]; then
+    printf 'ok   缺少令牌退 5\n'
+else
+    printf 'FAIL 缺少令牌: 退出码 %d\n%s\n' "${rc}" "${out}" >&2
+    fails=$((fails + 1))
+fi
+
 out="$(bash "${FX}/ci/gates/release-audit.sh" --repo o/r --dir "${FX}" 2>&1)"
 rc=$?
 if [ "${rc}" -eq 5 ]; then

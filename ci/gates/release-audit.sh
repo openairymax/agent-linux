@@ -18,7 +18,6 @@
 set -uo pipefail
 
 readonly EINVAL=5
-readonly ENOREL=3
 # shellcheck source=../lib/log.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/log.sh"
 # shellcheck source=../lib/release-assets.sh
@@ -43,7 +42,14 @@ done
 [ -n "${REPO}" ] || { err "缺少 --repo（或 GITHUB_REPOSITORY）"; exit "${EINVAL}"; }
 [ -d "${DIR}" ] || { err "目录不存在: ${DIR}"; exit "${EINVAL}"; }
 
-TOKEN="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
+# 对账要读的是写入后的真实页面，不能停在「拿不到就跳过」：匿名 GET 走
+# runner 的共享出口 IP，配额（60 次/小时）随时被别人用光，失败会表现为
+# 403 而不是缺件，正好掩盖它要查的东西。因此要求显式令牌，缺令牌直接退 5。
+# 工作流注入的是 GITHUB_TOKEN，本地与回归用 TOKEN；三者取到即用，统一
+# export 成库认识的 TOKEN。
+TOKEN="${TOKEN:-${GITHUB_TOKEN:-${GH_TOKEN:-}}}"
+[ -n "${TOKEN}" ] || { err "缺少 GITHUB_TOKEN"; exit "${EINVAL}"; }
+export TOKEN
 
 work="$(mktemp -d)"
 trap 'rm -rf "${work}"' EXIT
@@ -54,7 +60,7 @@ airy_assets_have "${REPO}" "${TAG}" "${work}/have" "${work}/rel.json"
 rc=$?
 case "${rc}" in
     0) ;;
-    "${AIRY_ASSETS_ENOREL}") err "Release ${TAG} 不存在，发布未完成"; exit "${ENOREL}" ;;
+    "${AIRY_ASSETS_ENOREL}") err "Release ${TAG} 不存在，发布未完成"; exit "${AIRY_ASSETS_ENOREL}" ;;
     *) exit 1 ;;
 esac
 
