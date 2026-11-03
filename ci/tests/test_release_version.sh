@@ -33,9 +33,14 @@ tree()
 ok() { printf 'ok   %s\n' "$*"; }
 bad() { printf 'FAIL %s\n' "$*"; fails=$((fails + 1)); }
 
+# 门禁在 CI 里把 tag/ver 写进 $GITHUB_OUTPUT，本地才打印。回归断言的是
+# 打印形态，若继承工作流的 GITHUB_OUTPUT，out_set 会安静地写进那个文件，
+# 断言取不到文本——本地全过、CI 全红（run 6e31b4b）。输出通道属于运行
+# 环境，回归必须自带干净环境，不能要求门禁为测试改行为。
 run()
 {
-    bash "${FX}/ci/gates/release-version.sh" "$@" 2>&1
+    env -u GITHUB_OUTPUT -u GITHUB_ENV -u GITHUB_ACTIONS \
+        bash "${FX}/ci/gates/release-version.sh" "$@" 2>&1
 }
 
 # expect NAME RC TEXT [ARG...] —— 跑一次门禁，比对退出码与输出片段。
