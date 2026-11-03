@@ -117,6 +117,14 @@ grep -Fq 'run-*/boot.log' "${FX}/out4/evidence-missing.txt" &&
 check "缺 --out 退 5" 5 "" --dir "${FX}/bare"
 check "无 --dir 退 5" 5 "" --out "${FX}/out5"
 
+# 前一条腿失败会让后续腿整段跳过，连目录都不会被创建。这是最常见的缺证
+# 形态，必须按四件套全缺登记，而不是让整次收集以参数错误退出——否则另一
+# 条腿已经拿到的证据也跟着丢掉。
+check "腿目录不存在按缺件登记" 0 "缺 4 项" \
+    --out "${FX}/out6" --dir "${FX}/nodir" --dir "${tmp}/install-usb"
+[ -f "${FX}/out6/install-usb/tap.txt" ] || {
+    printf 'FAIL 缺腿拖累了正常腿的证据\n' >&2; fails=$((fails + 1)); }
+
 if [ "${fails}" -eq 0 ]; then
     printf 'test_evidence: 全部通过\n'
 else
