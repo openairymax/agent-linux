@@ -14,7 +14,7 @@
 #   ① 声明面（无参数）：comps 装齐 NetworkManager 与无线后端、且不装
 #      NetworkManager-config-server；固件清单覆盖 wifi 器件；桌面策略
 #      文件键齐全；spec 同时声明、安装并打包该文件；两个 kickstart 剖面
-#      都声明 DHCP 引导并启用 NetworkManager。
+#      都声明 DHCP 引导，且经 boot-set 清单启用 NetworkManager。
 #   ② 实物面（--root）：镜像内策略文件、nmcli、NetworkManager.service
 #      都在，且没有残留的服务器策略。包在而内容不在，正是声明面看不
 #      出来的形态。
@@ -46,6 +46,7 @@ MAN="${ROOT}/distro/firmware/fw-manifest.txt"
 CONF="${ROOT}/distro/network/99-airymax.conf"
 SPEC="${ROOT}/distro/specs/airymaxos-release.spec"
 KSDIR="${ROOT}/distro/kickstart"
+BOOTSET="${ROOT}/distro/presets/boot-set"
 TMP="$(mktemp -d)"
 trap 'rm -rf "${TMP}"' EXIT
 
@@ -170,17 +171,15 @@ spec_check()
     }
 }
 
-# 两个剖面启用单元的方式不同：minimal 走 kickstart 的 services 指令，
-# workstation 在 %post 里按清单逐项 systemctl --root=/ enable 并断言落盘
-# 状态。判据同时认这两条路径，问的是「有没有把 NetworkManager 列入启用」，
-# 不把某一种写法钉成唯一正确做法。
+# 单元启用只有一条实现（SSoT）：kickstart 调 boot_set.sh --root=/ 离线落位，
+# 清单是 distro/presets/boot-set，与升级路径的 %posttrans 共用同一份。判据
+# 因此问的是这条链是否完整——只管 kickstart 里逐项 enable 的写法，就是又抄
+# 了一份清单，清单搬走之后它只会稳定地报假警。
 nm_on()
 {
-    if grep -qE '^services --enabled=.*NetworkManager' "$1"; then
-        return 0
-    fi
-    grep -qE 'systemctl --root=/ enable' "$1" &&
-        grep -qF 'NetworkManager.service' "$1"
+    grep -qF 'boot_set.sh' "$1" &&
+        grep -qF -- '--root=/' "$1" &&
+        grep -qxF 'NetworkManager.service' "${BOOTSET}"
 }
 
 ks_check()
