@@ -4,7 +4,7 @@
 # ci/gates/kernel-consistency.sh — 生成物与真相源的零漂移校验
 #
 # 用法:
-#   ci/gates/kernel-consistency.sh [--kind all|matrix|abi|codegen|uapi]
+#   ci/gates/kernel-consistency.sh [--kind all|specver|matrix|abi|codegen|uapi]
 #
 # 前三条校验共用同一个性质：仓库里有「人工维护的真值」和「由真值生成的
 # 产物」，一旦两者不一致，说明有人改了真值没重跑生成器，或改了生成物
@@ -15,12 +15,19 @@
 #   matrix   任务书矩阵（OS-STD-TOOL-161）
 #   abi      ABI 布局黄金样本（OS-IRON-001）
 #   codegen  代码生成零漂移
+#   specver  内核版本在配方与内核树之间一致
 #
 # 第四条 uapi 重建的是上游已删除的 headers_check 语义：导出的头文件
 # 必须自包含编译。文本式 grep（用 __u32 就必须 include linux/types.h）
 # 会误杀整个 [SC] 契约头体系——它们刻意经 uapi_compat.h 三方类型桥
 # （非 Linux 平台 typedef stdint），因此这里以「逐头 standalone 编译」
 # 为准，让编译器而非正则裁决自包含性。
+#
+# specver 校验的是跨子树的版本真值：kernel/Makefile 由上游提交决定，
+# 是内核版本的唯一来源；distro 配方以 %global kernel_version 复述它，
+# RPM 的 Source 名与版本字段都由这个宏派生。抬基线时只改一处，两边就
+# 静默分叉，且要等到镜像组装时由 build-kernel 的检查才拦下——此时整轮
+# RPM 构建已经烧完。这里复用 build-kernel 的同一条判据，把发现提前到秒级。
 #
 # 退出码: 0 通过；1 有漂移；5 参数不满足。
 # ===========================================================================
@@ -36,7 +43,7 @@ KIND=all
 usage()
 {
     cat <<'EOF'
-用法: ci/gates/kernel-consistency.sh [--kind all|matrix|abi|codegen]
+用法: ci/gates/kernel-consistency.sh [--kind all|specver|matrix|abi|codegen|uapi]
 EOF
 }
 
@@ -52,14 +59,24 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 
-case "${KIND}" in all | matrix | abi | codegen | uapi) ;;
+case "${KIND}" in all | specver | matrix | abi | codegen | uapi) ;;
 *)
-    note "--kind 只接受 all|matrix|abi|codegen|uapi"
+    note "--kind 只接受 all|specver|matrix|abi|codegen|uapi"
     exit "${EINVAL}"
     ;;
 esac
 
 cd "${REPO_ROOT}" || die "无法进入 ${REPO_ROOT}"
+
+run_specver()
+{
+    group "specver: 内核版本与配方一致"
+    local ver rc=0
+    ver="$(bash distro/scripts/build-kernel.sh --check-version)" || rc=$?
+    [ "${rc}" -ne 0 ] || note "内核版本 ${ver}"
+    endgroup
+    return "${rc}"
+}
 
 run_matrix()
 {
@@ -121,11 +138,13 @@ run_uapi()
 rc=0
 case "${KIND}" in
 all)
+    run_specver || rc=1
     run_matrix || rc=1
     run_abi || rc=1
     run_codegen || rc=1
     run_uapi || rc=1
     ;;
+specver) run_specver || rc=1 ;;
 matrix) run_matrix || rc=1 ;;
 abi) run_abi || rc=1 ;;
 codegen) run_codegen || rc=1 ;;
