@@ -30,74 +30,10 @@ bad()
     fails=$((fails + 1))
 }
 
-mkdir -p "${tmp}/bin" "${tmp}/store"
-cat >"${tmp}/bin/oras" <<'EOF'
-#!/bin/sh
-store="${FAKE_STORE:-/nonexistent}"
-cmd="$1"
-shift
-key()
-{
-    printf '%s' "$1" | tr '/:' '__'
-}
-case "$cmd" in
-login)
-    cat >/dev/null
-    exit 0
-    ;;
-manifest)
-    sub="$1"
-    shift
-    case "$sub" in
-    fetch)
-        [ -d "${store}/$(key "$1")" ] || {
-            echo "Error: not found" >&2
-            exit 1
-        }
-        echo '{"layers":[]}'
-        ;;
-    delete)
-        rm -rf "${store}/$(key "$2")"
-        ;;
-    esac
-    ;;
-push)
-    ref=""
-    files=""
-    while [ $# -gt 0 ]; do
-        case "$1" in
-        --artifact-type) shift; shift ;;
-        /*:*) files="${files} ${1%%:*}"; shift ;;
-        *) ref="$1"; shift ;;
-        esac
-    done
-    mkdir -p "${store}/$(key "${ref}")"
-    for f in ${files}; do
-        cp "${f}" "${store}/$(key "${ref}")/"
-    done
-    [ -n "${FAKE_CORRUPT:-}" ] &&
-        printf 'x' >>"${store}/$(key "${ref}")/payload.tar"
-    ;;
-pull)
-    ref=""
-    out=""
-    while [ $# -gt 0 ]; do
-        case "$1" in
-        -o) shift; out="$1"; shift ;;
-        *) ref="$1"; shift ;;
-        esac
-    done
-    [ -d "${store}/$(key "${ref}")" ] || {
-        echo "Error: manifest unknown" >&2
-        exit 1
-    }
-    mkdir -p "${out}"
-    cp -a "${store}/$(key "${ref}")/." "${out}"/
-    ;;
-esac
-exit 0
-EOF
-chmod 755 "${tmp}/bin/oras"
+mkdir -p "${tmp}/store"
+# shellcheck source=lib/fake_oras.sh
+. "${ROOT}/ci/tests/lib/fake_oras.sh"
+fake_oras_install "${tmp}/bin"
 
 run()
 {

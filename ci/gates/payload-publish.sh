@@ -315,7 +315,7 @@ pull()
             die "写入池失败: ${DIR}/${base}"
         hit=$((hit + 1))
     done
-    printf 'tag=%s\nrpm=%s\nsource=ghcr\n' "${TAG}" "${hit}" \
+    printf 'tag=%s\nrpm=%s\ntotal=%s\nsource=ghcr\n' "${TAG}" "${hit}" "${n}" \
         >"${DIR}/${MARK_SRC}"
     say "回取 ${hit}/${n}${arch_note}（${REF}:${TAG}）"
 }

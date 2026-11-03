@@ -226,6 +226,16 @@ jobs:
       # 「播种成功」。
       - uses: oras-project/setup-oras@22ce207df3b08e061f537244349aac6ae1d214f6 # v1
 
+      # 输入指纹在下载任何 RPM 之前就能算出来：五段仓库的 repomd 摘要、comps、
+      # 锁定输入、配方与镜像根表。预热端（payload-seed.yml）按同一指纹把整份
+      # 载荷推成 seed- 层，此处命中即拿到与当前上游一致的字节，不必再跨境收割。
+      # 层未发布或上游不可达时退 0，由下一步的老制品与在线求解接住：预热只
+      # 负责让层提前存在，任何一方都不得先跑完不可。
+      - name: Seed closure RPM pool by input key
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ci/ci.sh payload-seed fetch --dir "$RUNNER_TEMP/closure-cache" --arch x86_64 --token "$GHCR_TOKEN"
+
       - name: Seed closure RPM pool
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
