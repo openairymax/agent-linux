@@ -166,4 +166,21 @@ case "${out}" in
 *) bad "空池仍然推送"; printf '%s\n' "${out}" >&2 ;;
 esac
 
+missing_of()
+{
+    sed -n 's/^missing=//p' "$1" | head -1
+}
+
+# 层存在时不应该再起预热（整池恢复约 2.5 GB，上游一天只变几批）。x86_64 的
+# 层在前面的用例里已经推过，riscv64 的没有。
+run probe --arch x86_64 --check --ref "ghcr.io/x/y" --output "${tmp}/c1" >/dev/null
+[ "$(missing_of "${tmp}/c1")" = "0" ] &&
+    ok "层已存在时 probe 报告无需预热" ||
+    bad "层已存在时 missing 不为 0（$(missing_of "${tmp}/c1")）"
+
+run probe --arch riscv64 --check --ref "ghcr.io/x/y" --output "${tmp}/c2" >/dev/null
+[ "$(missing_of "${tmp}/c2")" = "1" ] &&
+    ok "层缺失时 probe 报告需要预热" ||
+    bad "层缺失时 missing 不为 1（$(missing_of "${tmp}/c2")）"
+
 exit "${fails}"
