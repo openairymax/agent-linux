@@ -6,14 +6,16 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 
 ---
 
-本目录承接 L-16 release 工程能力，当前包含两个工具：
+本目录承接 L-16 release 工程能力，当前包含三个工具与一份验收报告模板：
 
 | 工具 | 职责 |
 |------|------|
 | [`merge_sbom.py`](#merge_sbompy--spdx-sbom-分片合并) | 把各子仓扫描出的 SPDX 2.3 SBOM 分片合并为单一 `agent-linux` 主体物料清单 |
 | [`release_manifest.py`](#release_manifestpy--发布物料清单门禁与生成) | 以 `manifest.yaml` 为唯一事实源，校验「物料清单 ↔ release 流水线」双向一致，并生成校验和与 release notes |
+| [`pick_image.py`](#pick_imagepy--安装镜像认领) | 按提交认领已被 `image-build` 验收的安装镜像，使发行物与验收过的镜像字节同一 |
+| [`acceptance-report-template.md`](acceptance-report-template.md) | 验收报告模板（§1 准备 → §8 归档），占位符残留即视为未取证 |
 
-两个工具都**只做真实计算**，不做任何占位跳过：冲突即失败，绝不静默丢弃或覆盖。
+三个工具都**只做真实计算**，不做任何占位跳过：冲突即失败，绝不静默丢弃或覆盖。
 
 ---
 
@@ -174,6 +176,49 @@ python3 tools/release-engineering/release_manifest.py --check \
 
 ---
 
+## pick_image.py — 安装镜像认领
+
+### 用途
+
+安装镜像由 `image-build.yml` 在同一提交上组装并验收：A 轮产出产品 ISO 并断言
+`AIRYMAX-DESKTOP-READY`，B 轮产出验收 ISO 并断言 `AIRYMAX-SMOKE-PASS`。发行
+流程在打 tag 前认领 A 轮产物；若在 tag 上重新组装镜像，「发布的镜像」与「验收
+过的镜像」就不是同一份字节，`G-ISO-1` 与 `G-UKUI-1` 随之失去意义，且多花一轮
+组装时间。本工具把「认领哪一次运行」从人工辨认变为可复算的判据。
+
+认领判据三条同时成立：
+
+| # | 判据 | 说明 |
+|---|------|------|
+| 1 | 制品名等于 `--name` | 产品 ISO 的制品名为 `airymaxos-image`；B 轮验收 ISO 带 `-acceptance` 后缀，故验收镜像天然不会被认领——这是「发行物不得含自动登录与冒烟夹具」的结构性保证，而非人工约定 |
+| 2 | 制品未过期 | GitHub 制品过期后不可下载，认领即失败 |
+| 3 | `workflow_run.head_sha` 等于发布提交 | 不同提交的镜像即使同名也不可用 |
+
+多条命中取 `created_at` 最新者：同一提交重跑时以最后一次组装为准。
+
+### 使用方法
+
+```bash
+# 由 gh 导出制品清单后认领
+gh api --paginate "/repos/<owner>/<repo>/actions/artifacts" > artifacts.json
+python3 tools/release-engineering/pick_image.py \
+  --artifacts artifacts.json --sha "$(git rev-parse HEAD)"
+
+# 写入 GITHUB_OUTPUT（流水线内使用）
+python3 tools/release-engineering/pick_image.py \
+  --artifacts artifacts.json --sha "$GITHUB_SHA" --output "$GITHUB_OUTPUT"
+```
+
+### 退出码
+
+| 退出码 | 含义 |
+|--------|------|
+| `0` | 命中并输出（`run_id=` 与 `artifact=`） |
+| `1` | 无制品满足判据 |
+| `2` | 用法 / 输入错误（文件不可读、JSON 非法、缺字段） |
+
+---
+
 ## CI 接入
 
 - **管理仓 `release.yml`（`build-and-sign` job）**：以
@@ -200,6 +245,7 @@ python3 -m pytest tools/release-engineering/tests/ -q
 - `tests/test_merge_sbom.py` — 合并 / 去重 / 冲突 / 确定性 / CLI。
 - `tests/test_release_manifest.py` — 清单 schema / 流水线产物提取 / 双向一致性 /
   校验和 / release notes / CLI / 真实仓库。
+- `tests/test_pick_image.py` — 三条认领判据 / 同名取最新 / 过期与跨提交拒绝 / CLI。
 
 ## 许可证
 
