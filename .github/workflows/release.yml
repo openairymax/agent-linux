@@ -69,6 +69,12 @@ jobs:
           fetch-depth: 0
           submodules: recursive
 
+      # 发布比组装更不允许「源码只在本机」：tag 一侧推了、另一侧没推，
+      # 产物照样签得出来，但取不到对应源码的发行版没有意义（CI-07）。
+      # 比的是 tag 与检出提交，手动触发与 tag 推送两种入口因此同判据。
+      - name: Origin tag check
+        run: ci/ci.sh remote-sync --kind tags --ref "$RELEASE_TAG" --sha "$(git rev-parse HEAD)" --remote origin
+
       # 与 image-build 同一条静态门禁：发布链此前全程无 lint，静态不合格
       # 的树可以直接进到四架构内核构建与签名（0.0.4 清单 CI-06）。
       - name: Static gates

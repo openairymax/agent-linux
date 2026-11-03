@@ -103,6 +103,15 @@ jobs:
         with:
           submodules: recursive
 
+      # 构建侧只看得到自己被 checkout 的那一份。本地有、镜像还没收的提交
+      # 照样能编出校验和齐全的发行物，只是没有任何远程取得到它的源码，
+      # 于是这份产物不可复现也不可追溯（CI-07）。这一步最便宜，放最前面。
+      - name: Origin tip check
+        env:
+          REF: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+        run: ci/ci.sh remote-sync --ref "$REF" --sha "$SHA" --remote origin
+
       # 静态门禁必须先于组装：spec / comps / kickstart 改坏一条断言，代价
       # 是整轮 240 分钟组装白跑。此前 assemble 首步是 free-disk，静态不合格
       # 的树照样能进到 ISO 阶段（0.0.4 清单 CI-06）。
