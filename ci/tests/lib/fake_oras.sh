@@ -35,31 +35,63 @@ manifest)
     shift
     case "$sub" in
     fetch)
-        [ -d "${store}/$(key "$1")" ] || {
+        meta="${store}/.meta/$(key "$1").json"
+        if [ -f "${meta}" ]; then
+            cat "${meta}"
+        elif [ -d "${store}/$(key "$1")" ]; then
+            echo '{"layers":[]}'
+        else
             echo "Error: not found" >&2
             exit 1
-        }
-        echo '{"layers":[]}'
+        fi
         ;;
     delete)
-        rm -rf "${store}/$(key "$2")"
+        rm -rf "${store}/$(key "$2")" "${store}/.meta/$(key "$2").json"
         ;;
     esac
     ;;
 push)
     ref=""
     files=""
+    anns=""
     while [ $# -gt 0 ]; do
         case "$1" in
         --artifact-type) shift; shift ;;
-        /*:*) files="${files} ${1%%:*}"; shift ;;
-        *) ref="$1"; shift ;;
+        --annotation)
+            anns="${anns}
+$2"
+            shift 2
+            ;;
+        *)
+            if [ -z "${ref}" ]; then
+                ref="$1"
+            else
+                files="${files} $1"
+            fi
+            shift
+            ;;
         esac
     done
-    mkdir -p "${store}/$(key "${ref}")"
+    mkdir -p "${store}/$(key "${ref}")" "${store}/.meta"
     for f in ${files}; do
-        cp "${f}" "${store}/$(key "${ref}")/"
+        src="${f%%:*}"
+        [ -f "${src}" ] || src="${f}"
+        cp "${src}" "${store}/$(key "${ref}")/"
     done
+    if [ -n "${anns}" ]; then
+        {
+            printf '{"annotations":{'
+            printf '%s\n' "${anns}" | {
+                sep=""
+                while IFS= read -r a; do
+                    [ -n "${a}" ] || continue
+                    printf '%s"%s":"%s"' "${sep}" "${a%%=*}" "${a#*=}"
+                    sep=","
+                done
+            }
+            printf '},"layers":[]}'
+        } >"${store}/.meta/$(key "${ref}").json"
+    fi
     [ -n "${FAKE_CORRUPT:-}" ] &&
         printf 'x' >>"${store}/$(key "${ref}")/payload.tar"
     ;;
