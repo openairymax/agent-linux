@@ -26,7 +26,7 @@ fails=0
 FX="${tmp}/fx"
 mkdir -p "${FX}/ci/gates" "${FX}/ci/lib" \
     "${FX}/distro/comps" "${FX}/distro/firmware" "${FX}/distro/network" \
-    "${FX}/distro/specs" "${FX}/distro/kickstart"
+    "${FX}/distro/specs" "${FX}/distro/kickstart" "${FX}/distro/presets"
 cp "${GATE}" "${FX}/ci/gates/net-online.sh"
 cp "${ROOT}/ci/lib/log.sh" "${FX}/ci/lib/log.sh"
 
@@ -143,17 +143,24 @@ linux-firmware  gpu   /usr/lib/firmware/i915/*.bin*
 EOF
 }
 
-# 两个剖面启用单元的方式不同：min 走 services 指令，ws 在 %post 里离线
-# 启用。合规夹具同时覆盖两条路径，判据不把任何一种写法钉成唯一做法。
+# 两个剖面共用同一条启用链：kickstart 调 boot_set.sh 以 --root 离线落位，
+# 清单是 distro/presets/boot-set。判据问的是这条链是否完整，不另认逐项
+# enable 的写法——那等于把清单再抄一份。
 ks()
 {
     w kickstart/min.ks <<'EOF'
 network --bootproto=dhcp --activate --hostname=airymax-pc
-services --enabled=sshd,chronyd,NetworkManager
+boot_tool=/usr/lib/airymaxos/scripts/boot_set.sh
+"${boot_tool}" --root=/
 EOF
     w kickstart/ws.ks <<'EOF'
 network --bootproto=dhcp --activate
-systemctl --root=/ enable NetworkManager.service
+boot_tool=/usr/lib/airymaxos/scripts/boot_set.sh
+"${boot_tool}" --root=/
+EOF
+    w presets/boot-set <<'EOF'
+sshd.service
+NetworkManager.service
 EOF
 }
 
@@ -237,6 +244,12 @@ printf 'network --bootproto=dhcp --activate\n' >"${FX}/distro/kickstart/ws.ks"
 out="$(run)"
 check "kickstart 未启用 NetworkManager 判拒绝" 1 "$?" "${out}" \
     "ws.ks 未启用 NetworkManager"
+
+ks
+sed -i '/NetworkManager.service/d' "${FX}/distro/presets/boot-set"
+out="$(run)"
+check "启用清单缺 NetworkManager 判拒绝" 1 "$?" "${out}" \
+    "min.ks 未启用 NetworkManager"
 
 mkfix
 mkdir -p "${tmp}/root/etc/NetworkManager/conf.d" "${tmp}/root/usr/bin" \
