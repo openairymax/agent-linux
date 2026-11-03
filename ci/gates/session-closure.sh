@@ -131,9 +131,13 @@ check_source()
     # tty0 + ttyS0。0.0.3 把 ARM64 的 ttyAMA0 抄进来，无该设备的机器上
     # console= 会注册成幽灵项，systemd-vconsole-setup 随之失败；三项
     # console= 也让「最后一项路由 /dev/console」的语义不可读。
+    #
+    # 判据落在 console= 赋值上，不落在设备名本身：包内 changelog 与注释
+    # 需要能如实写明「此处故意不写 ttyAMA0」，禁设备名会把解释也判死，
+    # 逼人删掉唯一说明为什么这么做的证据。
     want_absent "${ks}" 'console=ttyAMA0' "kickstart/console-arch"
     want_absent "${min}" 'console=ttyAMA0' "kickstart-min/console-arch"
-    want_absent "${spec}" 'ttyAMA0' "spec-check/console-arch"
+    want_absent "${spec}" 'console=ttyAMA0' "spec-check/console-arch"
     console_count "${ks}" 2 "kickstart/console-count"
     console_count "${min}" 2 "kickstart-min/console-count"
 
