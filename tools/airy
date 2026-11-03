@@ -33,7 +33,7 @@ usage()
 	cat <<'EOF'
 用法：tools/airy <命令> [参数...]
 
-  --list, -l    列出全部命令
+  --list, -l    列出全部命令（按用途分组，列出脚本相对 tools/ 的路径）
   --help, -h    本帮助
 
 命令名与脚本路径的唯一声明在 tools/commands.tsv；各命令的参数见
@@ -41,25 +41,66 @@ usage()
 EOF
 }
 
+# 表里既有数据行也有 `# -- 分组名 ----` 的节标题。分两遍读：第一遍取
+# 命令列与路径列的真实最大宽度，第二遍才输出。宽度不能用固定值——
+# release-engineering/release_manifest.py 已超过旧版写死的 38 列，用途
+# 列被顶歪就是从这里来的。表头保持 ASCII：CJK 按字节计宽，与 %-*s 不同源。
+tab=$(printf '\t')
+
 list()
 {
-	local cmd path desc
-	while read -r cmd path desc || [ -n "$cmd" ]; do
-		case "$cmd" in
-		''|'#'*) continue ;;
+	line=""
+	name=""
+	path=""
+	wcmd=0
+	wpath=0
+
+	while IFS= read -r line || [ -n "$line" ]; do
+		case "$line" in
+		'' | '#'*) continue ;;
 		esac
-		printf '  %-12s %-38s %s\n' "$cmd" "$path" "$desc"
+		name=${line%%"$tab"*}
+		path=${line#*"$tab"}
+		path=${path%%"$tab"*}
+		[ "${#name}" -gt "$wcmd" ] && wcmd=${#name}
+		[ "${#path}" -gt "$wpath" ] && wpath=${#path}
+	done <"$TABLE"
+
+	printf '  %-*s  %-*s  %s\n' "$wcmd" "cmd" "$wpath" "script (in tools/)" "purpose"
+	while IFS= read -r line || [ -n "$line" ]; do
+		case "$line" in
+		'' ) continue ;;
+		'# -- '*)
+			group=${line#\# -- }
+			printf '\n%s\n' "${group%% -*}"
+			continue
+			;;
+		'#'*) continue ;;
+		esac
+		name=${line%%"$tab"*}
+		path=${line#*"$tab"}
+		path=${path%%"$tab"*}
+		desc=${line#*"$tab"}
+		desc=${desc#*"$tab"}
+		printf '  %-*s  %-*s  %s\n' "$wcmd" "$name" "$wpath" "$path" "$desc"
 	done <"$TABLE"
 }
 
 resolve()
 {
-	local cmd="$1" path target=""
-	while read -r name path _ || [ -n "$name" ]; do
-		case "$name" in
-		''|'#'*) continue ;;
+	want="$1"
+	name=""
+	path=""
+	target=""
+
+	while IFS= read -r line || [ -n "$line" ]; do
+		case "$line" in
+		'' | '#'*) continue ;;
 		esac
-		if [ "$name" = "$cmd" ]; then
+		name=${line%%"$tab"*}
+		path=${line#*"$tab"}
+		path=${path%%"$tab"*}
+		if [ "$name" = "$want" ]; then
 			target="$path"
 			break
 		fi
