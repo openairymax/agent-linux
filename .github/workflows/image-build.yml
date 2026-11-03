@@ -477,6 +477,25 @@ jobs:
           TAG: ${{ inputs.release_tag }}
         run: ci/ci.sh iso-publish --out "$RUNNER_TEMP/image" --tag "$TAG" ${{ inputs.replace && '--force' || '' }}
 
+      # 证明与 ISO 同批发布：ISO 一进 registry 就不再改动，证明若晚一步生成，
+      # 中间就留下「镜像已在、来源只能靠构建日志口头说明」的窗口。buildId 取
+      # 自镜像自带的 image-ci-manifest.txt（随制品一起下载），因此证明里的值
+      # 与装机后 /etc/airymaxos-build 逐字相同——这是「装机可反查」的全部依据。
+      - name: Build ISO provenance attestation
+        if: success() && inputs.release_tag != '' && !inputs.acceptance
+        env:
+          TAG: ${{ inputs.release_tag }}
+        run: ci/ci.sh attest build --out "$RUNNER_TEMP/image" --tag "$TAG"
+
+      # 推后回读比对摘要、buildId 与字节，任一处不符即红：证明本身也要能被
+      # 验证，否则它只是另一段自述。
+      - name: Publish ISO provenance attestation
+        if: success() && inputs.release_tag != '' && !inputs.acceptance
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.release_tag }}
+        run: ci/ci.sh attest publish --out "$RUNNER_TEMP/image" --tag "$TAG" --token "$GHCR_TOKEN" ${{ inputs.replace && '--force' || '' }}
+
       # 清单只由产物推出：ISO 实测摘要对账本、build 对发行包 NEVRA，任一
       # 不等即不产出（生成器退 1，本步红）。放在发布之后是因为账本由
       # iso-publish 写出——提前生成等于给未经账本自证的字节发摘要。
