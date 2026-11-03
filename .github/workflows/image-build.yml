@@ -99,7 +99,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 300
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           submodules: recursive
 
@@ -128,7 +128,7 @@ jobs:
       # 下载（run 40485745100 的 ISO 单件就占 43 分钟）退化为本地解包，
       # 重复轮次不再受跨洋链路速率左右。
       - name: Restore openEuler media
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ runner.temp }}/media
           key: oe-media-${{ env.OE_ISO_SHA256 }}-${{ env.OE_IMG_SHA256 }}
@@ -147,7 +147,7 @@ jobs:
       # 永远不落盘，下一轮又从零下载，越慢越容易被取消，形成自锁环。
       - name: Restore dnf toolchain cache
         id: dnf
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ runner.temp }}/dnf-cache
           key: dnf-${{ hashFiles('ci/container/build-packages.txt') }}
@@ -174,7 +174,7 @@ jobs:
       # （run 41613120035：命中 371 MiB 的半份缓存，离线自证立刻失败）。
       - name: Save dnf toolchain cache
         if: always() && steps.dnf.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ runner.temp }}/dnf-cache
           key: ${{ steps.warm.outcome == 'success' && format('dnf-{0}', hashFiles('ci/container/build-packages.txt')) || format('dnf-{0}-partial-{1}', hashFiles('ci/container/build-packages.txt'), github.run_id) }}
@@ -184,7 +184,7 @@ jobs:
       # 只存一份。第一段缺席时（首次播种）按 closure- 回落到旧代的池。
       - name: Restore closure RPM pool
         id: pool
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ runner.temp }}/closure-cache
           key: closure-${{ hashFiles('distro/repo/mirrors.list', 'distro/kickstart/airymaxos-workstation.ks') }}-${{ github.run_id }}
@@ -200,7 +200,7 @@ jobs:
       # 564 MiB、制品 2321.7 MiB、播种 0 秒，构建段 40 分钟仍在拉包）。
       # 制品尚未发布时本步退 0，回落在线的慢路径，不会把「没播种」伪装成
       # 「播种成功」。
-      - uses: oras-project/setup-oras@v1
+      - uses: oras-project/setup-oras@22ce207df3b08e061f537244349aac6ae1d214f6 # v1
 
       - name: Seed closure RPM pool
         env:
@@ -238,7 +238,7 @@ jobs:
       - name: Save closure RPM pool
         if: always() && steps.poolstate.outputs.count != '0'
         continue-on-error: true
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ runner.temp }}/closure-cache
           key: closure-${{ hashFiles('distro/repo/mirrors.list', 'distro/kickstart/airymaxos-workstation.ks') }}-${{ steps.poolstate.outputs.digest }}
@@ -295,7 +295,7 @@ jobs:
       # 两个制品根下载后层级不同，门禁按文件名递归取唯一一份。
       - name: Upload release rpms
         if: success() && inputs.release_tag != '' && !inputs.acceptance
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: airymaxos-release-rpms
           path: |
@@ -306,7 +306,7 @@ jobs:
 
       - name: Upload image artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: airymaxos-image
           path: |
@@ -332,7 +332,7 @@ jobs:
     needs: assemble
     timeout-minutes: 360
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Checkout distro submodule
         run: git submodule update --init distro
@@ -346,7 +346,7 @@ jobs:
         run: ci/ci.sh qemu-setup --firmware both
 
       - name: Download image artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: airymaxos-image
           path: ${{ runner.temp }}/image
@@ -408,7 +408,7 @@ jobs:
       # 不同，占用发行 tag 会让两边都无法用 .sha256 自证。
       # 条件里显式写 success()：一旦给出 if 表达式，Actions 就不再套用默认的
       # success()，装机失败时发布步骤反而会被放行。
-      - uses: oras-project/setup-oras@v1
+      - uses: oras-project/setup-oras@22ce207df3b08e061f537244349aac6ae1d214f6 # v1
         if: success() && inputs.release_tag != '' && !inputs.acceptance
 
       # 幂等判据是「同 tag 同摘要」，重建同版本发行物必然摘要不同，故覆盖只
@@ -426,7 +426,7 @@ jobs:
       # iso-publish 写出——提前生成等于给未经账本自证的字节发摘要。
       - name: Download release rpms
         if: success() && inputs.release_tag != '' && !inputs.acceptance
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: airymaxos-release-rpms
           path: ${{ runner.temp }}/relch
@@ -440,7 +440,7 @@ jobs:
 
       - name: Upload acceptance evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: airymaxos-acceptance
           path: |
