@@ -2,46 +2,49 @@
 # ===========================================================================
 # commands.tsv — tools/ 命令面的唯一声明
 #
-# 每行三列（制表符分隔）：命令名、脚本相对路径、一句话用途。
-# `tools/airy` 只读这张表分发；改布局只改这里，命令名不随目录漂移。
+# 每行三列，列间恰好一个制表符：命令名、脚本相对路径、一句话用途。
+# 对齐由 `tools/airy --list` 负责，本文件不做填充——多列制表符会让
+# `cut -f2`、`awk -F'\t'` 这类按列取值的读取方式拿到空字段。
+#
 # 命令名用 kebab-case，与脚本文件名解耦：有的脚本沿用模块名
-# （os_chk.py），有的叫 farm_cli.py，对外一律以本表为准。
+# （os_chk.py），有的叫 farm_cli.py，对外一律以本表为准。改布局只改
+# 这张表，命令名不随目录漂移。
 #
 # 新增工具时同时更新 tools/README.md 的工具表；双向一致性由
 # tools/os-chk/tests/test_tools_index.py 校验。
 # ===========================================================================
 
 # -- 仓库治理（只读工作树状态，不读构建产物） -----------------------------
-ssot			repo/validate-ssot.py		SSoT 规则 ID 与注册表一致性校验
-owners			repo/codeowners.py		MAINTAINERS → CODEOWNERS 投影与漂移检查
-copyright		repo/check-copyright.py		仓库文件版权头检查
-leaf-ci			repo/aggregate-subrepo-ci.py	聚合各子仓 CI 状态
+ssot	repo/validate-ssot.py	SSoT 规则 ID 与注册表一致性校验
+owners	repo/codeowners.py	MAINTAINERS → CODEOWNERS 投影与漂移检查
+copyright	repo/check-copyright.py	仓库文件版权头检查
+leaf-ci	repo/aggregate-subrepo-ci.py	聚合各子仓 CI 状态
 
 # -- 测试证据（TAP / KTAP） ----------------------------------------------
-tap			tap/parse-tap.py		kselftest TAP 解析，not ok 即失败
-ktap			tap/kunit-tap-diff.py		KUnit KTAP 用例数棘轮门禁
+tap	tap/parse-tap.py	kselftest TAP 解析，not ok 即失败
+ktap	tap/kunit-tap-diff.py	KUnit KTAP 用例数棘轮门禁
 
 # -- CI 契约（清单 ↔ 工作流静态一致性） ----------------------------------
-chk			os-chk/os_chk.py		统一门禁编排器（gates.yaml 注册表）
-matrix			ci-matrix/ci_matrix.py		CI 构建矩阵契约检查
-defconfig		defconfig-matrix/defconfig_matrix.py	defconfig 矩阵契约检查
-btf			btf-integration/btf_integration.py	BTF / eBPF 基线契约检查
-kbuild			kbuild-version/kbuild_version.py	Kbuild 版本注入契约检查
-nightly			nightly/nightly.py		夜间流水线契约检查
-scaffold		repo-scaffold/repo_scaffold.py	八子仓骨架契约检查
+chk	os-chk/os_chk.py	统一门禁编排器（gates.yaml 注册表）
+matrix	ci-matrix/ci_matrix.py	CI 构建矩阵契约检查
+defconfig	defconfig-matrix/defconfig_matrix.py	defconfig 矩阵契约检查
+btf	btf-integration/btf_integration.py	BTF / eBPF 基线契约检查
+kbuild	kbuild-version/kbuild_version.py	Kbuild 版本注入契约检查
+nightly	nightly/nightly.py	夜间流水线契约检查
+scaffold	repo-scaffold/repo_scaffold.py	八子仓骨架契约检查
 
 # -- 契约生成与 ABI ------------------------------------------------------
-codegen			codegen/run_codegen.py		契约代码生成（--check 零漂移门禁）
-dsl			dsl/dsl_compile.py		策略 DSL 编译（--check 零漂移门禁）
-abi			abi-check/abi_check.py		系统调用 ABI 稳定性检查
-tri			sc-tri-compile/sc_tri_compile.py	[SC] 头文件三向编译与布局检查
+codegen	codegen/run_codegen.py	契约代码生成（--check 零漂移门禁）
+dsl	dsl/dsl_compile.py	策略 DSL 编译（--check 零漂移门禁）
+abi	abi-check/abi_check.py	系统调用 ABI 稳定性检查
+tri	sc-tri-compile/sc_tri_compile.py	[SC] 头文件三向编译与布局检查
 
 # -- 运行证据（真机 / 虚拟机） ------------------------------------------
-farm			airy-qemu/farm_cli.py		QEMU kselftest 农场（TAP 为准）
+farm	airy-qemu/farm_cli.py	QEMU kselftest 农场（TAP 为准）
 
 # -- 运维与发布 ----------------------------------------------------------
-rollback		airy-rollback/airy_rollback.py	三级回滚编排
-flash			airy-flash/airy_flash.py	ISO 可复现烧录与回读校验
-sbom			release-engineering/merge_sbom.py	SPDX SBOM 片段合并
-release			release-engineering/release_manifest.py	发布物料契约检查与校验和
-pick			release-engineering/pick_image.py	按提交认领已验收镜像
+rollback	airy-rollback/airy_rollback.py	三级回滚编排
+flash	airy-flash/airy_flash.py	ISO 可复现烧录与回读校验
+sbom	release-engineering/merge_sbom.py	SPDX SBOM 片段合并
+release	release-engineering/release_manifest.py	发布物料契约检查与校验和
+pick	release-engineering/pick_image.py	按提交认领已验收镜像
