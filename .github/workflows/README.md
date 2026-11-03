@@ -20,8 +20,9 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 - **`ci/gates/*.sh`**：全部断言与宿主准备，带 `# 用法:` 头，可直接执行。
 - **`ci/lib/*.sh`**：跨门禁共用的实现（apt 获取、宿主清理、TAP 解析等）。
 
-这条分工由 `ci/check-workflows.py` 的十二条规则强制执行（见第 4 节），而不是
-靠评审时的自觉。一个约定如果没有执行者，它就不是约定。
+这条分工由 `ci/check-workflows.py` 的十六条规则强制执行（见第 4 节），而不是
+靠评审时的自觉。一个约定如果没有执行者，它就不是约定。第 4 节的表格首列
+登记规则号，其覆盖范围由脚本反过来校验：文档漏登或重号同样判红。
 
 ## 2. 目录内容
 
@@ -67,24 +68,24 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 规则实现在 `ci/check-workflows.py`，由 `ci/lint.sh` 在 `os-chk-verify` 与本地
 lint 中执行。下表是规则本身，不是建议。
 
-| 方面 | 规则 | 为什么 |
-|------|------|--------|
-| 文件名 | kebab-case，`^[a-z0-9]+(-[a-z0-9]+)*\.yml$` | 任何文件系统与区域设置下大小写、排序都一致 |
-| `name:` | 与文件名主干逐字相同 | UI 显示名与文件路径只能有一处事实源，否则 Actions 列表、`gh workflow run` 与文档会互相矛盾 |
-| `-verify` 后缀 | 只留给阻断型门禁 | 读名字就知道违规会红 |
-| 生命周期名 | `image-build` / `nightly` / `release` | 按所属生命周期阶段命名，不按调用的工具命名 |
-| 载荷 | YAML 只做检出、`ci/ci.sh`、上传 | 断言全部下沉，可对遗留构建目录复跑 |
-| 作业数 | 每文件上限见 `ci/workflow-budgets.txt`（最多 2） | 保持 DAG 可读、关键路径短 |
-| 内联 `run` | 棘轮预算，只许下调；预算为 0 时额外禁用一批模式 | 防止 shell 逻辑一段段爬回 YAML |
-| `permissions:` | 顶层显式声明，禁止 `write-all` 与 `*: write` | 未声明时令牌权限随仓库设置漂移，同一份 YAML 在不同仓库权限不同 |
-| `concurrency:` | PR 触发的流水线必须声明，且取消进行中的旧轮 | 被取代的 run 的结论不描述当前树，留着只会占并发额度、并在排障时被误读 |
-| `timeout-minutes:` | 每个作业必填 | 缺省 360 分钟等于没有上限；获取卡死会一路烧到配额尽头 |
-| 运行器镜像 | 钉版（`ubuntu-24.04`），不用 `ubuntu-latest` | 浮动标签会悄悄换掉编译器、shellcheck 与 Python 版本，门禁结论就取决于跑的那一天 |
-| 触发路径对等 | `pull_request` 的 paths 必须是 `push` 的子集 | PR 独有的路径意味着该文件合并后不再被校验 |
-| 子模块路径 | 只写 gitlink 目录（`kernel`），不写 `kernel/**` | 父仓 diff 里子模块只有目录一项，内部 glob 永不命中，是死判据 |
-| 门禁存在性 | 每个 `ci/ci.sh <gate>` 必须有同名 `ci/gates/<gate>.sh` 且自带 `# 用法:` | 名字写错要到 checkout 与预热之后才以 exit 2 暴露；本地一秒可查 |
-| 库函数来源 | 门禁只能调用它 `source` 过的库函数 | 未 source 的 `need_cmd` 只会变成 “command not found”，前置校验静默失效 |
-| 动作版本 | `uses:` 一律钉 40 位提交 SHA，并带 `# vN` 注释 | 浮动 tag 可被上游重新指向：同一份 YAML 在两次运行之间换掉代码而日志无迹；钉 SHA 让升级变成一次显式提交，注释只作溯源标签 |
+| # | 规则 | 为什么 |
+|---|------|--------|
+| 1 | 结构上限：每个 workflow 的 job 数与内联 `run: \|` 块数不得超过 `ci/workflow-budgets.txt` 的登记值，预算只许下调 | 「薄化」要有可测量的上限，否则一次搬迁之后又会重新长回来 |
+| 2 | 棘轮：内联块数不得高于 `git HEAD` 中的同名文件 | 调低预算才算迁移；把逻辑抄回 YAML 会立即变红 |
+| 3 | 内联预算为 0 的文件不得出现已被门禁收编的模式：宿主清理、`docker load`、摘要校验、QEMU 安装、串口 TAP 解析 | 同一段断言有两份实现，改一处必漏一处 |
+| 4 | 不得在 YAML 里直接调用 `apt-get`，统一走 `ci/lib/apt.sh` | 获取超时、重试与硬超时只有一处实现，否则一次镜像不响应就烧光整步预算 |
+| 5 | 命名约定：文件名为 kebab-case 的 `<scope>[-<scope>…].yml`，且顶层 `name:` 与文件名主干逐字相同 | UI 显示名与文件路径只能有一处事实源，否则 Actions 列表、`gh workflow run` 与文档互相矛盾 |
+| 6 | 门禁脚本只能调用它 `source` 过的库函数 | 未 `source` 的 `need_cmd` 只会变成 "command not found"，前置校验静默失效 |
+| 7 | 顶层必须显式声明 `permissions:`，禁止 `write-all` 与 `*: write` | 未声明时令牌权限随仓库设置漂移，同一份 YAML 在不同仓库权限不同 |
+| 8 | 每个 job 必须有 `timeout-minutes:` | 缺省 360 分钟等于没有上限；获取卡死会一路烧到配额尽头 |
+| 9 | PR 触发的流水线必须声明 `concurrency:`，并取消进行中的旧轮 | 被取代的 run 的结论不描述当前树，留着只会占并发额度、并在排障时被误读 |
+| 10 | `pull_request` 的 paths 必须是 `push` 的 paths 子集 | PR 独有的路径意味着该文件合并后不再被校验 |
+| 11 | paths 只写 gitlink 目录（`kernel`），不写 `kernel/**` | 父仓 diff 里子模块只有目录一项，内部 glob 永不命中，是死判据 |
+| 12 | 每个 `ci/ci.sh <gate>` 必须有同名 `ci/gates/<gate>.sh`，且该脚本自带 `# 用法:` 头 | 名字写错要到 checkout 与工具链预热之后才以 exit 2 暴露 |
+| 13 | 每个 `uses:` 一律钉 40 位提交 SHA，并带 `# vN` 溯源注释（`./…` 与 `docker://` 豁免） | 浮动 tag 可被上游重新指向：代码在两次运行之间被换掉而日志无迹 |
+| 14 | 每个 `runs-on:` 必须钉成 `<发行版>-<YY.MM>`（如 `ubuntu-24.04`），不得用 `-latest` | 浮动标签会悄悄换掉编译器、shellcheck 与 Python 版本，门禁结论就取决于跑的那一天 |
+| 15 | 文件名分两族：`*-verify` 必须由 `pull_request` 触发（阻断型门禁）；其余只能是 `image-build` / `nightly` / `release` | 读名字就知道违规会红，也读得出它何时跑 |
+| 16 | 本节表格的规则号必须与脚本的规则号一一对应：漏登、多登、重号均判红 | 文档一旦能单独演化，读者就会按错版本执行，新增规则则无人知晓 |
 
 新增或改名一个流水线需要三处同步：文件、`name:`、`ci/workflow-budgets.txt`。
 `./ci/lint.sh` 在任一处漂移时直接判红。

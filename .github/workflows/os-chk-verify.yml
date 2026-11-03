@@ -58,10 +58,10 @@ concurrency:
 jobs:
   os-chk-verify:
     name: OS-CHK Unified Gates
-    # 全仓唯一的 22.04 例外：本 job 的 lint 门禁以镜像自带的 shellcheck 版本
-    # 作为基线，换镜像等于换基线，必须在能本地复算该版本结论时再迁移。
-    # 其余 workflow 已统一固定 24.04，不再使用浮动的 ubuntu-latest。
-    runs-on: ubuntu-22.04
+    # 全仓统一钉 24.04：门禁的判据必须随镜像固定，浮动标签会让同一份
+    # 脚本在两次运行之间落到不同版本的工具链上。迁移前已用该镜像自带的
+    # shellcheck 0.9.0 对 ci/ 全量预验，结果与本任务的历史基线一致。
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
