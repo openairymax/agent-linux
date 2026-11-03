@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 """ci/check-workflows.py —— 守住 workflow 薄化与命名约束
 
-十三条规则：
+十六条规则：
 
 1. 结构上限：每个 workflow 的 job 数 ≤ 预算，内联 ``run: |`` 块数 ≤ 预算
    （预算见 ci/workflow-budgets.txt，只许下调）。
@@ -43,6 +43,18 @@
    提交，``# v4`` 只是给人读的溯源标签。本地 action（``./…``）与
    ``docker://`` 镜像不受此约束——前者随本仓检出一同变化，后者由摘要
    另行约束。
+14. 每个 ``runs-on:`` 必须钉成 ``<发行版>-<YY.MM>`` 的镜像标签，不得用
+   ``-latest``。浮动标签会在不改变本仓任何一行的情况下换掉编译器、
+   shellcheck 与 Python 版本，于是「门禁结论取决于跑的那一天」：0.0.3
+   的 SC2034 就是这样在本地与 runner 上分别成立与不成立的。
+15. 文件名分两族，语义即用法：``*-verify`` 是阻断型门禁，必须由
+   ``pull_request`` 触发（否则它的结论不进入合并判断，等于没拦住）；
+   其余只能是生命周期名 ``image-build`` / ``nightly`` / ``release``。
+   读名字就知道会红，也读得出它何时跑。
+16. 本文件的规则号与 ``.github/workflows/README.md`` 第 4 节的表格必须
+   一一对应。规则表长期写着「十二条」而脚本已有十三条：读者按错版本
+   执行，新增规则也没有人知道。表格每行首列登记它对应的规则号，缺失、
+   多余与重号都判红——文档因此不能再单独演化。
 
 为什么需要它：这些约束此前只存在于文档里，没有执行者。78 段内联 shell
 就是这样一段段长出来的——每一次单看都合理，合起来就没有人能在本地验证。
@@ -103,6 +115,18 @@ GATE_USAGE = re.compile(r"^# 用法:", re.MULTILINE)
 # 供应链：uses: 只认 40 位提交 SHA，且要带 ``# <版本>`` 溯源注释。
 USES = re.compile(r"^(\s*)(?:- )?uses:\s*(\S+)\s*(#\s*\S+)?\s*$")
 PINNED = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*@[0-9a-f]{40}$")
+
+# 运行器：只认钉版镜像标签（ubuntu-24.04）。浮动标签会在本仓一行未改的
+# 情况下换掉编译器、shellcheck 与 Python 版本，门禁结论就取决于跑的那天。
+RUNS_ON = re.compile(r"^\s*runs-on:\s*(\S+)\s*$", re.MULTILINE)
+RUNNER_TAG = re.compile(r"^[a-z]+-\d{2}\.\d{2}$")
+
+# 文件名词族：*-verify 是阻断型门禁，其余只能是生命周期名。
+LIFECYCLE = ("image-build", "nightly", "release")
+
+# 文档一致性：模块 docstring 的规则号 ↔ README 第 4 节表格首列的规则号。
+RULE_DOC = re.compile(r"^(\d+)\. ", re.MULTILINE)
+RULE_ROW = re.compile(r"^\|\s*([\d,\s]+?)\s*\|")
 
 
 def count_inline(text: str) -> int:
@@ -335,10 +359,73 @@ def check_pins(name: str, text: str) -> list[str]:
     return errors
 
 
+def check_runner(name: str, text: str) -> list[str]:
+    """运行器必须钉版：浮动标签会在两次运行之间换掉整条工具链。"""
+    errors: list[str] = []
+    for no, s in enumerate(text.splitlines(), 1):
+        m = RUNS_ON.match(s)
+        if m is None:
+            continue
+        tag = m.group(1)
+        if not RUNNER_TAG.match(tag):
+            errors.append(
+                f"{name}:{no}: runs-on: {tag} 未钉版（须为 <发行版>-<YY.MM>，"
+                "浮动标签会换掉编译器与 shellcheck 版本）")
+    return errors
+
+
+def check_family(name: str, text: str) -> list[str]:
+    """命名即语义：*-verify 必须阻断合并，其余只能是生命周期名。"""
+    stem = name[:-4]
+    if stem.endswith("-verify"):
+        if not PR_TRIGGER.search(text):
+            return [f"{name}: 名为 *-verify 却不由 pull_request 触发，"
+                    "其结论不进入合并判断"]
+        return []
+    if stem not in LIFECYCLE:
+        return [f"{name}: 非阻断型流水线须取生命周期名 "
+                f"{' / '.join(LIFECYCLE)}，否则读名字判断不出它何时跑"]
+    return []
+
+
+def rule_numbers() -> list[int]:
+    """本文件 docstring 登记的规则号。"""
+    return sorted({int(n) for n in RULE_DOC.findall(__doc__ or "")})
+
+
+def check_doc(name: str = "README.md") -> list[str]:
+    """README 第 4 节的规则号必须覆盖脚本全部规则，且不重号。"""
+    path = WORKFLOWS / name
+    if not path.exists():
+        return [f"{name}: 文件不存在，规则表无从对账"]
+    declared = rule_numbers()
+    lines = path.read_text().splitlines()
+    try:
+        start = next(i for i, s in enumerate(lines) if s.startswith("## 4."))
+    except StopIteration:
+        return [f"{name}: 缺少第 4 节规则表"]
+    seen: list[int] = []
+    for s in lines[start + 1:]:
+        if s.startswith("## "):
+            break
+        m = RULE_ROW.match(s)
+        if m is not None:
+            seen.extend(int(x) for x in re.findall(r"\d+", m.group(1)))
+    errors = [f"{name}: 规则 {n} 未出现在第 4 节表格（新增规则须同步登记）"
+              for n in declared if n not in seen]
+    errors += [f"{name}: 第 4 节表格登记了不存在的规则 {n}"
+               for n in seen if n not in declared]
+    dup = sorted({n for n in seen if seen.count(n) > 1})
+    if dup:
+        errors.append(f"{name}: 第 4 节表格重号 {', '.join(map(str, dup))}")
+    return errors
+
+
 def main() -> int:
     budgets = load_budgets()
     files = sorted(p.name for p in WORKFLOWS.glob("*.yml"))
     errors: list[str] = check_gate_libs()
+    errors.extend(check_doc())
 
     for name in files:
         if name not in budgets:
@@ -351,6 +438,8 @@ def main() -> int:
     for name in files:
         text = (WORKFLOWS / name).read_text()
         errors.extend(check_name(name, text))
+        errors.extend(check_family(name, text))
+        errors.extend(check_runner(name, text))
         errors.extend(check_policy(name, text))
         errors.extend(check_triggers(name, text))
         errors.extend(check_gate_refs(name, text))

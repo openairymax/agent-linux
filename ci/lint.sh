@@ -14,7 +14,7 @@
 #   6. 有 shellcheck 就用上，没有只告警——本地开发者不该被工具缺失拦住。
 #
 # 第 4 项是第 6 项的兜底：本地没有 shellcheck 时 SC2034 不会报，CI 的
-# ubuntu-22.04 自带 shellcheck 会报，于是出现「本地全绿、CI 红」（0.0.3
+# 24.04 自带 shellcheck 会报，于是出现「本地全绿、CI 红」（0.0.3
 # 的 release-deps.sh 就是这样挂掉的）。只查 ci/gates 下的叶子脚本：这些
 # 文件不被 source，常量必须自用，判定无歧义；ci/lib 的常量供他人引用，
 # 不能按同一条规则判。
