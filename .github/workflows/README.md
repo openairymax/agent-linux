@@ -118,6 +118,16 @@ ACCEPTANCE=true ./ci/ci.sh tap-extract --dir <dir>
 python3 tools/repo/validate-ssot.py . ssot-registry.yaml
 ```
 
+`ci/lint.sh` 在找不到 shellcheck 时只告警跳过，而 runner 上有——于是
+「本地全绿、CI 全红」会以纯静态问题的形式反复出现（SC2034 连续两次）。
+本地补齐静态工具，让两侧判据一致：
+
+```bash
+pipx install shellcheck-py   # 或 pip install --user shellcheck-py
+export PATH="$HOME/.local/bin:$PATH"
+PATH="$HOME/.local/bin:$PATH" ./ci/lint.sh
+```
+
 ## 7. 排查
 
 - 查某次运行的作业与步骤：
