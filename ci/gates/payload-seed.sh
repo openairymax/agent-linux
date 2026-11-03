@@ -69,10 +69,11 @@ OUTPUT=""
 REF="${REF_DEFAULT}"
 TOKEN=""
 REPOMD_DIR=""
+CHECK=0
 
 usage()
 {
-    echo "用法: ci/gates/payload-seed.sh probe --arch ARCH [--output FILE] [--repomd-dir DIR]"
+    echo "用法: ci/gates/payload-seed.sh probe --arch ARCH [--output FILE] [--repomd-dir DIR] [--check]"
     echo "      ci/gates/payload-seed.sh fetch --dir DIR --arch ARCH [--ref REPO] [--token TOKEN]"
     echo "      ci/gates/payload-seed.sh warm  --dir DIR --arch ARCH [--ref REPO] [--token TOKEN]"
 }
@@ -86,6 +87,7 @@ while [ "$#" -gt 0 ]; do
         --ref)        REF="${2:-}"; shift 2 ;;
         --token)      TOKEN="${2:-}"; shift 2 ;;
         --repomd-dir) REPOMD_DIR="${2:-}"; shift 2 ;;
+        --check)      CHECK=1; shift ;;
         -h|--help)    usage; exit 0 ;;
         *) die "未知参数: $1" ;;
     esac
@@ -169,12 +171,34 @@ probe()
 {
     if ! ps_key; then
         emit "tag="
+        emit "missing=0"
         say "上游元数据不可达，本轮不预热"
         return 0
     fi
     ps_report
     emit "tag=${PS_TAG}"
     emit "key=${PS_KEY}"
+    # 层已存在时后续预热一点字节都不该动：缓存整池恢复约 2.5 GB，而上游
+    # 一天只变几批（§18.8.3「目标 tag 已存在 → 直接退出，零下载」）。判定
+    # 不了（没有 oras、鉴权失败）一律当作缺失，让 warm 走完整判断——那边
+    # 的推送端本来就会在 tag 已存在时跳过。
+    if [ "${CHECK}" -eq 1 ] && ps_exist; then
+        emit "missing=0"
+        say "层已存在: ${PS_TAG}"
+    else
+        emit "missing=1"
+    fi
+}
+
+ps_exist()
+{
+    command -v oras >/dev/null 2>&1 || return 1
+    if [ -n "${TOKEN}" ]; then
+        printf '%s\n' "${TOKEN}" |
+            oras login "${REF%%/*}" --username airymax --password-stdin \
+            >/dev/null 2>&1 || return 1
+    fi
+    oras manifest fetch "${REF}:${PS_TAG}" >/dev/null 2>&1
 }
 
 ps_report()

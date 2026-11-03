@@ -11,12 +11,13 @@
 # 于是这条流水线只做两件事——重算输入指纹、把池推到该指纹上。
 #
 # 为什么必须有 probe 这一跳：指纹只能对实时上游取数，而「要不要推」取决于
-# 池的来源标签与实时指纹是否一致。判断留在门禁里（ci/gates/payload-seed.sh
-# warm），YAML 只转交 tag：上游不可达时 tag 为空，warm 这一跳直接不跑，而
-# 不是让整条流水线红掉（§18.8.3：预热不得成为任何一方的先决条件）。
+# 池的来源标签与实时指纹是否一致、目标层是否已经存在。两个判断都留在门禁里
+# （ci/gates/payload-seed.sh），YAML 只转交 tag 与 missing：上游不可达时 tag
+# 为空，层已存在时 missing 为 0，warm 这一跳都不跑，而不是让整条流水线红掉
+# （§18.8.3：预热不得成为任何一方的先决条件）。
 #
 # 每日一次而非每小时：缓存池约 2.5 GB，恢复一次就是一次整池读盘，而上游
-# 仓库一天只更新几批。层已存在时推送端会直接跳过，代价只剩这次恢复。
+# 仓库一天只更新几批。层已存在时 probe 就不让 warm 起跑，这一天的代价为零。
 # ===========================================================================
 
 name: payload-seed
@@ -45,24 +46,30 @@ jobs:
     timeout-minutes: 15
     outputs:
       tag: ${{ steps.key.outputs.tag }}
+      missing: ${{ steps.key.outputs.missing }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           submodules: false
 
-      # 指纹覆盖 distro 子模块里的配方、comps 与镜像根表，缺了它算不出 key。
       - name: Checkout submodules
         run: ci/ci.sh submodules
 
+      # 层已存在时不做任何事：判定要看 registry，因此这里先备好 oras。没有
+      # oras 时门禁把层当作缺失，warm 的推送端会在 tag 已存在时自行跳过。
+      - uses: oras-project/setup-oras@22ce207df3b08e061f537244349aac6ae1d214f6 # v1
+
       - name: Probe upstream metadata
         id: key
-        run: ci/ci.sh payload-seed probe --arch x86_64 --output "$GITHUB_OUTPUT"
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ci/ci.sh payload-seed probe --arch x86_64 --check --token "$GHCR_TOKEN" --output "$GITHUB_OUTPUT"
 
   # ─── Job 2: 把上一轮构建留下的闭包池推到该指纹上 ───────────────────────
   warm:
     name: Warm seed layer
     needs: probe
-    if: needs.probe.outputs.tag != ''
+    if: needs.probe.outputs.missing == '1'
     runs-on: ubuntu-24.04
     # 恢复整池 + 打包 + 推 layer + 回读校验，比构建段短得多；超过这个上限
     # 说明链路而非产物有问题，继续跑没有额外信息。
