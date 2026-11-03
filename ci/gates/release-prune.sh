@@ -26,7 +26,6 @@ readonly EINVAL=5
 # shellcheck source=../lib/release-assets.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/release-assets.sh"
 
-API="${GITHUB_API_URL:-https://api.github.com}"
 REPO="${GITHUB_REPOSITORY:-}"
 TAG=""
 DIR="."
@@ -79,7 +78,7 @@ while read -r id name; do
         gone=$((gone + 1))
         continue
     fi
-    code="$(airy_assets_api DELETE "${API}/repos/${REPO}/releases/assets/${id}" /dev/null)"
+    code="$(airy_assets_api DELETE "${AIRY_ASSETS_API}/repos/${REPO}/releases/assets/${id}" /dev/null)"
     [ "${code}" = "204" ] || { err "删除 ${name} 失败: HTTP ${code}"; exit 1; }
     say "已删除 ${name}"
     gone=$((gone + 1))

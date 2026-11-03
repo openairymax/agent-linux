@@ -24,6 +24,9 @@ AIRY_ASSETS_EINVAL=5
 # 探不到 Release 时的返回码。剪枝把它当「还没建，无需处理」，对账把它当
 # 「发布页不存在，不能算发布完成」——同一个事实，两种处置。
 AIRY_ASSETS_ENOREL=3
+# 接口终点由库自己拥有：调用方各自拼 URL 时，环境变量名就成了隐式契约，
+# 写错只是 404 而不是报错。GITHUB_API_URL 在 GHES 与本地演练时覆盖默认值。
+AIRY_ASSETS_API="${GITHUB_API_URL:-https://api.github.com}"
 
 # 期望集：摘要清单登记的物料，扣除只经 ghcr 交付的 OCI 镜像包，再加清单
 # 自身与 release notes 及其署名；channel.json 只在目录里存在时保留，因为它
@@ -83,7 +86,7 @@ airy_assets_have()
 {
     local repo="$1" tag="$2" out="$3" rel="$4" code
     code="$(airy_assets_api GET \
-        "${API:-https://api.github.com}/repos/${repo}/releases/tags/${tag}" "${rel}")"
+        "${AIRY_ASSETS_API}/repos/${repo}/releases/tags/${tag}" "${rel}")"
     case "${code}" in
         200) ;;
         404) return "${AIRY_ASSETS_ENOREL}" ;;
