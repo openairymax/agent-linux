@@ -221,6 +221,30 @@ corresponding subsystem matures:
 | `create-revert-pr.py` | `nightly.yml` | Create a revert PR for a regression commit (`--regression-commit`) |
 | `ci-budget-check.py` | `nightly.yml` | Check total CI time against the budget gate (`--max-minutes 60`, OS-STD-TEST-011) |
 
+## 统一命令入口（tools/airy）
+
+各工具此前按文件名调用：`repo/` 下用 kebab-case（`validate-ssot.py`），
+其余沿用模块名（`os_chk.py`、`farm_cli.py`、`dsl_compile.py`）。同一个
+命令面因此有三种写法，脚本一挪位置，文档、工作流与排障记录就一起失效。
+现在对外只有一个入口，命令名与存放位置解耦：
+
+```bash
+tools/airy --list            # 列出全部命令（名称、脚本、用途）
+tools/airy ssot . ssot-registry.yaml
+tools/airy chk --check
+tools/airy ktap --current kunit.tap
+tools/airy <命令> --help     # 参数语义仍由各工具自己解释
+```
+
+`commands.tsv` 是命令面的唯一声明（命令名、脚本路径、一句话用途），
+`airy` 只负责查表与 `exec`：`argv` 原样透传、退出码原样返回，不解释
+工具选项，因此不会出现两套参数语义。工具的直调路径保持不变，CI 的
+gate 按绝对路径调用，`tools/airy` 的引入不改变任何既有调用方。
+
+新增工具时在 `commands.tsv` 增加一行并更新本文件的工具表，
+`os-chk/tests/test_tools_index.py` 会双向校验二者与磁盘的一致性。
+`osaccrt/` 是验收执行器的模块集合，没有单一命令行入口，故不在表中。
+
 ## Usage
 
 ### SSoT Validation (local)
@@ -230,7 +254,7 @@ corresponding subsystem matures:
 pip install pyyaml
 
 # Run validation (from agent-linux management repo root)
-python3 tools/repo/validate-ssot.py . ssot-registry.yaml
+tools/airy ssot . ssot-registry.yaml
 ```
 
 `validate-ssot.py` exit codes:
@@ -249,6 +273,8 @@ rule-ID patterns, including range forms (`OS-TEST-001~012`) and suffix variants
   1. Include a `--help` flag and a module docstring.
   2. Return proper exit codes (`0` success, `1` content failure, `2` input/parse error).
   3. Be referenced in this README and in the relevant workflow.
+  4. Own a command row in `commands.tsv`, so the tool is reachable as
+     `tools/airy <command>` rather than by file path.
 - Python tools follow PEP 8 (enforced by `ruff`); shell helpers pass `shellcheck`.
 - Tools that consume CI secrets (`COSIGN_KEY`, `GPG_*`, `DNF_REPO_HOST`) must
   read them from the environment and never log or echo them.

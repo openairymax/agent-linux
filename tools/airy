@@ -1,0 +1,104 @@
+#!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# ===========================================================================
+# airy — tools/ 的统一命令入口
+#
+# 二十余个工具此前各按文件名调用：有的用 kebab-case（validate-ssot.py），
+# 有的沿用模块名（os_chk.py），有的叫 farm_cli.py。命令面因此靠记忆而不是
+# 靠查阅，脚本挪一次位置就要在所有文档和工作流里同步。本入口把「叫什么」
+# 与「放在哪」分开：命令名、脚本路径、一句话用途的唯一声明在
+# commands.tsv，改布局只改那张表。
+#
+# 入口只做分发：argv 原样透传，退出码原样返回，不解释工具自己的选项。
+# 因此工具仍可被单独调用（CI 的 gate 就按绝对路径调用），本入口不构成
+# 第二套语义，也不会与工具自身的参数解析产生分歧。
+#
+# 用法：
+#   tools/airy <命令> [参数...]
+#   tools/airy --list        列出全部命令
+#   tools/airy --help        本帮助
+#
+# 退出码：0 命令成功；工具的退出码原样返回；2 命令或表本身有误。
+#
+# 依赖：python3（或 PYTHON 指定的解释器）。
+# ===========================================================================
+set -eu
+
+TOOLS=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+TABLE="$TOOLS/commands.tsv"
+PY=${PYTHON:-python3}
+
+usage()
+{
+	cat <<'EOF'
+用法：tools/airy <命令> [参数...]
+
+  --list, -l    列出全部命令
+  --help, -h    本帮助
+
+命令名与脚本路径的唯一声明在 tools/commands.tsv；各命令的参数见
+「tools/airy <命令> --help」。
+EOF
+}
+
+list()
+{
+	local cmd path desc
+	while read -r cmd path desc || [ -n "$cmd" ]; do
+		case "$cmd" in
+		''|'#'*) continue ;;
+		esac
+		printf '  %-12s %-38s %s\n' "$cmd" "$path" "$desc"
+	done <"$TABLE"
+}
+
+resolve()
+{
+	local cmd="$1" path target=""
+	while read -r name path _ || [ -n "$name" ]; do
+		case "$name" in
+		''|'#'*) continue ;;
+		esac
+		if [ "$name" = "$cmd" ]; then
+			target="$path"
+			break
+		fi
+	done <"$TABLE"
+	printf '%s' "$target"
+}
+
+if [ "$#" -eq 0 ]; then
+	usage >&2
+	exit 2
+fi
+
+case "$1" in
+--help|-h)
+	usage
+	exit 0
+	;;
+--list|-l)
+	list
+	exit 0
+	;;
+-*)
+	printf 'airy: 未知选项 %s\n' "$1" >&2
+	usage >&2
+	exit 2
+	;;
+esac
+
+cmd=$1
+shift
+
+target=$(resolve "$cmd")
+if [ -z "$target" ]; then
+	printf 'airy: 未知命令 %s（用 --list 查看）\n' "$cmd" >&2
+	exit 2
+fi
+if [ ! -f "$TOOLS/$target" ]; then
+	printf 'airy: 命令 %s 指向的脚本不存在：%s\n' "$cmd" "$target" >&2
+	exit 2
+fi
+
+exec "$PY" "$TOOLS/$target" "$@"
