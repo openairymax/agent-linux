@@ -70,15 +70,24 @@ dnf -y install "${opts[@]}" ${AIRYMAX_PKGS}
 stamp "工具链: ${AIRYMAX_MODE} 安装完成"
 EOF
 
+# timeout(1) 只执行外部命令，包在 shell 函数上会退成
+# 「timeout: failed to run command 'dnf_run'」（run 41613120035）。时限因此
+# 加在 docker 这一层：命令先装进数组，需要限时才在数组头部插 timeout。
+# 第一参数是秒数，0 表示不限；第二参数是在线/离线模式。
 dnf_run()
 {
-    docker run --rm -v "${CACHE}:/var/cache/dnf:rw" \
-        -e AIRYMAX_PKGS="${pkgs}" -e AIRYMAX_MODE="$1" \
+    local limit="$1" mode="$2"
+    local cmd=(docker run --rm -v "${CACHE}:/var/cache/dnf:rw")
+
+    if [ "${limit}" -gt 0 ]; then
+        cmd=(timeout "${limit}" "${cmd[@]}")
+    fi
+    "${cmd[@]}" -e AIRYMAX_PKGS="${pkgs}" -e AIRYMAX_MODE="${mode}" \
         "${IMAGE}" bash -c "${script}"
 }
 
 group "toolchain offline attempt"
-if dnf_run offline; then
+if dnf_run 0 offline; then
     say "缓存已完整，跳过在线获取"
 else
     # 在线段沿用旧语义里的有限重试：镜像侧 HTTP/2 抖动会让整事务失败
@@ -86,7 +95,7 @@ else
     # 数据、不删已下好的包——缓存是跨轮复用的凭据，一次抖动清空它等于
     # 下一轮从零开始。
     for try in 1 2 3; do
-        if timeout 3600 dnf_run online; then
+        if dnf_run 3600 online; then
             say "在线获取完成（第 ${try} 次）"
             break
         fi
@@ -96,7 +105,7 @@ else
         [ "${try}" -lt 3 ] || die "工具链在线获取三次未成功"
     done
     group "toolchain offline proof"
-    dnf_run offline || die "缓存不足以离线完成工具链安装，装配段不可用"
+    dnf_run 0 offline || die "缓存不足以离线完成工具链安装，装配段不可用"
     endgroup
 fi
 endgroup
