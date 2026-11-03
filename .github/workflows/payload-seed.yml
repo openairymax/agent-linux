@@ -1,0 +1,94 @@
+# ===========================================================================
+# payload-seed.yml —— 定时把已收割的安装闭包推成 seed- 层
+#
+# 为什么需要这条流水线：image-build 的取层步骤只在「构建那一轮」有机会命中
+# seed 层，而层是否存在取决于上一次构建推没推。没有这条例行任务时，上游一
+# 变、又恰好没人手动构建，下一位接手的人只能跨境从镜像取 2.5 GB 闭包，在
+# 180 分钟的组装预算内多半取不完（§18.8.3）。
+#
+# 为什么预热不下载任何 RPM：字节全部来自上一轮构建留下的闭包池（actions
+# 缓存）。缓存与 registry 都在 GitHub 内网，托管 runner 也不吃跨境限速，
+# 于是这条流水线只做两件事——重算输入指纹、把池推到该指纹上。
+#
+# 为什么必须有 probe 这一跳：指纹只能对实时上游取数，而「要不要推」取决于
+# 池的来源标签与实时指纹是否一致。判断留在门禁里（ci/gates/payload-seed.sh
+# warm），YAML 只转交 tag：上游不可达时 tag 为空，warm 这一跳直接不跑，而
+# 不是让整条流水线红掉（§18.8.3：预热不得成为任何一方的先决条件）。
+#
+# 每日一次而非每小时：缓存池约 2.5 GB，恢复一次就是一次整池读盘，而上游
+# 仓库一天只更新几批。层已存在时推送端会直接跳过，代价只剩这次恢复。
+# ===========================================================================
+
+name: payload-seed
+
+on:
+  schedule:
+    # UTC 19:17 = 北京时间 03:17：镜像站每日同步多在深夜，此后预热最接近
+    # 当日上游状态，也避开构建与测试流水线的高峰时段。
+    - cron: '17 19 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: payload-seed
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  # seed 层推送到 ghcr，需要写包权限。
+  packages: write
+
+jobs:
+  # ─── Job 1: 对实时上游算输入指纹 ──────────────────────────────────────
+  probe:
+    name: Probe input key
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      tag: ${{ steps.key.outputs.tag }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          submodules: false
+
+      # 指纹覆盖 distro 子模块里的配方、comps 与镜像根表，缺了它算不出 key。
+      - name: Checkout submodules
+        run: ci/ci.sh submodules
+
+      - name: Probe upstream metadata
+        id: key
+        run: ci/ci.sh payload-seed probe --arch x86_64 --output "$GITHUB_OUTPUT"
+
+  # ─── Job 2: 把上一轮构建留下的闭包池推到该指纹上 ───────────────────────
+  warm:
+    name: Warm seed layer
+    needs: probe
+    if: needs.probe.outputs.tag != ''
+    runs-on: ubuntu-24.04
+    # 恢复整池 + 打包 + 推 layer + 回读校验，比构建段短得多；超过这个上限
+    # 说明链路而非产物有问题，继续跑没有额外信息。
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          submodules: false
+
+      - name: Checkout submodules
+        run: ci/ci.sh submodules
+
+      - uses: oras-project/setup-oras@22ce207df3b08e061f537244349aac6ae1d214f6 # v1
+
+      # 键的前缀与 image-build 的保存侧一致，restore-keys 取最新一份：预热
+      # 只关心「最近一次真实构建收割了什么」，不关心它是哪一轮存的。
+      - name: Restore closure RPM pool
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ runner.temp }}/closure-cache
+          key: closure-${{ hashFiles('distro/repo/mirrors.list', 'distro/kickstart/airymaxos-workstation.ks') }}
+          restore-keys: closure-
+
+      # 池的输入标签与实时指纹不一致时退 0 并说明原因：上游在两次之间变过，
+      # 旧字节挂在新 key 上只会让取层构建整层丢弃重下。
+      - name: Publish seed layer for current key
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ci/ci.sh payload-seed warm --dir "$RUNNER_TEMP/closure-cache" --arch x86_64 --token "$GHCR_TOKEN"

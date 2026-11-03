@@ -43,8 +43,11 @@
    的 SC2034 就是这样在本地与 runner 上分别成立与不成立的。
 14. 文件名分两族，语义即用法：``*-verify`` 是阻断型门禁，必须由
    ``pull_request`` 触发（否则它的结论不进入合并判断，等于没拦住）；
-   其余只能是生命周期名 ``image-build`` / ``nightly`` / ``release``。
-   读名字就知道会红，也读得出它何时跑。
+   其余只能是生命周期名 ``image-build`` / ``nightly`` / ``release`` /
+   ``payload-seed``。读名字就知道会红，也读得出它何时跑。
+   ``payload-seed`` 是唯一按周期预热制品、不产出镜像的生命周期：它的
+   触发面与 ``image-build`` 无关，混进 ``nightly`` 只会让测试日志与
+   预热日志互相淹没。
 15. 本文件的规则号与 ``.github/workflows/README.md`` 第 4 节的表格必须
    一一对应。规则表长期写着「十二条」而脚本已有十三条：读者按错版本
    执行，新增规则也没有人知道。表格每行首列登记它对应的规则号，缺失、
@@ -122,7 +125,7 @@ RUNS_ON = re.compile(r"^\s*runs-on:\s*(\S+)\s*$", re.MULTILINE)
 RUNNER_TAG = re.compile(r"^[a-z]+-\d{2}\.\d{2}$")
 
 # 文件名词族：*-verify 是阻断型门禁，其余只能是生命周期名。
-LIFECYCLE = ("image-build", "nightly", "release")
+LIFECYCLE = ("image-build", "nightly", "release", "payload-seed")
 
 # 文档一致性：模块 docstring 的规则号 ↔ README 第 4 节表格首列的规则号。
 RULE_DOC = re.compile(r"^(\d+)\. ", re.MULTILINE)
