@@ -452,25 +452,22 @@ jobs:
           TAG: ${{ inputs.release_tag }}
         run: ci/ci.sh release-channel --out "$RUNNER_TEMP/image" --rpm-dir "$RUNNER_TEMP/relch" --version "${TAG#v}"
 
+      # 收集规则属于判据：写进 YAML 就只能在云端验一次、也只能在云端改。
+      # 交给门禁后，同一段收集逻辑可以对着旧产物本地复算，缺项还被逐条
+      # 写进 evidence-missing.txt（此前手写 glob 的两份清单已开始不一致）。
+      # 三条腿各给一个 --dir：腿目录缺失（前腿失败、后续腿被跳过）本身
+      # 就是证据的一部分，按四件套全缺登记，不影响其余腿入包。
+      - name: Collect acceptance evidence
+        if: always()
+        env:
+          ACCEPTANCE: ${{ inputs.acceptance }}
+        run: ci/ci.sh evidence --out "$RUNNER_TEMP/evidence" --dir "$RUNNER_TEMP/install-usb" --dir "$RUNNER_TEMP/install-bios" --dir "$RUNNER_TEMP/install-uefi" --extra "$RUNNER_TEMP/image/desktop/iso/iso-oci.txt" --extra "$RUNNER_TEMP/image/channel.json"
+
       - name: Upload acceptance evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: airymaxos-acceptance
-          path: |
-            ${{ runner.temp }}/install-bios/tap.txt
-            ${{ runner.temp }}/install-bios/install-manifest.txt
-            ${{ runner.temp }}/install-bios/smoke-*.tap
-            ${{ runner.temp }}/install-uefi/tap.txt
-            ${{ runner.temp }}/install-uefi/install-manifest.txt
-            ${{ runner.temp }}/install-uefi/smoke-*.tap
-            ${{ runner.temp }}/install-usb/tap.txt
-            ${{ runner.temp }}/install-usb/install-manifest.txt
-            ${{ runner.temp }}/install-usb/smoke-*.tap
-            ${{ runner.temp }}/image/desktop/iso/iso-oci.txt
-            ${{ runner.temp }}/image/channel.json
-            ${{ runner.temp }}/install-bios/run-*/*.log
-            ${{ runner.temp }}/install-uefi/run-*/*.log
-            ${{ runner.temp }}/install-usb/run-*/*.log
+          path: ${{ runner.temp }}/evidence
           retention-days: 7
           if-no-files-found: warn

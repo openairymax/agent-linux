@@ -16,6 +16,7 @@
 #   smoke-*.tap           会话内冒烟 TAP，验收剖面必有
 # 缺项逐条写入 evidence-missing.txt；验收剖面（ACCEPTANCE=1，或 --require）
 # 判失败，产品剖面只告警——产品 ISO 本就不产冒烟 TAP，缺它不算缺件。
+# 腿目录不存在时按四件套全缺登记：前一条腿失败会让后面几条整段跳过。
 #
 # 包内另生成 evidence-manifest.txt（sha256 + 字节数 + 包内路径）。包因此
 # 可以脱离会话自证未被改动，也可以对着旧产物复算当时到底收进了什么。
@@ -55,9 +56,6 @@ done
 
 [ -n "${OUT}" ] || { err "--out 必填"; exit "${EINVAL}"; }
 [ "${#DIRS[@]}" -gt 0 ] || { err "至少需要一个 --dir"; exit "${EINVAL}"; }
-for d in "${DIRS[@]}"; do
-    [ -d "${d}" ] || { err "目录不存在: ${d}"; exit "${EINVAL}"; }
-done
 
 mkdir -p "${OUT}"
 missing="${OUT}/evidence-missing.txt"
@@ -85,10 +83,20 @@ take()
 
 # 一条腿的收集：四件套按类判有无，不按文件个数——run-* 目录数随固件与
 # 轮次变化，用个数判断会把「两轮都成功」当成缺件。
+#
+# 腿目录不存在（前一条腿失败后后续腿被跳过）不是参数错误：那正是需要
+# 记录的情形。按四件套全缺登记，其余腿的证据照常入包。
 collect()
 {
     local dir="$1" leg f
+    local -a quad=(tap.txt install-manifest.txt 'run-*/boot.log' 'smoke-*.tap')
     leg="$(basename "${dir}")"
+    if [ ! -d "${dir}" ]; then
+        for f in "${quad[@]}"; do
+            miss "${leg}/${f}"
+        done
+        return
+    fi
     for f in tap.txt install-manifest.txt; do
         if [ -f "${dir}/${f}" ]; then
             take "${leg}" "${dir}" "${dir}/${f}"
