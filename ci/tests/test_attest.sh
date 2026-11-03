@@ -234,4 +234,14 @@ case "${out}" in
 *) bad "rel verify 未拦住集合缩水"; printf '%s\n' "${out}" >&2 ;;
 esac
 
+# 发布作业不检出 distro 子模块，配方摘要会退化成一个与产物无关的空摘要。
+# 有 run id 时指纹必须停在原生量上：r<run>-g<检出提交>。
+out="$(FAKE_STORE="${tmp}/store" PATH="${tmp}/bin:${PATH}" \
+    AIRYMAX_BUILD_ID='' GITHUB_RUN_ID=4242 \
+    bash "${GATE}" build --kind rel --out "${rel}" --tag v0.0.4 2>&1)"
+sha="$(git -C "${ROOT}" rev-parse HEAD | cut -c1-12)"
+grep -q "\"buildId\": \"r4242-g${sha}\"" "${rfile}" &&
+    ok "流水线内指纹取 run id + 检出提交" ||
+    bad "流水线内指纹未取原生量"
+
 exit "${fails}"
