@@ -37,6 +37,11 @@
 # 推送是幂等的：同 tag 已存在即跳过，不重推。重复推送既不改变字节，又会
 # 在 registry 侧多留一份层，使镜像仓库的体积随预热次数线性增长。
 #
+# 每次推送写一条创建时间注解（org.openairymax.payload.created）。tag 里装的
+# 是内容摘要，排序不出先后；保留策略要回答「哪几层最近推上去的」，只能自己
+# 记一个时钟。注解随 manifest 走，幂等跳过时保持首次推送的时间，正好是回收
+# 端需要的那一列。
+#
 # 回取端的失败分两类，与 payload_cache.sh 的判据一致：制品不存在是正常
 # 状态（回落上游求解，慢但正确）；制品存在而字节不符是缓存污染，丢弃该
 # 文件、保留其余，不升级为构建失败——池只提供字节，不提供事实。
@@ -50,6 +55,7 @@ readonly REF_DEFAULT="ghcr.io/openairymax/airymaxos-payload"
 readonly TYPE_ARTIFACT="application/vnd.airymaxos.payload.v1"
 readonly TYPE_TAR="application/vnd.airymaxos.payload.tar"
 readonly TYPE_MANIFEST="application/vnd.airymaxos.payload.manifest"
+readonly ANN_CREATED="org.openairymax.payload.created"
 readonly MARK_SRC=".payload-source"
 LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)"
 # shellcheck source=../lib/log.sh
@@ -201,6 +207,7 @@ push()
         die "无法复制清单: ${MANIFEST}"
 
     if ! oras push --artifact-type "${TYPE_ARTIFACT}" "${REF}:${TAG}" \
+        --annotation "${ANN_CREATED}=$(date -u +%FT%TZ)" \
         "${tar_out}:${TYPE_TAR}" "${tmp}/payload-manifest.txt:${TYPE_MANIFEST}" \
         >"${tmp}/push.log" 2>&1; then
         cat "${tmp}/push.log" >&2

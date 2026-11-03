@@ -9,6 +9,8 @@
 #                                     [--ref REPO] [--token TOKEN]
 #       ci/gates/payload-seed.sh warm  --dir DIR --arch ARCH
 #                                     [--ref REPO] [--token TOKEN]
+#       ci/gates/payload-seed.sh gc    [--ref REPO] [--token TOKEN]
+#                                     [--keep N] [--dry-run]
 #
 # 发布端（payload-publish.sh）解决「载荷能不能按内容寻址取回」，本 gate 解决
 # 「取哪一个」。区别不在字节，而在选择依据：`build-` 层的 tag 来自产出的载荷
@@ -43,13 +45,26 @@
 # 层只是字节，消费端的求解仍以实时元数据或上一次成功事务的闭包清单为准逐包
 # 校验 sha256，不符即丢。标签乐观只花一次带宽，不会把错包装进镜像。
 #
-# 退出码: 0 成功/无需预热/上游不可达；1 拉取、校验或推送失败；5 参数不满足。
+# gc 是 §18.8.5 保留策略的执行端。seed 层是可再生字节，按架构留最近 KEEP 个
+# 就够——上游一变指纹就变，旧层再也不会被任何一轮取用，留着只是占仓库。判据
+# 是「哪一层最近推上去」，而 tag 里装的是输入指纹、排不出先后，因此序列取自
+# 发布端写的 manifest 注解；没有注解的层（早于该注解上线）视为最早，先删。
+#
+# build- 层在这里一律不删：它记的是「哪一轮真实产出过这份载荷」，要不要留取决
+# 于发布清单，而发布清单不在本仓库内产出。删除需要另一份事实来源，缺失时宁可
+# 不删——删错一层会让已发布版本的载荷失去可追溯的出处。
+#
+# 删除失败计为失败（退出 1）：这条策略存在的唯一目的是让体积有界，静默失败
+# 等于没有策略。列表本身取不到不算失败（链路或鉴权问题，下一轮还有机会）。
+#
+# 退出码: 0 成功/无需预热/上游不可达；1 拉取、校验、推送或删除失败；5 参数不满足。
 # ===========================================================================
 set -uo pipefail
 
 readonly EINVAL=5
 readonly REF_DEFAULT="ghcr.io/openairymax/airymaxos-payload"
 readonly MARK=".seed-complete"
+readonly ANN_CREATED="org.openairymax.payload.created"
 readonly PROBE_TMO="${PAYLOAD_SEED_TMO:-20}"
 LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)"
 # shellcheck source=../lib/log.sh
@@ -70,24 +85,29 @@ REF="${REF_DEFAULT}"
 TOKEN=""
 REPOMD_DIR=""
 CHECK=0
+KEEP=4
+DRY=0
 
 usage()
 {
     echo "用法: ci/gates/payload-seed.sh probe --arch ARCH [--output FILE] [--repomd-dir DIR] [--check]"
     echo "      ci/gates/payload-seed.sh fetch --dir DIR --arch ARCH [--ref REPO] [--token TOKEN]"
     echo "      ci/gates/payload-seed.sh warm  --dir DIR --arch ARCH [--ref REPO] [--token TOKEN]"
+    echo "      ci/gates/payload-seed.sh gc    [--ref REPO] [--token TOKEN] [--keep N] [--dry-run]"
 }
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
-        probe|fetch|warm) CMD="$1"; shift ;;
+        probe|fetch|warm|gc) CMD="$1"; shift ;;
         --dir)        DIR="${2:-}"; shift 2 ;;
         --arch)       ARCH="${2:-}"; shift 2 ;;
         --output)     OUTPUT="${2:-}"; shift 2 ;;
         --ref)        REF="${2:-}"; shift 2 ;;
         --token)      TOKEN="${2:-}"; shift 2 ;;
         --repomd-dir) REPOMD_DIR="${2:-}"; shift 2 ;;
+        --keep)       KEEP="${2:-}"; shift 2 ;;
         --check)      CHECK=1; shift ;;
+        --dry-run)    DRY=1; shift ;;
         -h|--help)    usage; exit 0 ;;
         *) die "未知参数: $1" ;;
     esac
@@ -97,6 +117,9 @@ done
 case "${ARCH}" in
 x86_64|aarch64|riscv64) ;;
 *) err "未定义架构: ${ARCH}"; exit "${EINVAL}" ;;
+esac
+case "${KEEP}" in
+''|*[!0-9]*) err "--keep 必须是非负整数: ${KEEP}"; exit "${EINVAL}" ;;
 esac
 
 emit()
@@ -310,8 +333,107 @@ warm()
     }
 }
 
+# 每个 seed 层的创建时间取自 manifest 注解。tag 里是内容指纹，排不出先后；
+# 注解由发布端在首次推送时写下，幂等重推不会改写它，正好是「这一层何时进库」
+# 的稳定证据。取不到注解（早于注解上线的层、registry 不回注解）时按最早处理，
+# 于是它们先被删除——这正是期望：无法证明新鲜的层不该占着配额。
+gc_stamp()
+{
+    local tag="$1" arch at=""
+    arch="$(printf '%s' "${tag}" | cut -d- -f2)"
+    if oras manifest fetch "${REF}:${tag}" >"${tmp}/gc-manifest.json" 2>/dev/null; then
+        at="$(python3 - "${tmp}/gc-manifest.json" "${ANN_CREATED}" <<'PY'
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as fh:
+        doc = json.load(fh)
+except (OSError, ValueError):
+    raise SystemExit(0)
+print(doc.get("annotations", {}).get(sys.argv[2], ""))
+PY
+)"
+    fi
+    printf '%s %s %s\n' "${arch}" "${at:-0000}" "${tag}" >>"${tmp}/seed.txt"
+}
+
+# 保留判据只有一条：同一架构内按创建时间倒序，前 KEEP 个留下。架构从 tag 的
+# 第二段读，不另立清单——清单会与 tag 分叉，而 tag 是 registry 上的事实。
+gc_seed()
+{
+    local total planned=0 done=0 tag rc=0 archs
+    [ -s "${tmp}/seed.txt" ] || {
+        say "没有 seed 层，无需回收"
+        return 0
+    }
+    total="$(wc -l <"${tmp}/seed.txt" | tr -d ' ')"
+    LC_ALL=C sort -k1,1 -k2,2r "${tmp}/seed.txt" |
+        awk -v k="${KEEP}" '{n[$1]++; if (n[$1] > k) print $3}' >"${tmp}/gc-del.txt"
+    planned="$(wc -l <"${tmp}/gc-del.txt" | tr -d ' ')"
+    archs="$(awk '{print $1}' "${tmp}/seed.txt" | sort -u | tr '\n' ' ')"
+    while IFS= read -r tag; do
+        [ -n "${tag}" ] || continue
+        if [ "${DRY}" -eq 1 ]; then
+            say "待删 seed 层: ${tag}"
+            continue
+        fi
+        if oras manifest delete --force "${REF}:${tag}" >/dev/null 2>&1; then
+            say "已删 seed 层: ${tag}"
+            done=$((done + 1))
+        else
+            err "seed 层删除失败: ${tag}"
+            rc=1
+        fi
+    done <"${tmp}/gc-del.txt"
+    say "seed 层 ${total} 个（架构: ${archs% }），每架构保留 ${KEEP}，删除 ${done}/${planned}"
+    [ "${DRY}" -eq 0 ] || say "dry-run：一个层都没有删"
+    return "${rc}"
+}
+
+gc_build()
+{
+    local n
+    [ -s "${tmp}/build.txt" ] || return 0
+    n="$(wc -l <"${tmp}/build.txt" | tr -d ' ')"
+    say "build- 层 ${n} 个，不回收：发布清单不在本仓库产出，删除缺事实来源"
+}
+
+gc()
+{
+    command -v oras >/dev/null 2>&1 || {
+        say "缺少 oras，跳过回收"
+        return 0
+    }
+    if [ -n "${TOKEN}" ]; then
+        printf '%s\n' "${TOKEN}" |
+            oras login "${REF%%/*}" --username airymax --password-stdin \
+            >/dev/null 2>&1 || {
+            say "registry 登录失败，跳过回收"
+            return 0
+        }
+    fi
+    if ! oras repo tags "${REF}" >"${tmp}/tags.txt" 2>"${tmp}/tags.log"; then
+        say "无法列出 ${REF} 的 tag（$(head -1 "${tmp}/tags.log" 2>/dev/null)），跳过回收"
+        return 0
+    fi
+    : >"${tmp}/seed.txt"
+    : >"${tmp}/build.txt"
+    while IFS= read -r tag; do
+        case "${tag}" in
+        seed-*) gc_stamp "${tag}" ;;
+        build-*) printf '%s\n' "${tag}" >>"${tmp}/build.txt" ;;
+        esac
+    done <"${tmp}/tags.txt"
+    gc_seed
+    local rc=$?
+    gc_build
+    return "${rc}"
+}
+
 case "${CMD}" in
 probe) probe ;;
 fetch) fetch ;;
 warm)  warm ;;
+gc)    gc ;;
 esac

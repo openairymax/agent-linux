@@ -65,6 +65,17 @@ jobs:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ci/ci.sh payload-seed probe --arch x86_64 --check --token "$GHCR_TOKEN" --output "$GITHUB_OUTPUT"
 
+      # 回收挂在本 job 而不是另开一条流水线：它判的只有「registry 上现在有
+      # 哪些层、各自何时推上去」，数据源就是 tag 列表，与预热是否起跑无关。
+      # 单独开一条会多一个周期、一份权限与一次 checkout，而 workflow 数量与
+      # 单文件内联块都受 ci/check-workflows.py 的棘轮约束（§17.6）。
+      # always()：probe 因链路失败时，仓库体积仍需有界，回收不该被连带跳过。
+      - name: Collect stale seed layers
+        if: always()
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ci/ci.sh payload-seed gc --token "$GHCR_TOKEN"
+
   # ─── Job 2: 把上一轮构建留下的闭包池推到该指纹上 ───────────────────────
   warm:
     name: Warm seed layer
