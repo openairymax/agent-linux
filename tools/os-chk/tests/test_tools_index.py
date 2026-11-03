@@ -127,6 +127,13 @@ class TestCommandSurface:
             f"缺命令：{sorted(catalogued - declared)}；"
             f"未登记用途：{sorted(declared - catalogued)}")
 
+    def test_rows_use_single_tabs(self) -> None:
+        """列间恰好一个制表符：多列填充会让 cut/awk 按列取值拿到空字段。"""
+        for raw in TABLE.read_text(encoding="utf-8").splitlines():
+            if not raw or raw.startswith("#"):
+                continue
+            assert raw.count("\t") == 2, f"列分隔符不是恰好两个：{raw!r}"
+
     def test_list_reports_every_command(self) -> None:
         res = airy("--list")
         assert res.returncode == 0, res.stderr
