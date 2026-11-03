@@ -1,49 +1,36 @@
 # ===========================================================================
 # agent-linux (AirymaxOS) CODEOWNERS
-# https://docs.github.com/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
 # ===========================================================================
-# This file is the GitHub CODEOWNERS projection of MAINTAINERS.
-# The authoritative source is MAINTAINERS (OS-STD-GOV-004).
-# CI validates that CODEOWNERS and MAINTAINERS stay in sync.
+# GENERATED FILE — 由 MAINTAINERS 投影而来，请勿手工编辑。
+# 权威来源是 MAINTAINERS（OS-STD-GOV-004）：改那里，再执行下面两条命令。
+#
+#   make codeowners-sync    重新生成
+#   make codeowners-check   校验是否漂移（CI 由 ci/gates/mgmt-files.sh 执行）
 # ===========================================================================
 
-# --------------------------------------------------------------------------
-# Default: all changes require SPHARX Engineering review
-# --------------------------------------------------------------------------
-*                           @spharx
-
-# --------------------------------------------------------------------------
-# Submodule directories
-# --------------------------------------------------------------------------
-/kernel/                    @spharx
-/services/                  @spharx
-/security/                  @spharx
-/memory/                   @spharx
-/cognition/                @spharx
-/cloudnative/               @spharx
-/system/                    @spharx
-/tests-linux/               @spharx
-
-# --------------------------------------------------------------------------
-# [SC] Shared Contract Layer (kernel/include/uapi/linux/airymax/)
-# Requires dual CI + L3 top maintainer approval (OS-IRON-014)
-# --------------------------------------------------------------------------
-/kernel/include/uapi/linux/airymax/    @spharx
-
-# --------------------------------------------------------------------------
-# SSoT Registry & Validation
-# --------------------------------------------------------------------------
-/.github/workflows/         @spharx
-/tools/                     @spharx
-
-# --------------------------------------------------------------------------
-# Governance files
-# --------------------------------------------------------------------------
-/MAINTAINERS                @spharx
-/CONTRIBUTING.md            @spharx
-/SECURITY.md                @spharx
-/CODEOWNERS                 @spharx
-/.editorconfig              @spharx
-/.clang-format              @spharx
-/.gitignore                 @spharx
-/.gitmodules                @spharx
+*                                     @spharx
+kernel/                               @spharx
+services/                             @spharx
+security/                             @spharx
+memory/                               @spharx
+cognition/                            @spharx
+cloudnative/                          @spharx
+distro/                               @spharx
+system/                               @spharx
+tests-linux/                          @spharx
+kernel/include/uapi/linux/airymax/    @spharx
+.github/workflows/                    @spharx
+tools/                                @spharx
+ssot-registry.yaml                    @spharx
+README.md                             @spharx
+README_zh.md                          @spharx
+LICENSE                               @spharx
+NOTICE                                @spharx
+CONTRIBUTING.md                       @spharx
+MAINTAINERS                           @spharx
+SECURITY.md                           @spharx
+.editorconfig                         @spharx
+.clang-format                         @spharx
+CODEOWNERS                            @spharx
+.gitignore                            @spharx
+.gitmodules                           @spharx
