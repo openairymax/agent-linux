@@ -39,5 +39,5 @@ contract: tools/kbuild-version/contract/version_h.airy.txt
 version_tuple:
   lts: 0
   major: 0
-  minor: 3
+  minor: 4
   release: ""
