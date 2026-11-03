@@ -224,6 +224,14 @@ jobs:
           AIRYMAX_COMMIT: ${{ github.sha }}
         run: ci/ci.sh assemble --image "$AIRYMAX_BUILD_IMAGE" --src "$GITHUB_WORKSPACE" --out "$RUNNER_TEMP/out" --media "$RUNNER_TEMP/media" --iso-base "$OE_ISO_NAME" --dnf-cache "$RUNNER_TEMP/dnf-cache" --closure-cache "$RUNNER_TEMP/closure-cache"
 
+      # 段耗时入账：同一棵树曾一次 16.5 分钟、一次 45 分钟还没跑完，而
+      # 页面上只有一个 step 总耗时，看不出慢在取包、编内核还是组 ISO。
+      # 耗时表进 job summary，超基线 2 倍的段打 AIRY-BUILD-DRIFT——慢但
+      # 产物正确的构建不判负，但必须留下可检索的标记（CI-08）。
+      - name: Account build segments
+        if: always()
+        run: ci/ci.sh build-drift --manifest "$RUNNER_TEMP/out/image-ci-manifest.txt" --summary "$GITHUB_STEP_SUMMARY"
+
       # 与 dnf 缓存同理：不看 job 成功态。本步跑在中止的轮次里时，已下载并
       # 通过摘要校验的 RPM 仍然有价值，下一轮只补差异。
       #

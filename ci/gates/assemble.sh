@@ -152,6 +152,7 @@ docker run --rm --privileged \
 
         # 严格离线：缓存由 ci/gates/toolchain.sh 预热并自证过。这里装不上
         # 只有一种含义——缓存没预热，秒级失败，不回落到公网。
+        t_tc="$(date +%s)"
         stamp "工具链: 离线重放"
         dnf -y install --cacheonly --setopt=keepcache=1 \
             --setopt=timeout=60 '"${pkgs}"' || {
@@ -159,6 +160,9 @@ docker run --rm --privileged \
             exit 1
         }
         stamp "工具链: 离线重放完成"
+        # 段耗时由这里起算：预热发生在 run-image-ci 之前，让后者自己计时
+        # 只会得到「从进入脚本起算」的零头。
+        export AIRY_TOOLCHAIN_S=$(( $(date +%s) - t_tc ))
 
         stamp "组装: 进入 run-image-ci"
         git config --global --add safe.directory "*"
