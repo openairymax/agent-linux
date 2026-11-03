@@ -1,151 +1,137 @@
-# `.github/` — GitHub Automation & Templates
-
-> GitHub Actions workflows, issue/PR templates and community health files for the
-> [agent-linux (AirymaxOS)](https://github.com/openairymax/agent-linux) management repository.
-
 Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
+
+# `.github/workflows/` — AirymaxOS 持续集成流水线
+
+> agent-linux（AirymaxOS）管理仓的 GitHub Actions 定义。每个文件只做三件事：
+> 检出、调用 `ci/ci.sh <gate>`、上传产物；所有判据都在 `ci/` 下，可在本地
+> 用同一条命令复跑。
 
 ---
 
-## Positioning
+## 1. 定位：YAML 是派遣层，不是判据所在
 
-This directory holds all repository-level GitHub automation for the agent-linux
-(AirymaxOS) management repository. It defines the CI/CD pipelines that validate
-governance files, build the kernel, run nightly verification, publish releases,
-guard the `[SC]` shared-contract layer, and enforce SSoT (Single Source of
-Truth) consistency.
+流水线曾经把 78 段 shell 直接写在 `run: |` 里。后果不是「写得不好看」，而是
+判据只在云端存在：改一行要在多个 YAML 之间同步，失败只能重跑整条流水线才能
+知道哪一句断了，本地无从验证。
 
-Each workflow stays deliberately small: the kernel, management-orchestration,
-image-acceptance and Airymax pipelines use **2 jobs** (`kernel-verify.yml`:
-`kernel-build` → `kernel-verify`; `mgmt-verify.yml`: `file-integrity` →
-`orchestrate-leaf-ci`; `image-build.yml`: `assemble` → `accept`; `airy-verify.yml`:
-`airy-build` → `airy-static`), while the remaining gates are single SSoT drift
-checks. Language-level CI for C / Rust / Go / Python is delegated to each leaf
-repository's own `.github/workflows/`; this repository only performs
-management-level orchestration.
+现在的分工是硬约束：
 
-Workflow YAML is a thin dispatch layer: every step either checks out, calls
-`ci/ci.sh <gate>`, or uploads an artifact. All assertions and host preparation
-live in `ci/` (see below), so the same command can be replayed locally against
-a leftover build directory instead of waiting for a cloud job.
+- **YAML**：触发条件、权限、并发、超时、`ci/ci.sh <gate>`、产物上传。
+- **`ci/gates/*.sh`**：全部断言与宿主准备，带 `# 用法:` 头，可直接执行。
+- **`ci/lib/*.sh`**：跨门禁共用的实现（apt 获取、宿主清理、TAP 解析等）。
 
-## Directory Contents
+这条分工由 `ci/check-workflows.py` 的十二条规则强制执行（见第 4 节），而不是
+靠评审时的自觉。一个约定如果没有执行者，它就不是约定。
+
+## 2. 目录内容
 
 ```text
-.github/
-├── README.md                    # This file
-├── workflows/                   # 8 GitHub Actions workflows
-│   ├── kernel-verify.yml        # Kernel build matrix + static analysis + tests
-│   ├── airy-verify.yml          # Airymax build (4 arches) + SPDX + symbol integrity
-│   ├── os-chk-verify.yml        # OS-CHK unified gate orchestration (P0/P1 blocking)
-│   ├── mgmt-verify.yml          # Governance file integrity + leaf CI orchestration
-│   ├── image-build.yml          # Desktop ISO assembly + install/cold-boot acceptance
-│   ├── nightly.yml              # Nightly test suite + auto-revert/budget check
-│   ├── release.yml              # Build + SBOM + sign + publish release
-│   └── ssot-verify.yml          # SSoT YAML syntax + cross-reference validation
-├── ISSUE_TEMPLATE/              # GitHub issue templates
-└── PULL_REQUEST_TEMPLATE.md     # Pull request template
+.github/workflows/
+├── README.md              # 本文件
+├── airy-verify.yml        # Airymax 内核扩展：四架构构建 + 静态检查
+├── image-build.yml        # 桌面 ISO 组装 + 装机冷启动验收
+├── kernel-verify.yml      # 内核构建矩阵 + 静态分析 + 测试
+├── mgmt-verify.yml        # 治理文件完整性 + 叶仓 CI 汇总
+├── nightly.yml            # 夜间测试套件 + 自动回退/预算检查
+├── os-chk-verify.yml      # OS-CHK 统一门禁编排（P0/P1 阻断）
+├── release.yml            # 构建 + SBOM + 签名 + 发布
+└── ssot-verify.yml        # SSoT 语法与交叉引用校验
 ```
 
-## CI Workflows (8 workflows)
+八个流水线，每个最多两个作业（`os-chk-verify` 为一个）。作业数上限登记在
+`ci/workflow-budgets.txt`，只许下调。
 
-| Workflow | Jobs | Trigger |
-|----------|------|---------|
-| `kernel-verify.yml` | `kernel-build` — Kbuild matrix (4 configs × 4 arches × 2 compilers − 4 excluded cells = 28, `max-parallel: 8`) with `W=2` zero-warning gate; `kernel-verify` — checkpatch `--strict`, sparse `C=2`, Coccinelle, KUnit on UML, kselftest on QEMU | PR / push on `kernel/**` |
-| `airy-verify.yml` | `airy-build` — `airy_defconfig` build matrix on 4 arches (x86_64/arm64/riscv/loongarch), then `ci/ci.sh kernel-airy --kind assert`: Airymax CONFIGs, BTF embedded, six `built-in.a` artifacts, symbol-clash check between `security/airy/` and `kernel/superv/`; `airy-static` — SPDX identifier audit only. checkpatch, the extension rules and the SSoT manifest checks are covered by `kernel-verify.yml` and `os-chk-verify.yml` | PR / push on `kernel` gitlink, `ci/gates/kernel-*.sh`, `ci/lib/**` |
-| `os-chk-verify.yml` | `os-chk-verify` — resolve `gates.yaml`, dispatch registered OS-CHK executors, aggregate reports and block on P0/P1 findings. Also carries the entire Python tool-suite payload (abi-check / codegen / dsl / farm / flash / rollback …): one dependency install, one pytest sweep, so a tool change no longer queues four near-identical workflows | PR / push on `tools/**`, `sdk/**`, `ci/**`, the four audited gitlinks |
-| `mgmt-verify.yml` | `file-integrity` — verify submodule dirs derived from `.gitmodules` (9 entries), `[SC]` 12 shared headers, single physical copy of `*/airymax/ipc.h`, 12 governance files, no `airymaxos-` prefix; `orchestrate-leaf-ci` — aggregate leaf CI statuses, markdownlint repository-owned markdown, copyright header check | PR on `**.md`, `.gitmodules`, `ssot-registry.yaml`, `MAINTAINERS`, `CODEOWNERS`, `tools/**`, `.github/**`, `kernel` / push on `main` |
-| `image-build.yml` | `assemble` — warm the build toolchain into a cached dnf tree (self-proved offline), build the desktop ISO from a pinned openEuler netinst base inside a privileged official container, then verify the assembly manifest and ISO checksum; `accept` — install the ISO in QEMU under BIOS and UEFI, cold-boot to `AIRYMAX-DESKTOP-READY` (or `AIRYMAX-SMOKE-PASS` with `acceptance=true`), publish TAP and serial logs. Both jobs are one-line `ci/ci.sh` calls; all logic lives in `ci/gates/` | `workflow_dispatch` (release gate, not a PR gate) |
-| `nightly.yml` | `nightly-test-suite` — seL4-style formal verification, 72h soak test, chaos injection (CPU hotplug / mem hotremove / I/O error / net partition); `nightly-revert-or-budget` — auto-revert on regression via `auto-bisect`, or CI budget check (60 min steady, 90 min kernel cold-cache fallback, OS-STD-TEST-011) | cron `0 2 * * *` / `workflow_dispatch` |
-| `release.yml` | `build-and-sign` — SPDX SBOM (syft per submodule + merge), kernel RPM build, GPG + cosign signing, SDK tarball; `publish-release` — verify signed artifacts, push OCI image to ghcr, prune stale assets, create GitHub Release with artifacts | tag `v*` / `v*-rc*` / `workflow_dispatch` |
-| `ssot-verify.yml` | `ssot-syntax-and-rules` — PyYAML syntax check, rule-ID count + uniqueness (OS-IRON-015), `validate-ssot.py` cross-ref; `doc-links` — repository-owned relative-path markdown link integrity | PR on `**.md`, `ssot-registry.yaml`, `tools/validate-ssot.py` / push on `main` |
+## 3. 流水线清单
 
-## Naming & Structure Conventions
+| 文件 | 作业 | 触发 | 守什么 |
+|------|------|------|--------|
+| `kernel-verify.yml` | `kernel-build`、`kernel-verify` | `kernel` gitlink、`ci/gates/kernel-*.sh`、`ci/lib/**` 的 PR 与 push | 构建矩阵为 4 配置 × 4 架构 × 2 编译器减 4 个排除格，共 28 格，`max-parallel: 8`；`W=2` 零告警。第二作业跑 checkpatch `--strict`、sparse `C=2`、Coccinelle、UML 上的 KUnit 与 QEMU 上的 kselftest |
+| `airy-verify.yml` | `airy-build`、`airy-static` | `kernel` gitlink、`ci/gates/kernel-*.sh`、`ci/lib/**` 的 PR 与 push | `airy_defconfig` 在 x86_64/aarch64/riscv64/loongarch64 上构建；断言 Airymax CONFIG、BTF 内嵌、六个 `built-in.a` 产物、`security/airy/` 与 `kernel/superv/` 的符号不冲突。`airy-static` 只审 SPDX 标识 |
+| `os-chk-verify.yml` | `os-chk-verify` | `tools/**`、`sdk/**`、`ci/**` 与四个受审 gitlink 的 PR 与 push | 解析 `gates.yaml`，分派已登记的 OS-CHK 执行器，汇总报告并阻断 P0/P1 级结论。同时承载整套 Python 工具链（abi-check、codegen、dsl、farm、flash、rollback 等）：一次依赖安装、一次 pytest，工具改动不再排队四轮 |
+| `mgmt-verify.yml` | `file-integrity`、`orchestrate-leaf-ci` | 文档、`.gitmodules`、`ssot-registry.yaml`、`MAINTAINERS`、`CODEOWNERS`、`tools/**`、`.github/**`、`kernel` 的 PR，以及 `main` 的 push | 校验由 `.gitmodules` 推导的子模块目录、12 份 `[SC]` 共享头、`ipc.h` 的物理唯一副本、12 份治理文件、不得出现 `airymaxos-` 前缀；第二作业汇总叶仓 CI、跑 markdownlint 与版权头检查 |
+| `image-build.yml` | `assemble`、`accept` | 仅 `workflow_dispatch`（发行门禁，不参与 PR） | `assemble` 先把构建工具链预热成可离线自证的 dnf 缓存树，再在特权官方容器内以钉版的 openEuler netinst 为基底组装桌面 ISO，校验装配清单与 ISO 校验和；`accept` 在 QEMU 下分别以 BIOS 与 UEFI 安装，冷启动到 `AIRYMAX-DESKTOP-READY`（`acceptance=true` 时为 `AIRYMAX-SMOKE-PASS`），发布 TAP 与串口日志 |
+| `nightly.yml` | `nightly-test-suite`、`nightly-revert-or-budget` | cron `0 2 * * *` 与手动 | 形式化验证、72 小时浸泡、混沌注入（CPU 热插拔、内存热移除、I/O 错误、网络分区）；第二作业在回归时经 `auto-bisect` 自动回退，或做 CI 预算检查（稳态 60 分钟，内核冷缓存 90 分钟） |
+| `release.yml` | `build-and-sign`、`publish-release` | 标签 `v*`、`v*-rc*` 与手动 | 逐子模块 SBOM 合并、内核 RPM、GPG 与 cosign 签名、SDK 压缩包；第二作业校验已签名产物、推送 OCI 镜像到 ghcr、清理过期资产、创建 GitHub Release |
+| `ssot-verify.yml` | `ssot-syntax-and-rules`、`doc-links` | 文档、`ssot-registry.yaml`、`tools/validate-ssot.py` 的 PR 与 `main` 的 push | PyYAML 语法、规则 ID 计数与唯一性、`validate-ssot.py` 交叉引用；相对路径链接完整性 |
 
-Every workflow obeys one naming scheme so that the Actions list, `gh workflow
-run`, and this document can never disagree. The rules are enforced by
-`ci/check-workflows.py` (rules 1–11), which runs from `ci/lint.sh` in
-`os-chk-verify.yml` — a convention that is not checked is not a convention.
+`nightly.yml` 与 `release.yml`、`image-build.yml` 暴露 `workflow_dispatch`。
+`image-build.yml` 的参数含义：
 
-| Aspect | Rule | Rationale |
-|--------|------|-----------|
-| File name | kebab-case `^[a-z0-9]+(-[a-z0-9]+)*\.yml$` | Case- and locale-insensitive on every filesystem; sorts predictably |
-| `name:` | Identical to the file stem | The UI label and the file path are one single source of truth |
-| `-verify` suffix | Reserved for gating workflows (the 5 SSoT/build gates) | A reader immediately knows the workflow fails the build on violation |
-| Lifecycle names | `image-build` / `nightly` / `release` | Named after the lifecycle stage they own, not the tool they call |
-| Payload | YAML is a thin dispatch layer — checkout, `ci/ci.sh <gate>`, upload | All assertions live in `ci/`, replayable locally |
-| Job count | 2 capped per workflow | Keeps the DAG readable and the critical path short |
-| Inline `run` budget | Ratcheted in `ci/workflow-budgets.txt` | Non-increasing cap prevents shell logic from creeping back into YAML |
-| `permissions:` | Top-level, explicit, never `write-all` or `*` | The default token scope drifts with repository settings; only the workflow file can pin it |
-| `concurrency:` | Top-level on every PR-triggered workflow, `cancel-in-progress: true` | A superseded run's verdict no longer describes the current tree; queuing it only burns runners |
-| `timeout-minutes:` | Required on every job | The 360-minute default is no limit at all; a hung job holds the runner until the queue gives up |
-| Runner image | Pinned (`ubuntu-24.04`), never `ubuntu-latest` | A floating label silently changes compiler, shellcheck and Python versions; the gate result then depends on the day it ran |
-| Trigger parity | `pull_request` paths ⊆ `push` paths | A PR-only path is a file that stops being validated once merged — the gate script edits itself, no one sees the verdict until `main` goes red |
-| Gitlink paths | List the submodule directory (`kernel`), never `kernel/**` | A submodule appears in the parent diff as one directory entry; an inner glob can never match |
+- `acceptance: true` — 生成验收 ISO，并断言会话内出现 `AIRYMAX-SMOKE-PASS`。
+- `release_tag` — 把产品 ISO 发布到 `ghcr.io`；发布按 `(tag, digest)` 幂等，
+  已有同名标签时拒绝替换，除非显式 `replace: true`。重打同一版本是一个决定，
+  不是一个副作用。
 
-Adding or renaming a workflow therefore requires three coordinated edits: the
-file, its `name:`, and `ci/workflow-budgets.txt`; `./ci/lint.sh` rejects the
-change if any of them drift apart. Declaring `permissions:` and
-`concurrency:` is likewise part of adding a workflow, not an afterthought.
+## 4. 命名与结构约定
 
-## `[SC]` Shared-Contract Headers
+规则实现在 `ci/check-workflows.py`，由 `ci/lint.sh` 在 `os-chk-verify` 与本地
+lint 中执行。下表是规则本身，不是建议。
 
-The `mgmt-verify.yml` and `os-chk-verify.yml` workflows guard the `[SC]` layer
-— the single physical source of truth for the kernel↔agentrt ABI, located at
-`kernel/include/uapi/linux/airymax/`:
+| 方面 | 规则 | 为什么 |
+|------|------|--------|
+| 文件名 | kebab-case，`^[a-z0-9]+(-[a-z0-9]+)*\.yml$` | 任何文件系统与区域设置下大小写、排序都一致 |
+| `name:` | 与文件名主干逐字相同 | UI 显示名与文件路径只能有一处事实源，否则 Actions 列表、`gh workflow run` 与文档会互相矛盾 |
+| `-verify` 后缀 | 只留给阻断型门禁 | 读名字就知道违规会红 |
+| 生命周期名 | `image-build` / `nightly` / `release` | 按所属生命周期阶段命名，不按调用的工具命名 |
+| 载荷 | YAML 只做检出、`ci/ci.sh`、上传 | 断言全部下沉，可对遗留构建目录复跑 |
+| 作业数 | 每文件上限见 `ci/workflow-budgets.txt`（最多 2） | 保持 DAG 可读、关键路径短 |
+| 内联 `run` | 棘轮预算，只许下调；预算为 0 时额外禁用一批模式 | 防止 shell 逻辑一段段爬回 YAML |
+| `permissions:` | 顶层显式声明，禁止 `write-all` 与 `*: write` | 未声明时令牌权限随仓库设置漂移，同一份 YAML 在不同仓库权限不同 |
+| `concurrency:` | PR 触发的流水线必须声明，且取消进行中的旧轮 | 被取代的 run 的结论不描述当前树，留着只会占并发额度、并在排障时被误读 |
+| `timeout-minutes:` | 每个作业必填 | 缺省 360 分钟等于没有上限；获取卡死会一路烧到配额尽头 |
+| 运行器镜像 | 钉版（`ubuntu-24.04`），不用 `ubuntu-latest` | 浮动标签会悄悄换掉编译器、shellcheck 与 Python 版本，门禁结论就取决于跑的那一天 |
+| 触发路径对等 | `pull_request` 的 paths 必须是 `push` 的子集 | PR 独有的路径意味着该文件合并后不再被校验 |
+| 子模块路径 | 只写 gitlink 目录（`kernel`），不写 `kernel/**` | 父仓 diff 里子模块只有目录一项，内部 glob 永不命中，是死判据 |
+| 门禁存在性 | 每个 `ci/ci.sh <gate>` 必须有同名 `ci/gates/<gate>.sh` 且自带 `# 用法:` | 名字写错要到 checkout 与预热之后才以 exit 2 暴露；本地一秒可查 |
+| 库函数来源 | 门禁只能调用它 `source` 过的库函数 | 未 source 的 `need_cmd` 只会变成 “command not found”，前置校验静默失效 |
 
-**12 [SC] headers** (per OS-IRON-014) — 10 core plus 2 supplementary:
-`error.h`, `log_types.h`, `ipc.h`, `sched.h`, `memory_types.h`, `security_types.h`, `cognition_types.h`, `syscalls.h`, `syscall_gen.h`, `uapi_compat.h`, `lsm_types.h`, `bpf_struct_ops.h`
+新增或改名一个流水线需要三处同步：文件、`name:`、`ci/workflow-budgets.txt`。
+`./ci/lint.sh` 在任一处漂移时直接判红。
 
-`mgmt-verify` asserts presence and a single physical copy of the headers on the
-parent-repo side; `os-chk-verify` runs the tri-path compile and layout check
-(`OS-CHK-DOC-04`). Both trigger on the `kernel` gitlink, which is the only shape
-a header change takes in this repository.
+## 5. 构建速度的纪律
 
-## Issue & PR Templates
+提速只允许在「不减少覆盖面」的方向上做。已落实的三条：
 
-- `ISSUE_TEMPLATE/` — structured issue templates for bugs, features and design proposals.
-- `PULL_REQUEST_TEMPLATE.md` — enforces the DCO sign-off reminder, subsystem prefix,
-  test/SSoT checklist, and `[SC]` change declaration on every pull request.
+1. **工具链预热自证**：`image-build` 的 `assemble` 先用一次 dnf 预热把 1200
+   余个包落进缓存树，并在离线状态自证可解析，之后每次组装只做增量。缓存键
+   绑定预热自证的结果，而不是绑定 YAML 的文本——绑定文本时，改了无关的一行
+   就会让整棵缓存失效，重新在线取包。
+2. **缓存命中判据前置**：预热门禁在进入 ISO 组装前判定缓存是否可用，未命中
+   时才在线补齐，避免「先跑十分钟再失败」。
+3. **并发取消与显式超时**：同一 PR 的旧轮被取消，每个作业都有上限，挂住的
+   作业不会占着运行器直到队列放弃。
 
-## Development Guide
+工具链门禁本身也有时限：每条外部命令进入固定的时限数组，单条命令不可无限
+等待。这条约束来自一次真实的自锁——缓存键依赖门的结论、门的结论又依赖缓存
+命中，两边互等，流水线只能在超时后失败。
 
-- **Trigger a workflow manually** — workflows exposing `workflow_dispatch` can be
-  run from the GitHub Actions UI (`nightly.yml`, `release.yml`, `image-build.yml`).
-  For `image-build.yml`, set `acceptance: true` to build the acceptance ISO and
-  assert the in-session `AIRYMAX-SMOKE-PASS` marker. `release_tag` publishes the
-  product ISO to `ghcr.io`; the publish step is idempotent on `(tag, digest)` and
-  refuses to replace an existing tag unless `replace: true` is set explicitly —
-  rebuilding the same version is a decision, not a side effect.
-- **Add a new workflow** — keep the 2-job cap, and do not put shell logic in the
-  YAML. Add a gate under `ci/gates/` with a `# 用法:` header, dispatch it from
-  `ci/ci.sh`, register its inline-block budget in `ci/workflow-budgets.txt`, then
-  run `./ci/lint.sh`. The authority document is
-  `docs/docs-linux/70-build-system/03-ci-cd-pipeline.md` in the **hub repository**
-  (`airymaxhub/docs/`), not in this one.
-- **Replay a workflow locally** — every gate is a plain script, so the same
-  assertions can be run against a leftover build directory:
+## 6. 本地复跑
 
-  ```bash
-  ./ci/ci.sh --list                       # list gates and their usage
-  ./ci/ci.sh image-verify --out <dir>     # re-check an existing image-build output
-  ACCEPTANCE=true ./ci/ci.sh tap-extract --dir <dir>
-  ```
+每个门禁都是普通脚本，因此同一套断言可以在本地对遗留的构建目录执行：
 
-- **Local SSoT validation** before pushing:
+```bash
+./ci/ci.sh --list                       # 列出全部门禁及其用法
+./ci/ci.sh image-verify --out <dir>     # 复核已有 image-build 产物
+ACCEPTANCE=true ./ci/ci.sh tap-extract --dir <dir>
+./ci/lint.sh                            # 工作流规则 + 门禁 + SSoT 本地校验
+python3 tools/validate-ssot.py . ssot-registry.yaml
+```
 
-  ```bash
-  python3 tools/validate-ssot.py . ssot-registry.yaml
-  ```
+## 7. 排查
 
-- **Branch protection** — L1/L3 review is enforced via GitHub branch protection
-  rules (`require_code_owner_reviews` + 2 required reviewers), not via a CI job.
-- **Secrets** — release signing uses `GPG_PRIVATE_KEY`, `GPG_PASSPHRASE`,
-  `COSIGN_KEY`, `COSIGN_PASSWORD`. Never log or echo these values.
+- 查某次运行的作业与步骤：
+  `gh run view <run-id> --log`，或按 `run_id` 调 GitHub API 的
+  `actions/runs/<id>/jobs`。
+- `image-build` 的产物在 `out/desktop/iso/*.iso` 与同名 `.sha256`，以产物形式
+  上传；`accept` 的 TAP 与串口日志同样以产物形式保留，用于归因「装上了但没
+  进桌面」与「没装上」这两类不同故障。
+- 父仓的 `kernel`、`system`、`distro` 等以 gitlink 固定 SHA。CI 检出的是该
+  SHA 的内容，因此未推到远端的本地提交会让 checkout 失败（远端报
+  `upload-pack: not our ref`），这不是权限问题，是对象不在远端。
 
-## License
+## 8. 许可
 
-Dual-licensed under **AGPL v3 + Apache 2.0** (SPDX: `AGPL-3.0-or-later OR Apache-2.0`).
-See the repository root [LICENSE](../LICENSE) and [NOTICE](../NOTICE).
+双许可 **AGPL v3 + Apache 2.0**（SPDX：`AGPL-3.0-or-later OR Apache-2.0`）。
+详见仓库根目录的 [LICENSE](../../LICENSE) 与 [NOTICE](../../NOTICE)。
 
 Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
