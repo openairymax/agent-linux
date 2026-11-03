@@ -23,7 +23,6 @@ readonly EINVAL=5
 # shellcheck source=../lib/release-assets.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/release-assets.sh"
 
-API="${GITHUB_API_URL:-https://api.github.com}"
 REPO="${GITHUB_REPOSITORY:-}"
 TAG=""
 DIR="."
