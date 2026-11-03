@@ -51,7 +51,7 @@ build()
     need_cmd docker
     [ -n "${VER}" ] || { err "缺少 --ver"; exit "${EINVAL}"; }
     epoch="${SOURCE_DATE_EPOCH:-$(git log -1 --pretty=%ct)}"
-    docker build -f oci/Containerfile.agent-base \
+    docker build -f ci/container/Containerfile.agent-base \
         --build-arg "SOURCE_DATE_EPOCH=${epoch}" \
         --build-arg "AIRY_VERSION=${VER}" \
         --build-arg "RPM_ARCH=x86_64" \

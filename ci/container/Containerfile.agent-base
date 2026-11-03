@@ -11,7 +11,7 @@
 #   国内可换成 hub.oepkgs.net/openeuler/openeuler:24.03-lts-sp3。
 #
 # 构建入口（.github/workflows/release.yml 的 "Build OCI base image" 步骤）：
-#   docker build -f oci/Containerfile.agent-base \
+#   docker build -f ci/container/Containerfile.agent-base \
 #     --build-arg SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct) \
 #     --build-arg AIRY_VERSION=<X.Y.Z> \
 #     -t ghcr.io/openairymax/airymaxos:v<X.Y.Z> .

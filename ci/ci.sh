@@ -9,6 +9,7 @@
 # 分层：
 #   ci/          仓库级门禁：编排（取介质、起容器、跑装机）与断言（清单、
 #                摘要、TAP、日志）。可在任意一台留有产物的机器上重放。
+#   ci/container/ 基础镜像的 Containerfile 与包清单，只由 release-oci 消费。
 #   distro/ci/   distro 子模块内部构建入口（run-image-ci.sh、run-lint.sh），
 #                由本层调用，不反向依赖本层。
 #   .github/    只留 checkout → ci/ci.sh <gate> → upload artifact。
