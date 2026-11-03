@@ -314,11 +314,20 @@ def validate(registered, used):
         return 0
 
 
+def usage(stream=sys.stdout):
+    print(f"Usage: {os.path.basename(sys.argv[0])} <docs_root> <ssot_yaml>",
+          file=stream)
+    print("  docs_root  — root directory of documentation", file=stream)
+    print("  ssot_yaml  — path to ssot-registry.yaml", file=stream)
+
+
 def main():
+    if sys.argv[1:] in (["-h"], ["--help"]):
+        usage()
+        sys.exit(0)
+
     if len(sys.argv) != 3:
-        print(f"Usage: {sys.argv[0]} <docs_root> <ssot_yaml>")
-        print(f"  docs_root  — root directory of documentation")
-        print(f"  ssot_yaml  — path to ssot-registry.yaml")
+        usage(sys.stderr)
         sys.exit(2)
 
     docs_root = sys.argv[1]
