@@ -8,22 +8,39 @@
 # 收敛到此处后，YAML 只需一行调用。
 # ===========================================================================
 
+# / 的可用块数（KiB）。用 -P -k 而不是 -h：-P 固定字段位，第 4 列恒为
+# 可用块数；-h 给的是人类可读串，两次数值无法相减。
+avail_kb()
+{
+    df -Pk / | awk 'NR == 2 { print $4 }'
+}
+
 # 托管 runner 预装的工具链（dotnet/android/ghc/CodeQL/boost/ghcup/swift）
 # 最多占 30G；镜像流水线要落一个 4G ISO 加两 G 载荷，不清理就在组装尾段
 # ENOSPC，而且失败点在 ISO 生成之后，前面十几分钟的编译全白费。
+#
+# 前后各取一次可用空间并打印差值：清理列表是照镜像快照抄的，runner 镜像
+# 换版后某些路径会消失、某些会变大，只看事后的绝对值无法判断这一步还值不
+# 值得占流水线时间（W-3）。差值为零或为负说明清理已无效，该删的条目该重估。
 #
 # 只在 GITHUB_ACTIONS=true 时执行：这些路径属于宿主自己的安装，本地开发者
 # 不该因为跑一次门禁就被删掉 /usr/share/dotnet。
 free_disk()
 {
+    local before after gained
+
     if [ "${GITHUB_ACTIONS:-}" != true ]; then
         note "非 CI 环境，跳过 runner 磁盘清理"
         return 0
     fi
     group "free runner disk"
+    before="$(avail_kb)"
     sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
         /opt/hostedtoolcache/CodeQL /usr/local/share/boost \
         /usr/local/.ghcup /usr/share/swift
+    after="$(avail_kb)"
+    gained=$(( (after - before) / 1024 ))
+    say "清理释放 ${gained} MiB（/${after} MiB 可用）"
     df -h /
     endgroup
 }
