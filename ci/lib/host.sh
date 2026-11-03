@@ -15,19 +15,42 @@ avail_kb()
     df -Pk / | awk 'NR == 2 { print $4 }'
 }
 
-# 托管 runner 预装的工具链（dotnet/android/ghc/CodeQL/boost/ghcup/swift）
-# 最多占 30G；镜像流水线要落一个 4G ISO 加两 G 载荷，不清理就在组装尾段
-# ENOSPC，而且失败点在 ISO 生成之后，前面十几分钟的编译全白费。
+# 秒级时间戳，只用于计时：EPOCHSECONDS 免去每项一次 date 的 fork。
+now_sec()
+{
+    printf '%s' "${EPOCHSECONDS:-$(date +%s)}"
+}
+
+# 托管 runner 预装的工具链，逐项独立。此前整串写死在 rm 的参数里，无法
+# 单独计时，也无法判断某一棵是否还值得删。
+FREE_TARGETS=(
+    /usr/share/dotnet
+    /usr/local/lib/android
+    /opt/ghc
+    /opt/hostedtoolcache/CodeQL
+    /usr/local/share/boost
+    /usr/local/.ghcup
+    /usr/share/swift
+)
+
+# 这七棵树最多占 30G；镜像流水线要落一个 4G ISO 加两 G 载荷，不清理就在
+# 组装尾段 ENOSPC，而且失败点在 ISO 生成之后，前面十几分钟的编译全白费。
 #
 # 前后各取一次可用空间并打印差值：清理列表是照镜像快照抄的，runner 镜像
 # 换版后某些路径会消失、某些会变大，只看事后的绝对值无法判断这一步还值不
 # 值得占流水线时间（W-3）。差值为零或为负说明清理已无效，该删的条目该重估。
 #
+# 并发删除：七棵树互不相干，串行时每一步都在等同一块盘，96 秒里大半是元
+# 数据操作排队。并发把等待重叠起来，收尾按耗时倒序列出每一项，于是「哪一
+# 棵树是长杆」和「哪一棵已经不值这几秒」都能从日志里直接读出来，而不是靠
+# 猜着裁剪（CI-16 要求裁剪前先有实测）。
+#
 # 只在 GITHUB_ACTIONS=true 时执行：这些路径属于宿主自己的安装，本地开发者
 # 不该因为跑一次门禁就被删掉 /usr/share/dotnet。
 free_disk()
 {
-    local before after gained
+    local before after gained tmp path elapsed spent pid
+    local -a pids=()
 
     if [ "${GITHUB_ACTIONS:-}" != true ]; then
         note "非 CI 环境，跳过 runner 磁盘清理"
@@ -35,11 +58,27 @@ free_disk()
     fi
     group "free runner disk"
     before="$(avail_kb)"
-    sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
-        /opt/hostedtoolcache/CodeQL /usr/local/share/boost \
-        /usr/local/.ghcup /usr/share/swift
+    tmp="$(mktemp)"
+
+    for path in "${FREE_TARGETS[@]}"; do
+        [ -e "${path}" ] || continue
+        (
+            spent="$(now_sec)"
+            sudo rm -rf "${path}"
+            printf '%s %s\n' "$(( $(now_sec) - spent ))" "${path}" >>"${tmp}"
+        ) &
+        pids+=("$!")
+    done
+    for pid in "${pids[@]}"; do
+        wait "${pid}" || warn "有一条清理失败，见上方 rm 的报错"
+    done
+
     after="$(avail_kb)"
     gained=$(( (after - before) / 1024 ))
+    while read -r elapsed path; do
+        say "  ${elapsed}s ${path}"
+    done < <(sort -rn "${tmp}")
+    rm -f "${tmp}"
     say "清理释放 ${gained} MiB（/${after} MiB 可用）"
     df -h /
     endgroup
