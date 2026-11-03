@@ -160,17 +160,24 @@ jobs:
       # 混在一步时 Actions 只报一个总耗时，排障看不出瓶颈在哪。warm 收尾会
       # 用干净容器自证缓存可离线安装，装配段因此能严格离线。
       - name: Warm toolchain cache
+        id: warm
         timeout-minutes: 75
         run: ci/ci.sh toolchain --image "$AIRYMAX_BUILD_IMAGE" --cache "$RUNNER_TEMP/dnf-cache"
 
       # 显式保存且不看 job 成功态：warm 中途失败时，已下载的 rpm 仍有价值，
-      # 下一轮从这些包继续，而不是回到零。命中同键时保存会报错，故加判据。
+      # 下一轮从这些包继续，而不是回到零。
+      #
+      # 键分两种：自证通过（warm 成功）才写精确键，它代表「缓存足以离线安装」，
+      # 后续轮命中即跳过在线段；未通过则写滚动键，靠 restore-keys 的 dnf-
+      # 前缀被下一轮捡走。半份缓存若落在精确键上，cache-hit 恒真、保存分支
+      # 永不触发，每一轮都只能从公网补差且补不全，形成自锁环
+      # （run 41613120035：命中 371 MiB 的半份缓存，离线自证立刻失败）。
       - name: Save dnf toolchain cache
         if: always() && steps.dnf.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: ${{ runner.temp }}/dnf-cache
-          key: dnf-${{ hashFiles('ci/container/build-packages.txt') }}
+          key: ${{ steps.warm.outcome == 'success' && format('dnf-{0}', hashFiles('ci/container/build-packages.txt')) || format('dnf-{0}-partial-{1}', hashFiles('ci/container/build-packages.txt'), github.run_id) }}
 
       # 键分两段：前缀是闭包定义的摘要（镜像根表 + 配方），后缀是池内容的
       # 摘要。前者让「闭包定义没变」的轮次优先命中同一代，后者让同一份池
