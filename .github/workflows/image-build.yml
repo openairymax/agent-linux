@@ -369,25 +369,33 @@ jobs:
       # 分步后步骤名即结论；运行目录按 run-<fw>-<n> 命名，两腿互不覆盖。
       # step 级时限 80 分钟 > 装机 3600 s + 冷启动 900 s，且累计仍小于 job
       # 的 360 分钟，保证超限时先由 step 收尾而不是被 job 强制取消。
+      #
+      # 产物目录也按固件分开：run-* 目录名虽不同，但 tap.txt 与
+      # install-manifest.txt 是每目录一份，两腿共用一个 --out 时后跑的
+      # 那腿会把前腿的总账覆盖掉，失败现场只剩一条腿的证据。
       - name: Install and cold boot (BIOS, CD-ROM)
         timeout-minutes: 80
         env:
           ACCEPTANCE: ${{ inputs.acceptance }}
-        run: ci/ci.sh accept --iso "$AIRYMAX_ISO" --out "$RUNNER_TEMP/install" --firmware bios --media cdrom --runs 1 --install-timeout 3600 --boot-timeout 900
+        run: ci/ci.sh accept --iso "$AIRYMAX_ISO" --out "$RUNNER_TEMP/install-bios" --firmware bios --media cdrom --runs 1 --install-timeout 3600 --boot-timeout 900
 
       - name: Install and cold boot (UEFI, CD-ROM)
         timeout-minutes: 80
         env:
           ACCEPTANCE: ${{ inputs.acceptance }}
-        run: ci/ci.sh accept --iso "$AIRYMAX_ISO" --out "$RUNNER_TEMP/install" --firmware uefi --media cdrom --runs 1 --install-timeout 3600 --boot-timeout 900
+        run: ci/ci.sh accept --iso "$AIRYMAX_ISO" --out "$RUNNER_TEMP/install-uefi" --firmware uefi --media cdrom --runs 1 --install-timeout 3600 --boot-timeout 900
 
       - name: Annotate boot failures (USB)
         if: failure()
         run: ci/ci.sh boot-annotate --dir "$RUNNER_TEMP/install-usb"
 
-      - name: Annotate boot failures (CD-ROM)
+      - name: Annotate boot failures (BIOS)
         if: failure()
-        run: ci/ci.sh boot-annotate --dir "$RUNNER_TEMP/install"
+        run: ci/ci.sh boot-annotate --dir "$RUNNER_TEMP/install-bios"
+
+      - name: Annotate boot failures (UEFI)
+        if: failure()
+        run: ci/ci.sh boot-annotate --dir "$RUNNER_TEMP/install-uefi"
 
       - name: Extract smoke TAP (USB)
         if: always()
@@ -395,11 +403,17 @@ jobs:
           ACCEPTANCE: ${{ inputs.acceptance }}
         run: ci/ci.sh tap-extract --dir "$RUNNER_TEMP/install-usb"
 
-      - name: Extract smoke TAP (CD-ROM)
+      - name: Extract smoke TAP (BIOS)
         if: always()
         env:
           ACCEPTANCE: ${{ inputs.acceptance }}
-        run: ci/ci.sh tap-extract --dir "$RUNNER_TEMP/install"
+        run: ci/ci.sh tap-extract --dir "$RUNNER_TEMP/install-bios"
+
+      - name: Extract smoke TAP (UEFI)
+        if: always()
+        env:
+          ACCEPTANCE: ${{ inputs.acceptance }}
+        run: ci/ci.sh tap-extract --dir "$RUNNER_TEMP/install-uefi"
 
       # ISO 经 OCI 制品通道交付，与 release.yml 的基础镜像分属两个包
       # （airymaxos-iso / airymaxos），互不覆盖 tag。放在这里而不是 assemble：
@@ -444,15 +458,19 @@ jobs:
         with:
           name: airymaxos-acceptance
           path: |
-            ${{ runner.temp }}/install/tap.txt
-            ${{ runner.temp }}/install/install-manifest.txt
-            ${{ runner.temp }}/install/smoke-*.tap
+            ${{ runner.temp }}/install-bios/tap.txt
+            ${{ runner.temp }}/install-bios/install-manifest.txt
+            ${{ runner.temp }}/install-bios/smoke-*.tap
+            ${{ runner.temp }}/install-uefi/tap.txt
+            ${{ runner.temp }}/install-uefi/install-manifest.txt
+            ${{ runner.temp }}/install-uefi/smoke-*.tap
             ${{ runner.temp }}/install-usb/tap.txt
             ${{ runner.temp }}/install-usb/install-manifest.txt
             ${{ runner.temp }}/install-usb/smoke-*.tap
             ${{ runner.temp }}/image/desktop/iso/iso-oci.txt
             ${{ runner.temp }}/image/channel.json
-            ${{ runner.temp }}/install/run-*/*.log
+            ${{ runner.temp }}/install-bios/run-*/*.log
+            ${{ runner.temp }}/install-uefi/run-*/*.log
             ${{ runner.temp }}/install-usb/run-*/*.log
           retention-days: 7
           if-no-files-found: warn
