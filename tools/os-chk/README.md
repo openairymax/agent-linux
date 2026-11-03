@@ -60,10 +60,10 @@ tools/os-chk/
 
 | 门禁 | 名称 | 执行器 |
 |------|------|--------|
-| OS-CHK-DOC-01 | Copyright 头部 | `tools/check-copyright.py` |
+| OS-CHK-DOC-01 | Copyright 头部 | `tools/repo/check-copyright.py` |
 | OS-CHK-DOC-04 | [SC] 头文件清单一致性 | `tools/sc-tri-compile/sc_tri_compile.py` |
 | OS-IRON-001 | syscall ABI 稳定性 | `tools/abi-check/abi_check.py` |
-| OS-IRON-015 | SSoT 规则 ID 注册一致性 | `tools/validate-ssot.py` |
+| OS-IRON-015 | SSoT 规则 ID 注册一致性 | `tools/repo/validate-ssot.py` |
 | OS-IRON-009-CODEGEN | codegen 生成产物零漂移 | `tools/codegen/run_codegen.py` |
 | OS-IRON-009-DSL | 策略 DSL 决策表零漂移 | `tools/dsl/dsl_compile.py` |
 | OS-TEST-066 | Airymax 定制 checkpatch 扩展规则 | `kernel/scripts/airy_checkpatch_ext.pl` |

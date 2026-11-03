@@ -52,7 +52,7 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 | `image-build.yml` | `assemble`、`accept` | 仅 `workflow_dispatch`（发行门禁，不参与 PR） | `assemble` 先把构建工具链预热成可离线自证的 dnf 缓存树，再在特权官方容器内以钉版的 openEuler netinst 为基底组装桌面 ISO，校验装配清单与 ISO 校验和；`accept` 在 QEMU 下分别以 BIOS 与 UEFI 安装，冷启动到 `AIRYMAX-DESKTOP-READY`（`acceptance=true` 时为 `AIRYMAX-SMOKE-PASS`），发布 TAP 与串口日志 |
 | `nightly.yml` | `nightly-test-suite`、`nightly-revert-or-budget` | cron `0 2 * * *` 与手动 | 形式化验证、72 小时浸泡、混沌注入（CPU 热插拔、内存热移除、I/O 错误、网络分区）；第二作业在回归时经 `auto-bisect` 自动回退，或做 CI 预算检查（稳态 60 分钟，内核冷缓存 90 分钟） |
 | `release.yml` | `build-and-sign`、`publish-release` | 标签 `v*`、`v*-rc*` 与手动 | 逐子模块 SBOM 合并、内核 RPM、GPG 与 cosign 签名、SDK 压缩包；第二作业校验已签名产物、推送 OCI 镜像到 ghcr、清理过期资产、创建 GitHub Release |
-| `ssot-verify.yml` | `ssot-syntax-and-rules`、`doc-links` | 文档、`ssot-registry.yaml`、`tools/validate-ssot.py` 的 PR 与 `main` 的 push | PyYAML 语法、规则 ID 计数与唯一性、`validate-ssot.py` 交叉引用；相对路径链接完整性 |
+| `ssot-verify.yml` | `ssot-syntax-and-rules`、`doc-links` | 文档、`ssot-registry.yaml`、`tools/repo/validate-ssot.py` 的 PR 与 `main` 的 push | PyYAML 语法、规则 ID 计数与唯一性、`validate-ssot.py` 交叉引用；相对路径链接完整性 |
 
 `nightly.yml` 与 `release.yml`、`image-build.yml` 暴露 `workflow_dispatch`。
 `image-build.yml` 的参数含义：
@@ -114,7 +114,7 @@ lint 中执行。下表是规则本身，不是建议。
 ./ci/ci.sh image-verify --out <dir>     # 复核已有 image-build 产物
 ACCEPTANCE=true ./ci/ci.sh tap-extract --dir <dir>
 ./ci/lint.sh                            # 工作流规则 + 门禁 + SSoT 本地校验
-python3 tools/validate-ssot.py . ssot-registry.yaml
+python3 tools/repo/validate-ssot.py . ssot-registry.yaml
 ```
 
 ## 7. 排查

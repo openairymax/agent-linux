@@ -30,7 +30,7 @@ readonly MD_GLOBS=('*.md' '.github/**/*.md' 'tools/**/*.md')
 leaf_ci()
 {
     need_cmd python3
-    python3 tools/aggregate-subrepo-ci.py --fail-on-red
+    python3 tools/repo/aggregate-subrepo-ci.py --fail-on-red
     say "叶子子仓 CI 状态已聚合"
 }
 
@@ -47,7 +47,7 @@ md_lint()
 copyright()
 {
     need_cmd python3
-    python3 tools/check-copyright.py --root .
+    python3 tools/repo/check-copyright.py --root .
     say "版权头校验通过"
 }
 

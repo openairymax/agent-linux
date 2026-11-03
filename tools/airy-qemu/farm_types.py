@@ -16,7 +16,7 @@ dataclass，构造时经 __post_init__ 校验，不含任何占位或桩逻辑�
   docs-linux/80-testing/03-kernel-selftests.md
     OS-TEST-030（自检注册）、OS-KER-101（自检不得阻塞）
   .github/workflows/kernel-verify.yml（virtme-ng 实际调用基线）
-  tools/parse-tap.py（TAP 解析契约：plan_total / ok_count / not_ok_count）
+  tools/tap/parse-tap.py（TAP 解析契约：plan_total / ok_count / not_ok_count）
 
 Example:
     >>> from farm_types import Arch, Machine, Suite, FarmJob
@@ -163,7 +163,7 @@ class JobState(str, Enum):
 class TapSummary:
     """TAP 结果汇总。
 
-    plan_total / ok_count / not_ok_count 与 tools/parse-tap.py 的返回值
+    plan_total / ok_count / not_ok_count 与 tools/tap/parse-tap.py 的返回值
     语义一致；skip_count 是携带 ``# SKIP`` 指令的用例数，按
     OS-TEST-021 单独计数，不并入 ok_count。
     """

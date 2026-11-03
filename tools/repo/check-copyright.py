@@ -3,9 +3,9 @@
 """
 check-copyright.py — 检查管理仓自有 Markdown 文档的版权头
 
-被 mgmt-verify.yml 引用。仅枚举 ``--root`` 所在 git 仓库中
-**被跟踪**的 .md 文件（``git ls-files``），因此天然排除子模块内部内容与
-未跟踪文件；再跳过路径段以 ``.`` 开头的文件（如 ``.github/`` 下的
+被 ci/gates/mgmt-leaves.sh 调用（mgmt-verify.yml 触发）。仅枚举 ``--root``
+所在 git 仓库中**被跟踪**的 .md 文件（``git ls-files``），因此天然排除子模块
+内部内容与未跟踪文件；再跳过路径段以 ``.`` 开头的文件（如 ``.github/`` 下的
 front-matter 模板），最后检查每个文件的**第 1 行**是否包含
 "Copyright" 或 "SPDX-License-Identifier"。
 

@@ -4,7 +4,7 @@
 kunit-tap-diff.py — KUnit KTAP 用例数单调性门禁（OS-TEST-012）
 
 解析 ``kunit.py run --raw_output=kunit`` 产出的嵌套 KTAP，与仓库内基线快照
-（默认 ``tools/kunit-tap-baseline.tap``）对比。基线是一份「棘轮」：用例总数
+（默认 ``tools/tap/kunit-tap-baseline.tap``）对比。基线是一份「棘轮」：用例总数
 只允许增长，套件不得被静默删除。确需下调基线时，必须在同一次变更中显式修改
 基线文件，使删除动作在评审 diff 中可见。
 
@@ -153,8 +153,8 @@ def main():
     parser.add_argument("--current", help="当前 KTAP 文件；省略则读 stdin")
     parser.add_argument(
         "--baseline-file",
-        default="tools/kunit-tap-baseline.tap",
-        help="基线快照路径（默认 tools/kunit-tap-baseline.tap）",
+        default="tools/tap/kunit-tap-baseline.tap",
+        help="基线快照路径（默认 tools/tap/kunit-tap-baseline.tap）",
     )
     parser.add_argument(
         "--update",

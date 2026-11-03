@@ -20,7 +20,7 @@ Documentation/process/maintainers.rst for field semantics.
 Preferred order: M: R: L: S: W: B: T: F: O: H: V:
 
 O: 是 CODEOWNERS 的唯一来源：M:/R: 里的邮箱不是合法 owner 写法，
-投影只认 O:。每个含 F: 的块都必须给出 O:，否则 tools/codeowners.py 拒绝
+投影只认 O:。每个含 F: 的块都必须给出 O:，否则 tools/repo/codeowners.py 拒绝
 生成。
 
 For 0.1.1 all submodules are S: Experimental.

@@ -37,7 +37,7 @@ gates:
     category: doc
     authority: 05-development-process.md §6.1
     executor:
-      argv: ["python3", "tools/check-copyright.py", "--root", "."]
+      argv: ["python3", "tools/repo/check-copyright.py", "--root", "."]
 
   # ── [SC] 契约层（DOC-04 头文件清单一致 / IRON-01 共享契约层一致）──────
   - id: OS-CHK-DOC-04
@@ -64,7 +64,7 @@ gates:
     category: doc
     authority: 09-ssot-registry.md（OS-IRON-015）
     executor:
-      argv: ["python3", "tools/validate-ssot.py", ".", "ssot-registry.yaml"]
+      argv: ["python3", "tools/repo/validate-ssot.py", ".", "ssot-registry.yaml"]
 
   # ── IRON-9 生成产物零漂移（codegen / DSL 决策表）─────────────────────
   - id: OS-IRON-009-CODEGEN

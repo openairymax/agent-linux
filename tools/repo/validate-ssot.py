@@ -6,7 +6,7 @@ Validates that every OS-*-NNN (agent-linux) and *-NNN (agentrt) rule ID
 referenced in documentation is registered in the SSoT YAML registry.
 
 Usage:
-    python3 tools/validate-ssot.py <docs_root> <ssot_yaml>
+    python3 tools/repo/validate-ssot.py <docs_root> <ssot_yaml>
 
 Exit codes:
     0 — all rule IDs are registered (or only deprecated warnings)

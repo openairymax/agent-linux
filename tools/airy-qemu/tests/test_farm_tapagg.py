@@ -307,7 +307,7 @@ def test_parse_matches_canonical_counts(repo_root: Path) -> None:
 
 def load_canonical(repo_root: Path):
     """按路径加载 CI 使用的规范 TAP 解析器。"""
-    path = repo_root / "tools" / "parse-tap.py"
+    path = repo_root / "tools" / "tap" / "parse-tap.py"
     spec = importlib.util.spec_from_file_location("canonical_tap", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

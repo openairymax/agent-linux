@@ -193,7 +193,7 @@ Contributions follow the IRON engineering rules and the SSoT (Single Source of T
 - **Commit prefix** — use the submodule name as prefix (`kernel:`, `services:`, `security:`, `memory:`, `cognition:`, `cloudnative:`, `system:`, `distro:`, `tests-linux:`, `docs:`, `ci:`, `tools:`, `ssot:`).
 - **Branches** — management repo is `main` only; leaf repos develop on `ALK-6.6-dev` (kernel) and `dev/hubs-01` (other leaves).
 - **Code style** — C: tab-8, 80 cols (`.clang-format`); Rust: `cargo fmt`; Python: PEP 8 (`ruff`); Go: `gofmt`.
-- **SSoT compliance** — every `OS-*-NNN` rule ID referenced in docs must be registered in [`ssot-registry.yaml`](ssot-registry.yaml); validate locally with `python3 tools/validate-ssot.py . ssot-registry.yaml`.
+- **SSoT compliance** — every `OS-*-NNN` rule ID referenced in docs must be registered in [`ssot-registry.yaml`](ssot-registry.yaml); validate locally with `python3 tools/repo/validate-ssot.py . ssot-registry.yaml`.
 - **Function prefix** — kernel-side APIs use the `airy_*` prefix (not legacy `airymaxos_*`).
 - **Reviews** — L1 subsystem maintainer + L3 top maintainer approval required for `[SC]` changes; enforced via branch protection and `MAINTAINERS` / `CODEOWNERS`.
 
