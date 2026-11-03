@@ -131,4 +131,39 @@ else
     printf '%s\n' "${out}" >&2
 fi
 
+# 预热只推已有字节，判据是池的输入标签与实时指纹一致：标签对得上才推，
+# 上游在两次之间变过就把旧字节挂在旧 key 上，取层构建会整层丢弃。
+out="$(run warm --dir "${tmp}/pkg" --arch x86_64 --ref "ghcr.io/x/y")"
+rc=$?
+case "${out}" in
+*无输入标签*) ok "池无输入标签时不预热" ;;
+*) bad "无标签时未跳过（rc=${rc}）"; printf '%s\n' "${out}" >&2 ;;
+esac
+
+out="$(run warm --dir "${tmp}/pool" --arch x86_64 --ref "ghcr.io/x/y")"
+rc=$?
+if [ "${rc}" = "0" ] && case "${out}" in *跳过推送*) true ;; *) false ;; esac; then
+    ok "标签一致时按当前指纹预热"
+else
+    bad "标签一致时未预热（rc=${rc}）"
+    printf '%s\n' "${out}" >&2
+fi
+
+mkdir -p "${tmp}/stale"
+cp -p "${tmp}/pool/a.rpm" "${tmp}/stale/"
+printf 'tag=seed-x86_64-0000000000000000\nkey=0\n' >"${tmp}/stale/.input-key"
+out="$(run warm --dir "${tmp}/stale" --arch x86_64 --ref "ghcr.io/x/y")"
+case "${out}" in
+*"本轮不预热"*) ok "标签陈旧时不预热" ;;
+*) bad "标签陈旧时仍然推送"; printf '%s\n' "${out}" >&2 ;;
+esac
+
+mkdir -p "${tmp}/empty"
+cp -p "${tmp}/pool/.input-key" "${tmp}/empty/"
+out="$(run warm --dir "${tmp}/empty" --arch x86_64 --ref "ghcr.io/x/y")"
+case "${out}" in
+*"池内没有 RPM"*) ok "空池不预热" ;;
+*) bad "空池仍然推送"; printf '%s\n' "${out}" >&2 ;;
+esac
+
 exit "${fails}"

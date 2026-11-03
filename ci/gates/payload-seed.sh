@@ -7,6 +7,8 @@
 #                                     [--repomd-dir DIR]
 #       ci/gates/payload-seed.sh fetch --dir DIR --arch ARCH
 #                                     [--ref REPO] [--token TOKEN]
+#       ci/gates/payload-seed.sh warm  --dir DIR --arch ARCH
+#                                     [--ref REPO] [--token TOKEN]
 #
 # 发布端（payload-publish.sh）解决「载荷能不能按内容寻址取回」，本 gate 解决
 # 「取哪一个」。区别不在字节，而在选择依据：`build-` 层的 tag 来自产出的载荷
@@ -30,7 +32,18 @@
 # 标记与池同目录、随缓存一起保存，L1-b 的补差链据此判断「已有整份」而不是
 # 「目录非空」——半份池同样非空（run 41075519752）。
 #
-# 退出码: 0 成功/无需预热/上游不可达；1 拉取或校验失败；5 参数不满足。
+# warm 是定时预热侧的发布入口，它不下载任何 RPM：字节来自上一轮构建留下的
+# 闭包池（actions/cache，宿主与 registry 都在 GitHub 内网，跑托管 runner 也
+# 不吃跨境限速），本 gate 只负责判断这份池是否对应当前上游。判断依据是构建
+# 开始时 fetch 写下的 .input-key：池在那一轮被收割，标签就是那一段输入；定时
+# 任务重算实时指纹，两者相等才推送。不相等说明上游在两次之间变过，此时推送
+# 等于把旧字节挂在新的 key 上，取层的构建会整层丢弃重下，比不预热更慢。
+#
+# 允许「标签对得上但池不完整」的窗口（构建中途上游再变一次）是有意的：seed
+# 层只是字节，消费端的求解仍以实时元数据或上一次成功事务的闭包清单为准逐包
+# 校验 sha256，不符即丢。标签乐观只花一次带宽，不会把错包装进镜像。
+#
+# 退出码: 0 成功/无需预热/上游不可达；1 拉取、校验或推送失败；5 参数不满足。
 # ===========================================================================
 set -uo pipefail
 
@@ -61,11 +74,12 @@ usage()
 {
     echo "用法: ci/gates/payload-seed.sh probe --arch ARCH [--output FILE] [--repomd-dir DIR]"
     echo "      ci/gates/payload-seed.sh fetch --dir DIR --arch ARCH [--ref REPO] [--token TOKEN]"
+    echo "      ci/gates/payload-seed.sh warm  --dir DIR --arch ARCH [--ref REPO] [--token TOKEN]"
 }
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
-        probe|fetch) CMD="$1"; shift ;;
+        probe|fetch|warm) CMD="$1"; shift ;;
         --dir)        DIR="${2:-}"; shift 2 ;;
         --arch)       ARCH="${2:-}"; shift 2 ;;
         --output)     OUTPUT="${2:-}"; shift 2 ;;
@@ -183,6 +197,7 @@ fetch()
         return 0
     fi
     ps_report
+    ps_record
     bash "${ROOT}/ci/gates/payload-publish.sh" pull \
         --dir "${DIR}" --tag "${PS_TAG}" --ref "${REF}" --token "${TOKEN}" || {
         err "取层失败: ${PS_TAG}"
@@ -211,7 +226,68 @@ ps_mark()
     say "取层完成: ${rpm} 个包（${PS_TAG}）"
 }
 
+# 池的来源标签只在构建开始时写：那一池字节对应哪一段输入，只有收割它的
+# 那一轮知道。定时任务拿它和实时指纹比对，决定能不能把池挂到当前 key 上。
+ps_record()
+{
+    printf 'tag=%s\nkey=%s\narch=%s\nat=%s\n' \
+        "${PS_TAG}" "${PS_KEY}" "${ARCH}" "$(date -u +%FT%TZ)" \
+        >"${DIR}/.input-key" || die "无法写入输入标签: ${DIR}/.input-key"
+}
+
+# 清单只覆盖目录里已有的 RPM：预热不补差、不向上游取任何字节。条目按名字
+# 排序，与 payload-publish 打包时的 --sort=name 一致，同一池两次预热得到
+# 同一层摘要，重复推送才可能被判为「已有」而跳过。
+ps_manifest()
+{
+    local f out="${tmp}/payload-manifest.txt" n
+    n="$(find "${DIR}" -maxdepth 1 -type f -name '*.rpm' | wc -l | tr -d ' ')"
+    [ "${n}" -gt 0 ] || return 1
+    {
+        printf '# AirymaxOS payload manifest\n'
+        printf 'arch=%s\n' "${ARCH}"
+        printf 'count=%s\n' "${n}"
+        find "${DIR}" -maxdepth 1 -type f -name '*.rpm' | sort |
+            while IFS= read -r f; do
+                printf 'rpm %s %s\n' \
+                    "$(sha256sum "${f}" | cut -d' ' -f1)" "${f##*/}"
+            done
+    } >"${out}"
+}
+
+warm()
+{
+    [ -n "${DIR}" ] || { err "--dir 必填"; exit "${EINVAL}"; }
+    local src="${DIR}/.input-key" tag
+    [ -f "${src}" ] || {
+        say "池无输入标签（${src}），本轮不预热"
+        return 0
+    }
+    if ! ps_key; then
+        say "上游元数据不可达，本轮不预热"
+        return 0
+    fi
+    tag="$(sed -n 's/^tag=//p' "${src}" | head -1)"
+    if [ "${tag}" != "${PS_TAG}" ]; then
+        say "池对应 ${tag:-未知}，实时指纹为 ${PS_TAG}，本轮不预热"
+        return 0
+    fi
+    ps_manifest || {
+        say "池内没有 RPM（${DIR}），本轮不预热"
+        return 0
+    }
+    ps_report
+    bash "${ROOT}/ci/gates/payload-publish.sh" push \
+        --dir "${DIR}" --manifest "${tmp}/payload-manifest.txt" \
+        --tag "${PS_TAG}" --arch "${ARCH}" \
+        --ref "${REF}" --token "${TOKEN}" || {
+        err "预热推送失败: ${PS_TAG}"
+        return 1
+    }
+}
+
 case "${CMD}" in
 probe) probe ;;
 fetch) fetch ;;
+warm)  warm ;;
 esac

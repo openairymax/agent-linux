@@ -35,11 +35,12 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 ├── mgmt-verify.yml        # 治理文件完整性 + 叶仓 CI 汇总
 ├── nightly.yml            # 夜间测试套件 + 自动回退/预算检查
 ├── os-chk-verify.yml      # OS-CHK 统一门禁编排（P0/P1 阻断）
+├── payload-seed.yml       # 定时把闭包池推成按输入指纹命名的 seed 层
 ├── release.yml            # 构建 + SBOM + 签名 + 发布
 └── ssot-verify.yml        # SSoT 语法与交叉引用校验
 ```
 
-八个流水线，每个最多两个作业（`os-chk-verify` 为一个）。作业数上限登记在
+九个流水线，每个最多两个作业（`os-chk-verify` 为一个）。作业数上限登记在
 `ci/workflow-budgets.txt`，只许下调。
 
 ## 3. 流水线清单
@@ -52,10 +53,12 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 | `mgmt-verify.yml` | `file-integrity`、`orchestrate-leaf-ci` | 文档、`.gitmodules`、`ssot-registry.yaml`、`MAINTAINERS`、`CODEOWNERS`、`tools/**`、`.github/**`、`kernel` 的 PR，以及 `main` 的 push | 校验由 `.gitmodules` 推导的子模块目录、12 份 `[SC]` 共享头、`ipc.h` 的物理唯一副本、12 份治理文件、不得出现 `airymaxos-` 前缀；第二作业汇总叶仓 CI、跑 markdownlint 与版权头检查 |
 | `image-build.yml` | `assemble`、`accept` | 仅 `workflow_dispatch`（发行门禁，不参与 PR） | `assemble` 先把构建工具链预热成可离线自证的 dnf 缓存树，再在特权官方容器内以钉版的 openEuler netinst 为基底组装桌面 ISO，校验装配清单与 ISO 校验和；`accept` 在 QEMU 下分别以 BIOS 与 UEFI 安装，冷启动到 `AIRYMAX-DESKTOP-READY`（`acceptance=true` 时为 `AIRYMAX-SMOKE-PASS`），发布 TAP 与串口日志 |
 | `nightly.yml` | `nightly-test-suite`、`nightly-revert-or-budget` | cron `0 2 * * *` 与手动 | 形式化验证、72 小时浸泡、混沌注入（CPU 热插拔、内存热移除、I/O 错误、网络分区）；第二作业在回归时经 `auto-bisect` 自动回退，或做 CI 预算检查（稳态 60 分钟，内核冷缓存 90 分钟） |
+| `payload-seed.yml` | `probe`、`warm` | cron `17 19 * * *`（北京时间 03:17）与手动 | `probe` 对实时上游取五段仓库元数据，算出 `seed-<arch>-<key16>`；`warm` 恢复上一轮构建留下的闭包池，仅当池的输入标签与该指纹一致时把它推成 seed 层，上游不可达或指纹已变则退 0 并说明原因。预热只搬运已有字节，不下载任何 RPM，因此也不得成为构建的先决条件 |
 | `release.yml` | `build-and-sign`、`publish-release` | 标签 `v*`、`v*-rc*` 与手动 | 逐子模块 SBOM 合并、内核 RPM、GPG 与 cosign 签名、SDK 压缩包；第二作业校验已签名产物、推送 OCI 镜像到 ghcr、清理过期资产、创建 GitHub Release |
 | `ssot-verify.yml` | `ssot-syntax-and-rules`、`doc-links` | 文档、`ssot-registry.yaml`、`tools/repo/validate-ssot.py` 的 PR 与 `main` 的 push | PyYAML 语法、规则 ID 计数与唯一性、`validate-ssot.py` 交叉引用；相对路径链接完整性 |
 
-`nightly.yml` 与 `release.yml`、`image-build.yml` 暴露 `workflow_dispatch`。
+`nightly.yml` 与 `release.yml`、`image-build.yml`、`payload-seed.yml` 暴露
+`workflow_dispatch`。
 `image-build.yml` 的参数含义：
 
 - `acceptance: true` — 生成验收 ISO，并断言会话内出现 `AIRYMAX-SMOKE-PASS`。
@@ -83,7 +86,7 @@ lint 中执行。下表是规则本身，不是建议。
 | 11 | paths 只写 gitlink 目录（`kernel`），不写 `kernel/**` | 父仓 diff 里子模块只有目录一项，内部 glob 永不命中，是死判据 |
 | 12 | 每个 `ci/ci.sh <gate>` 必须有同名 `ci/gates/<gate>.sh`，且该脚本自带 `# 用法:` 头 | 名字写错要到 checkout 与工具链预热之后才以 exit 2 暴露 |
 | 13 | 每个 `runs-on:` 必须钉成 `<发行版>-<YY.MM>`（如 `ubuntu-24.04`），不得用 `-latest` | 浮动标签会悄悄换掉编译器、shellcheck 与 Python 版本，门禁结论就取决于跑的那一天 |
-| 14 | 文件名分两族：`*-verify` 必须由 `pull_request` 触发（阻断型门禁）；其余只能是 `image-build` / `nightly` / `release` | 读名字就知道违规会红，也读得出它何时跑 |
+| 14 | 文件名分两族：`*-verify` 必须由 `pull_request` 触发（阻断型门禁）；其余只能是 `image-build` / `nightly` / `release` / `payload-seed` | 读名字就知道违规会红，也读得出它何时跑 |
 | 15 | 本节表格的规则号必须与脚本的规则号一一对应：漏登、多登、重号均判红 | 文档一旦能单独演化，读者就会按错版本执行，新增规则则无人知晓 |
 | 16 | 每个 `uses:` 一律钉 40 位提交 SHA，并带 `# vN` 溯源注释（`./…` 与 `docker://` 豁免） | 浮动 tag 可被上游重新指向：代码在两次运行之间被换掉而日志无迹 |
 
