@@ -143,6 +143,17 @@ att_bid()
     printf '%s\n' "${id}"
 }
 
+# 发布作业没有检出 distro 子模块，airy_build_id 会退到第 4 级「配方摘要」，
+# 而那里一个 spec 都读不到，结果是一个与产物无关的空摘要。run id 与检出
+# 提交都是手上已有的原生量，补进环境让指纹停在正确的优先级上。
+att_run()
+{
+    [ -z "${AIRYMAX_RUN_ID:-}" ] && [ -n "${GITHUB_RUN_ID:-}" ] || return 0
+    export AIRYMAX_RUN_ID="${GITHUB_RUN_ID}"
+    AIRYMAX_COMMIT="${AIRYMAX_COMMIT:-$(git -C "${ROOT}" rev-parse HEAD)}"
+    export AIRYMAX_COMMIT
+}
+
 # subject 一律落成「名字<TAB>摘要」两列，生成与校验都只认这一种中间形态。
 # 有了它，两类发行物的差别只剩「名字从哪来」，校验器不必知道种类。
 att_set_iso()
@@ -179,6 +190,7 @@ att_gen()
     local subj="${WORK}/subjects" file commit bid src
     [ -n "${OUT}" ] && [ -n "${TAG}" ] || { usage >&2; exit "${EINVAL}"; }
     need_cmd python3 sha256sum git
+    att_run
     bid="$(att_bid)"
     commit="$(git -C "${ROOT}" rev-parse HEAD 2>/dev/null)"
     [ -n "${commit}" ] || die "无法确定源码提交，拒绝出证"

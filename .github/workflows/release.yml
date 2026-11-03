@@ -266,3 +266,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ci/ci.sh release-audit --tag "${{ needs.build-and-sign.outputs.tag }}" --repo "${{ github.repository }}"
+
+      # 只给 ISO 出证，等于承认「镜像可追溯、装进系统的 RPM 不可追溯」。
+      # 出证与推送分两步：推送失败可以对着同一份产物重试，不必重跑整轮
+      # 构建。指纹由 runner 自带的 GITHUB_RUN_ID 与检出提交决定，发布作业
+      # 不检出 distro 子模块也不会退化成空配方摘要。
+      - name: Attest release assets
+        run: ci/ci.sh attest build --kind rel --out . --tag "${{ needs.build-and-sign.outputs.tag }}"
+
+      - name: Publish release attestation
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ci/ci.sh attest publish --kind rel --out . --tag "${{ needs.build-and-sign.outputs.tag }}" --ref ghcr.io/openairymax/airymaxos --token "$GHCR_TOKEN"
