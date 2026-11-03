@@ -37,7 +37,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 360   # 托管 runner 单 job 硬上限（6 小时）
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: { submodules: recursive }
 
       - name: Validate nightly contract
@@ -62,7 +62,7 @@ jobs:
     env:
       COMMIT: ${{ github.sha }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Auto-bisect regression window (if nightly-test-suite failed)
         if: needs.nightly-test-suite.result == 'failure'

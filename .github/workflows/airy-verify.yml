@@ -83,7 +83,7 @@ jobs:
       # acquire 级超时与重试仍由 ci/lib/apt.sh 控制，镜像无响应时不会无限等待。
       APT_TIMEOUT: "2400"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: { submodules: recursive }
       - name: Install build dependencies and cross toolchain
         run: ci/ci.sh kernel-deps --kind build --arch ${{ matrix.arch }}
@@ -93,7 +93,7 @@ jobs:
         run: ci/ci.sh kernel-airy --kind assert --arch ${{ matrix.arch }}
       - name: Upload build log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: airy-build-${{ matrix.arch }}
           path: ${{ runner.temp }}/build.log
@@ -105,7 +105,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: { submodules: recursive }
       - name: Audit SPDX identifiers
         run: ci/ci.sh kernel-airy --kind style

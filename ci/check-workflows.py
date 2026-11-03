@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 """ci/check-workflows.py —— 守住 workflow 薄化与命名约束
 
-十二条规则：
+十三条规则：
 
 1. 结构上限：每个 workflow 的 job 数 ≤ 预算，内联 ``run: |`` 块数 ≤ 预算
    （预算见 ci/workflow-budgets.txt，只许下调）。
@@ -37,6 +37,12 @@
    真实存在，且该脚本自带 ``# 用法:`` 头——分发器按文件名解析，名字写错
    会在 checkout 与 runner 预热之后才以 exit 2 暴露，而 ``--list`` 的自动
    登记表也会漏项。判据在本地一秒可查，没有理由留给云端。
+13. 每个 ``uses:`` 都必须钉到 40 位提交 SHA，并带 ``# <版本>`` 注释。浮动
+   tag（``@v4``）是可被上游重新指向的引用：同一条 workflow 在两次运行之间
+   可以换掉代码，而日志里看不出任何差别。钉 SHA 把「升级」变成一次显式
+   提交，``# v4`` 只是给人读的溯源标签。本地 action（``./…``）与
+   ``docker://`` 镜像不受此约束——前者随本仓检出一同变化，后者由摘要
+   另行约束。
 
 为什么需要它：这些约束此前只存在于文档里，没有执行者。78 段内联 shell
 就是这样一段段长出来的——每一次单看都合理，合起来就没有人能在本地验证。
@@ -93,6 +99,10 @@ JOB_TIMEOUT = re.compile(r"^    timeout-minutes:\s*\S")
 # 门禁引用：ci/ci.sh 后面紧跟的门禁名（``--list``、``-h`` 等选项不算）。
 GATE_REF = re.compile(r"ci/ci\.sh\s+([a-z][a-z0-9-]*)")
 GATE_USAGE = re.compile(r"^# 用法:", re.MULTILINE)
+
+# 供应链：uses: 只认 40 位提交 SHA，且要带 ``# <版本>`` 溯源注释。
+USES = re.compile(r"^(\s*)(?:- )?uses:\s*(\S+)\s*(#\s*\S+)?\s*$")
+PINNED = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*@[0-9a-f]{40}$")
 
 
 def count_inline(text: str) -> int:
@@ -305,6 +315,26 @@ def check_gate_refs(name: str, text: str) -> list[str]:
     return errors
 
 
+def check_pins(name: str, text: str) -> list[str]:
+    """每个 uses: 钉 40 位 SHA 并带版本注释；本地 action 与镜像除外。"""
+    errors: list[str] = []
+    for no, s in enumerate(text.splitlines(), 1):
+        m = USES.match(s)
+        if m is None:
+            continue
+        ref = m.group(2)
+        if ref.startswith(("./", "docker://")):
+            continue
+        if not PINNED.match(ref):
+            errors.append(
+                f"{name}:{no}: {ref} 未钉到 40 位提交 SHA（浮动 tag 可被上游重指）")
+            continue
+        if m.group(3) is None:
+            errors.append(
+                f"{name}:{no}: {ref} 缺少 `# <版本>` 注释，升级时无从判断基线")
+    return errors
+
+
 def main() -> int:
     budgets = load_budgets()
     files = sorted(p.name for p in WORKFLOWS.glob("*.yml"))
@@ -324,6 +354,7 @@ def main() -> int:
         errors.extend(check_policy(name, text))
         errors.extend(check_triggers(name, text))
         errors.extend(check_gate_refs(name, text))
+        errors.extend(check_pins(name, text))
         inline = count_inline(text)
         jobs = count_jobs(text)
         total += inline

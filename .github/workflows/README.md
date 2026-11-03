@@ -84,6 +84,7 @@ lint 中执行。下表是规则本身，不是建议。
 | 子模块路径 | 只写 gitlink 目录（`kernel`），不写 `kernel/**` | 父仓 diff 里子模块只有目录一项，内部 glob 永不命中，是死判据 |
 | 门禁存在性 | 每个 `ci/ci.sh <gate>` 必须有同名 `ci/gates/<gate>.sh` 且自带 `# 用法:` | 名字写错要到 checkout 与预热之后才以 exit 2 暴露；本地一秒可查 |
 | 库函数来源 | 门禁只能调用它 `source` 过的库函数 | 未 source 的 `need_cmd` 只会变成 “command not found”，前置校验静默失效 |
+| 动作版本 | `uses:` 一律钉 40 位提交 SHA，并带 `# vN` 注释 | 浮动 tag 可被上游重新指向：同一份 YAML 在两次运行之间换掉代码而日志无迹；钉 SHA 让升级变成一次显式提交，注释只作溯源标签 |
 
 新增或改名一个流水线需要三处同步：文件、`name:`、`ci/workflow-budgets.txt`。
 `./ci/lint.sh` 在任一处漂移时直接判红。

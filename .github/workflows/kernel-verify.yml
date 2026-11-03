@@ -81,7 +81,7 @@ jobs:
           - arch: loongarch
             compiler: clang
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: { submodules: recursive }
 
       - name: Install build dependencies and toolchain
@@ -90,7 +90,7 @@ jobs:
       # 缓存预算：GitHub 每仓缓存上限 10G，28 格各 2G 的名义总量 56G 必然被
       # LRU 淘汰（实测 "No cache found"），因此只给最慢的 airy_defconfig 七格
       # 建缓存（7×800M≈5.6G），其余格冷构建也在 30 分钟内，不占缓存配额。
-      - uses: hendrikmuhs/ccache-action@v1
+      - uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639 # v1
         if: matrix.config == 'airy_defconfig'
         with:
           key: kernel-${{ matrix.config }}-${{ matrix.arch }}-${{ matrix.compiler }}
@@ -101,7 +101,7 @@ jobs:
 
       - name: Upload build log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: kbuild-${{ matrix.config }}-${{ matrix.arch }}-${{ matrix.compiler }}
           path: ${{ runner.temp }}/build.log
@@ -116,7 +116,7 @@ jobs:
     env:
       KSFT_INSTALL: ${{ github.workspace }}/kselftest-install
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: { submodules: recursive }
 
       - name: Install analysis and runtime test tools
@@ -130,7 +130,7 @@ jobs:
       - name: KUnit on UML + baseline diff
         run: ci/ci.sh kernel-kunit --tap "$RUNNER_TEMP/kunit.tap"
 
-      - uses: hendrikmuhs/ccache-action@v1
+      - uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639 # v1
         with:
           key: kernel-airy_defconfig-x86_64-gcc
           max-size: 2G
@@ -153,7 +153,7 @@ jobs:
 
       - name: Upload verification logs and TAP
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: kernel-verify-evidence
           path: |

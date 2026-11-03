@@ -57,7 +57,7 @@ jobs:
       tag: ${{ steps.ver.outputs.tag }}
       ver: ${{ steps.ver.outputs.ver }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           # 手动触发时 github.ref 是默认分支，不指定 ref 会拿分支头顶着
           # 某个 tag 的版本号去构建：tag 指向的提交与产物不再对应，事后
@@ -80,7 +80,7 @@ jobs:
         run: ci/ci.sh release-version --tag "${RELEASE_TAG}"
 
       - name: Import GPG signing key
-        uses: crazy-max/ghaction-import-gpg@v6
+        uses: crazy-max/ghaction-import-gpg@e89d40939c28e39f97cf32126055eeae86ba74ec # v6
         with:
           gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
           passphrase: ${{ secrets.GPG_PASSPHRASE }}
@@ -93,7 +93,7 @@ jobs:
         run: ci/ci.sh release-sign probe
 
       - name: Install syft
-        uses: anchore/sbom-action/download-syft@v0
+        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0
 
       - name: Compute SOURCE_DATE_EPOCH
         id: epoch
@@ -155,7 +155,7 @@ jobs:
         run: ci/ci.sh release-sign manifest --ver "${{ steps.ver.outputs.ver }}" --tag "${{ steps.ver.outputs.tag }}"
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: release-artifacts-${{ steps.ver.outputs.ver }}
           if-no-files-found: error
@@ -188,12 +188,12 @@ jobs:
     steps:
       # 发布侧同样按 tag 检出：release-verify 读的是 ci/ 与模板，
       # 用默认分支的版本去校验 tag 的产物，等于换了判据。
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ env.RELEASE_TAG }}
 
       - name: Download build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: release-artifacts-${{ needs.build-and-sign.outputs.ver }}
 
@@ -203,7 +203,7 @@ jobs:
       - name: Verify signed artifacts
         run: ci/ci.sh release-verify --dir .
 
-      - uses: sigstore/cosign-installer@v3
+      - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
 
       - name: Publish OCI image
         env:
@@ -231,7 +231,7 @@ jobs:
         run: ci/ci.sh release-prune --tag "${{ needs.build-and-sign.outputs.tag }}" --repo "${{ github.repository }}"
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ needs.build-and-sign.outputs.tag }}
           prerelease: ${{ env.PRE_REL }}
