@@ -90,6 +90,15 @@ def commands() -> list[tuple[str, str]]:
     return rows
 
 
+def groups() -> list[str]:
+    """commands.tsv 的节标题文本，不含其后的装饰横线。"""
+    out = []
+    for raw in TABLE.read_text(encoding="utf-8").splitlines():
+        if raw.startswith("# -- "):
+            out.append(raw[len("# -- "):].split(" -")[0])
+    return out
+
+
 def airy(*args: str) -> subprocess.CompletedProcess:
     return subprocess.run(["sh", str(AIRY), *args],
                           text=True, capture_output=True)
@@ -140,6 +149,43 @@ class TestCommandSurface:
         absent = [name for name, _ in commands()
                   if name not in res.stdout.split()]
         assert not absent, f"--list 漏列命令：{absent}"
+
+    def test_list_keeps_purpose_groups(self) -> None:
+        """节标题必须随命令一起出现。
+
+        表的五组用途只存在于 commands.tsv；分发器若压平成一张平表，读者就
+        只能按名字猜归属，这正是「命令面靠记忆」的来源。
+        """
+        out = airy("--list").stdout
+        assert groups(), "commands.tsv 没有节标题，分组无从渲染"
+        absent = [g for g in groups() if g not in out]
+        assert not absent, f"--list 未渲染分组：{absent}"
+
+    def test_list_columns_align(self) -> None:
+        """用途列起点对所有命令一致。
+
+        固定列宽会在最长路径出现时顶歪（release-engineering/
+        release_manifest.py 就是那一行），因此宽度必须由表本身算出。
+        """
+        res = airy("--list")
+        rows = commands()
+        wcmd = max(len(name) for name, _ in rows)
+        wpath = max(len(path) for _, path in rows)
+        by_name = {name: path for name, path in rows}
+        for line in res.stdout.splitlines():
+            if not line.startswith("  "):
+                continue
+            name = line[2:2 + wcmd].rstrip()
+            if name not in by_name:
+                continue
+            pos = 2 + wcmd
+            assert line[pos:pos + 2] == "  ", f"命令列后应为两空格：{line!r}"
+            pos += 2
+            assert line[pos:pos + wpath].rstrip() == by_name[name], (
+                f"路径列错位：{line!r}")
+            pos += wpath
+            assert line[pos:pos + 2] == "  ", f"路径列后应为两空格：{line!r}"
+            assert line[pos + 2:].strip(), f"用途列为空：{line!r}"
 
     def test_help_succeeds(self) -> None:
         res = airy("--help")

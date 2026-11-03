@@ -229,7 +229,7 @@ corresponding subsystem matures:
 现在对外只有一个入口，命令名与存放位置解耦：
 
 ```bash
-tools/airy --list            # 列出全部命令（名称、脚本、用途）
+tools/airy --list            # 按用途分组列出命令（名称、脚本、用途）
 tools/airy ssot . ssot-registry.yaml
 tools/airy chk --check
 tools/airy ktap --current kunit.tap
