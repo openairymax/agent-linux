@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 # ===========================================================================
-# ci/gates/release-prune.sh — 让 Release 资产与本次物料严格一致
+# ci/gates/release-prune.sh — 写入 Release 之前收回页面
 #
 # 用法: ci/gates/release-prune.sh --tag TAG [--repo OWNER/NAME] [--dir DIR] [--dry-run]
 #
@@ -12,9 +12,9 @@
 # 的 concurrency 就是为它设的），所以清理不是一次性收尾，而是发布流程必须
 # 自带的幂等性。
 #
-# 期望集不另立清单：以摘要清单 agent-linux-<ver>.sha256sum 为唯一事实源。
-# 它由 release_manifest.py 从本次物料确定性生成，且已由 release-verify.sh
-# 逐项重算过摘要，因此可以放心据此判定「谁不属于本次发布」。
+# 本门禁只删多余项，不判缺失：它跑在写入之前，此刻缺件是正常的。写入之后
+# 的完整性由 release-audit.sh 把页面读回来对账，两者共用 ci/lib/release-assets.sh
+# 的期望集，避免各算一套。
 #
 # 退出码: 0 一致或无可删；1 接口失败或删除失败；5 参数与前置条件不满足。
 # ===========================================================================
@@ -23,6 +23,8 @@ set -uo pipefail
 readonly EINVAL=5
 # shellcheck source=../lib/log.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/log.sh"
+# shellcheck source=../lib/release-assets.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/release-assets.sh"
 
 API="${GITHUB_API_URL:-https://api.github.com}"
 REPO="${GITHUB_REPOSITORY:-}"
@@ -54,56 +56,15 @@ fi
 work="$(mktemp -d)"
 trap 'rm -rf "${work}"' EXIT
 
-# 期望集：清单里出现的每个文件名，连同其署名；外加清单自身。
-want_of()
-{
-    awk 'NF >= 2 { print $2; print $2 ".asc" }' "$1" | sort -u
-}
+airy_assets_want "${DIR}" "${work}/want" || exit "${EINVAL}"
 
-sums="$(find "${DIR}" -maxdepth 1 -type f -name 'agent-linux-*.sha256sum' | sort)"
-[ -n "${sums}" ] || { err "未找到摘要清单 agent-linux-*.sha256sum"; exit "${EINVAL}"; }
-[ "$(printf '%s\n' "${sums}" | wc -l)" -eq 1 ] ||
-    { err "摘要清单应恰好一份，实得 $(printf '%s\n' "${sums}" | wc -l)"; exit "${EINVAL}"; }
-
-{
-    printf '%s\n' "${sums##*/}"
-    # channel.json 由装配轮的验收制品取回，不登记在摘要清单里。它只在正式
-    # tag 上存在，故按存在与否决定保留：无条件保留会在预发布重发时留下上一
-    # 轮的通道清单，无条件删除则会在正式 tag 重发时删掉客户端唯一的发现入口。
-    [ -f "${DIR}/channel.json" ] && printf 'channel.json\n'
-    want_of "${sums}"
-} | sort -u >"${work}/want"
-
-# 只读演练允许无令牌跑公开仓库：没有令牌就不发 Authorization 头，
-# 而不是发一个空的 Bearer（后者会被 401 挡回，把演练变成伪失败）。
-call()
-{
-    local method="$1" url="$2" out="$3"
-    local -a auth=()
-    if [ -n "${TOKEN}" ]; then
-        auth=(-H "Authorization: Bearer ${TOKEN}")
-    fi
-    curl -sS -X "${method}" -o "${out}" -w '%{http_code}' "${auth[@]}" \
-        -H 'Accept: application/vnd.github+json' \
-        -H 'X-GitHub-Api-Version: 2022-11-28' \
-        "${url}"
-}
-
-code="$(call GET "${API}/repos/${REPO}/releases/tags/${TAG}" "${work}/rel.json")"
-case "${code}" in
-    200) ;;
-    404) say "Release ${TAG} 尚未建立，无需清理"; exit 0 ;;
-    *)   err "读取 Release ${TAG} 失败: HTTP ${code}"; exit 1 ;;
+airy_assets_have "${REPO}" "${TAG}" "${work}/have" "${work}/rel.json"
+rc=$?
+case "${rc}" in
+    0) ;;
+    "${AIRY_ASSETS_ENOREL}") say "Release ${TAG} 尚未建立，无需清理"; exit 0 ;;
+    *) exit 1 ;;
 esac
-
-python3 - "${work}/rel.json" >"${work}/have" <<'PY'
-import json, sys
-
-with open(sys.argv[1], encoding="utf-8") as fh:
-    release = json.load(fh)
-for asset in release.get("assets", []):
-    print(asset["id"], asset["name"])
-PY
 
 kept=0
 gone=0
@@ -118,7 +79,7 @@ while read -r id name; do
         gone=$((gone + 1))
         continue
     fi
-    code="$(call DELETE "${API}/repos/${REPO}/releases/assets/${id}" /dev/null)"
+    code="$(airy_assets_api DELETE "${API}/repos/${REPO}/releases/assets/${id}" /dev/null)"
     [ "${code}" = "204" ] || { err "删除 ${name} 失败: HTTP ${code}"; exit 1; }
     say "已删除 ${name}"
     gone=$((gone + 1))

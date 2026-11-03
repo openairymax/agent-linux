@@ -251,3 +251,12 @@ jobs:
             agent-linux-*.sha256sum.asc
             agent-linux-*-release-notes.md
             agent-linux-*-release-notes.md.asc
+
+      # 上传没有事务：glob 少一项、某个 PUT 被重试吞掉、或上传在 timeout
+      # 边缘被截断，页面都会安静地少几件东西，而 action-gh-release 只要
+      # 没报错就算「发布成功」。写完之后必须把页面读回来与摘要清单对账，
+      # 缺失与多余都判失败；重跑幂等（剪枝 → 上传 → 对账）。
+      - name: Audit release assets
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ci/ci.sh release-audit --tag "${{ needs.build-and-sign.outputs.tag }}" --repo "${{ github.repository }}"
