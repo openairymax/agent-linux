@@ -62,15 +62,15 @@ notes:
   # ── 说明（发行披露 · §3.7「说明」节）───────────────────────────────────
   # 注：条目为单行标量——多行折叠会在渲染时于断行处插入空格，破坏中文语流。
   summary:
-    - 首个可安装、可运行、可进入 UKUI 桌面的 AirymaxOS 初步版本
-    - 交付内核 RPM（x86_64/aarch64/riscv64/loongarch64）、SPDX SBOM、Agent SDK tarball、airy-flash 烧录工具与 OCI 基础镜像五条主线物料
-    - 安装镜像 airymaxos-0.0.3-x86_64.iso 支持 BIOS 与 UEFI 双固件装机
+    - 系统盘与数据盘分离的通用磁盘布局：/ 与 /data 独立挂载，安装期由 airy-disk 记录选盘、装机后自证，裸盘/多盘/双系统三拓扑同一代码路径
+    - 开机与安装打印按阶段约定输出（引导/介质/安装/首启），每阶段有固定前缀与末行判定，卡住即可定位到阶段，不必事后翻日志
+    - 内置壁纸收敛为 clouds_moonlight、hangzhouxihu、qilian 三张，门禁按文件名与 digest 双断言，镜像内不得残留上游其余壁纸
 
   # ── 其他（发行披露 · §3.7「其他」节）───────────────────────────────────
   remarks:
-    - 安装镜像 3.4 GB 超出 Release 单资产与 AtomGit 网关上限，经 OCI 通道发布于 ghcr.io/openairymax/airymaxos-iso，oras pull 取件后校验 .sha256
-    - UKUI 桌面可进入由 GitHub runner 的 KVM 无头 QEMU 双固件验收轮证得（AIRYMAX-SMOKE-PASS）
-    - 内核 RPM、SBOM 与 SDK 经 GPG 签名，基础镜像 ghcr.io/openairymax/airymaxos 经 cosign 签名
+    - 安装镜像 airymaxos-0.0.4-x86_64.iso 支持 BIOS 与 UEFI 双固件装机；体积超出 Release 单资产与 AtomGit 网关上限，经 OCI 通道发布于 ghcr.io/openairymax/airymaxos-iso，oras pull 取件后校验 .sha256
+    - 首启 60s 内 Wi-Fi 或有线至少一路 DHCP 到网关，是装机验收的第一道门禁，网络不通过即整机判负
+    - 内核基线不变（6.6 线，%global kernel_local -alk）；UKUI 组件代以基底仓库实测 NVRA 为准；内核 RPM、SBOM 与 SDK 经 GPG 签名，基础镜像 ghcr.io/openairymax/airymaxos 经 cosign 签名
 
 materials:
   # ── §3.1 物料 1：源码 tarball ──────────────────────────────────────────
