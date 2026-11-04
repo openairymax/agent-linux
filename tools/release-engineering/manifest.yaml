@@ -39,6 +39,12 @@
 #                   active   — 0.0.3 由 release.yml 真实产出并纳入签名发布
 #                   deferred — 0.0.3 暂不交付，须登记 defer_reason/defer_target
 #   evidence      active 必填：release.yml 中对应的产物 glob 列表（含签名件）
+#   produce       active 必填：生成该物料的可重放命令（argv 列表的列表）
+#                   * 外层按执行顺序排列，每项一条 argv；占位符限
+#                     ${version} / ${tag} / ${repo} 三个，--replay 时展开。
+#                   * 首两个 token 必须是 ci/ci.sh <门禁>，门禁须真实存在于
+#                     ci/gates/ —— --check 断言这一点，防止记录随流水线漂移。
+#                   * deferred 物料不得登记 produce（无命令可重放）。
 #   defer_reason  deferred 必填：暂缓交付的原因
 #   defer_target  deferred 必填：补齐目标版本
 #
@@ -50,7 +56,7 @@
 #     为空」与「发行说明冗长」两类漂移。
 #   * release_manifest.py --check 校验本段的键集、取值类型与条数上限（3 条）。
 
-version: "1.2.0"
+version: "1.3.0"
 
 notes:
   # ── 说明（发行披露 · §3.7「说明」节）───────────────────────────────────
@@ -89,6 +95,9 @@ materials:
     evidence:
       - dist/rpm/**/*.rpm
       - dist/rpm/**/*.rpm.asc
+    produce:
+      - ["ci/ci.sh", "release-kernel", "build"]
+      - ["ci/ci.sh", "release-sign", "artifacts", "--ver", "${version}"]
 
   # ── §3.1 物料 3：12 daemon RPM（2 架构）───────────────────────────────
   - id: daemon-rpm
@@ -124,6 +133,8 @@ materials:
     delivery: active
     evidence:
       - sbom-agent-linux-*.spdx.json
+    produce:
+      - ["ci/ci.sh", "release-sbom", "--ver", "${version}"]
 
   # ── §3.1 物料 6：airy_defconfig 快照 ──────────────────────────────────
   - id: airy-defconfig
@@ -155,6 +166,9 @@ materials:
     evidence:
       - agent-linux-*-release-notes.md
       - agent-linux-*-release-notes.md.asc
+    produce:
+      - ["ci/ci.sh", "release-sign", "manifest", "--ver", "${version}",
+         "--tag", "${tag}"]
 
   # ── §3.1 物料 9：校验和文件 ───────────────────────────────────────────
   - id: checksums
@@ -166,6 +180,9 @@ materials:
     evidence:
       - agent-linux-*.sha256sum
       - agent-linux-*.sha256sum.asc
+    produce:
+      - ["ci/ci.sh", "release-sign", "manifest", "--ver", "${version}",
+         "--tag", "${tag}"]
 
   # ── §3.1 物料 10：公钥 ────────────────────────────────────────────────
   - id: gpg-public-key
@@ -207,6 +224,9 @@ materials:
     evidence:
       - agent-linux-sdk-*.tar.gz
       - agent-linux-sdk-*.tar.gz.asc
+    produce:
+      - ["ci/ci.sh", "tool-pack", "--out", ".", "--version", "${version}"]
+      - ["ci/ci.sh", "release-sign", "artifacts", "--ver", "${version}"]
 
   - id: airy-flash
     name: airy-flash 烧录工具
@@ -217,6 +237,9 @@ materials:
     evidence:
       - airy-flash-*.pyz
       - airy-flash-*.pyz.asc
+    produce:
+      - ["ci/ci.sh", "tool-pack", "--out", ".", "--version", "${version}"]
+      - ["ci/ci.sh", "release-sign", "artifacts", "--ver", "${version}"]
 
   - id: oci-image
     name: OCI 基础镜像
@@ -226,6 +249,9 @@ materials:
     delivery: active
     evidence:
       - oci-image-*.tar
+    produce:
+      - ["ci/ci.sh", "release-oci", "build", "--tag", "${tag}",
+         "--ver", "${version}"]
 
   # ── 补充物料：发行通道清单 ────────────────────────────────────────────
   # 由装配轮的验收制品取回（ci/gates/channel-fetch.sh），不由本流水线重新
@@ -239,3 +265,6 @@ materials:
     delivery: active
     evidence:
       - channel.json
+    produce:
+      - ["ci/ci.sh", "channel-fetch", "--tag", "${tag}", "--repo", "${repo}",
+         "--dir", "."]
