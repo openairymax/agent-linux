@@ -128,6 +128,14 @@ jobs:
           SOURCE_DATE_EPOCH: ${{ steps.epoch.outputs.value }}
         run: ci/ci.sh release-config snapshot --ver "${{ steps.ver.outputs.ver }}"
 
+      # 物料 1（09-release-process.md §3.2）：源码 tarball。与配置快照同理放在
+      # 最便宜的一段——子仓未初始化、tag 与 gitlink 不一致等问题几分钟内暴露，
+      # 不必等内核四腿跑完。导出 1.4 GB 内核源码再压到约 200 MB，实测数分钟。
+      - name: Pack source tarball
+        env:
+          SOURCE_DATE_EPOCH: ${{ steps.epoch.outputs.value }}
+        run: ci/ci.sh release-source snapshot --ver "${{ steps.ver.outputs.ver }}"
+
       # 同一段安装在暖缓存 runner 上 33s 完成，冷启动 28min，也出现过整步
       # 卡住 45min 以上的实例：镜像源无响应时 apt 没有超时，会把 240min 的
       # job 预算烧光。acquire 超时、重试与硬超时统一收在 ci/lib/apt.sh，
@@ -189,6 +197,8 @@ jobs:
             airy-flash-${{ steps.ver.outputs.ver }}.pyz.asc
             agent-linux-${{ steps.ver.outputs.ver }}-airy-defconfig.tar.xz
             agent-linux-${{ steps.ver.outputs.ver }}-airy-defconfig.tar.xz.asc
+            agent-linux-${{ steps.ver.outputs.ver }}.tar.xz
+            agent-linux-${{ steps.ver.outputs.ver }}.tar.xz.asc
             agent-linux-${{ steps.ver.outputs.ver }}-gpg-key.asc
             oci-image-${{ steps.ver.outputs.tag }}.tar
             agent-linux-${{ steps.ver.outputs.ver }}.sha256sum
@@ -271,8 +281,10 @@ jobs:
             agent-linux-sdk-*.tar.gz.asc
             airy-flash-*.pyz
             airy-flash-*.pyz.asc
-            agent-linux-*-airy-defconfig.tar.xz
-            agent-linux-*-airy-defconfig.tar.xz.asc
+            agent-linux-${{ needs.build-and-sign.outputs.ver }}-airy-defconfig.tar.xz
+            agent-linux-${{ needs.build-and-sign.outputs.ver }}-airy-defconfig.tar.xz.asc
+            agent-linux-${{ needs.build-and-sign.outputs.ver }}.tar.xz
+            agent-linux-${{ needs.build-and-sign.outputs.ver }}.tar.xz.asc
             sbom-agent-linux-*.spdx.json
             agent-linux-*-gpg-key.asc
             channel.json

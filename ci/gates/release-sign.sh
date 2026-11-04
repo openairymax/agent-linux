@@ -70,6 +70,7 @@ artifacts()
     need_cmd gpg
     mapfile -t files < <(find dist/rpm -name '*.rpm' | sort)
     files+=("agent-linux-sdk-${ver}.tar.gz" "airy-flash-${ver}.pyz"
+            "agent-linux-${ver}.tar.xz"
             "agent-linux-${ver}-airy-defconfig.tar.xz")
     for f in "${files[@]}"; do
         sign "${f}"
@@ -111,6 +112,8 @@ manifest()
             "agent-linux-sdk-${ver}.tar.gz.asc" \
             "airy-flash-${ver}.pyz" \
             "airy-flash-${ver}.pyz.asc" \
+            "agent-linux-${ver}.tar.xz" \
+            "agent-linux-${ver}.tar.xz.asc" \
             "agent-linux-${ver}-airy-defconfig.tar.xz" \
             "agent-linux-${ver}-airy-defconfig.tar.xz.asc" \
             "agent-linux-${ver}-gpg-key.asc" \
