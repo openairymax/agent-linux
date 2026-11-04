@@ -156,6 +156,7 @@ def test_default_env_matches_distro() -> None:
     """仓库内 verdict.env 可被直接消费，且含全部负向证据键。"""
     env = ob.load_env()
     assert "AIRYMAX-SMOKE-FAIL" in env["BOOT_FAIL"]
+    assert "AIRYMAX-BOOT-STUCK" in env["BOOT_FAIL"]
     assert set(env) >= {"BOOT_FAIL", "INST_FAIL", "RPM_FAIL", "PAY_FAIL"}
 
 
