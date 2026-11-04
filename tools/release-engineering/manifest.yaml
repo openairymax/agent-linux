@@ -230,9 +230,13 @@ materials:
     format: Markdown
     signature: gpg
     authority: docs/docs-linux/120-development-process/09-release-process.md §3.1 物料12
-    delivery: deferred
-    defer_reason: ABI 报告依赖 tools/abi-check 的基线比对结果归档流程，待其接入发布链
-    defer_target: "0.0.4"
+    delivery: active
+    evidence:
+      - agent-linux-*-abi-report.md
+      - agent-linux-*-abi-report.md.asc
+    produce:
+      - ["ci/ci.sh", "release-abi", "report", "--ver", "${version}"]
+      - ["ci/ci.sh", "release-sign", "artifacts", "--ver", "${version}"]
 
   # ── 补充物料：release.yml 真实产出但 §3.1 未单列（权威出处另见下）──────
   - id: sdk-tarball

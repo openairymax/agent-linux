@@ -136,6 +136,14 @@ jobs:
           SOURCE_DATE_EPOCH: ${{ steps.epoch.outputs.value }}
         run: ci/ci.sh release-source snapshot --ver "${{ steps.ver.outputs.ver }}"
 
+      # 物料 12（§3.1，铁律 OS-IRON-001）：syscall ABI 报告。判定由
+      # tools/abi-check 做，门禁只做「跑一次真实检查 + 钉溯源 + 失败不出
+      # 报告」。它只读源码，秒级完成，故与配置快照、源码 tarball 同段。
+      - name: Generate syscall ABI report
+        env:
+          SOURCE_DATE_EPOCH: ${{ steps.epoch.outputs.value }}
+        run: ci/ci.sh release-abi report --ver "${{ steps.ver.outputs.ver }}"
+
       # 同一段安装在暖缓存 runner 上 33s 完成，冷启动 28min，也出现过整步
       # 卡住 45min 以上的实例：镜像源无响应时 apt 没有超时，会把 240min 的
       # job 预算烧光。acquire 超时、重试与硬超时统一收在 ci/lib/apt.sh，
@@ -199,6 +207,8 @@ jobs:
             agent-linux-${{ steps.ver.outputs.ver }}-airy-defconfig.tar.xz.asc
             agent-linux-${{ steps.ver.outputs.ver }}.tar.xz
             agent-linux-${{ steps.ver.outputs.ver }}.tar.xz.asc
+            agent-linux-${{ steps.ver.outputs.ver }}-abi-report.md
+            agent-linux-${{ steps.ver.outputs.ver }}-abi-report.md.asc
             agent-linux-${{ steps.ver.outputs.ver }}-gpg-key.asc
             oci-image-${{ steps.ver.outputs.tag }}.tar
             agent-linux-${{ steps.ver.outputs.ver }}.sha256sum
@@ -285,6 +295,8 @@ jobs:
             agent-linux-${{ needs.build-and-sign.outputs.ver }}-airy-defconfig.tar.xz.asc
             agent-linux-${{ needs.build-and-sign.outputs.ver }}.tar.xz
             agent-linux-${{ needs.build-and-sign.outputs.ver }}.tar.xz.asc
+            agent-linux-${{ needs.build-and-sign.outputs.ver }}-abi-report.md
+            agent-linux-${{ needs.build-and-sign.outputs.ver }}-abi-report.md.asc
             sbom-agent-linux-*.spdx.json
             agent-linux-*-gpg-key.asc
             channel.json
