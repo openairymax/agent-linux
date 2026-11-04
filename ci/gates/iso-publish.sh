@@ -40,6 +40,11 @@
 # 磁盘：分块在 $TMPDIR 下进行，峰值需额外一份 ISO 大小的空间，由调用方
 # （free-disk 门禁）保证；不以 $OUT 为暂存区，避免分块混进交付产物。
 #
+# 账本制品：iso-oci.txt 原先只作为需登录的 Actions 制品上传，外部用户拿
+# 不到逐块账本，只能自己从清单注解重建块表——读错一处注解无从察觉。这里
+# 把它以单层小制品推在同一 tag 的 <tag>-ledger 后缀下，公开可匿名拉取；
+# 它不随主制品一起判幂等：主制品早年发布过、账本缺失正是要补的缺口。
+#
 # 退出码: 0 已发布或已存在；1 推送/断言失败；5 参数不满足。
 # ===========================================================================
 set -uo pipefail
@@ -47,6 +52,7 @@ set -uo pipefail
 readonly EINVAL=5
 readonly ARTIFACT_TYPE="application/vnd.airymaxos.iso.v1"
 readonly LAYER_TYPE="application/vnd.airymaxos.iso.layer.v1+iso"
+readonly LEDGER_TYPE="application/vnd.airymaxos.iso.ledger.v1"
 readonly DEFAULT_CHUNK=201326592
 readonly MIN_CHUNK=1048576
 readonly ANN="org.openairymax.iso"
@@ -120,6 +126,20 @@ parts_from_remote()
             { d = $1; sub(/^sha256:/, "", d)
               printf "%04d %s %s %s.part%04d\n", NR - 1, d, $2, n, NR - 1 }' \
             >"${WORK}/parts.txt"
+}
+
+# 账本制品的单层 digest（去掉算法前缀）；层数不为 1 时输出空串。
+ledger_remote_sum()
+{
+    python3 -c '
+import json, sys
+try:
+    m = json.load(open(sys.argv[1]))
+except (OSError, ValueError):
+    sys.exit(0)
+layers = m.get("layers") or []
+print(layers[0].get("digest", "").split(":", 1)[-1] if len(layers) == 1 else "")
+' "${WORK}/ledger.json"
 }
 
 # 从本地分块生成 parts.txt，并就块数与总字节对账。
@@ -284,10 +304,44 @@ ref_file="$(dirname "${iso}")/iso-oci.txt"
     while read -r idx pd ps pn; do
         printf 'part=%s sha256=%s size=%s name=%s\n' "${idx}" "${pd}" "${ps}" "${pn}"
     done <"${WORK}/parts.txt"
+    printf 'ledger=oras pull %s:%s-ledger -o .\n' "${REF}" "${TAG}"
     printf 'pull=oras pull %s -o .\n' "${target}"
     printf 'join=cat %s.part* > %s\n' "${name}" "${name}"
 } >"${ref_file}"
 
+# 账本单独推、单独验：主制品已发布而账本缺失，正是外部用户拿不到逐块
+# 账本的成因。判据是「远端单层 digest == 本地 iso-oci.txt 的 sha256」，
+# 账本内容一改，digest 就变，不存在「同名不同内容」的静默替换。
+ledger_sum="$(sha256sum "${ref_file}" | cut -d' ' -f1)"
+ledger_target="${REF}:${TAG}-ledger"
+push_ledger=1
+
+if oras manifest fetch "${ledger_target}" >"${WORK}/ledger.json" 2>/dev/null; then
+    if [ "$(ledger_remote_sum)" = "${ledger_sum}" ]; then
+        note "${ledger_target} 已是同一份账本，跳过上传"
+        push_ledger=0
+    elif [ "${FORCE}" -eq 0 ]; then
+        die "${ledger_target} 已存在但内容不同（sha256=$(ledger_remote_sum)）；确认要替换才加 --force"
+    fi
+fi
+
+if [ "${push_ledger}" -eq 1 ]; then
+    group "oras push ${ledger_target}"
+    ( cd "$(dirname "${ref_file}")" && oras push --artifact-type "${LEDGER_TYPE}" \
+        --annotation "${ANN}.ledger-for=${TAG}" \
+        --annotation "${ANN}.name=${name}" \
+        --annotation "${ANN}.sha256=${sum}" \
+        "${ledger_target}" "iso-oci.txt:${LEDGER_TYPE}" ) ||
+        die "oras push 账本失败: ${ledger_target}"
+    endgroup
+
+    oras manifest fetch "${ledger_target}" >"${WORK}/ledger.json" ||
+        die "推送后无法读取账本清单: ${ledger_target}"
+    [ "$(ledger_remote_sum)" = "${ledger_sum}" ] ||
+        die "远端账本 digest 与本地 iso-oci.txt 不一致: ${ledger_target}"
+fi
+
 say "ISO 已发布: ${target}"
 say "拉取: oras pull ${target} -o . 然后 cat ${name}.part* > ${name}"
+say "账本: oras pull ${ledger_target} -o . 得到 iso-oci.txt"
 say "引用记录: ${ref_file}"

@@ -49,6 +49,7 @@ import socket
 import stat
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from collections.abc import Callable, Iterable, Sequence
@@ -1520,6 +1521,30 @@ def _fetch_steps(
     ]
 
 
+def _ledger_from_artifact(ref: str, oras: str) -> tuple[OciLedger, str]:
+    """先取 <tag>-ledger 制品里的 iso-oci.txt，未命中才回落清单注解。
+
+    清单注解是发布侧写死的元数据，用户若按它手工重建块表，读错一处注解
+    不会有任何提示；发布侧把 iso-oci.txt 作为单层小制品推在同一 tag 的
+    -ledger 后缀下，取件侧优先拿它。制品不存在时（早于该做法的发布物）
+    回落清单重建，并在报告里明确标出「未命中」，不让降级路径看起来像
+    正常路径。
+    """
+    with tempfile.TemporaryDirectory(prefix="airy-ledger.") as tmp:
+        try:
+            proc = subprocess.run(
+                [oras, "pull", f"{ref}-ledger", "-o", tmp],
+                capture_output=True,
+                text=True,
+            )
+        except OSError:
+            proc = None
+        path = Path(tmp) / "iso-oci.txt"
+        if proc is not None and proc.returncode == 0 and path.is_file():
+            return parse_oci(path), f"{ref}-ledger（账本命中）"
+    return ledger_from_ref(ref, oras), f"{ref}（账本未命中，按清单注解重建）"
+
+
 def _ledger_arg(args: argparse.Namespace) -> tuple[OciLedger, str]:
     """两个取件入口二选一：账本文件可离线复盘，--ref 免去文件分发。"""
     if bool(args.oci) == bool(args.ref):
@@ -1531,7 +1556,7 @@ def _ledger_arg(args: argparse.Namespace) -> tuple[OciLedger, str]:
         )
     if args.oci:
         return parse_oci(Path(args.oci)), str(Path(args.oci))
-    return ledger_from_ref(args.ref, args.oras), args.ref
+    return _ledger_from_artifact(args.ref, args.oras)
 
 
 def _run_fetch(

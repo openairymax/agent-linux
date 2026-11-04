@@ -52,7 +52,7 @@ CI——这是 dd 与图形烧录器都无法给出的东西。
 | 内容 | 出处 |
 |------|------|
 | 发布物组成（ISO + `.sha256` + `iso-manifest.txt`） | `.github/workflows/image-build.yml` |
-| 发行 ISO 的取件通道与摘要 | `desktop/iso/iso-oci.txt`（由 `ci/ci.sh iso-publish` 写入：整体 sha256、块大小、块数与逐块 digest）。该文件不是唯一入口：清单注解与逐层 digest 已含同样内容，`fetch --ref` 只凭 tag 即可取件 |
+| 发行 ISO 的取件通道与摘要 | `ghcr.io/openairymax/airymaxos-iso:<tag>-ledger`（单层 `iso-oci.txt`：整体 sha256、块大小、块数与逐块 digest，匿名可拉）。清单注解与逐层 digest 含同样内容，`fetch --ref` 只凭 tag 即可取件，作为账本制品不可达时的降级路径 |
 | 取件通道的不可变性断言 | `ci/gates/iso-publish.sh`（每块 layer digest 必须等于该块 sha256，拼接后必须等于整体 sha256） |
 | BIOS + UEFI 双固件冷启动验收 | `ci/ci.sh accept --firmware both` |
 | 装机后桌面就绪标记 `AIRYMAX-DESKTOP-READY` | 同上，产品 ISO 断言 |
@@ -76,7 +76,7 @@ Actions 的 `airymaxos-image` artifact 只保留 7 天，仅用于调试，不�
 
 | 步骤 | 动作 | 失败即停 |
 |------|------|----------|
-| 1 | `airy-flash fetch --ref ghcr.io/openairymax/airymaxos-iso:v0.0.3 --out releases/v0.0.3`：按 tag 读清单 → 拉取分块 → 逐块核对 → 拼接 → 整体核对；已有账本文件时改传 `--oci FILE`，两者结论一致 | 是 |
+| 1 | `oras pull ghcr.io/openairymax/airymaxos-iso:v0.0.3-ledger -o .` 先取账本（单层 `iso-oci.txt`，公开可匿名拉取），再 `airy-flash fetch --oci iso-oci.txt --out releases/v0.0.3`：拉取分块 → 逐块核对 → 拼接 → 整体核对；账本制品不可达时改传 `--ref <tag>`，由 `oras manifest fetch` 按注解重建账本，报告里会打印「账本命中 / 未命中」 | 是 |
 | 2 | 插入 U 盘，用 `lsblk` 找到**整盘**节点（如 `/dev/sdb`，不是 `/dev/sdb1`） | 是 |
 | 3 | `plan` 只预检：核对系统盘、挂载、只读、容量、摘要来源 | 是 |
 | 4 | `write --yes`：校验镜像 → 写入 → `fsync` → 回读比对 | 是 |
@@ -87,8 +87,11 @@ Actions 的 `airymaxos-image` artifact 只保留 7 天，仅用于调试，不�
 是发布时那一块，`oras` 自己的 layer digest 证明 registry 端的 blob 与清单一
 致，拼接后再算的整体 `sha256` 证明块序与块边界未被改动，清单里的
 `sha256=` 证明拿到的就是这个 tag 当初发布的整体字节。任一不符即中止，不进
-入烧录。`iso-oci.txt` 里的 `pull=` 与 `join=` 两行保留了原生 `oras` 与 `cat`
-的等价写法，供没有本工具的环境照抄执行。
+入烧录。账本取的是发布侧推的 `<tag>-ledger` 制品，不是用户自己从注解重建的
+块表——注解读错一处不会有任何提示，所以 `--ref`（`oras manifest fetch` 加
+注解重建）只作降级路径，且报告里明确打印「账本命中 / 未命中」。`iso-oci.txt`
+里的 `ledger=`、`pull=` 与 `join=` 三行保留了原生 `oras` 与 `cat` 的等价写法，
+供没有本工具的环境照抄执行。
 
 `plan` 与 `write` 共用同一套预检，所以「预检通过」是「可以写」的充分条件；
 `plan` 已经算过完整 sha256，`write` 会再算一次，避免两次操作之间镜像被替换。
@@ -169,9 +172,14 @@ WSL2 的 `/dev/sd*` 只有 WSL 自己的虚拟磁盘，插在主机上的 U 盘�
 # 环境自检
 python3 airy-flash-0.0.3.pyz check
 
-# 取回发行 ISO：清单是唯一账本，块错位或字节不符即行中止。
-# 发布面的清单本身就是账本（注解 + 逐层 digest），所以只给 tag 即可取件；
-# 已拿到 iso-oci.txt 的离线场景改用 --oci FILE，两条路径结论一致。
+# 取回发行 ISO：先取账本，再按账本取块；块错位或字节不符即行中止。
+# 账本是发布侧推的同 tag <tag>-ledger 制品（单层 iso-oci.txt，匿名可拉）。
+oras pull ghcr.io/openairymax/airymaxos-iso:v0.0.3-ledger -o .
+python3 airy-flash-0.0.3.pyz fetch \
+    --oci iso-oci.txt --out releases/v0.0.3
+
+# 降级路径：账本制品不可达（旧发布物或镜像站缺该 tag）时只给 tag，
+# 由 oras manifest fetch 按清单注解重建账本；报告会打印「账本未命中」。
 python3 airy-flash-0.0.3.pyz fetch \
     --ref ghcr.io/openairymax/airymaxos-iso:v0.0.3 --out releases/v0.0.3
 

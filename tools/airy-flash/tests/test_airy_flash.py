@@ -894,8 +894,12 @@ def write_oci(root: Path, *, payload: bytes, chunk: int, name: str = "airymaxos.
     return oci
 
 
-def stub_oras(root: Path, *, code: int = 0) -> Path:
-    """假 oras：把 fixtures/ 下的分块拷进 -o 目录；code≠0 时模拟拉取失败。"""
+def stub_oras(root: Path, *, code: int = 0, ledger: bool = True) -> Path:
+    """假 oras：把 fixtures/ 下的分块拷进 -o 目录；code≠0 时模拟拉取失败。
+
+    `ledger=False` 模拟早于账本制品的发布物：拉 -ledger 后缀的那次直接
+    失败，取件侧应回落到清单注解，而不是把整个取件判死。
+    """
     script = root / "oras-stub"
     script.write_text(
         "#!/bin/sh\n"
@@ -910,7 +914,19 @@ def stub_oras(root: Path, *, code: int = 0) -> Path:
         '    echo "pull failed" >&2\n'
         '    exit "$exit_code"\n'
         "fi\n"
-        'cp "$(dirname "$0")"/fixtures/* "$out"/\n'
+        f"ledger_hit={1 if ledger else 0}\n"
+        'case "$*" in\n'
+        "*-ledger*)\n"
+        '    if [ "$ledger_hit" -eq 0 ]; then\n'
+        '        echo "not found" >&2\n'
+        "        exit 1\n"
+        "    fi\n"
+        '    cp "$(dirname "$0")/iso-oci.txt" "$out"/\n'
+        "    ;;\n"
+        "*)\n"
+        '    cp "$(dirname "$0")"/fixtures/* "$out"/\n'
+        "    ;;\n"
+        "esac\n"
         'touch "$(dirname "$0")/called"\n',
         encoding="utf-8",
     )
@@ -1170,7 +1186,7 @@ def test_cli_fetch_rejects_both_ledger_sources(
 def test_cli_fetch_uses_ref_as_ledger(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """--ref 以远端清单为账本：发布制品过期后仍可按 tag 取回同一份字节。"""
+    """账本制品不存在时按清单注解重建，并在报告里标出「未命中」。"""
     payload = b"R" * 200 + b"S" * 200 + b"T" * 50
     oci = write_oci(tmp_path, payload=payload, chunk=200)
     ledger = af.parse_oci(oci)
@@ -1191,15 +1207,42 @@ def test_cli_fetch_uses_ref_as_ledger(
             "--out",
             str(out),
             "--oras",
+            str(stub_oras(tmp_path, ledger=False)),
+            "--no-progress",
+        ]
+    )
+    assert code == EXIT_OK
+    assert (out / ledger.name).read_bytes() == payload
+    printed = capsys.readouterr().out
+    assert "账本未命中" in printed
+    assert printed.splitlines()[-1].startswith("AIRY-FLASH-PASS command=fetch ")
+
+
+def test_cli_fetch_prefers_ledger_artifact(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """账本制品在时直接用它：块表由发布侧写死，不再由用户从注解重建。"""
+    payload = b"L" * 200 + b"M" * 200 + b"N" * 50
+    oci = write_oci(tmp_path, payload=payload, chunk=200)
+    ledger = af.parse_oci(oci)
+    out = tmp_path / "iso"
+    code = af.main(
+        [
+            "fetch",
+            "--ref",
+            "ghcr.io/openairymax/airymaxos-iso:v0.0.3",
+            "--out",
+            str(out),
+            "--oras",
             str(stub_oras(tmp_path)),
             "--no-progress",
         ]
     )
     assert code == EXIT_OK
     assert (out / ledger.name).read_bytes() == payload
-    assert capsys.readouterr().out.splitlines()[-1].startswith(
-        "AIRY-FLASH-PASS command=fetch "
-    )
+    printed = capsys.readouterr().out
+    assert "账本命中" in printed
+    assert printed.splitlines()[-1].startswith("AIRY-FLASH-PASS command=fetch ")
 
 
 def test_write_report_key_value_format(tmp_path: Path) -> None:
