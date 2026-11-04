@@ -136,6 +136,16 @@ jobs:
       - name: Free runner disk
         run: ci/ci.sh free-disk
 
+      # 复用的发行包必须与树内版本同源。只校验 tag 格式不够：0.0.3 收尾期
+      # 用 release_tag=v0.0.3 派发了树内 0.0.4 的组装，直到 11 分钟后的
+      # Verify assembly manifest 才因「载荷内核包不在 v0.0.3 的摘要里」失败，
+      # 期间预热与介质下载全部白跑。版本同源是两三秒的判定，放在最前。
+      - name: Check release tag against tree version
+        if: inputs.release_tag != ''
+        env:
+          TAG: ${{ inputs.release_tag }}
+        run: ci/ci.sh release-version --tag "$TAG"
+
       # 发行资产里的内核包是 ISO 载荷的内核来源。只下载与校验，不重建：
       # 只要 ISO 自己再编一次内核，载荷中同名包的哈希就与发行 .sha256sum
       # 分叉，装机介质也就无法用发行校验和核验。
