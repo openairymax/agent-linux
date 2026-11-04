@@ -3,12 +3,16 @@
 # ===========================================================================
 # ci/gates/mgmt-files.sh — 治理文件与子模块完整性
 #
-# 用法: ci/gates/mgmt-files.sh
+# 用法: ci/gates/mgmt-files.sh [--only 检查项]
 #
 # 六项断言此前是 mgmt-verify.yml 与 sc-verify.yml 里的内联 shell：子模块
 # 目录、子模块检出状态、[SC] 12 头文件、[SC] ipc.h 唯一物理副本、治理文件
 # 清单、废弃前缀。它们只读工作树、不触碰宿主，属于典型的「同一判据要在
 # 本地先跑一遍」的逻辑，因此下沉到本 gate；YAML 只剩一次分派。
+#
+# --only 只跑其中一项：整树断言（子模块检出、[SC] 头文件、CODEOWNERS 投影）
+# 没有完整仓库就无从成立，而单项判据本身仍需负向回归（见 ci/tests/
+# test_mgmt_files.sh）。不给这个入口，被检项就只能在真树上正向跑一遍。
 #
 # CODEOWNERS 一致性也在此校验：CODEOWNERS 头部声称「CI validates that
 # CODEOWNERS and MAINTAINERS stay in sync」，此前没有任何实现支撑，生成器
@@ -27,6 +31,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 cd "${ROOT}"
+
+readonly EINVAL=5
 
 readonly -a SC_HEADERS=(
     error.h log_types.h ipc.h sched.h memory_types.h security_types.h
@@ -111,11 +117,33 @@ gov_files()
     say "治理文件齐备: ${#GOV_FILES[@]} 个"
 }
 
+# 废弃前缀判据约束的是**仓库命名**（2026-07-12 决策），不是禁止某个词串
+# 出现在文档里。决策原文是「8 子仓裸名，禁止 airymaxos- 前缀」：它管的是新
+# 仓库叫什么。此前用裸子串匹配，把 GHCR 的 OCI 包名 airymaxos-iso 与发行
+# 产物名 airymaxos-<ver>-x86_64.iso 一并判红——这两个是合法交付物（ISO 走
+# 独立包，见 ci/gates/iso-publish.sh），于是每次改 README 治理门禁必红，
+# 长期噪声化之后没人再看它，真正的越界命名反而能被忽略。
 no_prefix()
 {
-    grep -r "airymaxos-" README.md README_zh.md MAINTAINERS 2>/dev/null &&
+    local -a names
+    local IFS='|' pat hits f
+
+    # 缺文件不是「无前缀」：grep 的 rc=2（文件不存在）在新旧两版都走不到
+    # die，空树会被读成合规。先把被检文件的存在性判掉。
+    for f in README.md README_zh.md MAINTAINERS; do
+        [ -f "${f}" ] || die "[NP] 缺少被检文件: ${f}"
+    done
+    mapfile -t names < <(sub_paths | while read -r p; do basename "${p}"; done |
+        sort -u)
+    [ "${#names[@]}" -gt 0 ] || die ".gitmodules 未声明任何子模块"
+    # 禁止集合由 .gitmodules 的裸名派生：新增子仓自动纳入，不在此维护第二
+    # 份名单；匹配到裸名边界即止（airymaxos-kernel-6.6 同样命中）。
+    pat="airymaxos-(${names[*]})\\b"
+    if hits="$(grep -rnE "${pat}" README.md README_zh.md MAINTAINERS 2>/dev/null)"; then
+        printf '%s\n' "${hits}" >&2
         die "发现已废弃的 airymaxos- 前缀（2026-07-12 决策）"
-    say "无废弃的 airymaxos- 前缀"
+    fi
+    say "无废弃的 airymaxos- 前缀（裸名 ${#names[@]} 个）"
 }
 
 owners_sync()
@@ -125,9 +153,43 @@ owners_sync()
     say "CODEOWNERS 与 MAINTAINERS 同步"
 }
 
+usage()
+{
+    cat <<'EOF'
+用法: ci/gates/mgmt-files.sh [--only 检查项]
+
+检查项: sub-dirs sub-state sc-headers sc-unique gov-files owners-sync
+        no-prefix
+EOF
+}
+
+run_one()
+{
+    case "$1" in
+        sub-dirs) sub_dirs ;;
+        sub-state) sub_state ;;
+        sc-headers) sc_headers ;;
+        sc-unique) sc_unique ;;
+        gov-files) gov_files ;;
+        owners-sync) owners_sync ;;
+        no-prefix) no_prefix ;;
+        *)
+            err "未知检查项: $1"
+            usage >&2
+            exit "${EINVAL}"
+            ;;
+    esac
+}
+
 main()
 {
     group "治理文件与子模块完整性"
+    if [ -n "${ONLY}" ]; then
+        run_one "${ONLY}"
+        say "单项检查通过: ${ONLY}"
+        endgroup
+        return 0
+    fi
     sub_dirs
     sub_state
     sc_headers
@@ -138,5 +200,18 @@ main()
     endgroup
     say "治理门禁通过"
 }
+
+ONLY=""
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --only)
+            [ -n "${2:-}" ] || { usage >&2; exit "${EINVAL}"; }
+            ONLY="$2"
+            shift 2
+            ;;
+        -h|--help) usage; exit 0 ;;
+        *) err "未知参数: $1"; usage >&2; exit "${EINVAL}" ;;
+    esac
+done
 
 main "$@"
