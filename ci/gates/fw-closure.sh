@@ -6,7 +6,7 @@
 # 用法: ci/gates/fw-closure.sh [--root DIR] [--kernel DIR --drv NAME]
 #       [--manifest FILE] [--comps FILE]
 #
-# 五件事，按证据由弱到强排列：
+# 六件事，按证据由弱到强排列：
 #   ① 集合对账（构建期）：comps 里名称含 firmware 或以 -ucode 结尾的包，
 #      必须全部出现在 fw-manifest.txt；清单声明的包必须全部由 comps 安装。
 #      两个方向都判，是因为少声明会让器件在装机后静默失效，多声明则让
@@ -26,6 +26,10 @@
 #      lib_t。内核读固件只要求该标签，enforcing 下标签错了表现为「文件在
 #      但载入失败」。本机无 matchpathcon 或无策略时只提示不判负——宿主
 #      环境的缺失不是镜像的缺陷。
+#   ⑥ 清单回读（需 --root）：镜像内的 fw-manifest.txt 必须与仓库清单逐字
+#      相同，同目录还要有内核 ABI 标记。清单只留在仓库里时，目标机上的
+#      判定只能拿发行当天的旧清单套升级后的镜像，两边分叉而判定仍绿；
+#      这一项保证「按同一份数据判」在装机后也成立。
 #
 # 谓词只认「是不是固件包」，不认具体包名：仓库元数据在离线环境不可得，
 # 而 comps 是「镜像装什么包」的唯一声明；新增固件包时判定自动生效，不用
@@ -46,6 +50,9 @@ export LC_ALL=C
 
 readonly EINVAL=5
 readonly FWDIR=/usr/lib/firmware
+# 清单与 ABI 标记的安装位置，由 distro/specs/airymaxos-firmware.spec 的
+# %files 决定；改路径必须同时改两处，否则回读判定会在装机后判负。
+readonly MDIR=/usr/share/airymaxos/firmware
 
 # shellcheck source=../lib/log.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/log.sh"
@@ -186,6 +193,39 @@ file_check()
             bad=1
         fi
     done <"${TMP}/data"
+}
+
+# read_back —— 清单回读：镜像内的清单必须与仓库清单逐字相同。
+#
+# 只比「有没有」不够：装机后跑判定时，调用方拿的仍是仓库里的清单，若镜像
+# 内那份已随包升级而变，比对的其实是两份不同代的数据。逐字相等把这件事
+# 变成一次 cmp，差异直接判负。
+read_back()
+{
+    local dst="${SYSROOT}${MDIR}/fw-manifest.txt"
+    local abi="${SYSROOT}${MDIR}/kernel-abi"
+
+    if [ ! -r "${dst}" ]; then
+        err "镜像内无固件清单: ${MDIR}/fw-manifest.txt"
+        bad=1
+        return 0
+    fi
+    if ! cmp -s "${MAN}" "${dst}"; then
+        err "镜像内固件清单与仓库清单不一致: ${MDIR}/fw-manifest.txt"
+        bad=1
+    fi
+    if [ ! -r "${abi}" ]; then
+        err "镜像内无内核 ABI 标记: ${MDIR}/kernel-abi"
+        bad=1
+        return 0
+    fi
+    # ABI 形如 6.6.161：只允许数字与点。空串或带其它字符说明包装错了版本。
+    case "$(tr -d '[:space:]' <"${abi}")" in
+    ''|*[!0-9.]*)
+        err "内核 ABI 标记非法: ${MDIR}/kernel-abi"
+        bad=1
+        ;;
+    esac
 }
 
 # ko_path NAME —— 驱动名到模块文件。压缩后缀由发行版决定，先按三种常见
@@ -368,7 +408,7 @@ rows "${MAN}" >"${TMP}/rows"
 row_check
 dup_check
 set_check
-[ -z "${SYSROOT}" ] || file_check
+[ -z "${SYSROOT}" ] || { file_check; read_back; }
 
 if [ -n "${SYSROOT}" ]; then
     pnvm_check
