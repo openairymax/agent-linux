@@ -18,6 +18,10 @@ release_manifest.py — AirymaxOS 发布物料清单门禁与发布辅助工具
                  通道清单 channel.json（schema_version=1）。生成前做身份链
                  交叉断言：ISO 实测摘要与 iso-oci.txt 账本一致、构建号与
                  airymaxos-release NEVRA 的 Release 一致；任一不等即不产出。
+  5. --replay    按清单登记的 produce（生成命令 argv）重放某条 active 物料
+                 的生成过程，重放后逐条验证 evidence 有产物落地。清单只记
+                 「结果」时无法复跑，故每条 active 物料必须登记 produce；
+                 --check 同时断言命令引用的门禁真实存在，杜绝记录漂移。
 
 设计原则（与项目铁律一致）：
   * 清单是唯一事实源；只做「清单 ↔ 发布流水线/仓库」的交叉比对，不重复实现
@@ -38,12 +42,18 @@ Usage:
     python3 tools/release-engineering/release_manifest.py --notes [options]
     python3 tools/release-engineering/release_manifest.py --channel
         --version VER [options]
+    python3 tools/release-engineering/release_manifest.py --replay ID
+        --version VER [--tag TAG] [--repo OWNER/NAME] [--dry-run] [options]
 
 Options:
     --check               物料清单门禁的 CI 模式（精简输出，仅退出码）
     --checksums           生成 sha256sum 校验和文本
     --notes               生成精简 release notes（概述 / 说明 / 其他）
     --channel             生成发行通道清单 channel.json
+    --replay ID           按 produce 记录重放指定 active 物料的生成命令
+    --dry-run             只打印展开后的命令，不执行（与 --replay 同用）
+    --tag TAG             --replay 的 ${tag} 取值（默认 v<version>）
+    --repo OWNER/NAME     --replay 的 ${repo} 取值（默认 openairymax/agent-linux）
     --repo-root PATH      agent-linux 仓库根（默认：自动探测）
     --manifest PATH       物料清单（默认：tools/release-engineering/manifest.yaml）
     --output PATH         结果写入文件（默认：标准输出）
@@ -79,6 +89,7 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import sys
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
@@ -101,18 +112,24 @@ __all__ = [
     "build_parser",
     "build_sums",
     "check_pipeline",
+    "check_recipes",
     "check_schema",
+    "expand_argv",
+    "find_material",
     "find_repo_root",
+    "gate_names",
     "iso_asset",
     "load_yaml",
     "main",
     "normalize_glob",
     "parse_nevra",
+    "ph_values",
     "pick_rpm",
     "pipeline_globs",
     "print_report",
     "read_ledger",
     "render_notes",
+    "replay",
     "resolve_paths",
     "sha256_of",
     "stamp_of",
@@ -152,12 +169,19 @@ STAMP_FMT = "%Y-%m-%dT%H:%M:%SZ"
 TOP_KEYS = frozenset({"version", "materials", "notes"})
 MATERIAL_KEYS = frozenset({
     "id", "name", "format", "signature", "authority", "delivery",
-    "evidence", "defer_reason", "defer_target",
+    "evidence", "produce", "defer_reason", "defer_target",
 })
 REQUIRED_MATERIAL_KEYS = ("id", "name", "format", "signature",
                           "authority", "delivery")
 NOTES_KEYS = frozenset({"summary", "remarks"})
 NOTES_MAX_LINES = 3
+
+DISPATCH_REL = "ci/ci.sh"
+GATE_DIR_REL = "ci/gates"
+PH_RE = re.compile(r"\$\{([a-z_]+)\}")
+PRODUCE_PH = frozenset({"version", "tag", "repo"})
+DEFAULT_REPO = "openairymax/agent-linux"
+DEFAULT_TAG_FMT = "v{ver}"
 
 UPLOAD_ARTIFACT_USES = "actions/upload-artifact"
 GH_RELEASE_USES = "softprops/action-gh-release"
@@ -335,14 +359,16 @@ def _entry_problems(idx: int, entry: Any, seen: set[str]) -> list[str]:
 
 
 def _delivery_errs(where: str, entry: Manifest, delivery: Any) -> list[str]:
-    """按 delivery 状态校验 evidence / defer_* 字段的组合合法性。"""
+    """按 delivery 状态校验 evidence / produce / defer_* 的组合合法性。"""
     problems = []
     evidence = entry.get("evidence")
+    produce = entry.get("produce")
     if delivery == DELIVERY_ACTIVE:
         if not isinstance(evidence, list) or not evidence:
             problems.append(f"{where}: active 物料要求非空 evidence 列表")
         elif any(not isinstance(g, str) or not g for g in evidence):
             problems.append(f"{where}.evidence 含非法项")
+        problems.extend(_produce_errs(where, produce))
         if entry.get("defer_reason") or entry.get("defer_target"):
             problems.append(
                 f"{where}: active 物料不得登记 defer_reason/defer_target")
@@ -352,6 +378,26 @@ def _delivery_errs(where: str, entry: Manifest, delivery: Any) -> list[str]:
                 problems.append(f"{where}: deferred 物料要求 {key}")
         if evidence:
             problems.append(f"{where}: deferred 物料不得登记 evidence")
+        if produce:
+            problems.append(f"{where}: deferred 物料不得登记 produce")
+    return problems
+
+
+def _produce_errs(where: str, produce: Any) -> list[str]:
+    """校验 active 物料的生成命令记录形状。
+
+    produce 是「每条物料记录生成命令 argv」的落点：外层按执行顺序排列，
+    每项为一条 argv（token 列表），缺失或空列表即视为不可复跑。
+    """
+    if not isinstance(produce, list) or not produce:
+        return [f"{where}: active 物料要求非空 produce 列表（生成命令 argv）"]
+    problems = []
+    for idx, argv in enumerate(produce):
+        if not isinstance(argv, list) or not argv:
+            problems.append(f"{where}.produce[{idx}] 必须是非空 argv 列表")
+            continue
+        if any(not isinstance(tok, str) or not tok.strip() for tok in argv):
+            problems.append(f"{where}.produce[{idx}] 含非字符串或空 token")
     return problems
 
 
@@ -419,6 +465,53 @@ def check_schema(manifest: Manifest) -> CheckResult:
             problems.extend(_entry_problems(idx, entry, seen))
 
     return CheckResult("清单 schema 合法", not problems, "\n".join(problems))
+
+
+# ─── Recipe (produce) check ────────────────────────────────────────────────
+
+
+def gate_names(repo_root: Path) -> set[str]:
+    """返回仓库内真实存在的门禁名（ci/gates/*.sh 去后缀）。"""
+    return {path.stem for path in (repo_root / GATE_DIR_REL).glob("*.sh")}
+
+
+def _recipe_errs(entry: Manifest, gates: set[str]) -> list[str]:
+    """校验单条 active 物料的 produce 是否指向真实门禁且占位符可解析。"""
+    problems = []
+    mid = entry.get("id")
+    for idx, argv in enumerate(entry.get("produce") or []):
+        where = f"物料 {mid} 的 produce[{idx}]"
+        if len(argv) < 2 or argv[0] != DISPATCH_REL:
+            problems.append(f"{where} 必须以 {DISPATCH_REL} <门禁> 开头")
+            continue
+        if argv[1] not in gates:
+            problems.append(f"{where} 引用的门禁不存在: {argv[1]}")
+        unknown = {m for tok in argv for m in PH_RE.findall(tok)} - PRODUCE_PH
+        if unknown:
+            problems.append(f"{where} 含未知占位符: {', '.join(sorted(unknown))}")
+    return problems
+
+
+def check_recipes(manifest: Manifest, repo_root: Path) -> CheckResult:
+    """校验每条 active 物料的生成命令记录可复算。
+
+    清单只记结果不记命令时，产物无法从清单复跑；本项要求 produce 指向
+    仓库内真实门禁，且占位符限于可解析的白名单，防止记录随流水线漂移。
+
+    Args:
+        manifest: 清单顶层映射。
+        repo_root: 仓库根路径。
+
+    Returns:
+        检查结果。
+    """
+    gates = gate_names(repo_root)
+    problems = []
+    for entry in manifest.get("materials", []):
+        if entry.get("delivery") != DELIVERY_ACTIVE:
+            continue
+        problems.extend(_recipe_errs(entry, gates))
+    return CheckResult("物料生成命令可复算", not problems, "\n".join(problems))
 
 
 # ─── Pipeline consistency check ────────────────────────────────────────────
@@ -601,7 +694,8 @@ def build_checks(manifest: Manifest, repo_root: Path) -> list[CheckResult]:
     schema = check_schema(manifest)
     if not schema.passed:
         return [schema]
-    return [schema, check_pipeline(manifest, repo_root)]
+    return [schema, check_recipes(manifest, repo_root),
+            check_pipeline(manifest, repo_root)]
 
 
 def resolve_paths(args: argparse.Namespace) -> tuple[Path, Path]:
@@ -678,6 +772,141 @@ def cmd_notes(args: argparse.Namespace) -> int:
         return EXIT_USAGE
     emit(render_notes(args.version, notes), args.output)
     return EXIT_PASS
+
+
+# ─── Recipe replay ─────────────────────────────────────────────────────────
+
+
+def find_material(manifest: Manifest, mid: str) -> Manifest:
+    """按 id 取出物料条目。
+
+    Args:
+        manifest: 清单顶层映射。
+        mid: 物料 id。
+
+    Returns:
+        物料条目。
+
+    Raises:
+        ToolError: id 未登记。
+    """
+    for entry in manifest.get("materials", []):
+        if entry.get("id") == mid:
+            return entry
+    raise ToolError(f"物料未登记: {mid}")
+
+
+def ph_values(args: argparse.Namespace) -> dict[str, str]:
+    """从命令行参数导出 produce 占位符取值。
+
+    Args:
+        args: 命令行参数（version / tag / repo 可为空）。
+
+    Returns:
+        占位符名到取值的映射；未给出的取值留空，由 expand_argv 报错。
+    """
+    ver = args.version or ""
+    return {
+        "version": ver,
+        "tag": args.tag or (DEFAULT_TAG_FMT.format(ver=ver) if ver else ""),
+        "repo": args.repo or DEFAULT_REPO,
+    }
+
+
+def expand_argv(argv: Sequence[str], values: dict[str, str]) -> list[str]:
+    """展开一条 argv 中的占位符。
+
+    Args:
+        argv: 命令 token 列表。
+        values: 占位符取值。
+
+    Returns:
+        展开后的 token 列表。
+
+    Raises:
+        ToolError: 占位符未知或取值为空。
+    """
+    expanded = []
+    for tok in argv:
+        for name in PH_RE.findall(tok):
+            if name not in values:
+                raise ToolError(f"未知占位符: ${{{name}}}")
+            if not values[name]:
+                raise ToolError(
+                    f"占位符 ${{{name}}} 无取值（用 --version/--tag/--repo 指定）")
+        expanded.append(PH_RE.sub(lambda m: values[m.group(1)], tok))
+    return expanded
+
+
+def _evidence_missing(entry: Manifest, repo_root: Path) -> list[str]:
+    """返回重放后仍无产物落地的 evidence glob。"""
+    return [glob for glob in entry.get("evidence", [])
+            if not any(repo_root.glob(glob))]
+
+
+def _run_argv(cmd: list[str], repo_root: Path) -> int:
+    """执行一条生成命令，返回其退出码。"""
+    try:
+        return subprocess.run(cmd, cwd=repo_root, check=False).returncode
+    except OSError as exc:
+        raise ToolError(f"生成命令无法执行: {' '.join(cmd)}（{exc}）") from exc
+
+
+def replay(manifest: Manifest, repo_root: Path, mid: str,
+           values: dict[str, str], dry_run: bool) -> int:
+    """按 produce 记录重放某条物料的生成过程。
+
+    Args:
+        manifest: 清单顶层映射。
+        repo_root: 仓库根路径（命令工作目录）。
+        mid: 物料 id。
+        values: 占位符取值。
+        dry_run: 只打印展开后的命令，不执行。
+
+    Returns:
+        退出码：0 重放成功且 evidence 有产物；1 命令失败或产物缺失；
+        2 用法错误。
+    """
+    entry = find_material(manifest, mid)
+    if entry.get("delivery") != DELIVERY_ACTIVE:
+        print(f"ERROR: 物料 {mid} 未启用（deferred），无生成命令可重放",
+              file=sys.stderr)
+        return EXIT_USAGE
+    argvs = entry.get("produce") or []
+    if not argvs:
+        print(f"ERROR: 物料 {mid} 未登记生成命令（produce）", file=sys.stderr)
+        return EXIT_USAGE
+    for argv in argvs:
+        cmd = expand_argv(argv, values)
+        print("+ " + " ".join(cmd))
+        if dry_run:
+            continue
+        code = _run_argv(cmd, repo_root)
+        if code:
+            print(f"ERROR: 生成命令失败（退出码 {code}）: {' '.join(cmd)}",
+                  file=sys.stderr)
+            return EXIT_FAIL
+    if dry_run:
+        return EXIT_PASS
+    missing = _evidence_missing(entry, repo_root)
+    if missing:
+        print(f"ERROR: 物料 {mid} 重放后无产物: {', '.join(missing)}",
+              file=sys.stderr)
+        return EXIT_FAIL
+    print(f"REPLAY: PASS {mid}")
+    return EXIT_PASS
+
+
+def cmd_replay(args: argparse.Namespace) -> int:
+    """运行生成命令重放。"""
+    try:
+        repo_root, manifest_path = resolve_paths(args)
+        manifest = load_yaml(manifest_path, "物料清单")
+        return replay(manifest, repo_root, args.replay,
+                      ph_values(args), args.dry_run)
+    except ToolError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return EXIT_USAGE
 
 
 # ─── Channel manifest ──────────────────────────────────────────────────────
@@ -948,6 +1177,8 @@ def build_parser() -> argparse.ArgumentParser:
     mode.add_argument("--channel", action="store_true",
                       help="生成发行通道清单 channel.json"
                            "（04-update-mechanism §2.3）")
+    mode.add_argument("--replay", metavar="ID", default=None,
+                      help="按 produce 记录重放指定 active 物料的生成命令")
     parser.add_argument("--repo-root", default=None,
                         help="agent-linux 仓库根（默认：自动探测）")
     parser.add_argument("--manifest", default=None,
@@ -970,6 +1201,12 @@ def build_parser() -> argparse.ArgumentParser:
                         help="发行说明地址（默认：GitHub Release tag 页）")
     parser.add_argument("--released-at", default=None,
                         help="UTC 时间戳（默认：SOURCE_DATE_EPOCH，否则当前时间）")
+    parser.add_argument("--tag", default=None,
+                        help="--replay 的 ${tag} 取值（默认 v<version>）")
+    parser.add_argument("--repo", default=None,
+                        help=f"--replay 的 ${{repo}} 取值（默认：{DEFAULT_REPO}）")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="只打印展开后的命令，不执行（与 --replay 同用）")
     parser.add_argument("files", nargs="*", help="--checksums 的待校验文件")
     return parser
 
@@ -992,6 +1229,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return cmd_notes(args)
         if args.channel:
             return cmd_channel(args)
+        if args.replay:
+            return cmd_replay(args)
         return cmd_check(args)
     except ToolError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)

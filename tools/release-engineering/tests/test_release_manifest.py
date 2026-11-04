@@ -1,15 +1,15 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 """release_manifest 单元测试。
 
-覆盖三块能力：清单 schema 门禁、清单 ↔ 发布流水线双向一致、以及
-`--checksums` / `--notes` / `--channel` 三个发布辅助模式；并用合成仓库做
-端到端验证，避免任何桩路径。
+覆盖四块能力：清单 schema 门禁、清单 ↔ 发布流水线双向一致、生成命令记录
+可复算（`produce`）与 `--replay` 重放，以及 `--checksums` / `--notes` /
+`--channel` 三个发布辅助模式；并用合成仓库做端到端验证，避免任何桩路径。
 
 Author:
     SPHARX Ltd. - Airymax Team
 
 Version:
-    1.2.0
+    1.3.0
 """
 
 from __future__ import annotations
@@ -37,6 +37,8 @@ materials:
     delivery: active
     evidence:
       - dist/rpm/**/*.rpm
+    produce:
+      - ["ci/ci.sh", "release-kernel", "build"]
   - id: source-tarball
     name: 源码 tarball
     format: .tar.xz
@@ -77,13 +79,26 @@ def load_manifest_text(text):
     return rm.yaml.safe_load(text)
 
 
+def write_gates(tmp_path, manifest_text):
+    """按清单登记的 produce 建出同名门禁，模拟真实仓库的门禁目录。"""
+    doc = load_manifest_text(manifest_text)
+    gates = tmp_path / "ci" / "gates"
+    gates.mkdir(parents=True, exist_ok=True)
+    (tmp_path / "ci" / "ci.sh").write_text("#!/bin/sh\nexit 0\n",
+                                           encoding="utf-8")
+    for entry in doc.get("materials", []):
+        for argv in entry.get("produce") or []:
+            (gates / f"{argv[1]}.sh").write_text("", encoding="utf-8")
+
+
 def write_repo(tmp_path, manifest_text=GOOD_MANIFEST,
                release_text=GOOD_RELEASE):
-    """在合成仓库写入清单与发布流水线，返回清单路径。"""
+    """在合成仓库写入清单、门禁与发布流水线，返回清单路径。"""
     tool = tmp_path / "tools" / "release-engineering"
     tool.mkdir(parents=True, exist_ok=True)
     manifest = tool / "manifest.yaml"
     manifest.write_text(manifest_text, encoding="utf-8")
+    write_gates(tmp_path, manifest_text)
     wf_dir = tmp_path / ".github" / "workflows"
     wf_dir.mkdir(parents=True, exist_ok=True)
     (wf_dir / "release.yml").write_text(release_text, encoding="utf-8")
@@ -103,7 +118,8 @@ def active_material(mid, *globs):
     """构造一条 active 物料记录。"""
     return {"id": mid, "name": mid, "format": ".bin", "signature": "gpg",
             "authority": "docs/x.md §1", "delivery": "active",
-            "evidence": list(globs)}
+            "evidence": list(globs),
+            "produce": [["ci/ci.sh", "release-kernel", "build"]]}
 
 
 def manifest_dict(materials, version="1.0.0", notes=None):
@@ -597,6 +613,178 @@ class TestNevra:
     def test_reject_non_numeric_release(self):
         with pytest.raises(rm.ChannelMismatch):
             rm.parse_nevra(rm.Path("pkg-1.0-rc1.x86_64.rpm")).build
+
+
+# ─── Recipe record / replay ────────────────────────────────────────────────
+
+
+REPLAY_MANIFEST = """\
+version: "1.0.0"
+notes:
+  summary: []
+  remarks: []
+materials:
+  - id: notes
+    name: 发行说明
+    format: Markdown
+    signature: gpg
+    authority: docs/x.md §1
+    delivery: active
+    evidence:
+      - out/notes-*.md
+    produce:
+      - ["ci/ci.sh", "fake", "--ver", "${version}"]
+"""
+
+REPLAY_CI = """\
+#!/bin/sh
+ver=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+    --ver) shift; ver=$1 ;;
+    esac
+    shift
+done
+mkdir -p out
+printf '%s\\n' "$ver" > "out/notes-$ver.md"
+"""
+
+
+def write_replay_repo(tmp_path, ci_text=REPLAY_CI):
+    """写入登记了可重放生成命令的合成仓库，返回清单路径。"""
+    manifest = write_repo(tmp_path, REPLAY_MANIFEST, "name: release\n")
+    ci = tmp_path / "ci" / "ci.sh"
+    ci.write_text(ci_text, encoding="utf-8")
+    ci.chmod(0o755)
+    return manifest
+
+
+class TestRecipes:
+    def test_active_without_produce_rejected(self):
+        entry = active_material("kernel-rpm", "dist/**/*.rpm")
+        entry.pop("produce")
+        result = rm.check_schema(manifest_dict([entry]))
+        assert not result.passed
+        assert "produce" in result.details
+
+    def test_empty_produce_rejected(self):
+        entry = active_material("kernel-rpm", "dist/**/*.rpm")
+        entry["produce"] = []
+        assert not rm.check_schema(manifest_dict([entry])).passed
+
+    def test_empty_argv_rejected(self):
+        entry = active_material("kernel-rpm", "dist/**/*.rpm")
+        entry["produce"] = [[]]
+        assert not rm.check_schema(manifest_dict([entry])).passed
+
+    def test_deferred_with_produce_rejected(self):
+        entry = {"id": "src", "name": "src", "format": ".tar.xz",
+                 "signature": "gpg", "authority": "docs/x.md §1",
+                 "delivery": "deferred", "defer_reason": "待补齐",
+                 "defer_target": "0.0.4",
+                 "produce": [["ci/ci.sh", "fake"]]}
+        result = rm.check_schema(manifest_dict([entry]))
+        assert not result.passed
+        assert "produce" in result.details
+
+    def test_ghost_gate_rejected(self, tmp_path):
+        entry = active_material("kernel-rpm", "dist/**/*.rpm")
+        entry["produce"] = [["ci/ci.sh", "ghost", "build"]]
+        (tmp_path / "ci" / "gates").mkdir(parents=True)
+        result = rm.check_recipes(manifest_dict([entry]), tmp_path)
+        assert not result.passed
+        assert "ghost" in result.details
+
+    def test_unknown_placeholder_rejected(self, tmp_path):
+        entry = active_material("kernel-rpm", "dist/**/*.rpm")
+        entry["produce"] = [["ci/ci.sh", "release-kernel", "${build}"]]
+        gates = tmp_path / "ci" / "gates"
+        gates.mkdir(parents=True)
+        (gates / "release-kernel.sh").write_text("", encoding="utf-8")
+        result = rm.check_recipes(manifest_dict([entry]), tmp_path)
+        assert not result.passed
+        assert "build" in result.details
+
+    def test_non_dispatch_command_rejected(self, tmp_path):
+        entry = active_material("kernel-rpm", "dist/**/*.rpm")
+        entry["produce"] = [["make", "kernel"]]
+        (tmp_path / "ci" / "gates").mkdir(parents=True)
+        result = rm.check_recipes(manifest_dict([entry]), tmp_path)
+        assert not result.passed
+        assert "ci/ci.sh" in result.details
+
+
+class TestReplay:
+    def test_replay_runs_command_and_verifies(self, tmp_path):
+        manifest = write_replay_repo(tmp_path)
+        rc = rm.main(["--replay", "notes", "--version", "0.0.4",
+                      "--repo-root", str(tmp_path),
+                      "--manifest", str(manifest)])
+        assert rc == rm.EXIT_PASS
+        assert (tmp_path / "out" / "notes-0.0.4.md").read_text() == "0.0.4\n"
+
+    def test_replay_without_evidence_fails(self, tmp_path, capsys):
+        manifest = write_replay_repo(tmp_path, "#!/bin/sh\nexit 0\n")
+        rc = rm.main(["--replay", "notes", "--version", "0.0.4",
+                      "--repo-root", str(tmp_path),
+                      "--manifest", str(manifest)])
+        assert rc == rm.EXIT_FAIL
+        assert "无产物" in capsys.readouterr().err
+
+    def test_replay_command_failure_exit_code(self, tmp_path, capsys):
+        manifest = write_replay_repo(tmp_path, "#!/bin/sh\nexit 7\n")
+        rc = rm.main(["--replay", "notes", "--version", "0.0.4",
+                      "--repo-root", str(tmp_path),
+                      "--manifest", str(manifest)])
+        assert rc == rm.EXIT_FAIL
+        assert "退出码 7" in capsys.readouterr().err
+
+    def test_replay_dry_run_skips_execution(self, tmp_path, capsys):
+        manifest = write_replay_repo(tmp_path)
+        rc = rm.main(["--replay", "notes", "--version", "0.0.4", "--dry-run",
+                      "--repo-root", str(tmp_path),
+                      "--manifest", str(manifest)])
+        assert rc == rm.EXIT_PASS
+        assert not (tmp_path / "out").exists()
+        assert "--ver 0.0.4" in capsys.readouterr().out
+
+    def test_replay_tag_and_repo_placeholders(self, tmp_path, capsys):
+        text = REPLAY_MANIFEST.replace(
+            '"--ver", "${version}"]',
+            '"--ver", "${version}", "--tag", "${tag}",\n'
+            '         "--repo", "${repo}"]')
+        manifest = write_repo(tmp_path, text, "name: release\n")
+        rc = rm.main(["--replay", "notes", "--version", "0.0.4", "--dry-run",
+                      "--tag", "v0.0.4-rc1", "--repo", "acme/linux",
+                      "--repo-root", str(tmp_path),
+                      "--manifest", str(manifest)])
+        out = capsys.readouterr().out
+        assert rc == rm.EXIT_PASS
+        assert "v0.0.4-rc1" in out
+        assert "acme/linux" in out
+
+    def test_replay_deferred_usage_error(self, tmp_path, capsys):
+        manifest = write_repo(tmp_path)
+        rc = rm.main(["--replay", "source-tarball", "--version", "0.0.4",
+                      "--repo-root", str(tmp_path),
+                      "--manifest", str(manifest)])
+        assert rc == rm.EXIT_USAGE
+        assert "deferred" in capsys.readouterr().err
+
+    def test_replay_unknown_material_usage_error(self, tmp_path, capsys):
+        manifest = write_repo(tmp_path)
+        rc = rm.main(["--replay", "ghost", "--version", "0.0.4",
+                      "--repo-root", str(tmp_path),
+                      "--manifest", str(manifest)])
+        assert rc == rm.EXIT_USAGE
+        assert "物料未登记" in capsys.readouterr().err
+
+    def test_replay_missing_version_usage_error(self, tmp_path, capsys):
+        manifest = write_replay_repo(tmp_path)
+        rc = rm.main(["--replay", "notes", "--repo-root", str(tmp_path),
+                      "--manifest", str(manifest)])
+        assert rc == rm.EXIT_USAGE
+        assert "version" in capsys.readouterr().err
 
 
 # ─── Real repository ───────────────────────────────────────────────────────

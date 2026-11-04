@@ -84,7 +84,7 @@ SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct) \
 
 [`manifest.yaml`](manifest.yaml) 是 AirymaxOS 发布物料的**唯一事实源**（SSoT），
 逐项登记每类物料的格式、签名方式、权威依据、交付方式、证据路径与（未启用时的）
-延后目标。本工具以它为输入，提供三种能力：
+延后目标。本工具以它为输入，提供四种能力：
 
 1. **门禁（`--check`）**：校验 `manifest.yaml` schema，并做「物料清单 ↔
    [release.yml](../../.github/workflows/release.yml)」**双向一致性**检查——正向要求
@@ -96,6 +96,10 @@ SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct) \
 3. **release notes（`--notes`）**：渲染精简 Markdown（概述 / 说明 / 其他 三节，
    三节合计文字不超过 12 行）；「说明」「其他」两节的内容取自 `manifest.yaml`
    的 `notes` 段，每节至多 3 条。
+4. **重放（`--replay ID`）**：按该物料 `produce` 登记的 argv 顺序执行生成命令，
+   并在结束后逐条验证 `evidence` 确实有产物落地。清单若只记结果不记命令，
+   产物就无法从清单复跑；`--check` 同时断言 `produce` 引用的门禁真实存在于
+   `ci/gates/`、占位符限于 `${version}`/`${tag}`/`${repo}`，避免记录随流水线漂移。
 
 工具**不做任何静默降级**：清单缺字段、流水线无产物、待校验文件缺失均以非零退出码
 显式失败。
@@ -132,6 +136,7 @@ notes 披露段）与 `materials`（物料列表）。`notes` 段两键均必填
 | `authority` | 权威依据（文档路径 §小节） |
 | `delivery` | `active`（已由流水线交付）/ `deferred`（尚未启用） |
 | `evidence` | active 必填：流水线声明的产物 glob 列表 |
+| `produce` | active 必填：生成命令 argv 列表的列表（按执行顺序；首两个 token 为 `ci/ci.sh <门禁>`；占位符限 `${version}`/`${tag}`/`${repo}`） |
 | `defer_reason` / `defer_target` | deferred 必填：延后原因与计划承接的里程碑 |
 
 ### 使用方法
@@ -151,6 +156,15 @@ python3 tools/release-engineering/release_manifest.py --checksums \
 python3 tools/release-engineering/release_manifest.py --notes \
   --version 0.0.3
 
+# 重放某条物料的生成命令：先 --dry-run 打印将执行的 argv，确认后再实跑
+python3 tools/release-engineering/release_manifest.py --replay release-notes \
+  --version 0.0.4 --dry-run
+python3 tools/release-engineering/release_manifest.py --replay release-notes \
+  --version 0.0.4
+# 非 GitHub 环境下重放 update-channel：显式给出 tag 与 repo
+python3 tools/release-engineering/release_manifest.py --replay update-channel \
+  --version 0.0.4 --tag v0.0.4 --repo openairymax/agent-linux
+
 # 指定非默认清单
 python3 tools/release-engineering/release_manifest.py --check \
   --manifest tools/release-engineering/manifest.yaml
@@ -168,10 +182,17 @@ python3 tools/release-engineering/release_manifest.py --check \
 
 - **新增流水线产物**时，须在 `manifest.yaml` 新增对应物料条目并把 `evidence` 指向
   该产物 glob，否则门禁反向检查判「未登记物料」失败。
+- **登记生成命令（`produce`）**时，按执行顺序逐条列出 argv，首两个 token 必须是
+  `ci/ci.sh <门禁>`，且该门禁须真实存在于 `ci/gates/`；argv 中只允许
+  `${version}`/`${tag}`/`${repo}` 三个占位符。`--check` 会断言这三点，写成别名、
+  复制流水线片段或自造占位符都会被判失败——命令的唯一事实源仍是 `ci/gates/`，
+  清单只引用不复制。
 - **命名规则（SSoT）**：发布资产（tarball / SBOM / 校验和 / release notes 及其签名）
   统一用 `agent-linux-<ver>` 前缀（09-release-process.md §3.2）；RPM 包名统一用
   `airymaxos-*`（§3.3）。二者为「资产名 vs 包名」并存的约定，不得混用。
-- **启用 deferred 物料**时，把 `delivery` 改为 `active`、补 `evidence`、删 `defer_*`。
+- **启用 deferred 物料**时，把 `delivery` 改为 `active`、补 `evidence` 与 `produce`、
+  删 `defer_*`；反过来停用某条物料时须同时删掉 `evidence`/`produce`，否则 schema
+  判「deferred 不得登记 evidence/produce」。
 - 提交类落款按 [git-commit-message.md](../../../.trae/rules/git-commit-message.md)。
 
 ---
@@ -244,7 +265,8 @@ python3 -m pytest tools/release-engineering/tests/ -q
 
 - `tests/test_merge_sbom.py` — 合并 / 去重 / 冲突 / 确定性 / CLI。
 - `tests/test_release_manifest.py` — 清单 schema / 流水线产物提取 / 双向一致性 /
-  校验和 / release notes / CLI / 真实仓库。
+  生成命令记录可复算（`produce`）/ `--replay` 重放 / 校验和 / release notes /
+  CLI / 真实仓库。
 - `tests/test_pick_image.py` — 三条认领判据 / 同名取最新 / 过期与跨提交拒绝 / CLI。
 
 ## 许可证
