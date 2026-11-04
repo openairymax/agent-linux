@@ -67,17 +67,26 @@ airy_assets_want()
 
 # 只读演练允许无令牌跑公开仓库：没有令牌就不发 Authorization 头，
 # 而不是发一个空的 Bearer（后者会被 401 挡回，把演练变成伪失败）。
+#
+# 第四个参数是写操作的请求体文件：JSON 走文件而不是命令行，免得引号在
+# 两层解析里各转义一次。读与写共用同一处鉴权与版本头——「谁带了令牌」
+# 若分成两份实现，其中一份迟早会忘。
 airy_assets_api()
 {
-    local method="$1" url="$2" out="$3"
-    local -a auth=()
+    local method="$1" url="$2" out="$3" body="${4:-}"
+    local -a auth=() args=(-sS -X "${method}" -o "${out}" -w '%{http_code}')
     if [ -n "${TOKEN:-}" ]; then
         auth=(-H "Authorization: Bearer ${TOKEN}")
     fi
-    curl -sS -X "${method}" -o "${out}" -w '%{http_code}' "${auth[@]}" \
-        -H 'Accept: application/vnd.github+json' \
-        -H 'X-GitHub-Api-Version: 2022-11-28' \
-        "${url}"
+    if [ "${#auth[@]}" -gt 0 ]; then
+        args+=("${auth[@]}")
+    fi
+    args+=(-H 'Accept: application/vnd.github+json'
+           -H 'X-GitHub-Api-Version: 2022-11-28')
+    if [ -n "${body}" ]; then
+        args+=(-H 'Content-Type: application/json' --data-binary "@${body}")
+    fi
+    curl "${args[@]}" "${url}"
 }
 
 # 实测集：`<asset id> <name>` 每行一条。Release 不存在返回 ENOREL，

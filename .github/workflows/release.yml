@@ -189,7 +189,10 @@ jobs:
       contents: write
       packages: write
     env:
-      # -rc/-beta 后缀才是预发布，正式 tag 直接成为 latest；不在发布后人工改状态
+      # -rc/-beta 后缀才是预发布。正式 tag 也不在这里成为 latest：页面建好
+      # 先停在 held，由发布机在 B 轮 AIRYMAX-SMOKE-PASS 之后显式 promote。
+      # releases/latest 是更新通道入口，一建页就置 latest 等于把未验收的
+      # 构建推给所有装机（REL-02）。
       PRE_REL: ${{ contains(needs.build-and-sign.outputs.tag, '-rc') || contains(needs.build-and-sign.outputs.tag, '-beta') }}
     steps:
       # 发布侧同样按 tag 检出：release-verify 读的是 ci/ 与模板，
@@ -241,7 +244,7 @@ jobs:
         with:
           tag_name: ${{ needs.build-and-sign.outputs.tag }}
           prerelease: ${{ env.PRE_REL }}
-          make_latest: ${{ env.PRE_REL == 'true' && 'false' || 'true' }}
+          make_latest: false
           # release notes 由确定性生成器产出并 GPG 签名，不再使用自动生成
           body_path: agent-linux-${{ needs.build-and-sign.outputs.ver }}-release-notes.md
           files: |
@@ -257,6 +260,16 @@ jobs:
             agent-linux-*.sha256sum.asc
             agent-linux-*-release-notes.md
             agent-linux-*-release-notes.md.asc
+
+      # 正式版建好页面必须停在 held。上面已把 make_latest 置 false，但那只覆盖
+      # 「新建」，重跑同一 tag 时页面可能已在 latest 上——而重跑意味着产物被
+      # 重写，上一轮的验收证据随之失效。因此这一步显式收回并读回断言，
+      # 让「页面在不该在的位置」当场变红，而不是等装机端收到半成品才暴露。
+      - name: Hold release stage
+        if: env.PRE_REL == 'false'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ci/ci.sh release-stage hold --tag "${{ needs.build-and-sign.outputs.tag }}" --repo "${{ github.repository }}"
 
       # 上传没有事务：glob 少一项、某个 PUT 被重试吞掉、或上传在 timeout
       # 边缘被截断，页面都会安静地少几件东西，而 action-gh-release 只要
