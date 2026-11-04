@@ -113,11 +113,16 @@ esac
 
 cd "${ROOT}" || die "无法进入仓库根: ${ROOT}"
 
-# 本地 python3 常被发行版拆掉 pip/ensurepip；先给出可执行的提示，而不是让
-# 第一条 pip 命令以 "No module named pip" 失败。
-if ! python3 -m pip --version >/dev/null 2>&1; then
-    die "本机 python3 没有 pip：请先 'python3 -m venv .venv && . .venv/bin/activate'，或安装 python3-pip"
-fi
+# 依赖装进仓库外的虚拟环境：系统 python3 常被标成 externally-managed
+# （PEP 668），pip 直接拒绝安装；ensurepip 被拆成单独的包时，venv 里连
+# pip 都没有。两条路径都由 ci/lib/pyenv.sh 处理，装好后虚拟环境的 bin 在
+# PATH 首位，下面的 pip、pytest 与漂移检查跑的是同一个解释器，也与
+# tools/venv-bootstrap.sh 引导出的本地环境一致。
+. "${ROOT}/ci/lib/pyenv.sh"
+venv="$(pyenv_home)"
+pyenv_guard "${venv}" "${ROOT}"
+pyenv_has_pip "${venv}" || pyenv_make "${venv}"
+export PATH="${venv}/bin:${PATH}"
 
 group "${KIND}: 依赖"
 for r in "${REQS[@]}"; do
