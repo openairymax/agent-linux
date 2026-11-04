@@ -1,212 +1,146 @@
 Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 
-# agent-linux 极境智能体操作系统（AirymaxOS）
+# AirymaxOS 极境智能体操作系统
 
-> agent-linux（AirymaxOS / 极境智能体操作系统）智能体操作系统管理仓。
-> [airymaxhub](https://atomgit.com/openairymax/airymaxhub) 伞仓下五个管理仓之一。
+本仓库是 AirymaxOS 的管理仓库，也是 [airymaxhub](https://atomgit.com/openairymax/airymaxhub) 下的五个管理仓库之一。
 
-**语言:** [English](README.md) | 简体中文
+**语言：** [English](README.md) | 简体中文
 
-[![Version](https://img.shields.io/badge/version-v0.0.3-5a6b7e)](https://github.com/openairymax/agent-linux/releases/tag/v0.0.3)
-[![License](https://img.shields.io/badge/license-AGPL--3.0+Apache--2.0-4a90d9)](LICENSE)
-[![Linux](https://img.shields.io/badge/Linux-6.6-FCC624?logo=linux\&logoColor=black)](https://www.kernel.org)
-[![Rust](https://img.shields.io/badge/Rust-experimental-DEA584?logo=rust\&logoColor=white)](https://www.rust-lang.org)
+[![AtomGit](https://atomgit.com/openairymax/agent-linux/star/badge.svg)](https://atomgit.com/openairymax/agent-linux)
+[![GitHub](https://img.shields.io/github/stars/openairymax/agent-linux?style=flat&logo=github)](https://github.com/openairymax/agent-linux)
+[![Version](https://img.shields.io/github/v/release/openairymax/agent-linux)](https://github.com/openairymax/agent-linux/releases)
+[![Linux](https://img.shields.io/badge/Linux-6.6-FCC624?logo=linux&logoColor=black)](https://www.kernel.org)
+[![GHCR](https://img.shields.io/badge/GHCR-airymaxos--iso-2496ED)](https://github.com/openairymax/agent-linux/pkgs/container/airymaxos-iso)
+[![CI](https://github.com/openairymax/agent-linux/actions/workflows/kernel-verify.yml/badge.svg)](https://github.com/openairymax/agent-linux/actions/workflows/kernel-verify.yml)
 
-***
+---
 
 ## 概述
 
-**agent-linux**（正式英文名：AirymaxOS，中文：极境智能体操作系统）是基于 Linux 6.6 构建的 AI 智能体操作系统研究项目。它是 `airymaxhub` 伞仓下的**内核态工程**大管理仓（v0.1.3 由 `agentrt-linux` 改名），与用户态工程 `agent-workload`（v0.1.4 由 `agent-runtim` 改名）同级，聚合 **9 个叶子仓**作为 git submodule。
+AirymaxOS 极境智能体操作系统，**ALK**（Airymax Linux Kernel）是基于Linux 6.6 进行微内化改造的kernel：  
 
-agent-linux 基于三大设计支柱：
+- **微内核化**：Airymax 进行 seL4 形式的改造，主线文件保持跟进上游。
+- **原生架构**：x86_64、aarch64、riscv64、loongarch64。
+- **对齐欧拉**：基底使用 openEuler 24.03 LTS；使用 UKUI 桌面。
 
-1. **微内核思想** — 参考 seL4 ，Liedtke 极简原则、capability 安全模型、服务用户态化、消息传递通信
-2. **标准兼容性** — 全面参考 Linux 6.6 LTS、openEuler 24.03 LTS 模块设计、技术规格和标准；兼容主流社区标准
-3. **Airymax同源性** — 与 `agentrt` 共享 Airymax 设计理念；架构同源，OS 上运行 `agentrt` 天然更稳健和适配，无适配层
+配套的智能体运行时是 [agentrt](https://atomgit.com/openairymax/agentrt)。
 
-在 Airymax 0.1.1 中，本仓库及其叶子仓包含设计文档、架构草案和工程基线声明。
+## 快速开始
+
+用 SSH 克隆并拉取全部九个子模块（AtomGit 是主托管平台）：
+
+```bash
+git clone git@atomgit.com:openairymax/agent-linux.git
+cd agent-linux
+git submodule update --init --recursive
+```
+
+分支：本仓库 `main`；kernel 子模块 `ALK-6.6-dev`；其余八个子模块 `dev/hubs-01`。
+
+## 安装 AirymaxOS（ISO）
+
+桌面 ISO 约 3.4 GB（BIOS / UEFI 均可引导）以 OCI 制品发布在 [GHCR](https://github.com/openairymax/agent-linux/pkgs/container/airymaxos-iso)；
+`airy-flash` 按 tag 拉取并校验摘要：
+
+```bash
+# 1. 从 Releases 页面下载 airy-flash-<ver>.pyz（单文件，无依赖）
+
+# 2. 按 tag 拉取 ISO（分块、可续传、摘要校验）
+python3 airy-flash-<ver>.pyz fetch \
+  --ref ghcr.io/openairymax/airymaxos-iso:v0.0.3 \
+  --out releases/v0.0.3
+
+# 3. 预检：显示目标设备，拒绝只读/已挂载/系统盘整盘等危险情况
+sudo python3 airy-flash-<ver>.pyz plan \
+  --image releases/v0.0.3/airymaxos-<ver>-x86_64.iso --device /dev/sdb
+
+# 4. 烧录 + 回读校验（需 root；只接受整盘节点，不接受分区）
+sudo python3 airy-flash-<ver>.pyz write \
+  --image releases/v0.0.3/airymaxos-<ver>-x86_64.iso --device /dev/sdb --yes
+```
+
+也可以直接用 `dd` 或 Rufus 的 DD 模式写入，但 `write` 会在写入后回读校验整段 ISO。
+之后：
+
+1. 关机，开机从 U 盘启动（`F12` / `F11` / `Esc`），按安装向导完成安装。
+2. 安装后检查：`uname -r` 以 `-alk` 结尾；
+   `journalctl -b | grep AIRYMAX-DESKTOP-READY` 能看到桌面就绪。
+
+故障排查与登录策略见 [tools/airy-flash/README.md](tools/airy-flash/README.md)。
 
 ## 仓库结构
 
 ```text
 agent-linux/             # 管理仓（本仓库）
-├── kernel/                # agent-linux 内核叶子仓（submodule）
-├── services/              # agent-linux 服务态叶子仓（submodule）
-├── security/              # agent-linux 安全态叶子仓（submodule）
-├── memory/                # agent-linux 内存管理叶子仓（submodule）
-├── cognition/             # agent-linux 认知层叶子仓（submodule）
-├── cloudnative/           # agent-linux 云原生叶子仓（submodule）
-├── system/                # agent-linux 系统层叶子仓（submodule）
-├── distro/                # agent-linux 发行版组装层叶子仓（submodule）
-├── tests-linux/       # agent-linux 测试叶子仓（submodule）
-├── .gitmodules            # Submodule 定义
-├── LICENSE                # AGPL-3.0 + Apache-2.0 双许可证全文
-├── NOTICE                 # 版权、商标与第三方声明
-├── README.md              # 英文版
-└── README_zh.md           # 中文版（本文件）
+├── kernel/              # ALK 6.6
+├── security/            # 安全态
+├── memory/              # 内存管理
+├── cognition/           # 认知层
+├── services/            # 服务态
+├── system/              # 系统层
+├── cloudnative/         # 云原生
+├── distro/              # 发行版组装层
+├── tests-linux/         # 测试
+└── tools/airy-flash/    # ISO 烧录与校验工具
 ```
 
-## 叶子仓
+## 叶子仓库
 
-| 模块              | 目录             | 仓库 URL                                        | 复用                         | 描述                                                            |
-| --------------- | -------------- | --------------------------------------------- | -------------------------- | ------------------------------------------------------------- |
-| **kernel**      | `kernel/`      | `git@atomgit.com:openairymax/kernel.git`      | atoms/corekern             | Linux 6.6 + sched\_tac + eBPF + io\_uring + Rust（实验性）+ 微内核化改造 |
-| **services**    | `services/`    | `git@atomgit.com:openairymax/services.git`    | daemons                    | VFS + 网络 + 驱动用户态化 + 12 daemons systemd 集成 + io\_uring 消息传递    |
-| **security**    | `security/`    | `git@atomgit.com:openairymax/security.git`    | cupolas                    | capability(seL4) + LSM + Landlock + 机密计算 + 国密                 |
-| **memory**      | `memory/`      | `git@atomgit.com:openairymax/memory.git`      | heapstore + memoryrovol    | MemoryRovol 内核态 + CXL + PMEM + MGLRU 多代 LRU                   |
-| **cognition**   | `cognition/`   | `git@atomgit.com:openairymax/cognition.git`   | coreloopthree + frameworks | CoreLoopThree kthread + Wasm 3.0 + LLM 调度 + Token 能效 + 超节点沙箱  |
-| **cloudnative** | `cloudnative/` | `git@atomgit.com:openairymax/cloudnative.git` | gateway + sdk              | K8s CRD + containerd shim + OCI + CNI + agentctl + 超节点 OS     |
-| **system**      | `system/`      | `git@atomgit.com:openairymax/system.git`      | commons                    | RPM + dnf + 配置 + shell + DevStation                           |
-| **distro**      | `distro/`      | `git@atomgit.com:openairymax/distro.git`      | commons                    | OS 镜像组装：kickstart + comps + rpm lockfile（openEuler 24.03 基础仓库）+ ostree + UKUI 桌面集成     |
-| **tests-linux** | `tests-linux/` | `git@atomgit.com:openairymax/tests-linux.git` | 全模块测试                      | 单元 + 集成 + 形式化验证(seL4 风格) + Soak + 混沌                          |
+九个叶子仓库聚合在本仓库中，各自独立构建与发布：
+
+| 模块 | 仓库 |
+|------|------|
+| kernel | [openairymax/kernel](https://github.com/openairymax/kernel) |
+| memory | [openairymax/memory](https://github.com/openairymax/memory) |
+| security | [openairymax/security](https://github.com/openairymax/security) |
+| cognition | [openairymax/cognition](https://github.com/openairymax/cognition) |
+| services | [openairymax/services](https://github.com/openairymax/services) |
+| system | [openairymax/system](https://github.com/openairymax/system) |
+| cloudnative | [openairymax/cloudnative](https://github.com/openairymax/cloudnative) |
+| tests-linux | [openairymax/tests-linux](https://github.com/openairymax/tests-linux) |
+| distro | [openairymax/distro](https://github.com/openairymax/distro) |
 
 ## 架构
 
 ```text
-┌─────────────────────────────────────────────────────────────────────┐
-│           agent-linux（AirymaxOS / 极境智能体操作系统）              │
-├─────────────────────────────────────────────────────────────────────┤
-│  应用层（Agent 租户）                                                  │
-│    └── Airymax SDK（Python / Go / Rust / TypeScript）                │
-├─────────────────────────────────────────────────────────────────────┤
-│  服务态（用户态）                       ← services          │
-│    gateway_d · llm_d · tool_d · sched_d · market_d · monit_d · ...   │
-├─────────────────────────────────────────────────────────────────────┤
-│  认知层（kthread + Wasm）              ← cognition         │
-│    CoreLoopThree · TimeSliceInfer · Token 能效                       │
-├─────────────────────────────────────────────────────────────────────┤
-│  安全层（LSM + capability）            ← security          │
-│    Cupolas · seL4 capability · Landlock · 机密计算                   │
-├─────────────────────────────────────────────────────────────────────┤
-│  内存层（内核态）                       ← memory            │
-│    MemoryRovol · CXL · PMEM · MGLRU 多代 LRU                              │
-├─────────────────────────────────────────────────────────────────────┤
-│  云原生层                              ← cloudnative       │
-│    K8s CRD · containerd shim · OCI · CNI                             │
-├─────────────────────────────────────────────────────────────────────┤
-│  系统层                                ← system            │
-│    RPM · dnf · 配置 · shell · DevStation                             │
-├─────────────────────────────────────────────────────────────────────┤
-│  发行版组装层                            ← distro            │
-│    kickstart · comps · rpm lockfile · ostree · UKUI 桌面              │
-├─────────────────────────────────────────────────────────────────────┤
-│  微内核（基于 Linux 6.6）              ← kernel            │
-│    sched_tac · eBPF · io_uring · Rust · 微内核化改造                  │
-├─────────────────────────────────────────────────────────────────────┤
-│  测试与验证                            ← tests-linux             │
-│    单元 · 集成 · 形式化(seL4) · Soak · 混沌                          │
-└─────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│                                AirymaxRT                                 │
+│                           智能体编排与运行时层                           │
+├──────────────────────────────────────────────────────────────────────────┤
+│                     POSIX-ABI 兼容层 + airymicro API                     │
+├──────────────────────────────────────────────────────────────────────────┤
+│  ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌───────────┐   │
+│  │ security  │ │  memory   │ │ services  │ │ cognition │ │  system   │   │
+│  │   (LSM)   │ │ (CXL/PM)  │ │ (daemons) │ │   (LLM)   │ │   (pkg)   │   │
+│  └───────────┘ └───────────┘ └───────────┘ └───────────┘ └───────────┘   │
+├──────────────────────────────────────────────────────────────────────────┤
+│         ┌──────────────────────────────────────────────────────┐         │
+│         │  ALK（Airymax Linux Kernel，Linux 6.6 分叉）         │         │
+│         │  airy_defconfig: x86_64 / arm64 / riscv / loongarch  │         │
+│         └──────────────────────────────────────────────────────┘         │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 与 Airymax agentrt 的关系
+Airy 内核模块安装在 ISO 镜像的 `/lib/modules/$(uname -r)/` 下，开机时加载；
+用户态工具通过 `airymicro` API 调用微内核服务。
 
-agent-linux 与 `agentrt` 共享相同的 Airymax 设计理念（架构同源）。核心微核心原语（`atoms/corekern`）、daemon 服务、安全框架（`cupolas`）、内存引擎（`heapstore` / `memoryrovol`）和认知循环（`coreloopthree`）在用户态运行时（`agentrt`）与 OS 级内核（agent-linux）之间复用。这确保了 `agentrt` 在 agent-linux 上原生运行，无适配层。
+## 持续集成
 
-### \[SC] 共享契约层
+所有提交均需通过 GitHub Actions 门禁校验（构建、静态分析与测试），
+最新状态见 [Actions 页面](https://github.com/openairymax/agent-linux/actions)。
 
-agentrt 与 agent-linux 通过 **IRON-9 v3 四层共享模型**协作，其中 \[SC] 共享契约层是字节级完全共享的核心。SSoT 物理宿主为 `kernel/include/uapi/linux/airymax/`，由 agent-linux 维护，agentrt 通过 `commons/include/airymax/` 同步引用。
+## 参与贡献
 
-**12 个 \[SC] 头文件**（10 核心 + 2 补充，详见 [09-ssot-registry.md](../docs/docs-linux/50-engineering-standards/09-ssot-registry.md) OS-IRON-014）：
+- 分支：`main` 为稳定集成分支；功能分支用 `feature/<name>`、`fix/<name>` 或 `refactor/<name>`。
+- 提交信息：小写子系统前缀（`kernel:`、`mgmt:`、`ci:`），祈使句，不用 emoji，结尾不加句号。
+- 代码风格：遵循各叶子仓库惯例；提交前用 `make -n build` 检查构建完整性。
+- 签名（DCO）：所有提交必须附带 `Signed-off-by: Your Name <email@example.com>`。
+- SSoT：架构、安全与发布相关的变更必须可追溯至 `ssot-registry.yaml`。
 
-| #  | 头文件                 | 物理宿主                                           | 职责                                                                                                      |
-| -- | ------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| 1  | `error.h`           | `include/uapi/linux/airymax/error.h`           | A-UEF 统一错误码（AIRY\_E\* POSIX 负值 + AIRY\_FAULT\_\* 0x1000+ 故障码）+ \[DSL] 降级块                               |
-| 2  | `log_types.h`       | `include/uapi/linux/airymax/log_types.h`       | A-ULP 统一日志类型（128B 固定记录格式 + 5 级日志枚举）                                                                     |
-| 3  | `ipc.h`             | `include/uapi/linux/airymax/ipc.h`             | IPC magic（0x41524531 'ARE1'）+ 128B 消息头 `struct airy_ipc_msg_hdr`（Layout C v4）+ Capability Folding Badge |
-| 4  | `sched.h`           | `include/uapi/linux/airymax/sched.h`           | sched\_tac 调度约束 + 任务描述符（magic 0x41475453 'AGTS'）+ vtime 类型                                              |
-| 5  | `memory_types.h`    | `include/uapi/linux/airymax/memory_types.h`    | MemoryRovol L1-L4 数据结构 + GFP 掩码语义                                                                       |
-| 6  | `security_types.h`  | `include/uapi/linux/airymax/security_types.h`  | capability 44 ID（41 POSIX + 3 Airymax 扩展）+ Cupolas blob 布局 + capability 派生模型                            |
-| 7  | `cognition_types.h` | `include/uapi/linux/airymax/cognition_types.h` | CoreLoopThree 阶段枚举（`AIRY_COG_PERCEPT/THINK/ACT`）+ Thinkdual 模式（`AIRY_THINK_FAST/SLOW`）                  |
-| 8  | `syscalls.h`        | `include/uapi/linux/airymax/syscalls.h`        | syscall 编号体系（v1.0.1：4 核心（548-551）+ 20 预留（552-571）= 24 槽位）                                     |
-| 9  | `syscall_gen.h`     | `include/uapi/linux/airymax/syscall_gen.h`     | `__NR_airy_*` syscall 编号宏与 `airy_sys_*` ABI 声明（由 `syscall.xml` 经 `syscall_gen.py` 生成，禁止手工修改）   |
-| 10 | `uapi_compat.h`     | `include/uapi/linux/airymax/uapi_compat.h`     | Linux kernel-style UAPI 类型桥接（`__u8`/`__u16`/`__u32`/`__u64`）                                            |
-| 11 | `lsm_types.h`       | `include/uapi/linux/airymax/lsm_types.h`       | LSM 钩子 250 ID 枚举 + 策略裁决 4 值枚举                                                                           |
-| 12 | `bpf_struct_ops.h`  | `include/uapi/linux/airymax/bpf_struct_ops.h`  | eBPF struct_ops 状态机（可观测性用；非核心架构，H5 约束）                                                          |
-
-**IRON-9 v3 四层共享模型**：
-
-| 层次               | 共享程度        | 内容                                                         |
-| ---------------- | ----------- | ---------------------------------------------------------- |
-| **\[SC] 共享契约层**  | 完全共享代码      | 12 个 [SC] 头文件（10 核心 + 2 补充，字节级一致）                                           |
-| **\[SS] 语义同源层**  | 高层 API 语义同源 | 调度/IPC/安全/记忆/认知 API（签名因抽象层级不同独立演进）                         |
-| **\[IND] 完全独立层** | 完全独立        | 平台适配层、构建系统、跨平台兼容层                                          |
-| **\[DSL] 降级生存层** | 最小生存子集      | `#ifdef AIRY_SC_FALLBACK` 降级块（capability\_badge=0，跳过 C-S9） |
-
-详见 [120-cross-project-code-sharing.md](../docs/docs-linux/50-engineering-standards/120-cross-project-code-sharing.md)。
-
-### 与 openEuler 的关系
-
-agent-linux 全面参考 Euler 的：
-
-- 工程标准和质量规范
-- 包管理（RPM / dnf）
-- 复用硬件驱动，以适配国内主流硬件
-
-agent-linux 兼容 Euler 标准，可消费 Euler 标准包和工具链。
-
-### 与 Linux 6.6 的关系
-
-agent-linux 基于 Linux 6.6（openEuler 24.03 LTS 同内核基线），集成：
-
-- **sched\_tac**（原生调度类，不使用 sched\_ext）实现 AI 感知的 CPU 调度
-- **eBPF 签名验证**（Linux 6.15）保障内核可编程安全性
-- **io\_uring** 提供高性能异步 I/O 与消息传递
-- **Rust**（Linux 6.6 实验性支持）用于内存安全的内核模块
-
-微内核化改造策略不从零开发微内核，而是在 Linux 宏内核之上应用微内核设计原则（策略内核：服务用户态化、capability 安全、消息传递）。
-
-## 上游依赖
-
-- **Airymax agentrt** — 提供被复用并扩展的运行时平台模块
-- **Euler 24.03 LTS / 26.03** — 标准与规范参考发行版
-- **Linux 6.6** — 提供 sched\_tac（不使用 sched\_ext）、eBPF、io\_uring 与 Rust（实验性）支持的基础内核
-
-## 下游消费者
-
-- **Agent 应用** — 通过 Airymax SDK 在 agent-linux 上原生运行
-- **云 / 边缘部署** — agent-linux 作为 AI 智能体基础设施的基础 OS
-- **研究人员** — 微内核设计与 AI 原生 OS 研究
-
-## 分支策略
-
-- **本管理仓** — 仅 `main` 分支，不创建 feature 分支。
-- **叶子仓** — 在 `dev/hubs-01` 分支上开发（`kernel` 叶子仓使用 `ALK-6.6-dev`）。
-
-克隆本仓库（含 submodule）：
-
-```bash
-git clone --recurse-submodules git@atomgit.com:openairymax/agent-linux.git
-cd agent-linux
-git submodule update --remote --checkout
-```
+详见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## 许可证
 
-采用 **AGPL v3 + Apache 2.0** 双许可证（SPDX: `AGPL-3.0-or-later OR Apache-2.0`）。详见 [LICENSE](LICENSE) 双许可证全文和 [NOTICE](NOTICE) 版权、商标与第三方声明。
-
-### 双许可证使用指南
-
-你可以**任选其一**适用——不是同时遵守两个，也不是都不遵守。
-
-**SPDX 表达式**：`AGPL-3.0-or-later OR Apache-2.0`
-
-| 你的场景                         | 选择             | 原因                |
-| ---------------------------- | -------------- | ----------------- |
-| 构建**SaaS 网络服务**并修改 AirymaxOS | **AGPL v3**    | 网络服务条款要求公开修改后的源代码 |
-| 开发**开源衍生作品**（copyleft 项目）    | **AGPL v3**    | 衍生作品必须同样以 AGPL 开源 |
-| 在**商业闭源产品**中集成 AirymaxOS     | **Apache 2.0** | 宽松许可证，允许闭源衍生      |
-| 构建**企业内部工具**                 | **Apache 2.0** | 无需公开源代码           |
-| 需要**专利保护**                   | **Apache 2.0** | 贡献者明确授予专利使用权      |
-| 仅用于学习与研究                     | **任一**         | 两者均允许个人使用         |
-
-### kernel 子仓许可证例外
-
-本管理仓本身（即 `agent-linux/` 仓库）及其所有子模块**除** **`kernel/`** **外**均采用 AGPL v3 + Apache 2.0 双许可证。`kernel/` 子模块采用 **GPL-2.0-only** 许可证，以保持与上游 Linux 内核（6.6 LTS / 7.1）的兼容性。
-
-| 路径                                                                                   | 许可证                               | 原因                                                        |
-| ------------------------------------------------------------------------------------ | --------------------------------- | --------------------------------------------------------- |
-| `agent-linux/`（管理仓）                                                                | `AGPL-3.0-or-later OR Apache-2.0` | 用户态管理代码                                                   |
-| `agent-linux/{cloudnative,cognition,distro,memory,security,services,system,tests-linux}/` | `AGPL-3.0-or-later OR Apache-2.0` | 用户态子模块                                                    |
-| `agent-linux/kernel/`                                                              | `GPL-2.0-only`                    | Linux 内核派生代码——AGPL v3 和 Apache 2.0 与 GPL-2.0-only **不兼容** |
-
-> **注意**：`agent-linux/{cloudnative,cognition,distro,memory,security,services,system,tests-linux}/` 中包含内核模块头文件（`#include <linux/module.h>`、`MODULE_LICENSE("GPL")` 等）的源代码文件，其 SPDX 标签**必须**使用 `GPL-2.0-only`。完整策略见 [docs/docs-linux/50-engineering-standards/12-license-policy.md](../docs/docs-linux/50-engineering-standards/12-license-policy.md)。
+本仓库及其子模块（`kernel/` 除外）为双许可，可任选其一：
+[AGPL-3.0-or-later](LICENSE) 或 [Apache-2.0](LICENSE)。
+`kernel/` 子树为 [GPL-2.0-only](kernel/COPYING)，与上游 Linux 内核保持兼容。
