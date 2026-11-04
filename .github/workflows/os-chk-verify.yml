@@ -102,6 +102,12 @@ jobs:
       - name: Network bring-up static gates
         run: ci/ci.sh net-online
 
+      # I-25：屏幕背光与键盘背光是两条完全不同的通路，缺一条就只能靠外部
+      # 工具猜设备名。本门禁在临时 sysfs 树上判「写进去与回读一致」的四种
+      # 收场，不依赖真机，也不需要先打镜像。
+      - name: Backlight entry gates
+        run: ci/ci.sh backlight
+
       # 依赖、pytest 与 os_chk.py --check 三步收进 ci/gates/python-verify.sh
       # 的 oschk 分支：此前 10 份依赖清单在本文件里各写一遍，本地无法复现，
       # 改动后只能在云端验证。现在 runner 与开发者跑的是同一条命令。
