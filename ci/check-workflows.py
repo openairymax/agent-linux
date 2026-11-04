@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 """ci/check-workflows.py —— 守住 workflow 薄化与命名约束
 
-十六条规则：
+十七条规则：
 
 1. 结构上限：每个 workflow 的 job 数 ≤ 预算，内联 ``run: |`` 块数 ≤ 预算
    （预算见 ci/workflow-budgets.txt，只许下调）。
@@ -58,6 +58,11 @@
    提交，``# v4`` 只是给人读的溯源标签。本地 action（``./…``）与
    ``docker://`` 镜像不受此约束——前者随本仓检出一同变化，后者由摘要
    另行约束。
+17. 每个 ``runs-on:`` 必须与 ``tools/nightly/manifest.yaml`` 的
+   ``runner.label`` 逐字相等。运行器版本此前散落在两处：``ceeea8e`` 把
+   workflow 全部钉到 ``ubuntu-24.04``，而 nightly 契约清单仍写浮动标签，
+   靠 run 40864072696 失败之后人工对齐。同一个事实只允许一个取值，改一侧
+   就必须同时改另一侧，否则本地一秒即可发现，而不是等云端预热完再报。
 
 为什么需要它：这些约束此前只存在于文档里，没有执行者。78 段内联 shell
 就是这样一段段长出来的——每一次单看都合理，合起来就没有人能在本地验证。
@@ -123,6 +128,9 @@ PINNED = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*@[0-9a-f]{40}$")
 # 情况下换掉编译器、shellcheck 与 Python 版本，门禁结论就取决于跑的那天。
 RUNS_ON = re.compile(r"^\s*runs-on:\s*(\S+)\s*$", re.MULTILINE)
 RUNNER_TAG = re.compile(r"^[a-z]+-\d{2}\.\d{2}$")
+
+# 运行器版本的唯一事实源：nightly 契约清单的 runner.label。
+NIGHTLY = ROOT / "tools" / "nightly" / "manifest.yaml"
 
 # 文件名词族：*-verify 是阻断型门禁，其余只能是生命周期名。
 LIFECYCLE = ("image-build", "nightly", "release", "payload-seed")
@@ -377,6 +385,38 @@ def check_runner(name: str, text: str) -> list[str]:
     return errors
 
 
+def runner_label() -> str | None:
+    """nightly 契约清单里 ``runner.label`` 的取值；清单缺失或无此键返回 None。"""
+    if not NIGHTLY.exists():
+        return None
+    in_runner = False
+    for s in NIGHTLY.read_text().splitlines():
+        if re.match(r"^runner:\s*$", s):
+            in_runner = True
+            continue
+        if not in_runner:
+            continue
+        if s.strip() and not s.startswith(" "):
+            break
+        m = re.match(r"^  label:\s*(\S+)\s*$", s)
+        if m is not None:
+            return m.group(1)
+    return None
+
+
+def check_runner_label(name: str, text: str, label: str) -> list[str]:
+    """runs-on 必须与清单的 runner.label 逐字相等：同一事实只能有一个取值。"""
+    errors: list[str] = []
+    for no, s in enumerate(text.splitlines(), 1):
+        m = RUNS_ON.match(s)
+        if m is None or m.group(1) == label:
+            continue
+        errors.append(
+            f"{name}:{no}: runs-on: {m.group(1)} 与 tools/nightly/manifest.yaml 的 "
+            f"runner.label={label} 不一致（两处各自演化，改一侧不会带出另一侧）")
+    return errors
+
+
 def check_family(name: str, text: str) -> list[str]:
     """命名即语义：*-verify 必须阻断合并，其余只能是生命周期名。"""
     stem = name[:-4]
@@ -429,6 +469,10 @@ def main() -> int:
     files = sorted(p.name for p in WORKFLOWS.glob("*.yml"))
     errors: list[str] = check_gate_libs()
     errors.extend(check_doc())
+    label = runner_label()
+    if label is None:
+        errors.append(
+            "tools/nightly/manifest.yaml: 未登记 runner.label，runs-on 无对照基准")
 
     for name in files:
         if name not in budgets:
@@ -443,6 +487,8 @@ def main() -> int:
         errors.extend(check_name(name, text))
         errors.extend(check_family(name, text))
         errors.extend(check_runner(name, text))
+        if label is not None:
+            errors.extend(check_runner_label(name, text, label))
         errors.extend(check_policy(name, text))
         errors.extend(check_triggers(name, text))
         errors.extend(check_gate_refs(name, text))
