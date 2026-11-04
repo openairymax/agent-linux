@@ -74,16 +74,21 @@ notes:
 
 materials:
   # ── §3.1 物料 1：源码 tarball ──────────────────────────────────────────
+  # §3.2 的命令 `git archive vX.Y.Z` 只能导出超项目一棵树，子仓在归档里只是
+  # gitlink 的空目录。门禁按 gitlink 逐个导出并合入同一棵树后打成单份归档，
+  # 命名沿用 §3.2 的 agent-linux-<ver>.tar.xz。
   - id: source-tarball
     name: 源码 tarball
     format: .tar.xz
     signature: gpg
     authority: docs/docs-linux/120-development-process/09-release-process.md §3.1 物料1 / §3.2
-    delivery: deferred
-    defer_reason: >-
-      release.yml 尚未以 git archive 生成源码 tarball；0.0.3 聚焦内核 RPM 与
-      SBOM 主线，源码 tarball 待发布物料清单门禁全绿后补齐
-    defer_target: "0.0.4"
+    delivery: active
+    evidence:
+      - agent-linux-*.tar.xz
+      - agent-linux-*.tar.xz.asc
+    produce:
+      - ["ci/ci.sh", "release-source", "snapshot", "--ver", "${version}"]
+      - ["ci/ci.sh", "release-sign", "artifacts", "--ver", "${version}"]
 
   # ── §3.1 物料 2：内核 RPM（4 架构）─────────────────────────────────────
   - id: kernel-rpm
