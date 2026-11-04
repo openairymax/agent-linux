@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 # ===========================================================================
-# ci/tests/test_workflow_rules.sh — ci/check-workflows.py 规则 13–16 的负向回归
+# ci/tests/test_workflow_rules.sh — ci/check-workflows.py 规则 13–17 的负向回归
 #
-# 这四条规则此前只有正向：真实树常年合规，规则写错、判反或者根本没接进
+# 这几条规则此前只有正向：真实树常年合规，规则写错、判反或者根本没接进
 # main() 都不会有人发现。本文件在一棵最小假树上逐条破坏，断言只看退出码
 # 与稳定判据字符串，因此不依赖真实 workflow 的数量与预算。
 #
 # 真实树是否合规不在这里判：os-chk-verify 直接跑 ci/check-workflows.py
-# 那一条，本文件只保证四条规则既不漏判也不误判。
+# 那一条，本文件只保证这几条规则既不漏判也不误判。
 #
 # 用法: bash ci/tests/test_workflow_rules.sh
 # 退出码: 0 全部通过；1 有断言失败。
@@ -22,7 +22,7 @@ FX="${tmp}/fx"
 SHA=11bd71901bbe5b1630ceea73d27597364c9af683
 fails=0
 
-mkdir -p "${FX}/ci" "${FX}/.github/workflows"
+mkdir -p "${FX}/ci" "${FX}/.github/workflows" "${FX}/tools/nightly"
 cp "${ROOT}/ci/check-workflows.py" "${FX}/ci/check-workflows.py"
 # check_gate_libs 无条件读 ci/ci.sh；本文件不判门禁库，留空文件即可。
 : >"${FX}/ci/ci.sh"
@@ -63,12 +63,14 @@ reset()
 {
     rm -rf "${FX}/.github"
     mkdir -p "${FX}/.github/workflows"
+    printf 'runner:\n  label: ubuntu-24.04\n  hosted_ceiling_minutes: 360\n' \
+        >"${FX}/tools/nightly/manifest.yaml"
 }
 
-# doc [规则号列表] — 写第 4 节规则表；默认登记 1..16，与脚本自述一致。
+# doc [规则号列表] — 写第 4 节规则表；默认登记 1..17，与脚本自述一致。
 doc()
 {
-    local nums="${1:-1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16}"
+    local nums="${1:-1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17}"
 
     {
         printf '## 4. 命名与结构约定\n\n| # | 规则 | 为什么 |\n|---|------|--------|\n'
@@ -125,19 +127,19 @@ out=$(run)
 check "规则 14：-verify 不由 PR 触发" 1 "$?" "${out}" "不由 pull_request 触发"
 
 reset
-doc 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
+doc 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16
 flow demo-verify.yml ubuntu-24.04 "actions/checkout@${SHA}" " # v4" pr
 out=$(run)
-check "规则 15：规则表漏登" 1 "$?" "${out}" "规则 16 未出现"
+check "规则 15：规则表漏登" 1 "$?" "${out}" "规则 17 未出现"
 
 reset
-doc 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17
+doc 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18
 flow demo-verify.yml ubuntu-24.04 "actions/checkout@${SHA}" " # v4" pr
 out=$(run)
-check "规则 15：规则表多登" 1 "$?" "${out}" "不存在的规则 17"
+check "规则 15：规则表多登" 1 "$?" "${out}" "不存在的规则 18"
 
 reset
-doc 1,2,3,4,5,6,7,8,9,10,11,12,13,13,14,15,16
+doc 1,2,3,4,5,6,7,8,9,10,11,12,13,13,14,15,16,17
 flow demo-verify.yml ubuntu-24.04 "actions/checkout@${SHA}" " # v4" pr
 out=$(run)
 check "规则 15：规则表重号" 1 "$?" "${out}" "重号 13"
@@ -153,6 +155,25 @@ doc
 flow demo-verify.yml ubuntu-24.04 "actions/checkout@${SHA}" "" pr
 out=$(run)
 check "规则 16：钉 SHA 缺版本注释" 1 "$?" "${out}" "缺少 \`# <版本>\` 注释"
+
+reset
+doc
+flow demo-verify.yml ubuntu-22.04 "actions/checkout@${SHA}" " # v4" pr
+out=$(run)
+check "规则 17：runs-on 与清单 label 不一致" 1 "$?" "${out}" "runner.label=ubuntu-24.04 不一致"
+
+reset
+doc
+rm -f "${FX}/tools/nightly/manifest.yaml"
+flow demo-verify.yml ubuntu-24.04 "actions/checkout@${SHA}" " # v4" pr
+out=$(run)
+check "规则 17：清单缺 runner.label" 1 "$?" "${out}" "未登记 runner.label"
+
+reset
+doc
+flow demo-verify.yml ubuntu-24.04 "actions/checkout@${SHA}" " # v4" pr
+out=$(run)
+check "规则 17：两侧一致时通过" 0 "$?" "${out}" "检查通过"
 
 if [ "${fails}" -ne 0 ]; then
     printf 'test_workflow_rules: %d 项失败\n' "${fails}" >&2

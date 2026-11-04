@@ -89,11 +89,12 @@ lint 中执行。下表是规则本身，不是建议。
 | 14 | 文件名分两族：`*-verify` 必须由 `pull_request` 触发（阻断型门禁）；其余只能是 `image-build` / `nightly` / `release` / `payload-seed` | 读名字就知道违规会红，也读得出它何时跑 |
 | 15 | 本节表格的规则号必须与脚本的规则号一一对应：漏登、多登、重号均判红 | 文档一旦能单独演化，读者就会按错版本执行，新增规则则无人知晓 |
 | 16 | 每个 `uses:` 一律钉 40 位提交 SHA，并带 `# vN` 溯源注释（`./…` 与 `docker://` 豁免） | 浮动 tag 可被上游重新指向：代码在两次运行之间被换掉而日志无迹 |
+| 17 | 每个 `runs-on:` 必须与 `tools/nightly/manifest.yaml` 的 `runner.label` 逐字相等 | 运行器版本散在两处时，改 workflow 不会带出清单，只能等云端跑红后人工对齐 |
 
 新增或改名一个流水线需要三处同步：文件、`name:`、`ci/workflow-budgets.txt`。
 `./ci/lint.sh` 在任一处漂移时直接判红。
 
-规则 13–16 的负向回归在 `ci/tests/test_workflow_rules.sh`：它在一棵最小假树上
+规则 13–17 的负向回归在 `ci/tests/test_workflow_rules.sh`：它在一棵最小假树上
 逐条破坏并断言判据字符串，因此真实树常年为绿也不会掩盖规则失效。
 
 ## 5. 构建速度的纪律
