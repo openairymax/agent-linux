@@ -115,8 +115,12 @@ t18_build_id() {
     :
 }
 
-printf '1..18\n'
-probe 18 "T18 build provenance" t18_build_id
+t21_fw_api() {
+    :
+}
+
+printf '1..21\n'
+probe 21 "T21 firmware api match" t21_fw_api
 EOF
 }
 
@@ -196,14 +200,20 @@ out="$(run --source "${FX}")"
 check "流水线未传 run id 判拒绝" 1 "$?" "${out}" "未传 run id"
 
 mkfix
-drop "${FX}/distro/ci/run-smoke.sh" 'probe 18'
+drop "${FX}/distro/ci/run-smoke.sh" 'probe 21'
 out="$(run --source "${FX}")"
-check "探针未登记判拒绝" 1 "$?" "${out}" "T18 未登记"
+check "探针未登记判拒绝" 1 "$?" "${out}" "T21 未登记"
 
 mkfix
-drop "${FX}/distro/ci/run-smoke.sh" "1..18"
+drop "${FX}/distro/ci/run-smoke.sh" "1..21"
 out="$(run --source "${FX}")"
 check "计划数未更新判拒绝" 1 "$?" "${out}" "计划数未更新"
+
+mkfix
+sed -i "s/^printf '1\.\.21\\\\n'\$/printf '1..20\\\\n'/" \
+    "${FX}/distro/ci/run-smoke.sh"
+out="$(run --source "${FX}")"
+check "计划数与探针号不符判拒绝" 1 "$?" "${out}" "与最大探针号 21 不符"
 
 if [ "${fails}" -ne 0 ]; then
     printf 'test_build_provenance: %d 项失败\n' "${fails}"
