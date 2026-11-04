@@ -13,7 +13,8 @@
 #   3. 清单记录的 ISO 摘要与磁盘文件一致，且同名 .sha256 存在；
 #   4. 给出 --release-rpms 时，载荷里每个内核包的摘要都必须命中发行
 #      .sha256sum，且至少 3 个——这是「ISO 与 Release 是同一份内核」的
-#      唯一判据。载荷再编一次内核就会同名包哈希分叉，此处必红；
+#      唯一判据。载荷再编一次内核就会同名包哈希分叉，此处必红；失败消息
+#      带出对照的发行版本，把「版本错配」与「同版但哈希分叉」分开；
 #   5. 镜像清单的构建来源指纹与 RPM 清单同值且非空（REL-03）。
 #
 # 之所以独立成 gate：这些断言此前内联在 image-build.yml 里，只能靠两小时的
@@ -115,6 +116,16 @@ if [ -n "${REL_RPMS}" ]; then
     shopt -u nullglob
     [ "${#sums[@]}" -gt 0 ] || die "发行目录没有 agent-linux-*.sha256sum"
 
+    # 摘要文件名带发行版本（agent-linux-<ver>.sha256sum）。判据问的是「载荷
+    # 与发行是不是同一版」：不同源时哈希当然不同，只说「摘要不一致」会把
+    # 版本错配读成内核随机性分叉——0.0.3 收尾期用 release_tag=v0.0.3 派发
+    # 0.0.4 的树，现场就是照这条消息去查内核构建的。带上版本号，一眼分开。
+    vers="$(for s in "${sums[@]}"; do
+        b="${s##*/}"
+        b="${b#agent-linux-}"
+        printf '%s\n' "${b%.sha256sum}"
+    done | sort -u | paste -sd, -)"
+
     n=0
     while read -r kind psum pname; do
         [ "${kind}" = rpm ] || continue
@@ -126,12 +137,13 @@ if [ -n "${REL_RPMS}" ]; then
                 break
             fi
         done
-        [ "${hit}" -eq 1 ] || die "${pname} 与发行校验和不一致"
+        [ "${hit}" -eq 1 ] ||
+            die "${pname} 不在发行摘要 v${vers} 中（载荷内核与发行不同源）"
         n=$(( n + 1 ))
     done <"${payload}"
 
     [ "${n}" -ge 3 ] || die "载荷内核包仅 ${n} 个，少于 3"
-    say "载荷内核包与发行校验和一致: ${n} 个"
+    say "载荷内核包与发行校验和一致: ${n} 个（v${vers}）"
 fi
 
 say "组装产物校验通过"
