@@ -135,8 +135,15 @@ mat()
     for name in airymaxos-kernel.x86_64.rpm airymaxos-kernel.x86_64.rpm.asc sbom.json airymaxos-sdk.tar.gz; do
         printf 'material %s\n' "${name}" >"${MAT}/${name}"
     done
+    # 公钥与分离署名同为 .asc，门禁只能按首行内容区分，夹具必须两种都有。
+    {
+        printf -- '-----BEGIN PGP PUBLIC KEY BLOCK-----\n'
+        printf 'key bytes of the release key\n'
+        printf -- '-----END PGP PUBLIC KEY BLOCK-----\n'
+    } >"${MAT}/agent-linux-1.2.0-gpg-key.asc"
     ( cd "${MAT}" && sha256sum airymaxos-kernel.x86_64.rpm \
         airymaxos-kernel.x86_64.rpm.asc sbom.json airymaxos-sdk.tar.gz \
+        agent-linux-1.2.0-gpg-key.asc \
         >agent-linux-1.2.0.sha256sum )
     printf 'signature of checksums\n' >"${MAT}/agent-linux-1.2.0.sha256sum.asc"
     {
@@ -265,6 +272,29 @@ check "参数缺值退 5" 5 "$?" "${out}" "需要参数值"
 mat 3
 out="$(run --dir "${MAT}")"
 check "合规物料自证通过" 0 "$?" "${out}" "物料自证通过"
+case "${out}" in
+*"1 份公钥"*) ok "公钥计入物料自证" ;;
+*) bad "公钥计入物料自证"; printf '%s\n' "${out}" >&2 ;;
+esac
+
+# 公钥与署名同后缀，门禁按首行内容区分：把公钥当署名会要求一份并不存在
+# 的被签文件，发行页上有公钥反而判负。
+mat 3
+: >"${MAT}/agent-linux-1.2.0-gpg-key.asc"
+( cd "${MAT}" && sha256sum airymaxos-kernel.x86_64.rpm \
+    airymaxos-kernel.x86_64.rpm.asc sbom.json airymaxos-sdk.tar.gz \
+    agent-linux-1.2.0-gpg-key.asc >agent-linux-1.2.0.sha256sum )
+out="$(run --dir "${MAT}")"
+check "空公钥判失败" 1 "$?" "${out}" "空署名或空公钥"
+
+# 反向：真正的分离署名缺了被签文件，仍必须判负，不能因为放宽公钥而漏判。
+mat 3
+printf 'signature without payload\n' >"${MAT}/lonely.rpm.asc"
+( cd "${MAT}" && sha256sum airymaxos-kernel.x86_64.rpm \
+    airymaxos-kernel.x86_64.rpm.asc sbom.json airymaxos-sdk.tar.gz \
+    agent-linux-1.2.0-gpg-key.asc lonely.rpm.asc >agent-linux-1.2.0.sha256sum )
+out="$(run --dir "${MAT}")"
+check "署名缺被签文件仍判失败" 1 "$?" "${out}" "署名缺少被签文件"
 
 mat 2
 out="$(run --dir "${MAT}")"

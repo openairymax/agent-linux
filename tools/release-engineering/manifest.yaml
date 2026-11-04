@@ -190,9 +190,15 @@ materials:
     format: .asc
     signature: none
     authority: docs/docs-linux/120-development-process/09-release-process.md §3.1 物料10
-    delivery: deferred
-    defer_reason: 公钥分发（AtomGit releases + keys.openpgp.org）属发布运维流程，待签名密钥体系上线
-    defer_target: "0.0.4"
+    delivery: active
+    evidence:
+      - agent-linux-*-gpg-key.asc
+    produce:
+      - ["ci/ci.sh", "release-sign", "key", "--ver", "${version}"]
+    # 公钥随物料发布（Release 附件 + 摘要清单条目），取件方据此验签。
+    # keys.openpgp.org 的公开登记需要邮箱回执确认，属人工发布运维，不由
+    # 流水线代劳——自动化能保证「发布页上一定有公钥」，不能保证「第三方
+    # 目录已收录」，两者不可混为一谈。
 
   # ── §3.1 物料 11：签核记录 ────────────────────────────────────────────
   - id: signoff-record
