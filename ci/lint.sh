@@ -7,7 +7,7 @@
 #
 # 检查七件事：
 #   1. workflow 薄化与命名约束（ci/check-workflows.py）；
-#   2. ci/ 下每个脚本可被 bash -n 解析；
+#   2. ci/ 与 tools/ 下每个 shell 脚本可被 bash -n 解析；
 #   3. 验收剖面归一化的行为（ci/lib/profile.sh）；
 #   4. 门禁脚本里「声明后从未使用」的 readonly 常量（无外部依赖）；
 #   5. ci/tests 下的门禁分支回归；
@@ -59,11 +59,14 @@ fi
 endgroup
 
 group "bash 语法"
+# tools/ 顶层也有 shell 入口（venv-bootstrap.sh）。此前只扫 ci/，这类脚本
+# 语法错误要到开发者第一次执行时才暴露。
 n=0
 while IFS= read -r f; do
     n=$(( n + 1 ))
     bash -n "${f}" || { err "语法错误: ${f}"; rc=1; }
-done < <(find "${ROOT}/ci" -type f -name '*.sh' | sort)
+done < <( { find "${ROOT}/ci" -type f -name '*.sh'
+            find "${ROOT}/tools" -maxdepth 1 -type f -name '*.sh'; } | sort)
 say "已解析 ${n} 个脚本"
 endgroup
 
@@ -140,7 +143,8 @@ if command -v shellcheck >/dev/null 2>&1; then
     group "shellcheck"
     while IFS= read -r f; do
         shellcheck -S warning -x "${f}" || { err "shellcheck: ${f}"; rc=1; }
-    done < <(find "${ROOT}/ci" -type f -name '*.sh' | sort)
+    done < <( { find "${ROOT}/ci" -type f -name '*.sh'
+                find "${ROOT}/tools" -maxdepth 1 -type f -name '*.sh'; } | sort)
     endgroup
 else
     warn "未安装 shellcheck，跳过静态检查"
