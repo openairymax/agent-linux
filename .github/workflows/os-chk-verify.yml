@@ -108,6 +108,12 @@ jobs:
       - name: Backlight entry gates
         run: ci/ci.sh backlight
 
+      # I-26：驱动名只能说明内核绑上了显卡，说明不了屏能用——缺 EDID、缺
+      # 模式、只剩未连接端口时 X 会在模式求交上失败，表现为「进了桌面但
+      # 黑屏」。本门禁在临时 DRM 树上判三条判据、四种缺口与不适用收场。
+      - name: Display capability gates
+        run: ci/ci.sh desktop-capability
+
       # 依赖、pytest 与 os_chk.py --check 三步收进 ci/gates/python-verify.sh
       # 的 oschk 分支：此前 10 份依赖清单在本文件里各写一遍，本地无法复现，
       # 改动后只能在云端验证。现在 runner 与开发者跑的是同一条命令。
