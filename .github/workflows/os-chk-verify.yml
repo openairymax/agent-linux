@@ -120,6 +120,12 @@ jobs:
       - name: W^X bypass and inventory gates
         run: ci/ci.sh wx-policy
 
+      # I-28：anaconda 在写入 RTC 时可能长时间无输出地停住。声明面判限时器
+      # 已按顺序嵌入两个剖面且只告警不判负；取证面解析装机日志的打点块
+      # （--log），装机后由验收脚本带着日志调用。
+      - name: RTC write bound and trace gates
+        run: ci/ci.sh rtc-probe
+
       # 依赖、pytest 与 os_chk.py --check 三步收进 ci/gates/python-verify.sh
       # 的 oschk 分支：此前 10 份依赖清单在本文件里各写一遍，本地无法复现，
       # 改动后只能在云端验证。现在 runner 与开发者跑的是同一条命令。
