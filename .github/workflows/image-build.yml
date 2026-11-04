@@ -367,6 +367,14 @@ jobs:
           if-no-files-found: warn
           compression-level: 0
 
+      # 预算棘轮：台账为实测各段登记的基线之和，必须仍比整轮实测合计高出
+      # 至少 20%。逐段的 AIRY-BUILD-DRIFT 只问单段有没有超上界，六个段各
+      # 慢 1.4 倍时它一声不响，合计却已经把余量吃光（CI-03）。放在所有上传
+      # 之后：判负的语义是「台账该重新推导了」，不该同时把这一轮的产物丢掉。
+      - name: Check build budget
+        if: always()
+        run: ci/ci.sh build-budget --manifest "$RUNNER_TEMP/out/image-ci-manifest.txt" --summary "$GITHUB_STEP_SUMMARY"
+
   # ─── Job 2: 装机 + BIOS/UEFI 冷启动 + 桌面就绪断言 ─────────────────────
   accept:
     name: Install + Cold Boot (L2/L3)
