@@ -16,6 +16,7 @@
 #   artifact 打包/解包改写，继续发布等于把未经核对的东西挂上发行 tag。
 #     * 摘要清单里每一行的文件都能找到，且重算摘要与清单一致
 #     * 清单内每份署名非空，且其被签文件在物料里存在
+#     * 清单内的发行公钥非空（公钥块不带被签文件，不能按署名要求）
 #     * release notes 恰好三个 ## 小节，正文不超过 12 行
 #
 # 二、发行自证（--iso/--iso-dir + --payload + --kernel-rpms）
@@ -114,7 +115,7 @@ pick()
 
 material()
 {
-    local sum notes count=0 signs=0 digest name hit actual f sections lines
+    local sum notes count=0 signs=0 keys=0 digest name hit actual f sections lines
 
     [ -d "${DIR}" ] || { err "目录不存在: ${DIR}"; exit "${EINVAL}"; }
 
@@ -130,10 +131,16 @@ material()
         count=$((count + 1))
         case "${name}" in
             *.asc)
-                [ -s "${hit}" ] || die "空署名: ${name}"
-                [ -n "$(walk -name "${name%.asc}" | head -n 1)" ] ||
-                    die "署名缺少被签文件: ${name}"
-                signs=$((signs + 1))
+                [ -s "${hit}" ] || die "空署名或空公钥: ${name}"
+                # 公钥块与分离署名同用 .asc 后缀，只能按内容分：
+                # 公钥没有也不该有「被签文件」，按署名判会把它误判成缺件。
+                if head -n 1 "${hit}" | grep -q 'BEGIN PGP PUBLIC KEY BLOCK'; then
+                    keys=$((keys + 1))
+                else
+                    [ -n "$(walk -name "${name%.asc}" | head -n 1)" ] ||
+                        die "署名缺少被签文件: ${name}"
+                    signs=$((signs + 1))
+                fi
                 ;;
         esac
     done < "${sum}"
@@ -150,7 +157,7 @@ material()
     [ "${lines}" -le "${NOTES_MAX}" ] ||
         die "${notes##*/} 正文 ${lines} 行，上限 ${NOTES_MAX}"
 
-    say "物料自证通过: ${count} 项摘要, ${signs} 份署名, notes ${lines} 行"
+    say "物料自证通过: ${count} 项摘要, ${signs} 份署名, ${keys} 份公钥, notes ${lines} 行"
 }
 
 iso_pick()

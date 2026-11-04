@@ -152,6 +152,12 @@ jobs:
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: ci/ci.sh release-sign artifacts --ver "${{ steps.ver.outputs.ver }}"
 
+      # 公钥是验证链的锚：发布页给了 .asc 却拿不出对应公钥，取件方就只能
+      # 信「这里有个签名」，无法验。私钥随 runner 销毁，公钥必须在签名之后、
+      # 生成摘要清单之前导出，才会进清单，进而被对账与发布页收录。
+      - name: Export the release public key
+        run: ci/ci.sh release-sign key --ver "${{ steps.ver.outputs.ver }}"
+
       # 物料 8/9（09-release-process.md §3.1）：以 tools/release-engineering
       # 的确定性实现产出校验和文件与精简 release notes，并即时 GPG 签名。
       # 命名规则：发布资产用 agent-linux-<ver>（§3.2），RPM 包名用 airymaxos-*（§3.3）。
@@ -173,6 +179,7 @@ jobs:
             agent-linux-sdk-${{ steps.ver.outputs.ver }}.tar.gz.asc
             airy-flash-${{ steps.ver.outputs.ver }}.pyz
             airy-flash-${{ steps.ver.outputs.ver }}.pyz.asc
+            agent-linux-${{ steps.ver.outputs.ver }}-gpg-key.asc
             oci-image-${{ steps.ver.outputs.tag }}.tar
             agent-linux-${{ steps.ver.outputs.ver }}.sha256sum
             agent-linux-${{ steps.ver.outputs.ver }}.sha256sum.asc
@@ -255,6 +262,7 @@ jobs:
             airy-flash-*.pyz
             airy-flash-*.pyz.asc
             sbom-agent-linux-*.spdx.json
+            agent-linux-*-gpg-key.asc
             channel.json
             agent-linux-*.sha256sum
             agent-linux-*.sha256sum.asc
