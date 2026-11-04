@@ -71,7 +71,8 @@ artifacts()
     mapfile -t files < <(find dist/rpm -name '*.rpm' | sort)
     files+=("agent-linux-sdk-${ver}.tar.gz" "airy-flash-${ver}.pyz"
             "agent-linux-${ver}.tar.xz"
-            "agent-linux-${ver}-airy-defconfig.tar.xz")
+            "agent-linux-${ver}-airy-defconfig.tar.xz"
+            "agent-linux-${ver}-abi-report.md")
     for f in "${files[@]}"; do
         sign "${f}"
     done
@@ -116,6 +117,8 @@ manifest()
             "agent-linux-${ver}.tar.xz.asc" \
             "agent-linux-${ver}-airy-defconfig.tar.xz" \
             "agent-linux-${ver}-airy-defconfig.tar.xz.asc" \
+            "agent-linux-${ver}-abi-report.md" \
+            "agent-linux-${ver}-abi-report.md.asc" \
             "agent-linux-${ver}-gpg-key.asc" \
             "oci-image-${tag}.tar"
     )
