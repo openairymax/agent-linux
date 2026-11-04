@@ -114,6 +114,12 @@ jobs:
       - name: Display capability gates
         run: ci/ci.sh desktop-capability
 
+      # I-27：闭源库带 PT_GNU_STACK=RWE 时，W^X 会在 dlopen 阶段拒绝它。
+      # 内核侧受理白名单需要 file_mprotect 钩子与可写策略通道，本版登记顺延，
+      # 这里只钉住「交付链不许用清位或重编可执行栈绕过」，以及例外清单可出。
+      - name: W^X bypass and inventory gates
+        run: ci/ci.sh wx-policy
+
       # 依赖、pytest 与 os_chk.py --check 三步收进 ci/gates/python-verify.sh
       # 的 oschk 分支：此前 10 份依赖清单在本文件里各写一遍，本地无法复现，
       # 改动后只能在云端验证。现在 runner 与开发者跑的是同一条命令。
