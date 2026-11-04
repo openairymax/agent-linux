@@ -152,14 +152,22 @@ chk_wf()
 }
 
 # 运行期回读：探针登记与计划数必须同时改，少一处 TAP 就会被判为不完整。
+# 计划数不再写死：从脚本里读出 1..N，与最大探针号比对，一致才算接线完整。
+# 写死一个数字时，新增探针要么漏改计划（TAP 截断），要么漏改门禁（门禁失效），
+# 而两种漏改都不会让构建失败。
 chk_smoke()
 {
-    local f="${SOURCE}/distro/ci/run-smoke.sh"
+    local f="${SOURCE}/distro/ci/run-smoke.sh" plan n
     need_file "${f}" || return 0
     rex "${f}" '^t18_build_id\(\) \{' "smoke: 缺少 t18_build_id"
-    has "${f}" 'probe 18 "T18 build provenance" t18_build_id' \
-        "smoke: T18 未登记"
-    has "${f}" '1..18' "smoke: 计划数未更新"
+    rex "${f}" '^t21_fw_api\(\) \{' "smoke: 缺少 t21_fw_api"
+    has "${f}" 'probe 21 "T21 firmware api match" t21_fw_api' \
+        "smoke: T21 未登记"
+    plan=$(sed -n "s/^printf '1\.\.\([0-9]*\)\\\\n'\$/\1/p" "${f}" | head -n 1)
+    n=$(awk '/^probe [0-9]/ { n = $2 + 0 } END { print n + 0 }' "${f}")
+    [ -n "${plan}" ] || bad "smoke: 计划数未更新"
+    [ -z "${plan}" ] || [ "${plan}" = "${n}" ] || \
+        bad "smoke: 计划数 ${plan} 与最大探针号 ${n} 不符"
 }
 
 say "构建来源接线 ${SOURCE}"
