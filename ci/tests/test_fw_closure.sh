@@ -135,9 +135,33 @@ mkdir -p "${tmp}/root/usr/lib/firmware/i915"
 : >"${tmp}/root/usr/lib/firmware/regulatory.db"
 : >"${tmp}/root/usr/lib/firmware/regulatory.db.p7s"
 : >"${tmp}/root/usr/lib/firmware/i915/adlp_dmc.bin"
+mkdir -p "${tmp}/root/usr/share/airymaxos/firmware"
+cp "${tmp}/good.txt" "${tmp}/root/usr/share/airymaxos/firmware/fw-manifest.txt"
+printf '6.6.161\n' >"${tmp}/root/usr/share/airymaxos/firmware/kernel-abi"
 out="$(run --manifest "${tmp}/good.txt" --comps "${tmp}/comps.xml" \
     --root "${tmp}/root")"
 check "实物核对全部命中判通过" 0 "$?" "${out}" "固件闭包判定通过"
+
+# 清单回读：airymaxos-firmware 把清单与 ABI 标记落盘，门禁在 --root 下
+# 逐字比对。三份变体各坏一处，确保缺文件、清单不同代、ABI 非法都能判出来。
+cp -a "${tmp}/root" "${tmp}/no-mf"
+rm -rf "${tmp}/no-mf/usr/share/airymaxos/firmware"
+out="$(run --manifest "${tmp}/good.txt" --comps "${tmp}/comps.xml" \
+    --root "${tmp}/no-mf")"
+check "镜像内无固件清单判拒绝" 1 "$?" "${out}" "镜像内无固件清单"
+
+cp -a "${tmp}/root" "${tmp}/old-mf"
+printf '# 发行当天的旧清单\n' \
+    >"${tmp}/old-mf/usr/share/airymaxos/firmware/fw-manifest.txt"
+out="$(run --manifest "${tmp}/good.txt" --comps "${tmp}/comps.xml" \
+    --root "${tmp}/old-mf")"
+check "镜像清单与仓库不同代判拒绝" 1 "$?" "${out}" "与仓库清单不一致"
+
+cp -a "${tmp}/root" "${tmp}/bad-abi"
+printf 'six\n' >"${tmp}/bad-abi/usr/share/airymaxos/firmware/kernel-abi"
+out="$(run --manifest "${tmp}/good.txt" --comps "${tmp}/comps.xml" \
+    --root "${tmp}/bad-abi")"
+check "清单 ABI 标记非法判拒绝" 1 "$?" "${out}" "ABI 标记非法"
 
 cat >"${tmp}/gpu.txt" <<'EOF'
 linux-firmware  gpu  /usr/lib/firmware/i915/*.bin*
@@ -196,6 +220,11 @@ chmod +x "${tmp}/bin/"*
 : >"${tmp}/selroot/usr/lib/firmware/regulatory.db"
 : >"${tmp}/selroot/usr/lib/firmware/regulatory.db.p7s"
 : >"${tmp}/selroot/usr/lib/firmware/i915/adlp_dmc.bin"
+mkdir -p "${tmp}/selroot/usr/share/airymaxos/firmware"
+cp "${tmp}/good.txt" \
+    "${tmp}/selroot/usr/share/airymaxos/firmware/fw-manifest.txt"
+printf '6.6.161\n' \
+    >"${tmp}/selroot/usr/share/airymaxos/firmware/kernel-abi"
 
 # 两个注入点都优先取调用方给的值，便于单独替换其中一条。MOCK_LABEL 显式
 # 转给子进程：函数前缀赋值只在函数作用域内生效，不保证已导出。
