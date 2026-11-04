@@ -137,14 +137,23 @@ materials:
       - ["ci/ci.sh", "release-sbom", "--ver", "${version}"]
 
   # ── §3.1 物料 6：airy_defconfig 快照 ──────────────────────────────────
+  # §3.5 的选型清单一列 CONFIG_SECURITY_AIRY_LSM 与 CONFIG_SCHED_EXT：前者在
+  # 内核树里没有这个符号（实际符号为 CONFIG_SECURITY_AIRY），后者是 6.12 才
+  # 引入的配置项，6.6 基线里恒不存在。快照门禁由此断言真实符号并在片段里
+  # 拒绝启用 sched_ext；文档符号名与实现同源于本次发行留档，不作静默改写。
+  # 同上（SBOM 一节）：以实现与真实符号为准，漂移记录待 docs SSoT 委员会裁定。
   - id: airy-defconfig
     name: airy_defconfig 快照
-    format: text
+    format: .tar.xz
     signature: gpg
     authority: docs/docs-linux/120-development-process/09-release-process.md §3.1 物料6 / §3.5
-    delivery: deferred
-    defer_reason: airy_defconfig 已随内核 RPM 打包（可自源码树获取），独立快照产物待发布链补齐
-    defer_target: "0.0.4"
+    delivery: active
+    evidence:
+      - agent-linux-*-airy-defconfig.tar.xz
+      - agent-linux-*-airy-defconfig.tar.xz.asc
+    produce:
+      - ["ci/ci.sh", "release-config", "snapshot", "--ver", "${version}"]
+      - ["ci/ci.sh", "release-sign", "artifacts", "--ver", "${version}"]
 
   # ── §3.1 物料 7：文档快照 ─────────────────────────────────────────────
   - id: docs-snapshot

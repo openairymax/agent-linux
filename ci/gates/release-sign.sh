@@ -10,8 +10,8 @@
 #
 # 私钥缺席或口令错误是「几秒可证伪、却只在发布末尾才暴露」的输入：旧流程
 # 要跑满四架构内核与 SDK 才在签名步失败，整轮作废。probe 在任何长步骤之前
-# 做一次真实签名，artifacts 签 RPM/SDK/pyz，manifest 生成校验和与 release
-# notes 后再签。
+# 做一次真实签名，artifacts 签 RPM/SDK/pyz/配置快照，manifest 生成校验和与
+# release notes 后再签。
 #
 # 口令只经环境变量 GPG_PASSPHRASE 传入。--passphrase-fd 3 读取的是 here-string，
 # 不会出现在进程参数里（ps 可见）。
@@ -69,7 +69,8 @@ artifacts()
 
     need_cmd gpg
     mapfile -t files < <(find dist/rpm -name '*.rpm' | sort)
-    files+=("agent-linux-sdk-${ver}.tar.gz" "airy-flash-${ver}.pyz")
+    files+=("agent-linux-sdk-${ver}.tar.gz" "airy-flash-${ver}.pyz"
+            "agent-linux-${ver}-airy-defconfig.tar.xz")
     for f in "${files[@]}"; do
         sign "${f}"
     done
@@ -110,6 +111,8 @@ manifest()
             "agent-linux-sdk-${ver}.tar.gz.asc" \
             "airy-flash-${ver}.pyz" \
             "airy-flash-${ver}.pyz.asc" \
+            "agent-linux-${ver}-airy-defconfig.tar.xz" \
+            "agent-linux-${ver}-airy-defconfig.tar.xz.asc" \
             "agent-linux-${ver}-gpg-key.asc" \
             "oci-image-${tag}.tar"
     )

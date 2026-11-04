@@ -120,6 +120,14 @@ jobs:
           SOURCE_DATE_EPOCH: ${{ steps.epoch.outputs.value }}
         run: ci/ci.sh release-sbom --ver "${{ steps.ver.outputs.ver }}"
 
+      # 物料 6（09-release-process.md §3.5）：内核配置快照。只读源码、不编译，
+      # 与 SDK 一样放在最便宜的一段——四架构片段缺一腿或选型配置被改坏，
+      # 都该在几分钟内暴露，而不是等内核四腿跑完。
+      - name: Snapshot airy_defconfig
+        env:
+          SOURCE_DATE_EPOCH: ${{ steps.epoch.outputs.value }}
+        run: ci/ci.sh release-config snapshot --ver "${{ steps.ver.outputs.ver }}"
+
       # 同一段安装在暖缓存 runner 上 33s 完成，冷启动 28min，也出现过整步
       # 卡住 45min 以上的实例：镜像源无响应时 apt 没有超时，会把 240min 的
       # job 预算烧光。acquire 超时、重试与硬超时统一收在 ci/lib/apt.sh，
@@ -179,6 +187,8 @@ jobs:
             agent-linux-sdk-${{ steps.ver.outputs.ver }}.tar.gz.asc
             airy-flash-${{ steps.ver.outputs.ver }}.pyz
             airy-flash-${{ steps.ver.outputs.ver }}.pyz.asc
+            agent-linux-${{ steps.ver.outputs.ver }}-airy-defconfig.tar.xz
+            agent-linux-${{ steps.ver.outputs.ver }}-airy-defconfig.tar.xz.asc
             agent-linux-${{ steps.ver.outputs.ver }}-gpg-key.asc
             oci-image-${{ steps.ver.outputs.tag }}.tar
             agent-linux-${{ steps.ver.outputs.ver }}.sha256sum
@@ -261,6 +271,8 @@ jobs:
             agent-linux-sdk-*.tar.gz.asc
             airy-flash-*.pyz
             airy-flash-*.pyz.asc
+            agent-linux-*-airy-defconfig.tar.xz
+            agent-linux-*-airy-defconfig.tar.xz.asc
             sbom-agent-linux-*.spdx.json
             agent-linux-*-gpg-key.asc
             channel.json
