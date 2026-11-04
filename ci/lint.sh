@@ -3,15 +3,21 @@
 # ===========================================================================
 # ci/lint.sh — 仓库级 CI 层自检
 #
-# 用法: ci/lint.sh
+# 用法: ci/lint.sh [--no-distro]
 #
-# 检查六件事：
+# 检查七件事：
 #   1. workflow 薄化与命名约束（ci/check-workflows.py）；
 #   2. ci/ 下每个脚本可被 bash -n 解析；
 #   3. 验收剖面归一化的行为（ci/lib/profile.sh）；
 #   4. 门禁脚本里「声明后从未使用」的 readonly 常量（无外部依赖）；
 #   5. ci/tests 下的门禁分支回归；
-#   6. 有 shellcheck 就用上，没有只告警——本地开发者不该被工具缺失拦住。
+#   6. 有 shellcheck 就用上，没有只告警——本地开发者不该被工具缺失拦住；
+#   7. distro 子仓静态门禁（ci/gates/distro-lint.sh，含其工具单测）。
+#
+# 第 7 项此前只在流水线里跑，本地「两个入口都绿」靠人记：run 40938020614
+# 的 os-chk-verify 就红在 distro 的一条旧语义断言上，而提交前只跑过本文件。
+# 现在一条命令覆盖两侧口径。CI 里 os-chk-verify 不再单列 distro-lint 步骤
+# ——同一份工作跑两遍只会加长每轮耗时。`--no-distro` 留给快速迭代。
 #
 # 第 4 项是第 6 项的兜底：本地没有 shellcheck 时 SC2034 不会报，CI 的
 # 24.04 自带 shellcheck 会报，于是出现「本地全绿、CI 红」（0.0.3
@@ -20,13 +26,26 @@
 # 不能按同一条规则判。
 #
 # 与 distro/ci/run-lint.sh 的分工：后者管 distro 子模块自己的单元测试与
-# 打包脚本；本文件只覆盖仓库根这一层（门禁 + workflow）。
+# 打包脚本，本文件覆盖仓库根这一层（门禁 + workflow），末段以门禁入口
+# 转调前者。两边逻辑不复制，只有调用方向。
 # ===========================================================================
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 # shellcheck source=lib/log.sh
 . "${ROOT}/ci/lib/log.sh"
+
+no_distro=0
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+    --no-distro) no_distro=1 ;;
+    *)
+        err "未知参数: $1（可用: --no-distro）"
+        exit 2
+        ;;
+    esac
+    shift
+done
 
 rc=0
 
@@ -101,6 +120,21 @@ while IFS= read -r f; do
 done < <(find "${ROOT}/ci/tests" -type f -name 'test_*.sh' | sort)
 say "已运行 ${n} 个回归脚本"
 endgroup
+
+if [ "${no_distro}" -eq 0 ]; then
+    group "distro 子仓静态门禁"
+    # 转调门禁入口而不是直连 distro/ci/run-lint.sh：参数语义、group 头与
+    # 退出码都由 ci/gates/distro-lint.sh 一处决定，本文件不再解释它。
+    if bash "${ROOT}/ci/ci.sh" distro-lint; then
+        say "通过"
+    else
+        err "distro 静态门禁未通过（ci/ci.sh distro-lint）"
+        rc=1
+    fi
+    endgroup
+else
+    warn "--no-distro: 跳过 distro 子仓静态门禁"
+fi
 
 if command -v shellcheck >/dev/null 2>&1; then
     group "shellcheck"
