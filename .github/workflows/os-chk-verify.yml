@@ -74,14 +74,11 @@ jobs:
 
       # 先检查门禁自己：workflow 是否仍满足薄化约束、ci/ 下脚本能否被
       # bash -n 解析、shellcheck 是否过。门禁脚本的改动此前无人验证。
+      # distro 子仓的规则与单测也在这里：lint.sh 末段转调 distro-lint 门禁，
+      # 子仓改坏一条断言在本地一条命令就能发现，不必等到云端。同一份工作
+      # 不在本文件里再单列一步，重复只会加长每轮耗时。
       - name: Lint gate scripts and workflows
         run: ci/ci.sh lint
-
-      # distro 子仓的规则与单测此前只在本地手动执行：子仓内改坏一条断言
-      # 不触发任何流水线，要等下一次组装镜像才暴露。入口交给子仓自己的
-      # run-lint.sh，本层不复制检查项。
-      - name: Distro submodule static gates
-        run: ci/ci.sh distro-lint
 
       # K-21：入口、单元启动面与离线资产通道的 0/10/1 契约在同一处判定。
       # 配方漏交付单元这类缺口此前要打完镜像、装完系统才发现。

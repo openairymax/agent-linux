@@ -121,7 +121,8 @@ lint 中执行。下表是规则本身，不是建议。
 ./ci/ci.sh --list                       # 列出全部门禁及其用法
 ./ci/ci.sh image-verify --out <dir>     # 复核已有 image-build 产物
 ACCEPTANCE=true ./ci/ci.sh tap-extract --dir <dir>
-./ci/lint.sh                            # 工作流规则 + 门禁 + SSoT 本地校验
+./ci/lint.sh                            # 工作流规则 + 门禁 + distro 子仓静态门禁
+./ci/lint.sh --no-distro                # 同上，跳过 distro 单测（快速迭代）
 python3 tools/repo/validate-ssot.py . ssot-registry.yaml
 ```
 
