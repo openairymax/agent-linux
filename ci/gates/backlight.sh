@@ -17,6 +17,7 @@
 #   * 包内没有桩标记——「可读写」不能靠 TODO 占位。
 #   * 代码里不出现具体机型名：机型名只允许出现在注释里，实现按类型与
 #     上限排序，换机器不需要改代码。
+#   * spec 声明并安装入口与包：源码可用不等于装机镜像里有这条命令。
 #
 # 实物面（造一棵临时 sysfs 树，全部判定与真机内核无关）：
 #
@@ -106,6 +107,10 @@ chk_pkg()
         grep -vE '^[^:]+:[0-9]+:[[:space:]]*#'; then
         bad "package: 代码里硬编码了机型设备名"
     fi
+    grep -qF 'system/services/airybright' "$1/distro/specs/airymaxos-system.spec" ||
+        bad "spec: 未声明 services/airybright 源包"
+    grep -qF '%{_bindir}/airy-bright' "$1/distro/specs/airymaxos-system.spec" ||
+        bad "spec: 未安装 airy-bright"
 }
 
 # 实物面 -------------------------------------------------------------------
