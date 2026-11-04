@@ -4,7 +4,11 @@
 # ci/gates/release-rpms.sh — 取发行版内核包（不重建）
 #
 # 用法: ci/gates/release-rpms.sh --tag vX.Y.Z --repo OWNER/REPO --dir DIR
-#                                [--env-key AIRYMAX_REL_RPMS]
+#                                [--arch x86_64] [--env-key AIRYMAX_REL_RPMS]
+#
+# --arch 必填语义、可省写法：取件方清楚本轮介质的目标架构（ISO 基线就是
+# x86_64），门禁不替它猜。此前把 x86_64 写进 glob，架构这一事实藏在门禁
+# 内部，调用点看不出取的是哪一架构的包，换架构时也不会有人想起改这里。
 #
 # 为什么必须复用而不是就地构建：ISO 载荷里的内核包一旦再编一次，同名包的
 # sha256 就与发行 .sha256sum 分叉，装机介质再也无法用发行校验和核验——
@@ -21,6 +25,7 @@ readonly EINVAL=5
 TAG=""
 REPO=""
 DIR=""
+ARCH="x86_64"
 ENV_KEY="AIRYMAX_REL_RPMS"
 
 while [ "$#" -gt 0 ]; do
@@ -28,9 +33,10 @@ while [ "$#" -gt 0 ]; do
         --tag)     TAG="${2:-}"; shift 2 ;;
         --repo)    REPO="${2:-}"; shift 2 ;;
         --dir)     DIR="${2:-}"; shift 2 ;;
+        --arch)    ARCH="${2:-}"; shift 2 ;;
         --env-key) ENV_KEY="${2:-}"; shift 2 ;;
         -h|--help)
-            echo "用法: ci/gates/release-rpms.sh --tag vX.Y.Z --repo O/R --dir DIR"
+            echo "用法: ci/gates/release-rpms.sh --tag vX.Y.Z --repo O/R --dir DIR [--arch ARCH]"
             exit 0 ;;
         *) die "未知参数: $1" ;;
     esac
@@ -38,6 +44,9 @@ done
 
 [ -n "${TAG}" ] && [ -n "${REPO}" ] && [ -n "${DIR}" ] || {
     err "--tag/--repo/--dir 均为必填"; exit "${EINVAL}"; }
+case "${ARCH}" in
+    ''|*[!a-z0-9_]*) err "--arch 必须是 RPM 架构名（如 x86_64/aarch64）: ${ARCH}"; exit "${EINVAL}" ;;
+esac
 
 need_cmd gh sha256sum grep find
 mkdir -p "${DIR}"
@@ -47,19 +56,19 @@ sum="${DIR}/agent-linux-${ver}.sha256sum"
 
 group "gh release download ${TAG}"
 gh release download "${TAG}" --repo "${REPO}" --dir "${DIR}" --clobber \
-    --pattern "airymaxos-kernel*.x86_64.rpm" \
+    --pattern "airymaxos-kernel*.${ARCH}.rpm" \
     --pattern "agent-linux-${ver}.sha256sum"
 endgroup
 
 [ -f "${sum}" ] || die "${TAG} 未提供 agent-linux-${ver}.sha256sum"
 
-grep -E '  airymaxos-kernel[^ ]*\.x86_64\.rpm$' "${sum}" >"${DIR}/kernel.sha256" || true
-[ -s "${DIR}/kernel.sha256" ] || die "${TAG} 的校验和未登记内核包"
+grep -E "  airymaxos-kernel[^ ]*\.${ARCH}\.rpm$" "${sum}" >"${DIR}/kernel.sha256" || true
+[ -s "${DIR}/kernel.sha256" ] || die "${TAG} 的校验和未登记 ${ARCH} 内核包"
 
 ( cd "${DIR}" && sha256sum -c kernel.sha256 ) || die "发行内核包摘要不符"
 
 want="$(grep -c . "${DIR}/kernel.sha256")"
-have="$(find "${DIR}" -name 'airymaxos-kernel*.x86_64.rpm' | wc -l)"
+have="$(find "${DIR}" -name "airymaxos-kernel*.${ARCH}.rpm" | wc -l)"
 [ "${have}" -eq "${want}" ] ||
     die "内核包 ${have} 个，校验和登记 ${want} 个"
 

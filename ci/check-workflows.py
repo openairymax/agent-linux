@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 """ci/check-workflows.py —— 守住 workflow 薄化与命名约束
 
-十七条规则：
+十八条规则：
 
 1. 结构上限：每个 workflow 的 job 数 ≤ 预算，内联 ``run: |`` 块数 ≤ 预算
    （预算见 ci/workflow-budgets.txt，只许下调）。
@@ -63,6 +63,13 @@
    workflow 全部钉到 ``ubuntu-24.04``，而 nightly 契约清单仍写浮动标签，
    靠 run 40864072696 失败之后人工对齐。同一个事实只允许一个取值，改一侧
    就必须同时改另一侧，否则本地一秒即可发现，而不是等云端预热完再报。
+18. 门禁、库、工具与 workflow 都不得由名称形状推语义：不得把「标签以
+   ``-latest`` 结尾」当成「托管运行器」，也不得在比较、``case`` 匹配或
+   GitHub 表达式里写 ``*-latest``。托管运行器的两种合法写法（``ubuntu-24.04``
+   与 ``ubuntu-latest``）都表示托管，自托管标签则任意命名——形状与语义
+   之间没有蕴含关系。0.0.3 的 run 40864072696 就是这样把自托管的
+   ``-latest`` 标签判成托管，随后按托管上限去等一个永远不会到来的空位。
+   制品类型（``.asc``/``.rpm``/``.ko``）与包名前缀是命名契约，不在此列。
 
 为什么需要它：这些约束此前只存在于文档里，没有执行者。78 段内联 shell
 就是这样一段段长出来的——每一次单看都合理，合起来就没有人能在本地验证。
@@ -131,6 +138,17 @@ RUNNER_TAG = re.compile(r"^[a-z]+-\d{2}\.\d{2}$")
 
 # 运行器版本的唯一事实源：nightly 契约清单的 runner.label。
 NIGHTLY = ROOT / "tools" / "nightly" / "manifest.yaml"
+
+# 形状推语义：把「名字长什么样」当成「它是什么」。托管与否只有清单的字段
+# 能回答，标签形状与语义之间没有蕴含关系。
+LATEST_SHAPE = [
+    (re.compile(r"""\.endswith\(\s*['"]-latest['"]"""), "endswith('-latest')"),
+    (re.compile(r"""\bin\s+['"]?\*-latest"""), "case 匹配 *-latest"),
+    (re.compile(r"""[=!]=\s*['"]?\*-latest"""), "比较 *-latest"),
+    (re.compile(r"""(?:contains|startsWith|endsWith)\([^)]*['"]-latest['"]"""),
+     "表达式 contains/endsWith '-latest'"),
+    (re.compile(r"""['"]-latest['"]\s+in\b"""), "'-latest' in"),
+]
 
 # 文件名词族：*-verify 是阻断型门禁，其余只能是生命周期名。
 LIFECYCLE = ("image-build", "nightly", "release", "payload-seed")
@@ -417,6 +435,29 @@ def check_runner_label(name: str, text: str, label: str) -> list[str]:
     return errors
 
 
+def shape_sites() -> list[Path]:
+    """形状判定的扫描面：门禁、库、工具与 workflow 本体（不含自测）。"""
+    out = sorted(CIGATES.glob("*.sh")) + sorted(CILIB.glob("*.sh"))
+    out += [p for p in sorted(ROOT.glob("tools/**/*.py"))
+            if "tests" not in p.parts and p.name != "check-workflows.py"]
+    return out + sorted(WORKFLOWS.glob("*.yml"))
+
+
+def check_shape(name: str, text: str) -> list[str]:
+    """禁止由名称形状推语义：托管与否只能读清单字段。
+
+    按整段文本匹配而不是整行：``case "$label" in`` 的匹配式在下一行，
+    逐行扫描会漏掉这种最常见的 shell 写法。
+    """
+    hits: set[tuple[int, str]] = set()
+    for pat, what in LATEST_SHAPE:
+        for m in pat.finditer(text):
+            hits.add((text.count("\n", 0, m.start()) + 1, what))
+    return [f"{name}:{no}: 由标签形状推语义（{what}），"
+            "托管性须读 tools/nightly/manifest.yaml 的字段"
+            for no, what in sorted(hits)]
+
+
 def check_family(name: str, text: str) -> list[str]:
     """命名即语义：*-verify 必须阻断合并，其余只能是生命周期名。"""
     stem = name[:-4]
@@ -473,6 +514,10 @@ def main() -> int:
     if label is None:
         errors.append(
             "tools/nightly/manifest.yaml: 未登记 runner.label，runs-on 无对照基准")
+
+    for path in shape_sites():
+        errors.extend(
+            check_shape(str(path.relative_to(ROOT)), path.read_text()))
 
     for name in files:
         if name not in budgets:

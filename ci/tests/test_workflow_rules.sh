@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 # ===========================================================================
-# ci/tests/test_workflow_rules.sh — ci/check-workflows.py 规则 13–17 的负向回归
+# ci/tests/test_workflow_rules.sh — ci/check-workflows.py 规则 13–18 的负向回归
 #
 # 这几条规则此前只有正向：真实树常年合规，规则写错、判反或者根本没接进
 # main() 都不会有人发现。本文件在一棵最小假树上逐条破坏，断言只看退出码
@@ -67,10 +67,10 @@ reset()
         >"${FX}/tools/nightly/manifest.yaml"
 }
 
-# doc [规则号列表] — 写第 4 节规则表；默认登记 1..17，与脚本自述一致。
+# doc [规则号列表] — 写第 4 节规则表；默认登记 1..18，与脚本自述一致。
 doc()
 {
-    local nums="${1:-1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17}"
+    local nums="${1:-1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18}"
 
     {
         printf '## 4. 命名与结构约定\n\n| # | 规则 | 为什么 |\n|---|------|--------|\n'
@@ -127,19 +127,19 @@ out=$(run)
 check "规则 14：-verify 不由 PR 触发" 1 "$?" "${out}" "不由 pull_request 触发"
 
 reset
-doc 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16
+doc 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17
 flow demo-verify.yml ubuntu-24.04 "actions/checkout@${SHA}" " # v4" pr
 out=$(run)
-check "规则 15：规则表漏登" 1 "$?" "${out}" "规则 17 未出现"
+check "规则 15：规则表漏登" 1 "$?" "${out}" "规则 18 未出现"
 
 reset
-doc 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18
+doc 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19
 flow demo-verify.yml ubuntu-24.04 "actions/checkout@${SHA}" " # v4" pr
 out=$(run)
-check "规则 15：规则表多登" 1 "$?" "${out}" "不存在的规则 18"
+check "规则 15：规则表多登" 1 "$?" "${out}" "不存在的规则 19"
 
 reset
-doc 1,2,3,4,5,6,7,8,9,10,11,12,13,13,14,15,16,17
+doc 1,2,3,4,5,6,7,8,9,10,11,12,13,13,14,15,16,17,18
 flow demo-verify.yml ubuntu-24.04 "actions/checkout@${SHA}" " # v4" pr
 out=$(run)
 check "规则 15：规则表重号" 1 "$?" "${out}" "重号 13"
@@ -174,6 +174,24 @@ doc
 flow demo-verify.yml ubuntu-24.04 "actions/checkout@${SHA}" " # v4" pr
 out=$(run)
 check "规则 17：两侧一致时通过" 0 "$?" "${out}" "检查通过"
+
+reset
+doc
+mkdir -p "${FX}/tools"
+printf 'def hosted(tag):\n    return tag.endswith("-latest")\n' >"${FX}/tools/scan.py"
+flow demo-verify.yml ubuntu-24.04 "actions/checkout@${SHA}" " # v4" pr
+out=$(run)
+check "规则 18：工具里由标签形状判托管" 1 "$?" "${out}" "endswith('-latest')"
+
+reset
+doc
+mkdir -p "${FX}/ci/gates"
+printf 'case "${label}" in\n    *-latest) hosted=1 ;;\nesac\n' \
+    >"${FX}/ci/gates/scan.sh"
+flow demo-verify.yml ubuntu-24.04 "actions/checkout@${SHA}" " # v4" pr
+out=$(run)
+check "规则 18：门禁里用 *-latest 匹配" 1 "$?" "${out}" "case 匹配 *-latest"
+rm -rf "${FX}/tools" "${FX}/ci/gates"
 
 if [ "${fails}" -ne 0 ]; then
     printf 'test_workflow_rules: %d 项失败\n' "${fails}" >&2
