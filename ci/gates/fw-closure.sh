@@ -3,15 +3,29 @@
 # ===========================================================================
 # ci/gates/fw-closure.sh — 固件闭包判定（QG-10 / D-01 / FW-01）
 #
-# 用法: ci/gates/fw-closure.sh [--manifest FILE] [--comps FILE] [--root DIR]
+# 用法: ci/gates/fw-closure.sh [--root DIR] [--kernel DIR --drv NAME]
+#       [--manifest FILE] [--comps FILE]
 #
-# 两件事，缺一不可：
+# 五件事，按证据由弱到强排列：
 #   ① 集合对账（构建期）：comps 里名称含 firmware 或以 -ucode 结尾的包，
 #      必须全部出现在 fw-manifest.txt；清单声明的包必须全部由 comps 安装。
 #      两个方向都判，是因为少声明会让器件在装机后静默失效，多声明则让
 #      清单慢慢变成与镜像无关的愿望列表。
 #   ② 实物核对（运行期证据）：给 --root 时逐条模式在系统内至少命中一个
 #      文件。包在而内容不在，正是 D-01「构建期与运行期双判」要拦的形态。
+#   ③ 内核 API 对账（构建期，需 --kernel 与 --root）：驱动经
+#      `modinfo -F firmware` 声明的每个固件名，必须在固件树里存在（含
+#      .xz/.zst 变体）。0.0.3 的 BE200 要 gl-c0-fm-c0（API 83），镜像只有
+#      -92/-100/-101，两个集合无交集，装机后才发现；这一项把缺口提前到
+#      出厂前。驱动名由调用方给出而不从清单推断：清单的粒度是包，映射到
+#      驱动需要内核侧事实，猜出来的映射会掩盖真实缺口。
+#   ④ .pnvm 与 .ucode 成对：pnvm 是 ucode 的伴生能力描述，只有 pnvm 没有
+#      ucode 时固件载入失败，dmesg 只留一句 api flags 越界，排障无从下手。
+#      反方向不判——没有 pnvm 的老器件是正常形态。
+#   ⑤ SELinux 标签（需 --root 与本机策略）：清单命中的固件文件必须落在
+#      lib_t。内核读固件只要求该标签，enforcing 下标签错了表现为「文件在
+#      但载入失败」。本机无 matchpathcon 或无策略时只提示不判负——宿主
+#      环境的缺失不是镜像的缺陷。
 #
 # 谓词只认「是不是固件包」，不认具体包名：仓库元数据在离线环境不可得，
 # 而 comps 是「镜像装什么包」的唯一声明；新增固件包时判定自动生效，不用
@@ -40,13 +54,20 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 MAN="${ROOT}/distro/firmware/fw-manifest.txt"
 COMPS="${ROOT}/distro/comps/airymaxos-comps.xml"
 SYSROOT=""
+KERNEL=""
+DRVS=()
+# 两个外部命令都可被环境覆盖：宿主是否装了 kmod / libselinux 与本判定无关，
+# 缺了要能如实报「证据不可用」，而不是让调用方去拼 PATH 才能复现分支。
+MODBIN="${AIRY_MODINFO:-modinfo}"
+SELBIN="${AIRY_MATCHPATHCON:-matchpathcon}"
 TMP="$(mktemp -d)"
 trap 'rm -rf "${TMP}"' EXIT
 
 usage()
 {
     printf '用法: ci/gates/fw-closure.sh'
-    printf ' [--manifest FILE] [--comps FILE] [--root DIR]\n'
+    printf ' [--root DIR] [--kernel DIR --drv NAME]'
+    printf ' [--manifest FILE] [--comps FILE]\n'
 }
 
 # comp_pkgs FILE —— comps 内全部包名，一行一个，不去重（重复声明本身
@@ -167,6 +188,118 @@ file_check()
     done <"${TMP}/data"
 }
 
+# ko_path NAME —— 驱动名到模块文件。压缩后缀由发行版决定，先按三种常见
+# 形态直接命中，再退回子树搜索，避免调用方必须先知道模块装在哪一层。
+ko_path()
+{
+    local d
+
+    for d in "${KERNEL}/${1}.ko" "${KERNEL}/${1}.ko.xz" \
+             "${KERNEL}/${1}.ko.zst"; do
+        if [ -f "${d}" ]; then
+            printf '%s' "${d}"
+            return 0
+        fi
+    done
+    find "${KERNEL}" -type f -name "${1}.ko*" -print -quit 2>/dev/null
+}
+
+# fw_names KO —— 模块声明的固件名，一行一个。modinfo 对多值条目按行输出，
+# 这里再用 tr 兜一层，避免某一版 kmod 把多个名字写在同一行时漏判。
+fw_names()
+{
+    "${MODBIN}" -F firmware "$1" 2>/dev/null | tr -s '[:space:]' '\n' | awk 'NF'
+}
+
+# fw_have NAME —— 固件树内是否存在该文件（含 .xz/.zst 变体）。
+fw_have()
+{
+    local p="${SYSROOT}${FWDIR}/$1"
+
+    [ -f "${p}" ] || [ -f "${p}.xz" ] || [ -f "${p}.zst" ]
+}
+
+# api_check —— 逐个驱动核对固件依赖。驱动不在模块树里判负：那说明调用方
+# 给的驱动名与出货模块集不一致，此时「没报缺失」是假绿，比判负更危险。
+api_check()
+{
+    local drv ko name
+
+    for drv in "${DRVS[@]}"; do
+        ko="$(ko_path "${drv}")"
+        if [ -z "${ko}" ]; then
+            err "模块树内无此驱动: ${drv}"
+            bad=1
+            continue
+        fi
+        while IFS= read -r name; do
+            fw_have "${name}" && continue
+            err "驱动固件缺失 [${drv}] ${name}"
+            bad=1
+        done < <(fw_names "${ko}")
+    done
+}
+
+# pnvm_check —— 每个 .pnvm 必须有同族的 .ucode。pnvm 携带能力描述，内核
+# 先读 ucode 再按 pnvm 协商；缺 ucode 时两者都不生效。同族指同一 stem，
+# 或 stem 后接 -API 的版本名——iwlwifi 的 pnvm 不带 API 号，ucode 带，
+# 只按完全同名判对会把正常布局判成缺文件。
+pnvm_check()
+{
+    local f stem
+
+    while IFS= read -r f; do
+        stem="${f%.pnvm*}"
+        if compgen -G "${stem}.ucode*" >/dev/null \
+            || compgen -G "${stem}-*.ucode*" >/dev/null; then
+            continue
+        fi
+        err "伴生 ucode 缺失: ${f#"${SYSROOT}"}"
+        bad=1
+    done < <(find "${SYSROOT}${FWDIR}" -type f \
+        \( -name '*.pnvm' -o -name '*.pnvm.xz' -o -name '*.pnvm.zst' \) \
+        2>/dev/null)
+}
+
+# sel_lab PATH —— 策略给出的标签；无策略时为空或 <<none>>。
+sel_lab()
+{
+    "${SELBIN}" -n "$1" 2>/dev/null | awk -F'\t' 'NR == 1 { print $2 }'
+}
+
+# policy_ok —— 宿主是否真的装着策略。只看命令是否存在不够：容器里常有
+# libselinux 却没策略文件，此时每个路径都得到 <<none>>，逐条判负会把宿主
+# 缺口当成镜像缺陷。用固件树根做哨兵，判的是「本机能回答这个问题」。
+policy_ok()
+{
+    local lab
+
+    lab="$(sel_lab "${FWDIR}")"
+    [ -n "${lab}" ] && [ "${lab}" != "<<none>>" ]
+}
+
+# sel_check —— 清单命中的固件文件必须落在 lib_t。内核读固件不经过 DAC，
+# 标签错了在 enforcing 下就是「文件在、载入失败」，且无任何指向性告警。
+# 查的是镜像内路径而不是宿主路径：--root 只是为了取出文件，策略问的是
+# 文件装到镜像里的位置，拿 /tmp/xxx 前缀去问只会得到 default_t。
+sel_check()
+{
+    local pkg cls pat f lab
+
+    while IFS=$'\t' read -r pkg cls pat; do
+        while IFS= read -r f; do
+            lab="$(sel_lab "${f#"${SYSROOT}"}")"
+            case "${lab}" in
+            *:lib_t|*:lib_t:*) ;;
+            *)
+                err "固件标签非 lib_t: ${f#"${SYSROOT}"} → ${lab:-（无）}"
+                bad=1
+                ;;
+            esac
+        done < <(compgen -G "${SYSROOT}${pat}")
+    done <"${TMP}/data"
+}
+
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --manifest)
@@ -182,6 +315,16 @@ while [ "$#" -gt 0 ]; do
         --root)
             [ -n "${2:-}" ] || { err "--root 需要目录路径"; exit "${EINVAL}"; }
             SYSROOT="$2"
+            shift 2
+            ;;
+        --kernel)
+            [ -n "${2:-}" ] || { err "--kernel 需要目录路径"; exit "${EINVAL}"; }
+            KERNEL="$2"
+            shift 2
+            ;;
+        --drv)
+            [ -n "${2:-}" ] || { err "--drv 需要驱动名"; exit "${EINVAL}"; }
+            DRVS+=("$2")
             shift 2
             ;;
         -h|--help)
@@ -202,6 +345,21 @@ if [ -n "${SYSROOT}" ] && [ ! -d "${SYSROOT}${FWDIR}" ]; then
     exit "${EINVAL}"
 fi
 
+# 内核 API 对账的三项前提缺一不可：没有模块树读不出驱动声明，没有镜像根
+# 无从求差集，没有驱动名则判据为空——空判据恒绿，比不跑更误导。
+if [ -n "${KERNEL}" ]; then
+    [ -d "${KERNEL}" ] || { err "模块树不存在: ${KERNEL}"; exit "${EINVAL}"; }
+    [ -n "${SYSROOT}" ] || { err "--kernel 需要同时给 --root"; exit "${EINVAL}"; }
+    [ "${#DRVS[@]}" -gt 0 ] || { err "--kernel 需要至少一个 --drv"; exit "${EINVAL}"; }
+    command -v "${MODBIN}" >/dev/null 2>&1 || {
+        err "缺少 ${MODBIN}，读不出驱动的固件依赖"
+        exit "${EINVAL}"
+    }
+elif [ "${#DRVS[@]}" -gt 0 ]; then
+    err "--drv 需要同时给 --kernel 与 --root"
+    exit "${EINVAL}"
+fi
+
 bad=0
 group "固件闭包"
 
@@ -212,6 +370,19 @@ dup_check
 set_check
 [ -z "${SYSROOT}" ] || file_check
 
+if [ -n "${SYSROOT}" ]; then
+    pnvm_check
+    if ! command -v "${SELBIN}" >/dev/null 2>&1; then
+        note "无 ${SELBIN}，跳过固件标签断言"
+    elif policy_ok; then
+        sel_check
+    else
+        note "本机无 SELinux 策略，跳过固件标签断言"
+    fi
+fi
+
+[ -z "${KERNEL}" ] || api_check
+
 row_n="$(wc -l <"${TMP}/data" | tr -d '[:space:]')"
 man_n="$(wc -l <"${TMP}/man" | tr -d '[:space:]')"
 fw_n="$(wc -l <"${TMP}/fw" | tr -d '[:space:]')"
@@ -221,4 +392,5 @@ if [ "${bad}" -ne 0 ]; then
 fi
 
 say "固件闭包判定通过: 条目 ${row_n}，包 ${man_n}，comps 固件包 ${fw_n}"
+[ -z "${KERNEL}" ] || say "内核固件依赖核对: 驱动 ${#DRVS[@]}"
 endgroup

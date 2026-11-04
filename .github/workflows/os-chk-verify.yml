@@ -126,6 +126,13 @@ jobs:
       - name: RTC write bound and trace gates
         run: ci/ci.sh rtc-probe
 
+      # I-20：固件清单、comps 与镜像必须投影同一批包。此前三者各自漂移，
+      # 0.0.3 的 regulatory.db 就是这样漏装的（5GHz 受限）。这里跑的是不
+      # 需要镜像根的判定面；带 --root/--kernel 的三面由出厂前按同一门禁
+      # 复核，判据只有这一份。
+      - name: Firmware closure gates
+        run: ci/ci.sh fw-closure
+
       # 依赖、pytest 与 os_chk.py --check 三步收进 ci/gates/python-verify.sh
       # 的 oschk 分支：此前 10 份依赖清单在本文件里各写一遍，本地无法复现，
       # 改动后只能在云端验证。现在 runner 与开发者跑的是同一条命令。
