@@ -1,231 +1,168 @@
 Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 
-# agent-linux（AirymaxOS）— AI Agent Operating System
+# agent-linux (AirymaxOS) — AI Agent Operating System
 
-> Management repository for the agent-linux (AirymaxOS) intelligent agent operating system.
-> One of five management repositories under the [airymaxhub](https://atomgit.com/openairymax/airymaxhub) umbrella.
+This repository is the management repo for AirymaxOS and one of five under
+the [airymaxhub](https://atomgit.com/openairymax/airymaxhub) umbrella.
 
 **Language:** English | [简体中文](README_zh.md)
 
-[![Version](https://img.shields.io/badge/version-v0.0.3-5a6b7e)](https://github.com/openairymax/agent-linux/releases/tag/v0.0.3)
-[![License](https://img.shields.io/badge/license-AGPL--3.0+Apache--2.0-4a90d9)](LICENSE)
+[![AtomGitStars](https://atomgit.com/openairymax/agent-linux/star/badge.svg)](https://atomgit.com/openairymax/agent-linux)
+[![GitHub](https://img.shields.io/github/stars/openairymax/agent-linux?style=flat&logo=github)](https://github.com/openairymax/agent-linux)
+[![Version](https://img.shields.io/github/v/release/openairymax/agent-linux)](https://github.com/openairymax/agent-linux/releases)
 [![Linux](https://img.shields.io/badge/Linux-6.6-FCC624?logo=linux&logoColor=black)](https://www.kernel.org)
-[![Rust](https://img.shields.io/badge/Rust-experimental-DEA584?logo=rust&logoColor=white)](https://www.rust-lang.org)
+[![GHCR](https://img.shields.io/badge/GHCR-airymaxos--iso-2496ED)](https://github.com/openairymax/agent-linux/pkgs/container/airymaxos-iso)
+[![CI](https://github.com/openairymax/agent-linux/actions/workflows/kernel-verify.yml/badge.svg)](https://github.com/openairymax/agent-linux/actions/workflows/kernel-verify.yml)
 
 ---
 
 ## Overview
 
-**agent-linux** (formal English name: AirymaxOS, Chinese: 极境智能体操作系统) is an AI Agent Operating System research project built on top of Linux 6.6. It is the **kernel-space engineering** super-management repository under the `airymaxhub` umbrella (renamed from `agentrt-linux` in v0.1.3), peer to the user-space engineering repo `agent-workload` (renamed from `agent-runtim` in v0.1.4), aggregating **9 leaf repositories** as git submodules.
+The AirymaxOS kernel is **ALK** (Airymax Linux Kernel), a fork of Linux 6.6:
 
-agent-linux is based on three design pillars:
+- **Mainline untouched**: Airymax-specific code lives only in newly added
+  directories (e.g. `security/airy`, `kernel/superv`); mainline files stay
+  as-is, which keeps tracking upstream easy.
+- **Verified on four architectures**: `airy_defconfig` builds on x86_64,
+  aarch64, riscv64, and loongarch64 in CI; the output consists of six
+  Airymax-only directories, and after install `uname -r` ends with `-alk`.
+- **Euler-compatible**: kernel config, patch policy, and ABI follow the Euler
+  standard; userspace is openEuler 24.03 LTS, reusing its verified packages
+  as-is, with the UKUI desktop consumed as RPMs rather than vendored source.
 
-1. **Microkernel Design Principles** — referencing seL4 / Zircon / Minix3, Liedtke minimality principle, capability-based security, user-space service isolation, message-passing communication
-2. **Euler Standards Compatibility** — comprehensive reference to Euler 24.03 LTS / 26.03 module design, technical specifications, and standards; Euler-compatible
-3. **Airymax Homology** — shares the same Airymax design philosophy with `agentrt`; the OS runs `agentrt` natively with no adaptation layer due to architectural homology
+The companion agent runtime is [agentrt](https://github.com/openairymax/agentrt).
+Architecture, security, and release rules are registered in
+`ssot-registry.yaml` and checked against the documentation by CI.
 
-This repository and its leaf repos hold design documents, architectural drafts, and engineering baseline declarations for the agent-linux operating system.
+## Quick Start
 
-## Repository Structure
+Clone over SSH (AtomGit is the primary host) and fetch all nine submodules:
+
+```bash
+git clone git@atomgit.com:openairymax/agent-linux.git
+cd agent-linux
+git submodule update --init --recursive
+```
+
+Branches: `main` here, `ALK-6.6-dev` for the kernel submodule, `dev/hubs-01`
+for the other eight.
+
+## Install AirymaxOS (ISO)
+
+The desktop ISO is ≈3.4 GiB (BIOS + UEFI bootable), larger than the release
+asset size limit, so it is published as an OCI artifact on
+[GHCR](https://github.com/openairymax/agent-linux/pkgs/container/airymaxos-iso);
+`airy-flash` pulls it by tag with digest verification:
+
+```bash
+# 1. Download airy-flash-<ver>.pyz from the Releases page (single file, no dependencies)
+
+# 2. Pull the ISO by tag (chunked, resumable, digest-verified)
+python3 airy-flash-<ver>.pyz fetch \
+  --ref ghcr.io/openairymax/airymaxos-iso:v0.0.3 \
+  --out releases/v0.0.3
+
+# 3. Preflight: show the target device, reject read-only/mounted/whole-disk-of-system
+sudo python3 airy-flash-<ver>.pyz plan \
+  --image releases/v0.0.3/airymaxos-<ver>-x86_64.iso --device /dev/sdb
+
+# 4. Write + read-back verify (requires root; whole-disk nodes only, no partitions)
+sudo python3 airy-flash-<ver>.pyz write \
+  --image releases/v0.0.3/airymaxos-<ver>-x86_64.iso --device /dev/sdb --yes
+```
+
+`dd` or Rufus in DD mode also works, but `write` reads the image back and
+verifies it after writing. Then:
+
+1. Power off, boot from the USB stick (`F12` / `F11` / `Esc`), and finish
+   the install wizard.
+2. After install, check that `uname -r` ends with `-alk` and that
+   `journalctl -b | grep AIRYMAX-DESKTOP-READY` reports the desktop is ready.
+
+Troubleshooting and login policy: [tools/airy-flash/README.md](tools/airy-flash/README.md).
+
+## Repository Layout
 
 ```text
-agent-linux/             # Management repository (this repo)
-├── kernel/                # agent-linux Kernel leaf repo (submodule)
-├── services/              # agent-linux Services leaf repo (submodule)
-├── security/              # agent-linux Security leaf repo (submodule)
-├── memory/                # agent-linux Memory leaf repo (submodule)
-├── cognition/             # agent-linux Cognition leaf repo (submodule)
-├── cloudnative/           # agent-linux CloudNative leaf repo (submodule)
-├── system/                # agent-linux System leaf repo (submodule)
-├── distro/                # agent-linux Distro leaf repo (submodule)
-├── tests-linux/       # agent-linux Tests leaf repo (submodule)
-├── .gitmodules            # Submodule definitions
-├── LICENSE                # AGPL-3.0 + Apache-2.0 dual license full text
-├── NOTICE                 # Copyright, trademark and third-party notices
-├── README.md              # This file (English)
-└── README_zh.md           # Chinese translation
+agent-linux/             # management repo (this repository)
+├── kernel/              # Linux 6.6 fork (submodule)
+├── security/            # security
+├── memory/              # memory management
+├── cognition/           # cognition
+├── services/            # services
+├── system/              # system
+├── cloudnative/         # cloud-native
+├── distro/              # distro assembly
+├── tests-linux/         # tests
+├── .github/workflows/   # CI pipelines
+└── tools/airy-flash/    # ISO flash and verification tool
 ```
 
 ## Leaf Repositories
 
-| Module | Directory | Repository URL | Reuses | Description |
-|--------|-----------|----------------|--------|-------------|
-| **kernel** | `kernel/` | `git@atomgit.com:openairymax/kernel.git` | atoms/corekern | Linux 6.6 + sched_tac + eBPF + io_uring + Rust + microkernel refactoring |
-| **services** | `services/` | `git@atomgit.com:openairymax/services.git` | daemons | VFS + network + driver user-space migration + 12 daemons systemd integration + io_uring message passing |
-| **security** | `security/` | `git@atomgit.com:openairymax/security.git` | cupolas | capability (seL4) + LSM + Landlock + confidential computing + national crypto |
-| **memory** | `memory/` | `git@atomgit.com:openairymax/memory.git` | heapstore + memoryrovol | MemoryRovol kernel-mode + CXL + PMEM + MGLRU 多代 LRU |
-| **cognition** | `cognition/` | `git@atomgit.com:openairymax/cognition.git` | coreloopthree + frameworks | CoreLoopThree kthread + Wasm 3.0 + LLM scheduling + Token energy efficiency + hyper-node sandbox |
-| **cloudnative** | `cloudnative/` | `git@atomgit.com:openairymax/cloudnative.git` | gateway + sdk | K8s CRD + containerd shim + OCI + CNI + agentctl + hyper-node OS |
-| **system** | `system/` | `git@atomgit.com:openairymax/system.git` | commons | RPM + dnf + configuration + shell + DevStation |
-| **distro** | `distro/` | `git@atomgit.com:openairymax/distro.git` | commons | OS image assembly: kickstart + comps + rpm lockfile (openEuler 24.03 base) + ostree + UKUI desktop integration |
-| **tests-linux** | `tests-linux/` | `git@atomgit.com:openairymax/tests-linux.git` | all modules | Unit + integration + formal verification (seL4 style) + Soak + chaos |
+Nine leaf repositories are aggregated in this repository; each builds and
+releases independently:
+
+| Module | Repository |
+|--------|------------|
+| kernel | [openairymax/kernel](https://github.com/openairymax/kernel) |
+| memory | [openairymax/memory](https://github.com/openairymax/memory) |
+| security | [openairymax/security](https://github.com/openairymax/security) |
+| cognition | [openairymax/cognition](https://github.com/openairymax/cognition) |
+| services | [openairymax/services](https://github.com/openairymax/services) |
+| system | [openairymax/system](https://github.com/openairymax/system) |
+| cloudnative | [openairymax/cloudnative](https://github.com/openairymax/cloudnative) |
+| tests-linux | [openairymax/tests-linux](https://github.com/openairymax/tests-linux) |
+| distro | [openairymax/distro](https://github.com/openairymax/distro) |
 
 ## Architecture
 
 ```text
-┌─────────────────────────────────────────────────────────────────────┐
-│           agent-linux（AirymaxOS / 极境智能体操作系统）              │
-├─────────────────────────────────────────────────────────────────────┤
-│  Applications (Agent tenants)                                        │
-│    └── Airymax SDK (Python / Go / Rust / TypeScript)                 │
-├─────────────────────────────────────────────────────────────────────┤
-│  Daemon Services (user-space)          ← services                     │
-│    gateway_d · llm_d · tool_d · sched_d · market_d · monit_d · ...   │
-├─────────────────────────────────────────────────────────────────────┤
-│  Cognition Layer (kthread + Wasm)      ← cognition                    │
-│    CoreLoopThree · TimeSliceInfer · Token energy efficiency          │
-├─────────────────────────────────────────────────────────────────────┤
-│  Security Layer (LSM + capability)     ← security                     │
-│    Cupolas · seL4 capability · Landlock · confidential computing     │
-├─────────────────────────────────────────────────────────────────────┤
-│  Memory Layer (kernel-mode)            ← memory                       │
-│    MemoryRovol · CXL · PMEM · MGLRU 多代 LRU                              │
-├─────────────────────────────────────────────────────────────────────┤
-│  CloudNative Layer                     ← cloudnative                   │
-│    K8s CRD · containerd shim · OCI · CNI                             │
-├─────────────────────────────────────────────────────────────────────┤
-│  System Layer                          ← system                        │
-│    RPM · dnf · configuration · shell · DevStation                    │
-├─────────────────────────────────────────────────────────────────────┤
-│  Distro Assembly Layer                 ← distro                        │
-│    kickstart · comps · rpm lockfile · ostree · UKUI desktop          │
-├─────────────────────────────────────────────────────────────────────┤
-│  Microkernel (Linux 6.6 based)         ← kernel                        │
-│    sched_tac · eBPF · io_uring · Rust · microkernel refactoring      │
-├─────────────────────────────────────────────────────────────────────┤
-│  Tests & Verification                  ← tests-linux                  │
-│    Unit · Integration · Formal (seL4) · Soak · Chaos                 │
-└─────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│                                AirymaxRT                                 │
+│                      Agent orchestration & runtime                       │
+├──────────────────────────────────────────────────────────────────────────┤
+│                     POSIX-ABI layer + airymicro API                      │
+├──────────────────────────────────────────────────────────────────────────┤
+│  ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌───────────┐   │
+│  │ security  │ │  memory   │ │ services  │ │ cognition │ │  system   │   │
+│  │   (LSM)   │ │ (CXL/PM)  │ │ (daemons) │ │   (LLM)   │ │   (pkg)   │   │
+│  └───────────┘ └───────────┘ └───────────┘ └───────────┘ └───────────┘   │
+├──────────────────────────────────────────────────────────────────────────┤
+│         ┌──────────────────────────────────────────────────────┐         │
+│         │  ALK (Airymax Linux Kernel, Linux 6.6 fork)          │         │
+│         │  airy_defconfig: x86_64 / arm64 / riscv / loongarch  │         │
+│         └──────────────────────────────────────────────────────┘         │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Relationship with Airymax agentrt
+The Airy kernel modules are installed under `/lib/modules/$(uname -r)/` in
+the ISO and loaded at boot; userspace tools call the microkernel services
+through the `airymicro` API.
 
-agent-linux and `agentrt` share the same Airymax design philosophy (architectural homology). The core micro-core primitives (`atoms/corekern`), daemon services, security framework (`cupolas`), memory engine (`heapstore` / `memoryrovol`), and cognition loop (`coreloopthree`) are reused between the user-space runtime (`agentrt`) and the OS-level kernel (agent-linux). This ensures `agentrt` runs natively on agent-linux with no adaptation layer.
+## Continuous Integration
 
-### Relationship with Euler Standards
+All commits must pass GitHub Actions gates (build, static analysis, and
+tests); see the [Actions page](https://github.com/openairymax/agent-linux/actions)
+for the latest status.
 
-agent-linux comprehensively references Euler 24.03 LTS / 26.03 for:
+## Contributing
 
-- Module design and technical specifications
-- Engineering standards and quality norms
-- Package management (RPM / dnf)
-- Distribution lifecycle and LTS support model
+- Branch strategy: `main` for stable integration; feature branches use
+  `feature/<name>`, `fix/<name>`, or `refactor/<name>`.
+- Commit messages: lowercase subsystem prefix (`kernel:`, `mgmt:`, `ci:`),
+  imperative mood, no emoji, no trailing period.
+- Code style: follow the conventions of each leaf repository; run `make -n build`
+  locally to verify build completeness.
+- Sign-off (DCO): all commits must include `Signed-off-by: Your Name <email@example.com>`.
+- SSoT: architecture, security, and release changes must be traceable to
+  `ssot-registry.yaml`.
 
-agent-linux is Euler-compatible and can consume Euler-standard packages and tooling.
-
-### Relationship with Linux 6.6
-
-agent-linux is built on Linux 6.6 (Euler-standard kernel baseline) with:
-
-- **sched_tac** (native scheduler classes, no sched_ext) for AI-aware CPU scheduling
-- **eBPF signed verification** (Linux 6.15) for secure in-kernel programmability
-- **io_uring** for high-performance async I/O and message passing
-- **Rust** (experimental support in Linux 6.6) for memory-safe kernel modules
-
-The microkernel refactoring strategy does NOT develop a microkernel from scratch — it applies microkernel design principles (user-space service isolation, capability-based security, message-passing) on top of the Linux 6.6 monolithic kernel.
-
-## Upstream Dependencies
-
-- **Airymax agentrt** — provides the runtime platform whose modules are reused and extended
-- **Euler 24.03 LTS / 26.03** — reference distribution for standards and specifications
-- **Linux 6.6** — base kernel with sched_tac (no sched_ext), eBPF, io_uring, and Rust（实验性）support
-
-## Downstream Consumers
-
-- **Agent applications** — run natively on agent-linux via the Airymax SDK
-- **Cloud / edge deployments** — agent-linux as the base OS for AI agent infrastructure
-- **Researchers** — microkernel design and AI-native OS research
-
-## Branch Strategy
-
-- **This management repo** — `main` only. No feature branches are created here.
-- **Leaf repositories** — active development happens on `ALK-6.6-dev` (kernel) and `dev/hubs-01` (other leaves).
-
-When cloning this repo with submodules:
-
-```bash
-git clone --recurse-submodules git@atomgit.com:openairymax/agent-linux.git
-cd agent-linux
-git submodule update --remote --checkout
-```
-
-## CI / CD Pipelines
-
-The management repository hosts **8 GitHub Actions workflows** (most capped at 2 jobs). All Python tool suites — abi-check, codegen, dsl, QEMU farm, flash, rollback — run inside `os-chk-verify.yml`: one dependency install, one pytest sweep, one verdict. Language-level CI is delegated to the leaf repositories' own `.github/workflows/`.
-
-| Workflow | Trigger | Jobs | Purpose |
-|----------|---------|------|---------|
-| `kernel-verify.yml` | PR / push on the `kernel` gitlink, `ci/gates/kernel-*.sh`, `ci/lib/**` | `kernel-build` + `kernel-verify` | Kbuild matrix (4 configs × 4 arches × 2 compilers, 4 excluded cells) + checkpatch / sparse / Coccinelle / KUnit / kselftest |
-| `airy-verify.yml` | PR / push on the `kernel` gitlink, `ci/gates/kernel-*.sh`, `ci/lib/**`, `tools/defconfig-matrix/**` | `airy-build` + `airy-static` | Airymax build on 4 arches; `kernel-airy --kind assert` (CONFIGs / BTF / built-in.a / symbol clash) + `--kind style` (SPDX) |
-| `os-chk-verify.yml` | PR / push on `tools/**`, `sdk/**`, `ci/**`, gitlinks | `os-chk-verify` | OS-CHK unified gates (P0/P1 blocking) + every Python tool suite |
-| `mgmt-verify.yml` | PR / push on docs, `.gitmodules`, SSoT, governance files, `kernel` | `file-integrity` + `orchestrate-leaf-ci` | Verify 9 submodules, [SC] 12 shared headers + single `ipc.h` copy, governance files; aggregate leaf CI status; markdownlint + copyright header |
-| `image-build.yml` | manual (`workflow_dispatch`) | `assemble` + `accept` | Desktop ISO assembled against a pinned openEuler base, then installed and cold-booted in QEMU under BIOS and UEFI; the ISO reaches `ghcr.io` only after both firmwares pass |
-| `nightly.yml` | cron `0 2 * * *` / manual | `nightly-test-suite` + `nightly-revert-or-budget` | Formal verification (seL4-style) + 72h soak + chaos; auto-revert or CI budget check |
-| `release.yml` | tag `v*` / manual | `build-and-sign` + `publish-release` | SPDX SBOM + kernel/SDK build + GPG & cosign signing; publish OCI image and GitHub Release |
-| `ssot-verify.yml` | PR / push on `**.md`, `ssot-registry.yaml` | `ssot-syntax-and-rules` + `doc-links` | YAML syntax + rule-ID uniqueness; repository-owned markdown link integrity |
-
-### [SC] Shared Contract Layer
-
-The shared-contract (`[SC]`) layer is the single physical source of truth for kernel↔agentrt ABI. It lives under `kernel/include/uapi/linux/airymax/` (maintained by agent-linux) and is mirrored to `agentrt/commons/include/airymax/` for user-space consumption. It consists of **12 shared headers** — **10 core** plus **2 supplementary** (per OS-IRON-014):
-
-| # | Header | Responsibility |
-|---|--------|---------------|
-| 1 | `error.h` | A-UEF unified error codes (`AIRY_E*` POSIX negative + `AIRY_FAULT_*` 0x1000+ fault codes) + [DSL] fallback block |
-| 2 | `log_types.h` | A-ULP unified log types (128B fixed record format + 5-level log enum) |
-| 3 | `ipc.h` | IPC magic (0x41524531 'ARE1') + 128B message header `struct airy_ipc_msg_hdr` (Layout C v4) + Capability Folding Badge |
-| 4 | `sched.h` | sched_tac scheduling constraints + task descriptor (magic 0x41475453 'AGTS') + vtime types |
-| 5 | `memory_types.h` | MemoryRovol L1-L4 data structures + GFP mask semantics |
-| 6 | `security_types.h` | capability 44 IDs (41 POSIX + 3 Airymax extensions) + Cupolas blob layout + capability derivation model |
-| 7 | `cognition_types.h` | CoreLoopThree phase enum (`AIRY_COG_PERCEPT/THINK/ACT`) + Thinkdual mode (`AIRY_THINK_FAST/SLOW`) |
-| 8 | `syscalls.h` | Syscall number system (v1.0.1: 4 core (548-551) + 20 reserved (552-571) = 24 slots) |
-| 9 | `syscall_gen.h` | `__NR_airy_*` syscall number macros + `airy_sys_*` ABI declarations, generated from `syscall.xml` by `syscall_gen.py` (do not edit manually) |
-| 10 | `uapi_compat.h` | Linux kernel-style UAPI type bridging (`__u8`/`__u16`/`__u32`/`__u64`) |
-| 11 | `lsm_types.h` | Pure-C LSM type definitions + `DEFINE_LSM(airy)` skeleton + capability cache structures |
-| 12 | `bpf_struct_ops.h` | eBPF struct_ops state machine (observability; non-core, H5 constraint) |
-
-Any change to a `[SC]` header must be mirrored into `agentrt/commons/include/airymax/` per **OS-IRON-014**. This repository validates the header set whenever the `kernel` gitlink moves: `mgmt-verify.yml` asserts presence and a single physical copy of `ipc.h`, `os-chk-verify.yml` runs the tri-path compile and layout check; the agentrt side is validated by the agentrt repository's own pipeline. The IPC ABI uses magic `0x41524531` (`'ARE1'`); the task descriptor magic is `0x41475453` (`'AGTS'`). Kernel-side functions use the `airy_*` prefix.
-
-## Development Guide
-
-Contributions follow the IRON engineering rules and the SSoT (Single Source of Truth) registry. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full process; key points:
-
-- **DCO** — every commit must be signed off (`git commit -s`, rule OS-IRON-007 / OS-KER-068).
-- **Commit prefix** — use the submodule name as prefix (`kernel:`, `services:`, `security:`, `memory:`, `cognition:`, `cloudnative:`, `system:`, `distro:`, `tests-linux:`, `docs:`, `ci:`, `tools:`, `ssot:`).
-- **Branches** — management repo is `main` only; leaf repos develop on `ALK-6.6-dev` (kernel) and `dev/hubs-01` (other leaves).
-- **Code style** — C: tab-8, 80 cols (`.clang-format`); Rust: `cargo fmt`; Python: PEP 8 (`ruff`); Go: `gofmt`.
-- **SSoT compliance** — every `OS-*-NNN` rule ID referenced in docs must be registered in [`ssot-registry.yaml`](ssot-registry.yaml); validate locally with `python3 tools/repo/validate-ssot.py . ssot-registry.yaml`.
-- **Function prefix** — kernel-side APIs use the `airy_*` prefix (not legacy `airymaxos_*`).
-- **Reviews** — L1 subsystem maintainer + L3 top maintainer approval required for `[SC]` changes; enforced via branch protection and `MAINTAINERS` / `CODEOWNERS`.
-
-See the [Branch Strategy](#branch-strategy) section above for clone-with-submodules instructions.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
 ## License
 
-Dual-licensed under **AGPL v3 + Apache 2.0** (SPDX: `AGPL-3.0-or-later OR Apache-2.0`). You may choose either license at your option. See [LICENSE](LICENSE) for the full text of both licenses and [NOTICE](NOTICE) for copyright, trademark and third-party notices.
-
-### Dual License Guide
-
-You may choose **either** license at your option — not both, not neither.
-
-**SPDX Expression**: `AGPL-3.0-or-later OR Apache-2.0`
-
-| If you are... | Choose | Why |
-|---------------|--------|-----|
-| Building a **SaaS** or network service that modifies AirymaxOS | **AGPL v3** | Network service clause requires source disclosure |
-| Developing **open-source** derivative works (copyleft) | **AGPL v3** | Derivatives must remain open-source under AGPL |
-| Using AirymaxOS in **commercial closed-source** products | **Apache 2.0** | Permissive, allows proprietary derivatives |
-| Building **enterprise internal tools** | **Apache 2.0** | No source disclosure required |
-| Needing **patent protection** | **Apache 2.0** | Explicit patent grant from contributors |
-| Just learning or researching | **Either** | Both permit personal use |
-
-### Kernel Submodule Exception
-
-The management repository itself (this `agent-linux/` repo) and all its submodules **except `kernel/`** are dual-licensed under AGPL v3 + Apache 2.0. The `kernel/` submodule is licensed under **GPL-2.0-only** to maintain compatibility with the upstream Linux kernel (6.6 LTS / 7.1).
-
-| Path | License | Why |
-|------|---------|-----|
-| `agent-linux/` (management repo) | `AGPL-3.0-or-later OR Apache-2.0` | User-space management code |
-| `agent-linux/{cloudnative,cognition,distro,memory,security,services,system,tests-linux}/` | `AGPL-3.0-or-later OR Apache-2.0` | User-space submodules |
-| `agent-linux/kernel/` | `GPL-2.0-only` | Linux kernel derived code — AGPL v3 and Apache 2.0 are NOT compatible with GPL-2.0-only |
-
-> **Note**: Source files within `agent-linux/{cloudnative,cognition,distro,memory,security,services,system,tests-linux}/` that include kernel module headers (`#include <linux/module.h>`, `MODULE_LICENSE("GPL")`, etc.) MUST use `GPL-2.0-only` in their SPDX tag. See [docs/docs-linux/50-engineering-standards/12-license-policy.md](../docs/docs-linux/50-engineering-standards/12-license-policy.md) for the full policy.
+This repository and its submodules (except `kernel/`) are dual-licensed;
+choose either [AGPL-3.0-or-later](LICENSE) or [Apache-2.0](LICENSE).
+The `kernel/` subtree is [GPL-2.0-only](kernel/COPYING), keeping it
+compatible with upstream Linux.
