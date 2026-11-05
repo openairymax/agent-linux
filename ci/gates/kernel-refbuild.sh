@@ -13,7 +13,7 @@
 # 对空对象做检查。独立成 gate 后，顺序依赖变成显式的前置命令。
 #
 # 断言分三层:
-#   1. airy_defconfig 合并后 10 个关键 CONFIG 必须精确匹配（不是包含）；
+#   1. airy_defconfig 合并后 11 个关键 CONFIG 必须精确匹配（不是包含）；
 #   2. CONFIG_LSM 里必须出现 airy；
 #   3. vmlinux 必须带 .BTF 段——Linux 6.6 的 BTF 由 gen_btf() 内嵌进
 #      该段，不产出独立 vmlinux.btf 文件（OS-OBS-012）。
@@ -46,6 +46,7 @@ readonly REQUIRED_CONF=(
     'CONFIG_AIRY_CAP_TABLE_SIZE=1024'
     'CONFIG_IO_URING=y'
     'CONFIG_USER_NS=y'
+    'CONFIG_BPF_UNPRIV_DEFAULT_OFF=y'
 )
 
 usage()
