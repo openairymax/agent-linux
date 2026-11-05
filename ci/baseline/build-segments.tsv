@@ -7,7 +7,7 @@
 # 轮，有了实测再补这一行。
 toolchain	120	热缓存重放实测 31 s（run 41155718658），冷装 255 包在 90 s 内
 rpm	900	0.0.3 树 620 包增量构建；复用发行内核时不重建，耗时落在这个区间内
-kern	1800	4 核 runner 上 x86_64_defconfig 实测 12.2 min（run 40025896195），取 30 min 为上界
+kern	4800	产品内核包（openeuler_defconfig 全模块）实测 4338 s（run 41925092075）；取 80 min 为上界，2 倍即 160 min，早于 180 min 的 step 时限。复用发行内核（--kernel-rpms）时本段不构建
 iso	600	热闭包实测 114 s（run 41155718658），含 mkksiso 与介质校验
 checksum	120	实测 2 s，留出慢盘余量
 install	3600	三轮胎装的单轮上界，超出即装机侧异常而非组装变慢
