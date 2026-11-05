@@ -38,6 +38,7 @@ readonly REQUIRED=(
     'CONFIG_IO_URING=y'
     'CONFIG_SECURITY_AIRY=y'
     '# CONFIG_BPF_LSM is not set'
+    'CONFIG_BPF_UNPRIV_DEFAULT_OFF=y'
 )
 readonly SCHED_EXT='CONFIG_SCHED_EXT=y'
 # shellcheck source=../lib/log.sh
