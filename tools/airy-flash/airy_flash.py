@@ -913,6 +913,7 @@ class Renderer:
         self._lock = threading.Lock()
         self._bar_open = False
         self._last_bucket = -1
+        self._last_emit = 0.0
         self._current = Stage(0, 0, "", OK)
 
     def _write(self, text: str) -> None:
@@ -948,6 +949,7 @@ class Renderer:
         """只登记当前阶段：进度行与结束行各自自带前缀，避免半行残留。"""
         self._current = stage
         self._last_bucket = -1
+        self._last_emit = 0.0
 
     def _head(self, stage: Stage) -> str:
         return pad(_label(stage), self.NAME)
@@ -969,12 +971,23 @@ class Renderer:
         bucket = int(ratio * self.MILESTONES)
         # 100% 里程碑与紧随其后的 stage_end 结果行重复，日志里两行同义；
         # 仅保留 0/25/50/75 四个过程刻度。
-        if bucket < self.MILESTONES and bucket != self._last_bucket:
-            self._last_bucket = bucket
-            self._write(
-                f"  [ .. ] {head} {bucket * 100 // self.MILESTONES:3d}% "
-                f"{human_bytes(done)} {human_bytes(rate)}/s ETA {human_duration(eta)}\n"
-            )
+        if bucket >= self.MILESTONES:
+            return
+        # 四等分只够分辨「跑完多少」，不够分辨「还活着还是挂住了」：3.7 GB
+        # 写盘时相邻刻度相隔两分钟以上，日志里就是两分钟静默（FL 现场按
+        # 日志判断卡死时踩过）。刻度仍随状态跃迁输出，另外按心跳间隔补发
+        # 带读数的行——百分比、已写字节、当前速率与 ETA 都在，慢和死就不
+        # 再是同一种现象。
+        moment = time.monotonic()
+        if bucket == self._last_bucket and moment - self._last_emit < self.BEAT:
+            return
+        self._last_bucket = bucket
+        self._last_emit = moment
+        self._write(
+            f"  [ .. ] {head} {ratio * 100:3.0f}% "
+            f"{human_bytes(done)}/{human_bytes(total)} "
+            f"{human_bytes(rate)}/s ETA {human_duration(eta)}\n"
+        )
 
     def heartbeat(self, stage: Stage, seconds: float) -> None:
         """无进度的阻塞阶段也要让屏幕持续刷新，避免看起来像卡死。"""

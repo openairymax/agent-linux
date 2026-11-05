@@ -157,6 +157,20 @@ def test_non_tty_progress_is_quarter_step_and_ansi_free() -> None:
     assert text.splitlines()[-1].strip().endswith("1.00 KiB")
 
 
+def test_non_tty_progress_keeps_emitting_with_readings() -> None:
+    """同一刻度内也要有读数行，否则写盘两分钟静默与卡死无法区分。"""
+    stream = io.StringIO()
+    renderer = af.Renderer(stream=stream, tty=False)
+    renderer.BEAT = 0.0
+    renderer.stage_start(af.Stage(1, 4, "写入设备", af.FAIL))
+    renderer.stage_progress(10, 100, 1024.0, 3.0)
+    renderer.stage_progress(12, 100, 1024.0, 3.0)
+    lines = [line for line in stream.getvalue().splitlines() if "%" in line]
+    assert len(lines) == 2
+    assert "10%" in lines[0] and "12%" in lines[1]
+    assert "/s ETA" in lines[0] and "1.00 KiB" in lines[0]
+
+
 def test_tty_progress_stays_on_one_line() -> None:
     stream = io.StringIO()
     renderer = af.Renderer(stream=stream, tty=True)
