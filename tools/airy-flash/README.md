@@ -76,7 +76,7 @@ Actions 的 `airymaxos-image` artifact 只保留 7 天，仅用于调试，不�
 
 | 步骤 | 动作 | 失败即停 |
 |------|------|----------|
-| 1 | `oras pull ghcr.io/openairymax/airymaxos-iso:v0.0.3-ledger -o .` 先取账本（单层 `iso-oci.txt`，公开可匿名拉取），再 `airy-flash fetch --oci iso-oci.txt --out releases/v0.0.3`：拉取分块 → 逐块核对 → 拼接 → 整体核对；账本制品不可达时改传 `--ref <tag>`，由 `oras manifest fetch` 按注解重建账本，报告里会打印「账本命中 / 未命中」 | 是 |
+| 1 | `oras pull ghcr.io/openairymax/airymaxos-iso:v0.0.4-ledger -o .` 先取账本（单层 `iso-oci.txt`，公开可匿名拉取），再 `airy-flash fetch --oci iso-oci.txt --out releases/v0.0.4`：拉取分块 → 逐块核对 → 拼接 → 整体核对；账本制品不可达时改传 `--ref <tag>`，由 `oras manifest fetch` 按注解重建账本，报告里会打印「账本命中 / 未命中」 | 是 |
 | 2 | 插入 U 盘，用 `lsblk` 找到**整盘**节点（如 `/dev/sdb`，不是 `/dev/sdb1`） | 是 |
 | 3 | `plan` 只预检：核对系统盘、挂载、只读、容量、摘要来源 | 是 |
 | 4 | `write --yes`：校验镜像 → 写入 → `fsync` → 回读比对 | 是 |
@@ -170,38 +170,38 @@ WSL2 的 `/dev/sd*` 只有 WSL 自己的虚拟磁盘，插在主机上的 U 盘�
 
 ```bash
 # 环境自检
-python3 airy-flash-0.0.3.pyz check
+python3 airy-flash-0.0.4.pyz check
 
 # 取回发行 ISO：先取账本，再按账本取块；块错位或字节不符即行中止。
 # 账本是发布侧推的同 tag <tag>-ledger 制品（单层 iso-oci.txt，匿名可拉）。
-oras pull ghcr.io/openairymax/airymaxos-iso:v0.0.3-ledger -o .
-python3 airy-flash-0.0.3.pyz fetch \
-    --oci iso-oci.txt --out releases/v0.0.3
+oras pull ghcr.io/openairymax/airymaxos-iso:v0.0.4-ledger -o .
+python3 airy-flash-0.0.4.pyz fetch \
+    --oci iso-oci.txt --out releases/v0.0.4
 
 # 降级路径：账本制品不可达（旧发布物或镜像站缺该 tag）时只给 tag，
 # 由 oras manifest fetch 按清单注解重建账本；报告会打印「账本未命中」。
-python3 airy-flash-0.0.3.pyz fetch \
-    --ref ghcr.io/openairymax/airymaxos-iso:v0.0.3 --out releases/v0.0.3
+python3 airy-flash-0.0.4.pyz fetch \
+    --ref ghcr.io/openairymax/airymaxos-iso:v0.0.4 --out releases/v0.0.4
 
 # 只预检（不碰目标设备）
-sudo python3 airy-flash-0.0.3.pyz plan \
-    --image releases/v0.0.3/airymaxos-0.0.3-x86_64.iso --device /dev/sdb
+sudo python3 airy-flash-0.0.4.pyz plan \
+    --image releases/v0.0.4/airymaxos-0.0.4-x86_64.iso --device /dev/sdb
 
 # 正式烧录（块设备必须 --yes）
-sudo python3 airy-flash-0.0.3.pyz write \
-    --image releases/v0.0.3/airymaxos-0.0.3-x86_64.iso --device /dev/sdb --yes
+sudo python3 airy-flash-0.0.4.pyz write \
+    --image releases/v0.0.4/airymaxos-0.0.4-x86_64.iso --device /dev/sdb --yes
 
 # 首次使用新介质，全量回读并留证
-sudo python3 airy-flash-0.0.3.pyz write \
-    --image airymaxos-0.0.3-x86_64.iso --device /dev/sdb \
+sudo python3 airy-flash-0.0.4.pyz write \
+    --image airymaxos-0.0.4-x86_64.iso --device /dev/sdb \
     --verify full --report flash-report.json --yes
 
 # 事后复核一块已经写好的盘
-sudo python3 airy-flash-0.0.3.pyz verify \
-    --image airymaxos-0.0.3-x86_64.iso --device /dev/sdb
+sudo python3 airy-flash-0.0.4.pyz verify \
+    --image airymaxos-0.0.4-x86_64.iso --device /dev/sdb
 
 # CI / 脚本取机器可读结果
-sudo python3 airy-flash-0.0.3.pyz write ... --json
+sudo python3 airy-flash-0.0.4.pyz write ... --json
 ```
 
 摘要来源按 `--sha256` → 镜像同目录 `<iso>.sha256` → 同目录 `SHA256SUMS` →
@@ -235,9 +235,9 @@ sudo python3 airy-flash-0.0.3.pyz write ... --json
 日志切片。
 
 ```text
-AirymaxOS 烧录工具 0.0.3  (write)
+AirymaxOS 烧录工具 0.0.4  (write)
 ====================================================================
-映像   /path/airymaxos-0.0.3-x86_64.iso
+映像   /path/airymaxos-0.0.4-x86_64.iso
        3.40 GiB   sha256 1a2b3c4d…5e6f7a8b
 目标   /dev/sdb
        USB 3.0 Flash Disk, usb, 28.7 GiB, 可移动
@@ -251,7 +251,7 @@ AirymaxOS 烧录工具 0.0.3  (write)
   [ OK ] 未挂载           无挂载点
   [ OK ] 非只读           ro=0
   [ OK ] 容量充足         28.7 GiB ≥ 3.40 GiB
-  [ OK ] 校验和来源       airymaxos-0.0.3-x86_64.iso.sha256
+  [ OK ] 校验和来源       airymaxos-0.0.4-x86_64.iso.sha256
 
 阶段
   [ .. ] 1/4 校验镜像      25% 870.24 MiB 1.12 GiB/s ETA 3s
@@ -271,7 +271,7 @@ AirymaxOS 烧录工具 0.0.3  (write)
   3. 装机后核对：hostname=airymax-pc，uname -r 以 "-alk" 结尾
   4. 核对登录策略：amuser 本地/SSH 免密，root 口令 00000000
 
-AIRY-FLASH-PASS command=write host=airymax-build image=/path/airymaxos-0.0.3-x86_64.iso sha256=1a2b…7a8b device=/dev/sdb
+AIRY-FLASH-PASS command=write host=airymax-build image=/path/airymaxos-0.0.4-x86_64.iso sha256=1a2b…7a8b device=/dev/sdb
 ```
 
 - 版式只有两条规则：**字段块（身份与结果）顶格对齐，列表（预检/阶段/下一步）缩进 2**；
