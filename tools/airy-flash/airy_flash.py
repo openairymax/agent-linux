@@ -101,7 +101,10 @@ __all__ = [
     "write_image",
 ]
 
-TOOL_VERSION = "0.0.3"
+# 发行版树内版本写在 distro/release/os-release 的 VERSION_ID；本工具被打成
+# 单文件 pyz 后脱离仓库运行，读不到那份声明，只能各自持有字面量。两者必须
+# 一致，由 ci/gates/tool-pack.sh 在打包后实跑 --version 比对，不一致即判负。
+TOOL_VERSION = "0.0.4"
 
 CHUNK = 4 << 20          # 单次读写块，4 MiB：对 U 盘与页缓存都友好
 SAMPLE_WINDOW = 16 << 20  # 抽检窗口
