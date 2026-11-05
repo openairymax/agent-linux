@@ -53,6 +53,7 @@ CONFIG_SECURITY=y
 CONFIG_SECURITY_AIRY=y
 CONFIG_IO_URING=y
 # CONFIG_BPF_LSM is not set
+CONFIG_BPF_UNPRIV_DEFAULT_OFF=y
 EOF
     done
 }
@@ -110,6 +111,15 @@ expect "缺一腿即判负" 1 "缺少" snapshot --ver 0.0.4 --out "${tmp}/c"
 seed
 sed -i '/CONFIG_IO_URING=y/d' "${FX}/kernel/arch/arm64/configs/airy_defconfig"
 expect "选型配置缺失即判负" 1 "CONFIG_IO_URING=y" snapshot --ver 0.0.4 --out "${tmp}/d"
+
+# 非特权 BPF 的默认值只能由编译期决定：内核在 0.06 s 就会按它决定是否打印
+# Spectre V2 告警，运行期再写 sysctl 已经来不及，所以片段丢这一行必须在
+# 打包前判负，而不是留到装机后的启动日志里。
+seed
+sed -i '/CONFIG_BPF_UNPRIV_DEFAULT_OFF=y/d' \
+    "${FX}/kernel/arch/riscv/configs/airy_defconfig"
+expect "非特权 BPF 取默认关缺失即判负" 1 "CONFIG_BPF_UNPRIV_DEFAULT_OFF=y" \
+    snapshot --ver 0.0.4 --out "${tmp}/g"
 
 seed
 printf 'CONFIG_SCHED_EXT=y\n' >>"${FX}/kernel/arch/x86/configs/airy_defconfig"
