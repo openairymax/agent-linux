@@ -81,6 +81,8 @@ required_configs:
   # 桌面运行时依赖：systemd 单元的 PrivateUsers=/RestrictNamespaces=
   # 需要用户命名空间；缺失时 upower.service 以 217/USER 失败。
   - CONFIG_USER_NS=y
+  # 安全基线：非特权 BPF 默认关闭，否则任意本地用户可加载 eBPF 程序。
+  - CONFIG_BPF_UNPRIV_DEFAULT_OFF=y
 
 # CONFIG_LSM 中必须出现的 LSM 名。
 lsm_entry: airy
