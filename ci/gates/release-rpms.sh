@@ -49,7 +49,7 @@ while [ "$#" -gt 0 ]; do
             echo "用法: ci/gates/release-rpms.sh --tag vX.Y.Z --repo O/R --dir DIR" \
                  "[--arch ARCH] [--run-id N]"
             exit 0 ;;
-        *) die "未知参数: $1" ;;
+        *) err "未知参数: $1"; exit "${EINVAL}" ;;
     esac
 done
 
