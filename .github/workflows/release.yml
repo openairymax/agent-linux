@@ -21,6 +21,10 @@ on:
       tag:
         description: 'Release tag (如 v0.0.3)'
         required: true
+      publish_run:
+        description: '只发布该 run 的 build-and-sign 制品（首个版本建页前用）'
+        type: string
+        default: ''
 
 concurrency:
   # 一个 tag 只能有一条发布流水线。tag 重指（收回错误的发布提交）时
@@ -44,6 +48,9 @@ jobs:
   build-and-sign:
     name: Build + SBOM + Sign (L7)
     runs-on: ubuntu-24.04
+    # 发布只重放已有制品时跳过整段构建：制品字节由 build-and-sign 一次产出并
+    # 带摘要，重放与重构建是两件事，前者不产生任何新字节。
+    if: inputs.publish_run == ''
     # 上限由内核构建步的 210min 决定：前置 checkout/apt 实测 5.3min，
     # 构建后还有 SDK、OCI 与签名约 15min，合计约 230min；240min 只剩
     # 10min 余量，慢镜像即可吃光，故 job 预算提到 300min
@@ -222,16 +229,32 @@ jobs:
     # 上传制品与写 Release 都是短操作，60 分钟足够；不给默认 360 分钟。
     timeout-minutes: 60
     needs: build-and-sign
+    # build-and-sign 被跳过时（只重放制品）needs 结果为 skipped，仍须继续。
+    if: ${{ always() && (inputs.publish_run != '' || needs.build-and-sign.result == 'success') }}
     permissions:
       contents: write
       packages: write
+      # 重放时从指定 run 取制品，读他人 run 的制品需要 actions: read。
+      actions: read
     env:
       # -rc/-beta 后缀才是预发布。正式 tag 也不在这里成为 latest：页面建好
       # 先停在 held，由发布机在 B 轮 AIRYMAX-SMOKE-PASS 之后显式 promote。
       # releases/latest 是更新通道入口，一建页就置 latest 等于把未验收的
       # 构建推给所有装机（REL-02）。
-      PRE_REL: ${{ contains(needs.build-and-sign.outputs.tag, '-rc') || contains(needs.build-and-sign.outputs.tag, '-beta') }}
+      PUBLISH_RUN: ${{ inputs.publish_run }}
     steps:
+      # tag 与 ver 在重放路径下没有上游输出可用，统一在此由 RELEASE_TAG 推出，
+      # 使两条路径共用同一份判定，不各自解析一次。
+      - name: Resolve release metadata
+        id: meta
+        run: |
+          tag="${RELEASE_TAG}"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "ver=${tag#v}" >> "$GITHUB_OUTPUT"
+          case "${tag}" in
+              *-rc*|*-beta*) echo "pre_rel=true" >> "$GITHUB_OUTPUT" ;;
+              *)             echo "pre_rel=false" >> "$GITHUB_OUTPUT" ;;
+          esac
       # 发布侧同样按 tag 检出：release-verify 读的是 ci/ 与模板，
       # 用默认分支的版本去校验 tag 的产物，等于换了判据。
       # 递归子模块是硬要求：channel-fetch 要做客户端校验包比对，
@@ -242,10 +265,21 @@ jobs:
           ref: ${{ env.RELEASE_TAG }}
           submodules: recursive
 
+      # 两条路径分别成步：download-artifact 只有在指定 run-id 时才应带令牌，
+      # 同一组 with 兼顾两义会让「取本轮制品」也走跨轮校验，凭空多一个失败面。
       - name: Download build artifacts
+        if: env.PUBLISH_RUN == ''
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: release-artifacts-${{ needs.build-and-sign.outputs.ver }}
+          name: release-artifacts-${{ steps.meta.outputs.ver }}
+
+      - name: Download build artifacts (replay)
+        if: env.PUBLISH_RUN != ''
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-artifacts-${{ steps.meta.outputs.ver }}
+          run-id: ${{ env.PUBLISH_RUN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       # 发布前自证：签名发生在另一台 runner，落盘字节可能已被 artifact
       # 打包解包改写。摘要、署名与 notes 形态在这一步重算，失败即停止，
@@ -260,17 +294,17 @@ jobs:
           COSIGN_KEY: ${{ secrets.COSIGN_KEY }}
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ci/ci.sh release-oci publish --tag "${{ needs.build-and-sign.outputs.tag }}"
+        run: ci/ci.sh release-oci publish --tag "${{ steps.meta.outputs.tag }}"
 
       # 通道清单只能来自装配出 ISO 的那一轮：它是客户端发现新版本的唯一入口
       # （releases/latest/download/channel.json），在本机重新生成等于用当前源码
       # 再推一份声明，与线上字节无关。取不到就不发版——发布页没有清单，装了
       # 这套系统的人就永远收不到后续版本。预发布不进更新通道，也没有清单。
       - name: Fetch release channel manifest
-        if: env.PRE_REL == 'false'
+        if: steps.meta.outputs.pre_rel == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ci/ci.sh channel-fetch --tag "${{ needs.build-and-sign.outputs.tag }}" --repo "${{ github.repository }}" --dir .
+        run: ci/ci.sh channel-fetch --tag "${{ steps.meta.outputs.tag }}" --repo "${{ github.repository }}" --dir .
 
       # 同一个 tag 重发时，旧号 RPM（airymaxos-kernel-*-0.0.3-5.*）会与本次的
       # 新号包并排留在发布页上——glob 上传只增不删。写 Release 之前按摘要清单
@@ -278,16 +312,16 @@ jobs:
       - name: Prune stale release assets
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ci/ci.sh release-prune --tag "${{ needs.build-and-sign.outputs.tag }}" --repo "${{ github.repository }}"
+        run: ci/ci.sh release-prune --tag "${{ steps.meta.outputs.tag }}" --repo "${{ github.repository }}"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
-          tag_name: ${{ needs.build-and-sign.outputs.tag }}
-          prerelease: ${{ env.PRE_REL }}
+          tag_name: ${{ steps.meta.outputs.tag }}
+          prerelease: ${{ steps.meta.outputs.pre_rel }}
           make_latest: false
           # release notes 由确定性生成器产出并 GPG 签名，不再使用自动生成
-          body_path: agent-linux-${{ needs.build-and-sign.outputs.ver }}-release-notes.md
+          body_path: agent-linux-${{ steps.meta.outputs.ver }}-release-notes.md
           files: |
             dist/rpm/**/*.rpm
             dist/rpm/**/*.rpm.asc
@@ -295,12 +329,12 @@ jobs:
             agent-linux-sdk-*.tar.gz.asc
             airy-flash-*.pyz
             airy-flash-*.pyz.asc
-            agent-linux-${{ needs.build-and-sign.outputs.ver }}-airy-defconfig.tar.xz
-            agent-linux-${{ needs.build-and-sign.outputs.ver }}-airy-defconfig.tar.xz.asc
-            agent-linux-${{ needs.build-and-sign.outputs.ver }}.tar.xz
-            agent-linux-${{ needs.build-and-sign.outputs.ver }}.tar.xz.asc
-            agent-linux-${{ needs.build-and-sign.outputs.ver }}-abi-report.md
-            agent-linux-${{ needs.build-and-sign.outputs.ver }}-abi-report.md.asc
+            agent-linux-${{ steps.meta.outputs.ver }}-airy-defconfig.tar.xz
+            agent-linux-${{ steps.meta.outputs.ver }}-airy-defconfig.tar.xz.asc
+            agent-linux-${{ steps.meta.outputs.ver }}.tar.xz
+            agent-linux-${{ steps.meta.outputs.ver }}.tar.xz.asc
+            agent-linux-${{ steps.meta.outputs.ver }}-abi-report.md
+            agent-linux-${{ steps.meta.outputs.ver }}-abi-report.md.asc
             sbom-agent-linux-*.spdx.json
             agent-linux-*-gpg-key.asc
             channel.json
@@ -314,10 +348,10 @@ jobs:
       # 重写，上一轮的验收证据随之失效。因此这一步显式收回并读回断言，
       # 让「页面在不该在的位置」当场变红，而不是等装机端收到半成品才暴露。
       - name: Hold release stage
-        if: env.PRE_REL == 'false'
+        if: steps.meta.outputs.pre_rel == 'false'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ci/ci.sh release-stage hold --tag "${{ needs.build-and-sign.outputs.tag }}" --repo "${{ github.repository }}"
+        run: ci/ci.sh release-stage hold --tag "${{ steps.meta.outputs.tag }}" --repo "${{ github.repository }}"
 
       # 上传没有事务：glob 少一项、某个 PUT 被重试吞掉、或上传在 timeout
       # 边缘被截断，页面都会安静地少几件东西，而 action-gh-release 只要
@@ -326,16 +360,16 @@ jobs:
       - name: Audit release assets
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ci/ci.sh release-audit --tag "${{ needs.build-and-sign.outputs.tag }}" --repo "${{ github.repository }}"
+        run: ci/ci.sh release-audit --tag "${{ steps.meta.outputs.tag }}" --repo "${{ github.repository }}"
 
       # 只给 ISO 出证，等于承认「镜像可追溯、装进系统的 RPM 不可追溯」。
       # 出证与推送分两步：推送失败可以对着同一份产物重试，不必重跑整轮
       # 构建。指纹由 runner 自带的 GITHUB_RUN_ID 与检出提交决定，发布作业
       # 不检出 distro 子模块也不会退化成空配方摘要。
       - name: Attest release assets
-        run: ci/ci.sh attest build --kind rel --out . --tag "${{ needs.build-and-sign.outputs.tag }}"
+        run: ci/ci.sh attest build --kind rel --out . --tag "${{ steps.meta.outputs.tag }}"
 
       - name: Publish release attestation
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ci/ci.sh attest publish --kind rel --out . --tag "${{ needs.build-and-sign.outputs.tag }}" --ref ghcr.io/openairymax/airymaxos --token "$GHCR_TOKEN"
+        run: ci/ci.sh attest publish --kind rel --out . --tag "${{ steps.meta.outputs.tag }}" --ref ghcr.io/openairymax/airymaxos --token "$GHCR_TOKEN"
