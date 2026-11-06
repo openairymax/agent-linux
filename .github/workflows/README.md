@@ -215,7 +215,8 @@ L2/L3 都不改判据，只改「同一份物料要付几次成本」。任何�
 2. **出 ISO 与通道清单。** `workflow_dispatch image-build`：`ref` 指该 tag，
    `release_tag=v<ver>`，`rpms_run=<第 1 步 run id>`，`replace` 按 ghcr 是否
    已有同 tag 产物决定。内核包改从制品取（`release-rpms --run-id`），accept
-   段产出 `channel.json` 并随 `airymaxos-acceptance` 上传。
+   段产出 `channel.json` 并随 `airymaxos-acceptance` 上传，位置在制品根
+   （`channel-fetch` 只按「制品/channel.json」取件，放进子目录等于取不到）。
    `acceptance` 必须保持 `false`：验收剖面是自动登录的 B 轮字节，既不产
    `channel.json`，也不允许占用发行 tag（`iso-publish` 与清单生成都带
    `!inputs.acceptance`）。装机的 BIOS/UEFI 冷启动断言在两条剖面里都会跑，
