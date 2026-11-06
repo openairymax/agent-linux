@@ -71,6 +71,10 @@ on:
         description: '复用该 Release 的内核包（如 v0.0.3；留空则就地构建）'
         type: string
         default: ''
+      rpms_run:
+        description: '改从该 release run 的制品取内核包（首个版本建页前用）'
+        type: string
+        default: ''
       replace:
         description: '覆盖 ghcr 同 tag 的既有产物（仅重建同版本发行物时开启）'
         type: boolean
@@ -82,6 +86,9 @@ concurrency:
 
 permissions:
   contents: read
+  # 首个版本的发行内核包取自发布 run 的制品（release-rpms --run-id），
+  # 读他人 run 的制品需要 actions: read。
+  actions: read
   # ISO 经 ghcr 的 blob 通道交付（Release 单资产上限 2 GiB），需要写包权限。
   packages: write
 
@@ -156,7 +163,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ inputs.release_tag }}
-        run: ci/ci.sh release-rpms --tag "$TAG" --repo "$GITHUB_REPOSITORY" --arch x86_64 --dir "$RUNNER_TEMP/rel-rpms"
+        run: ci/ci.sh release-rpms --tag "$TAG" --repo "$GITHUB_REPOSITORY" --arch x86_64 --dir "$RUNNER_TEMP/rel-rpms" ${{ inputs.rpms_run != '' && format('--run-id {0}', inputs.rpms_run) || '' }}
 
       # 介质由 sha256 固定、跨轮不变：整目录以摘要为键缓存。命中时 3.2 GiB
       # 下载（run 40485745100 的 ISO 单件就占 43 分钟）退化为本地解包，
