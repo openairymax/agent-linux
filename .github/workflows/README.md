@@ -197,6 +197,34 @@ L2/L3 都不改判据，只改「同一份物料要付几次成本」。任何�
 - **不以牺牲覆盖面换时间**：`--no-tests` 只在「同一提交的 push 门禁已全量跑过」
   时使用，且理由写在该步的注释里。
 
+## 5.6 首个版本的发布引导顺序
+
+发布链上有三条判据互相等待，首次发布时环是闭合的：
+
+- `publish-release` 建页之前要 `channel-fetch` 取到 `channel.json`；
+- `channel.json` 只由 `image-build` 在 `release_tag` 非空时产出；
+- 而该模式下 `release-rpms` 又要从发布页取内核包与发行校验和。
+
+首个版本还没有发布页，三条判据谁先谁后都无解。解法不是放宽判据，而是把
+「内核包从哪来」与「发布页何时建」解耦。首版按下面三段引导，之后版本恢复
+单次 `release.yml`：
+
+1. **构建并留存制品。** `release.yml` 照常由 tag 推送触发。`build-and-sign`
+   成功并上传 `release-artifacts-<ver>`；`publish-release` 在 `channel-fetch`
+   处失败是**预期结果**，不影响制品。记下该 run 的 id。
+2. **出 ISO 与通道清单。** `workflow_dispatch image-build`：`ref` 指该 tag，
+   `release_tag=v<ver>`，`rpms_run=<第 1 步 run id>`，`replace` 按 ghcr 是否
+   已有同 tag 产物决定。内核包改从制品取（`release-rpms --run-id`），accept
+   段产出 `channel.json` 并随 `airymaxos-acceptance` 上传。
+3. **只重放、不重编。** `workflow_dispatch release.yml`：`tag=v<ver>`，
+   `publish_run=<第 1 步 run id>`。`build-and-sign` 跳过，`publish-release`
+   从该 run 重放制品；此时 `channel-fetch` 能取到第 2 步的 `channel.json`，
+   建页完成。页面仍停在 held，等实机 `AIRYMAX-SMOKE-PASS` 后由发布机
+   `release-stage promote` 推进 latest。
+
+判据一条未减：内核包只构建一次，ISO 载荷与发行资产字节相同；重放不产生
+任何新字节，签名、摘要与对账照旧全量校验。
+
 ## 6. 本地复跑
 
 每个门禁都是普通脚本，因此同一套断言可以在本地对遗留的构建目录执行：
