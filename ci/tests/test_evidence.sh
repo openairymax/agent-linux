@@ -73,8 +73,10 @@ for f in tap.txt install-manifest.txt run-uefi-1/boot.log smoke-uefi-1.tap; do
     [ -f "${FX}/out/install-usb/${f}" ] && [ -f "${FX}/out/install/${f}" ] || {
         printf 'FAIL 包内缺 %s\n' "${f}" >&2; fails=$((fails + 1)); }
 done
-[ -f "${FX}/out/extras/channel.json" ] || {
-    printf 'FAIL 附加件未入包\n' >&2; fails=$((fails + 1)); }
+# 附加件必须在包根：channel-fetch 只按「制品/channel.json」取件，
+# 放进子目录会让建页那一步取不到。
+[ -f "${FX}/out/channel.json" ] || {
+    printf 'FAIL 附加件未入包根\n' >&2; fails=$((fails + 1)); }
 
 # 清单必须能自证：每行三列，且不含两个记账文件自身。
 lines="$(wc -l <"${FX}/out/evidence-manifest.txt")"

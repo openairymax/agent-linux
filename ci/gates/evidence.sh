@@ -18,6 +18,9 @@
 # 判失败，产品剖面只告警——产品 ISO 本就不产冒烟 TAP，缺它不算缺件。
 # 腿目录不存在时按四件套全缺登记：前一条腿失败会让后面几条整段跳过。
 #
+# --extra 的附加件平铺到包根，不设子目录：channel.json 由建页侧的
+# channel-fetch 按「制品/channel.json」取件，包根是它唯一可寻址的位置。
+#
 # 包内另生成 evidence-manifest.txt（sha256 + 字节数 + 包内路径）。包因此
 # 可以脱离会话自证未被改动，也可以对着旧产物复算当时到底收进了什么。
 #
@@ -138,10 +141,12 @@ for d in "${DIRS[@]}"; do
     collect "${d}"
 done
 
+# 附加件平铺到包根：制品根是下游唯一可寻址的命名空间。channel.json 由
+# channel-fetch 按「制品/channel.json」取件，塞进子目录等于让它取不到，
+# 建页那一步只能空手失败。
 for f in "${EXTRAS[@]}"; do
     [ -f "${f}" ] || continue
-    mkdir -p "${OUT}/extras"
-    cp -p "${f}" "${OUT}/extras/$(basename "${f}")"
+    cp -p "${f}" "${OUT}/$(basename "${f}")"
 done
 
 # 清单只列包内文件，两列摘要文件自身不入账（否则清单无法自证）。
