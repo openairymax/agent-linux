@@ -433,13 +433,22 @@ jobs:
       # 产物目录也按固件分开：run-* 目录名虽不同，但 tap.txt 与
       # install-manifest.txt 是每目录一份，两腿共用一个 --out 时后跑的
       # 那腿会把前腿的总账覆盖掉，失败现场只剩一条腿的证据。
+      #
+      # 腿与腿之间互不阻塞（!cancelled()）：默认的隐式 success() 会让第一
+      # 条失败的腿把后面两条整段跳过，于是 B 轮一次只能拿到一条坏腿的证据，
+      # 另外两条既没跑过也无从判读（run 42055603410 的 BIOS 腿失败后，
+      # UEFI-CD 腿被跳过，证据包因此缺 install-uefi 四件套）。三条腿本就
+      # 是三个独立判据：一条腿的失败不该删掉另外两条的证据。job 最终仍按
+      # 任一步失败判负，取消（用户中断或超时）时才整体停下。
       - name: Install and cold boot (BIOS, CD-ROM)
+        if: ${{ !cancelled() }}
         timeout-minutes: 80
         env:
           ACCEPTANCE: ${{ inputs.acceptance }}
         run: ci/ci.sh accept --iso "$AIRYMAX_ISO" --out "$RUNNER_TEMP/install-bios" --firmware bios --media cdrom --runs 1 --install-timeout 3600 --boot-timeout 900
 
       - name: Install and cold boot (UEFI, CD-ROM)
+        if: ${{ !cancelled() }}
         timeout-minutes: 80
         env:
           ACCEPTANCE: ${{ inputs.acceptance }}
