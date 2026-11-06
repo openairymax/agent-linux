@@ -234,9 +234,13 @@ jobs:
     steps:
       # 发布侧同样按 tag 检出：release-verify 读的是 ci/ 与模板，
       # 用默认分支的版本去校验 tag 的产物，等于换了判据。
+      # 递归子模块是硬要求：channel-fetch 要做客户端校验包比对，
+      # 读的是 system 子模块里的 system/services/airyupdate；
+      # 不拉子模块时该路径为空，发布在写 Release 前直接失败。
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ env.RELEASE_TAG }}
+          submodules: recursive
 
       - name: Download build artifacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
