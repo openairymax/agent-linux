@@ -18,7 +18,9 @@
 # distro/release/os-release 的 VERSION_ID；-rcN 与正式版共享同一个基线版本，
 # 因此只比基线。
 #
-# 输出（$GITHUB_OUTPUT）: tag=<vX.Y.Z> ver=<X.Y.Z>；本地运行时打印到 stderr。
+# 输出（$GITHUB_OUTPUT）: tag=<vX.Y.Z> ver=<X.Y.Z> pre_rel=<true|false>；
+# 本地运行时打印到 stderr。pre_rel 由 tag 后缀判定：-rcN/-betaN 是预发布，
+# 正式 tag 也不是 latest——页面建好先停在 held，等实机验收后由发布机推进。
 #
 # 退出码: 0 通过；1 tag 非法或与树内版本不同源；5 参数不满足。
 # ===========================================================================
@@ -64,4 +66,11 @@ tree="$(tree_ver)"
 
 out_set tag "${TAG}"
 out_set ver "${ver}"
+# 预发布只看 tag 后缀。此前这段 case 内联在 release.yml 的 publish job 里，
+# 与门禁各写一套版本口径：门禁收紧后内联仍会放行。-beta 不在合法后缀里，
+# 已由上面的格式校验拦下，此处只需 rc。
+case "${ver}" in
+    *-rc[0-9]*) out_set pre_rel true ;;
+    *)          out_set pre_rel false ;;
+esac
 say "发布版本 ${TAG}（ver=${ver}）"

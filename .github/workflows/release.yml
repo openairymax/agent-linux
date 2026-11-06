@@ -243,18 +243,6 @@ jobs:
       # 构建推给所有装机（REL-02）。
       PUBLISH_RUN: ${{ inputs.publish_run }}
     steps:
-      # tag 与 ver 在重放路径下没有上游输出可用，统一在此由 RELEASE_TAG 推出，
-      # 使两条路径共用同一份判定，不各自解析一次。
-      - name: Resolve release metadata
-        id: meta
-        run: |
-          tag="${RELEASE_TAG}"
-          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
-          echo "ver=${tag#v}" >> "$GITHUB_OUTPUT"
-          case "${tag}" in
-              *-rc*|*-beta*) echo "pre_rel=true" >> "$GITHUB_OUTPUT" ;;
-              *)             echo "pre_rel=false" >> "$GITHUB_OUTPUT" ;;
-          esac
       # 发布侧同样按 tag 检出：release-verify 读的是 ci/ 与模板，
       # 用默认分支的版本去校验 tag 的产物，等于换了判据。
       # 递归子模块是硬要求：channel-fetch 要做客户端校验包比对，
@@ -264,6 +252,13 @@ jobs:
         with:
           ref: ${{ env.RELEASE_TAG }}
           submodules: recursive
+
+      # tag 与 ver 在重放路径下没有上游输出可用，统一由 RELEASE_TAG 推出，
+      # 两条路径共用同一份判定。判定本身在门禁里：内联 shell 只能在云端
+      # 验一次，且与 build-and-sign 的取版本逻辑会各演化一套。
+      - name: Resolve release metadata
+        id: meta
+        run: ci/ci.sh release-version --tag "${RELEASE_TAG}"
 
       # 两条路径分别成步：download-artifact 只有在指定 run-id 时才应带令牌，
       # 同一组 with 兼顾两义会让「取本轮制品」也走跨轮校验，凭空多一个失败面。

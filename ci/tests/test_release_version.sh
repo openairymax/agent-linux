@@ -67,6 +67,9 @@ tree 'VERSION_ID="0.0.4"'
 expect "带 v 前缀且同源" 0 "ver=0.0.4" --tag v0.0.4
 expect "缺 v 前缀自动补齐" 0 "tag=v0.0.4" --tag 0.0.4
 expect "-rc 共享基线版本" 0 "ver=0.0.4-rc1" --tag v0.0.4-rc1
+# 预发布标记由 tag 后缀推出，发布侧不再自己写一套口径。
+expect "正式 tag 非预发布" 0 "pre_rel=false" --tag v0.0.4
+expect "-rc 是预发布" 0 "pre_rel=true" --tag v0.0.4-rc1
 expect "tag 高于树内版本" 1 "不同源" --tag v0.0.5
 expect "tag 低于树内版本" 1 "不同源" --tag v0.0.3
 expect "四段版本号非法" 1 "非法的发布 tag" --tag v0.0.4.1
