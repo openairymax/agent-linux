@@ -12,9 +12,10 @@
 # 收录两类片段，缺一复现不出来：
 #   common-agent.fragment     configs/defconfig-agent，全架构共用
 #   <arch>-airy_defconfig     arch/<kdir>/configs/airy_defconfig，架构专属
-# 早先只收后者，等于把硬件使能那一半留在源树里：触控板的 PCI glue 只由
-# defconfig-agent 打开，取件方照旧 README 合并出的 .config 与发行包不一致，
-# 而「与发行包同源」正是这份物料唯一的主张。
+# 早先只收后者，等于把 agent 层那一半留在源树里：安全模块、RT 带宽与 IMA
+# 的取舍、非特权 BPF 默认值都只写在 defconfig-agent 里，取件方照旧 README
+# 合并出的 .config 与发行包不一致，而「与发行包同源」正是这份物料唯一的
+# 主张。
 #
 # 选型配置（09-release-process.md §3.5）逐项断言在每个架构的片段里：io_uring
 # 打开、纯 C LSM（SECURITY_AIRY）打开、BPF LSM 关闭。§3.5 写的
@@ -56,11 +57,14 @@ readonly REQUIRED=(
     'CONFIG_BPF_UNPRIV_DEFAULT_OFF=y'
 )
 readonly SCHED_EXT='CONFIG_SCHED_EXT=y'
-# 全架构片段必须携带的硬件使能项，与 spec 的 %%check 同源同一判据：配置文件
-# 里写着、打包断言的也是这一条，因此快照缺它即等于物料与该版本的包不符。
+# 全架构片段必须携带的判据，与 spec 的 %%check 同源：配置文件里写着、打包
+# 断言的也是这几条，因此快照缺它即等于物料与该版本的包不符。取 RT 带宽与
+# IMA 两处「未启用」判据，是因为它们只在本片段里出现，且各有实机测量出处
+# （前者使 rtkit 每次开机刷 err、桌面音频拿不到实时优先级）；架构片段不复述。
 readonly AGENT='configs/defconfig-agent'
 readonly REQUIRED_AGENT=(
-    'CONFIG_I2C_DESIGNWARE_PCI=m'
+    '# CONFIG_RT_GROUP_SCHED is not set'
+    '# CONFIG_IMA_LOAD_X509 is not set'
 )
 # shellcheck source=../lib/log.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/log.sh"
