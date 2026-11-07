@@ -70,8 +70,19 @@ run()
 }
 
 # 假 gh：只实现本门禁用到的两条子命令，其余退 2，避免调用面扩大而测试仍绿。
+#
+# 未知开关一律按真实 CLI 的口径退 1，不静默跳过。这里曾用 `*) shift` 把不
+# 认识的参数吞掉，于是门禁传了 gh run download 根本没有的 --clobber 仍全绿，
+# 缺陷一路滑到装配 ISO 的流水线上才以「无制品」的假象爆出来。替身比被替身
+# 宽松，测试就不再是测试，而是给错误发通行证。
 cat >"${FX}/bin/gh" <<'EOF'
 #!/usr/bin/env bash
+flag_die()
+{
+    printf 'unknown flag: %s\n' "$1" >&2
+    exit 1
+}
+
 case "${1:-} ${2:-}" in
 "run download")
     shift 2
@@ -82,7 +93,8 @@ case "${1:-} ${2:-}" in
         case "$1" in
         --name) name="${2:-}"; shift 2 ;;
         --dir)  dir="${2:-}"; shift 2 ;;
-        *)      shift ;;
+        --repo) shift 2 ;;
+        *)      flag_die "$1" ;;
         esac
     done
     [ -d "${FAKE}/art/${id}/${name}" ] || exit 1
@@ -91,11 +103,17 @@ case "${1:-} ${2:-}" in
     ;;
 "release download")
     shift 2
+    # 首个位置参数是 TAG，真实 CLI 靠它定位发布页；替身按 FAKE/rel 取件，
+    # 但必须把它吞掉，否则会被当成未知开关。
+    case "${1:-}" in '' | --*) ;; *) shift ;; esac
     dir=""
     while [ "$#" -gt 0 ]; do
         case "$1" in
-        --dir) dir="${2:-}"; shift 2 ;;
-        *)     shift ;;
+        --dir)     dir="${2:-}"; shift 2 ;;
+        --clobber) shift ;;
+        --pattern) shift 2 ;;
+        --repo)    shift 2 ;;
+        *)         flag_die "$1" ;;
         esac
     done
     [ -d "${FAKE}/rel" ] || exit 1
