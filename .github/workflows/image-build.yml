@@ -123,7 +123,11 @@ jobs:
         env:
           REF: ${{ github.ref_name }}
           SHA: ${{ github.sha }}
-        run: ci/ci.sh remote-sync --ref "$REF" --sha "$SHA" --remote origin
+          # 标签派发与分支派发查的是两个命名空间，而 github.ref_name 把
+          # refs/ 前缀剥掉之后二者无法区分。缺 --kind 时门禁按 heads 查
+          # refs/heads/v0.0.4，标签派发必然报「无此分支」（run 42335415156）。
+          KIND: ${{ startsWith(github.ref, 'refs/tags/') && 'tags' || 'heads' }}
+        run: ci/ci.sh remote-sync --kind "$KIND" --ref "$REF" --sha "$SHA" --remote origin
 
       # 与后面 Fetch release kernel RPMs 同一判据：有发行包就不建内核，
       # 也就不需要 kernel 源码树。条件写在参数里，门禁本身不猜。

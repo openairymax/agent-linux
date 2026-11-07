@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 # ===========================================================================
-# ci/tests/test_workflow_rules.sh — ci/check-workflows.py 规则 13–18 的负向回归
+# ci/tests/test_workflow_rules.sh — ci/check-workflows.py 规则 13–19 的负向回归
 #
 # 这几条规则此前只有正向：真实树常年合规，规则写错、判反或者根本没接进
 # main() 都不会有人发现。本文件在一棵最小假树上逐条破坏，断言只看退出码
@@ -67,10 +67,10 @@ reset()
         >"${FX}/tools/nightly/manifest.yaml"
 }
 
-# doc [规则号列表] — 写第 4 节规则表；默认登记 1..18，与脚本自述一致。
+# doc [规则号列表] — 写第 4 节规则表；默认登记 1..19，与脚本自述一致。
 doc()
 {
-    local nums="${1:-1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18}"
+    local nums="${1:-1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19}"
 
     {
         printf '## 4. 命名与结构约定\n\n| # | 规则 | 为什么 |\n|---|------|--------|\n'
@@ -127,16 +127,16 @@ out=$(run)
 check "规则 14：-verify 不由 PR 触发" 1 "$?" "${out}" "不由 pull_request 触发"
 
 reset
-doc 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17
+doc 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18
 flow demo-verify.yml ubuntu-24.04 "actions/checkout@${SHA}" " # v4" pr
 out=$(run)
-check "规则 15：规则表漏登" 1 "$?" "${out}" "规则 18 未出现"
+check "规则 15：规则表漏登" 1 "$?" "${out}" "规则 19 未出现"
 
 reset
-doc 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19
+doc 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20
 flow demo-verify.yml ubuntu-24.04 "actions/checkout@${SHA}" " # v4" pr
 out=$(run)
-check "规则 15：规则表多登" 1 "$?" "${out}" "不存在的规则 19"
+check "规则 15：规则表多登" 1 "$?" "${out}" "不存在的规则 20"
 
 reset
 doc 1,2,3,4,5,6,7,8,9,10,11,12,13,13,14,15,16,17,18
@@ -192,6 +192,31 @@ flow demo-verify.yml ubuntu-24.04 "actions/checkout@${SHA}" " # v4" pr
 out=$(run)
 check "规则 18：门禁里用 *-latest 匹配" 1 "$?" "${out}" "case 匹配 *-latest"
 rm -rf "${FX}/tools" "${FX}/ci/gates"
+
+# 规则 19：remote-sync 的命名空间只能由调用方写明。缺 --kind 时门禁按
+# heads 查，标签派发会去查不存在的同名分支，判负成「无此分支」。
+# 前一条用例删掉了 tools/ 与 ci/gates/，这里补齐规则 12 与 17 的对照基准，
+# 让正例只受规则 19 影响。
+mkdir -p "${FX}/tools/nightly" "${FX}/ci/gates"
+printf '#!/bin/sh\n# 用法: ci/gates/remote-sync.sh\n' \
+    >"${FX}/ci/gates/remote-sync.sh"
+reset
+doc
+flow demo-verify.yml ubuntu-24.04 "actions/checkout@${SHA}" " # v4" pr
+printf '      - run: ci/ci.sh remote-sync --ref v0.0.4\n' \
+    >>"${FX}/.github/workflows/demo-verify.yml"
+printf 'demo-verify.yml 1 1\n' >"${FX}/ci/workflow-budgets.txt"
+out=$(run)
+check "规则 19：remote-sync 缺 --kind" 1 "$?" "${out}" "未声明 --kind"
+
+reset
+doc
+flow demo-verify.yml ubuntu-24.04 "actions/checkout@${SHA}" " # v4" pr
+printf '      - run: ci/ci.sh remote-sync --kind tags --ref v0.0.4\n' \
+    >>"${FX}/.github/workflows/demo-verify.yml"
+printf 'demo-verify.yml 1 1\n' >"${FX}/ci/workflow-budgets.txt"
+out=$(run)
+check "规则 19：显式 --kind 时通过" 0 "$?" "${out}" "检查通过"
 
 if [ "${fails}" -ne 0 ]; then
     printf 'test_workflow_rules: %d 项失败\n' "${fails}" >&2
