@@ -30,6 +30,10 @@
 #      相同，同目录还要有内核 ABI 标记。清单只留在仓库里时，目标机上的
 #      判定只能拿发行当天的旧清单套升级后的镜像，两边分叉而判定仍绿；
 #      这一项保证「按同一份数据判」在装机后也成立。
+#   ⑦ 扁平入口回读（需 --root）：安装期由 fw-flat.sh 按驱动请求名补的
+#      软链，装机后必须仍指向同一目标，且镜像内生成器与清单同在。③ 判
+#      的是「文件在」，这一项判的是「内核按裸名能取到」——BE200 的两类
+#      缺陷（缺文件、有文件但没入口）各由一项拦。
 #
 # 谓词只认「是不是固件包」，不认具体包名：仓库元数据在离线环境不可得，
 # 而 comps 是「镜像装什么包」的唯一声明；新增固件包时判定自动生效，不用
@@ -53,6 +57,9 @@ readonly FWDIR=/usr/lib/firmware
 # 清单与 ABI 标记的安装位置，由 distro/specs/airymaxos-firmware.spec 的
 # %files 决定；改路径必须同时改两处，否则回读判定会在装机后判负。
 readonly MDIR=/usr/share/airymaxos/firmware
+# 扁平入口生成器的安装位置，由同一份 %files 决定。清单是它的产物，
+# 两者必须同代：只留清单而无生成器时，下一轮升级再也补不齐入口。
+readonly FLATDIR=/usr/libexec/airymaxos
 
 # shellcheck source=../lib/log.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/log.sh"
@@ -340,6 +347,33 @@ sel_check()
     done <"${TMP}/data"
 }
 
+# flat_check —— 扁平入口回读。清单是 %posttrans 按本机模块写出的，逐条
+# 复核软链仍指向同一目标；生成器必须同时存在，否则清单成了孤儿数据，
+# 下一次 linux-firmware 升级后没有实现能补齐入口。
+#
+# 无清单不判负：没有裸名固件请求的机器（多数 ARM/RISC-V 板）不会产生
+# 条目，把「没有条目」当缺陷会让正常镜像在另外两个架构上恒红。
+flat_check()
+{
+    local list="${SYSROOT}${MDIR}/firmware-flat.list"
+    local gen="${SYSROOT}${FLATDIR}/fw-flat.sh"
+
+    if [ ! -e "${list}" ]; then
+        note "镜像内无扁平入口清单（该机模块未声明裸名固件）"
+        return 0
+    fi
+    if [ ! -f "${gen}" ]; then
+        err "扁平入口清单在而生成器缺失: ${FLATDIR}/fw-flat.sh"
+        bad=1
+        return 0
+    fi
+    if ! sh "${gen}" check "${SYSROOT}${FWDIR}" --list "${list}" \
+        >/dev/null 2>"${TMP}/flat.err"; then
+        err "扁平入口复核未通过: ${MDIR}/firmware-flat.list（$(awk 'NR == 1' "${TMP}/flat.err")）"
+        bad=1
+    fi
+}
+
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --manifest)
@@ -412,6 +446,7 @@ set_check
 
 if [ -n "${SYSROOT}" ]; then
     pnvm_check
+    flat_check
     if ! command -v "${SELBIN}" >/dev/null 2>&1; then
         note "无 ${SELBIN}，跳过固件标签断言"
     elif policy_ok; then
