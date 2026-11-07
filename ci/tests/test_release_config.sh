@@ -3,10 +3,10 @@
 # ===========================================================================
 # ci/tests/test_release_config.sh — ci/gates/release-config.sh 的分支回归
 #
-# 快照门禁的判定对象是内核子仓里的四份 airy_defconfig：真实内核树不在
-# 单测里构建，判定逻辑只能由合成夹具驱动。这里造一棵最小内核树，再逐条
-# 破坏单一前提（缺一腿、缺选型配置、启用 sched_ext、缺参数），断言只看
-# 退出码、稳定判据名与归档内容。
+# 快照门禁的判定对象是内核子仓里的四份 airy_defconfig 与一份全架构片段
+# configs/defconfig-agent：真实内核树不在单测里构建，判定逻辑只能由合成夹具
+# 驱动。这里造一棵最小内核树，再逐条破坏单一前提（缺一腿、缺全架构片段、
+# 缺选型配置、启用 sched_ext、缺参数），断言只看退出码、稳定判据名与归档内容。
 #
 # 确定性不靠注释承诺：同一份夹具两次调用必须字节相同，否则摘要清单在
 # 重发时对不上——这一条在测试里断言，而不是等发布页出事。
@@ -56,6 +56,10 @@ CONFIG_IO_URING=y
 CONFIG_BPF_UNPRIV_DEFAULT_OFF=y
 EOF
     done
+    mkdir -p "${FX}/kernel/configs"
+    cat >"${FX}/kernel/configs/defconfig-agent" <<'EOF'
+CONFIG_I2C_DESIGNWARE_PCI=m
+EOF
 }
 
 run()
@@ -99,12 +103,24 @@ fi
 
 want="$(
     printf '%s\n' aarch64-airy_defconfig loongarch64-airy_defconfig \
-        riscv64-airy_defconfig x86_64-airy_defconfig README | sort
+        riscv64-airy_defconfig x86_64-airy_defconfig common-agent.fragment README |
+        sort
 )"
 got="$(tar -tf "${tmp}/a/agent-linux-0.0.4-airy-defconfig.tar.xz" | sort)"
-[ "${got}" = "${want}" ] && ok "归档只含四份配置与 README" ||
+[ "${got}" = "${want}" ] && ok "归档含四份架构配置、全架构片段与 README" ||
     bad "归档内容不符：$(printf '%s ' ${got})"
 
+# 全架构片段是硬件使能的唯一载体（触控板的 PCI glue 只由它打开）。丢了它，
+# 取件方照 README 合并出的 .config 与发行包就不是同一份。
+rm -f "${FX}/kernel/configs/defconfig-agent"
+expect "缺全架构片段即判负" 1 "缺少" snapshot --ver 0.0.4 --out "${tmp}/h"
+
+seed
+printf 'CONFIG_DEBUG_INFO_NONE=y\n' >"${FX}/kernel/configs/defconfig-agent"
+expect "全架构片段丢硬件使能即判负" 1 "CONFIG_I2C_DESIGNWARE_PCI=m" \
+    snapshot --ver 0.0.4 --out "${tmp}/i"
+
+seed
 rm -f "${FX}/kernel/arch/riscv/configs/airy_defconfig"
 expect "缺一腿即判负" 1 "缺少" snapshot --ver 0.0.4 --out "${tmp}/c"
 
