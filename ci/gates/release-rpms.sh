@@ -71,8 +71,11 @@ sum="${DIR}/agent-linux-${ver}.sha256sum"
 
 if [ -n "${RUN_ID}" ]; then
     group "gh run download ${RUN_ID}"
+    # gh run download 没有 --clobber（那是 gh release download 的开关）；
+    # 传了会让整步死在参数解析上，报文却写成「无制品」，把 CLI 用法错误伪装
+    # 成资产缺失。目标目录由调用方给出且为空，覆盖语义本就不需要。
     gh run download "${RUN_ID}" --repo "${REPO}" \
-        --name "release-artifacts-${ver}" --dir "${DIR}" --clobber ||
+        --name "release-artifacts-${ver}" --dir "${DIR}" ||
         die "run ${RUN_ID} 无 release-artifacts-${ver} 制品"
     endgroup
 else
