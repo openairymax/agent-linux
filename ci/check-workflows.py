@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 """ci/check-workflows.py —— 守住 workflow 薄化与命名约束
 
-十八条规则：
+十九条规则：
 
 1. 结构上限：每个 workflow 的 job 数 ≤ 预算，内联 ``run: |`` 块数 ≤ 预算
    （预算见 ci/workflow-budgets.txt，只许下调）。
@@ -70,6 +70,12 @@
    之间没有蕴含关系。0.0.3 的 run 40864072696 就是这样把自托管的
    ``-latest`` 标签判成托管，随后按托管上限去等一个永远不会到来的空位。
    制品类型（``.asc``/``.rpm``/``.ko``）与包名前缀是命名契约，不在此列。
+19. 调用 ``ci/ci.sh remote-sync`` 必须显式给出 ``--kind``。门禁缺省按
+   ``heads`` 查 ``refs/heads/<ref>``，而 ``github.ref_name`` 把 ``refs/``
+   前缀剥掉之后标签与分支无法区分：标签派发时它去查根本不存在的
+   ``refs/heads/v0.0.4``，判负为「无此分支」（run 42335415156 即如此，
+   代价是整轮组装在第一步就落空）。命名空间是调用方的已知事实，必须由
+   调用方写明，而不是让门禁去猜。
 
 为什么需要它：这些约束此前只存在于文档里，没有执行者。78 段内联 shell
 就是这样一段段长出来的——每一次单看都合理，合起来就没有人能在本地验证。
@@ -138,6 +144,9 @@ RUNNER_TAG = re.compile(r"^[a-z]+-\d{2}\.\d{2}$")
 
 # 运行器版本的唯一事实源：nightly 契约清单的 runner.label。
 NIGHTLY = ROOT / "tools" / "nightly" / "manifest.yaml"
+
+# 多远程同 sha 门禁的调用点：命名空间（heads/tags）只能由调用方给出。
+REMOTE_SYNC = "ci/ci.sh remote-sync"
 
 # 形状推语义：把「名字长什么样」当成「它是什么」。托管与否只有清单的字段
 # 能回答，标签形状与语义之间没有蕴含关系。
@@ -472,6 +481,24 @@ def check_family(name: str, text: str) -> list[str]:
     return []
 
 
+def check_ref_kind(name: str, text: str) -> list[str]:
+    """remote-sync 的 ref 命名空间必须由调用方写明。
+
+    门禁缺省查 ``refs/heads/<ref>``；``github.ref_name`` 已把 ``refs/`` 前缀
+    剥掉，标签派发时它会去查不存在的同名分支，判负成「无此分支」。
+    """
+    errors: list[str] = []
+    for no, s in enumerate(text.splitlines(), 1):
+        if REMOTE_SYNC not in s or s.lstrip().startswith("#"):
+            continue
+        if "--kind" in s:
+            continue
+        errors.append(
+            f"{name}:{no}: remote-sync 未声明 --kind（缺省查 refs/heads/，"
+            "标签派发必然判「无此分支」）")
+    return errors
+
+
 def rule_numbers() -> list[int]:
     """本文件 docstring 登记的规则号。"""
     return sorted({int(n) for n in RULE_DOC.findall(__doc__ or "")})
@@ -537,6 +564,7 @@ def main() -> int:
         errors.extend(check_policy(name, text))
         errors.extend(check_triggers(name, text))
         errors.extend(check_gate_refs(name, text))
+        errors.extend(check_ref_kind(name, text))
         errors.extend(check_pins(name, text))
         inline = count_inline(text)
         jobs = count_jobs(text)
