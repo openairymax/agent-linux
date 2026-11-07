@@ -1,14 +1,20 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 # ===========================================================================
-# ci/gates/release-config.sh — airy_defconfig 快照（发布物料 6）
+# ci/gates/release-config.sh — 内核配置快照（发布物料 6）
 #
 # 用法: ci/gates/release-config.sh snapshot --ver VER [--src DIR] [--out DIR]
 #
-# 快照逐字节取自内核子仓 arch/<arch>/configs/airy_defconfig，四个交付架构
-# 各一份，不重新渲染、不追加注释：这份物料的价值是「与打内核 RPM 时用的是
-# 同一份字节」，改写过的快照无法与发行包里的配置互证。README 说明合并方式，
-# 取件方据此在本机复现同一份 .config。
+# 快照逐字节取自内核子仓，不重新渲染、不追加注释：这份物料的价值是「与打
+# 内核 RPM 时用的是同一份字节」，改写过的快照无法与发行包里的配置互证。
+# 取件方按 README 的三步合并即可复现同一份 .config。
+#
+# 收录两类片段，缺一复现不出来：
+#   common-agent.fragment     configs/defconfig-agent，全架构共用
+#   <arch>-airy_defconfig     arch/<kdir>/configs/airy_defconfig，架构专属
+# 早先只收后者，等于把硬件使能那一半留在源树里：触控板的 PCI glue 只由
+# defconfig-agent 打开，取件方照旧 README 合并出的 .config 与发行包不一致，
+# 而「与发行包同源」正是这份物料唯一的主张。
 #
 # 选型配置（09-release-process.md §3.5）逐项断言在每个架构的片段里：io_uring
 # 打开、纯 C LSM（SECURITY_AIRY）打开、BPF LSM 关闭。§3.5 写的
@@ -33,6 +39,15 @@ readonly ARCHES=(
     'riscv64:riscv'
     'loongarch64:loongarch'
 )
+# 每个架构的基线 defconfig，与 spec 的 %global kbase 逐字一致。README 要按它
+# 给复现步骤；写成「defconfig 一份就够」会让取件方在 x86 上拿到一份没开安全
+# 模块的 .config，而这正是发布物料要防的失真。
+declare -A KBASE=(
+    [x86_64]=openeuler_defconfig
+    [aarch64]=openeuler_defconfig
+    [riscv64]=defconfig
+    [loongarch64]=loongson3_defconfig
+)
 # 片段里必须逐字出现的选型配置。
 readonly REQUIRED=(
     'CONFIG_IO_URING=y'
@@ -41,6 +56,12 @@ readonly REQUIRED=(
     'CONFIG_BPF_UNPRIV_DEFAULT_OFF=y'
 )
 readonly SCHED_EXT='CONFIG_SCHED_EXT=y'
+# 全架构片段必须携带的硬件使能项，与 spec 的 %%check 同源同一判据：配置文件
+# 里写着、打包断言的也是这一条，因此快照缺它即等于物料与该版本的包不符。
+readonly AGENT='configs/defconfig-agent'
+readonly REQUIRED_AGENT=(
+    'CONFIG_I2C_DESIGNWARE_PCI=m'
+)
 # shellcheck source=../lib/log.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/log.sh"
 
@@ -82,25 +103,57 @@ check_frag()
     fi
 }
 
+check_agent()
+{
+    local f="$1" want
+
+    [ -s "${f}" ] || die "全架构片段为空: ${f}"
+    for want in "${REQUIRED_AGENT[@]}"; do
+        grep -qxF "${want}" "${f}" ||
+            die "全架构片段缺少「${want}」"
+    done
+}
+
 readme()
 {
+    local item arch kdir rows=""
+
+    for item in "${ARCHES[@]}"; do
+        arch="${item%%:*}"
+        kdir="${item##*:}"
+        printf -v rows '%s\n  %-12sARCH=%-11s base=%s' \
+            "${rows}" "${arch}" "${kdir}" "${KBASE[${arch}]}"
+    done
     cat >"$1" <<EOF
-AirymaxOS airy_defconfig 快照（v${VER}）
+AirymaxOS 内核配置快照（v${VER}）
 
-每个 <arch>-airy_defconfig 是内核树 arch/<arch>/configs/airy_defconfig 的
-逐字节副本，与 v${VER} 发行内核 RPM 构建时所用配置同源。合并方式：
+common-agent.fragment 是内核树 configs/defconfig-agent 的逐字节副本，四个
+架构共用；<arch>-airy_defconfig 是 arch/<kdir>/configs/airy_defconfig 的
+逐字节副本。两者与 v${VER} 发行内核 RPM 构建时所用配置同源。合并方式
+（<karch> 与 <base> 按架构取值，见下表）：
 
-  make ARCH=<arch> defconfig
-  scripts/kconfig/merge_config.sh -m .config <arch>-airy_defconfig
-  make ARCH=<arch> olddefconfig
+  make ARCH=<karch> <base>
+  sh scripts/kconfig/merge_config.sh -m .config common-agent.fragment
+  sh scripts/kconfig/merge_config.sh -m .config <arch>-airy_defconfig
+  make ARCH=<karch> olddefconfig
+${rows}
+
+发行包在合并前把 CONFIG_LOCALVERSION="-alk" 追加到架构片段末尾，
+复现时需同样追加，否则 uname -r 与 RPM 名对不上。合并顺序不可交换：
+olddefconfig 只在最后跑一次，靠后的片段覆盖靠前的。
 EOF
 }
 
 stage()
 {
-    local dir="$1" item arch kdir src
+    local dir="$1" item arch kdir src agent
 
     mkdir -p "${dir}" || die "无法创建暂存目录: ${dir}"
+    agent="${SRC}/${AGENT}"
+    [ -f "${agent}" ] || die "缺少 ${agent}（内核子模块未初始化？）"
+    check_agent "${agent}"
+    cp "${agent}" "${dir}/common-agent.fragment" ||
+        die "复制失败: ${AGENT}"
     for item in "${ARCHES[@]}"; do
         arch="${item%%:*}"
         kdir="${item##*:}"
@@ -132,6 +185,7 @@ verify_tar()
     for item in "${ARCHES[@]}"; do
         want+=("${item%%:*}-airy_defconfig")
     done
+    want+=('common-agent.fragment')
     want+=('README')
     got="$(tar -tf "${f}" | sort)"
     if [ "${got}" != "$(printf '%s\n' "${want[@]}" | sort)" ]; then
@@ -156,7 +210,7 @@ snapshot()
 
     group "Stage airy_defconfig"
     stage "${STAGE}" || exit 1
-    say "已收录 $(( ${#ARCHES[@]} + 1 )) 个文件: ${#ARCHES[@]} 份配置 + README"
+    say "已收录 $(( ${#ARCHES[@]} + 2 )) 个文件: ${#ARCHES[@]} 份架构配置 + 1 份全架构片段 + README"
     endgroup
 
     group "Pack snapshot"
