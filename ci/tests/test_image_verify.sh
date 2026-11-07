@@ -57,6 +57,9 @@ mkfy()
     } >"${out}/image-ci-manifest.txt"
     printf 'build_id=%s\n' "${bid}" >"${out}/rpms/build-manifest.txt"
     : >"${out}/rel/agent-linux-${sumver}.sha256sum"
+    # 发行侧有两个入口：RPM 目录与摘要清单路径。制品路径下两者不同目录，
+    # 门禁不再按布局在 RPM 目录里找清单，因此每例都要把清单路径交出去。
+    SUM_PATH="${out}/rel/agent-linux-${sumver}.sha256sum"
 }
 
 # rpm OUT SUMVER NAME —— 追加一个载荷内核包；SUMVER 非空时同时写进该版
@@ -101,7 +104,7 @@ o="${tmp}/same"
 mkfy "${o}" 0.0.4 "r1-abc"
 for k in "${NEVRA[@]:0:3}"; do rpm "${o}" 0.0.4 "${k}"; done
 expect "三包与发行同源" 0 "一致: 3 个（v0.0.4）" \
-    --out "${o}" --release-rpms "${o}/rel"
+    --out "${o}" --release-rpms "${o}/rel" --release-sum "${SUM_PATH}"
 
 # 2. 版本错配：载荷是 0.0.4 内核，摘要却是 0.0.3 的（0.0.4 组装期的真实
 #    形态）。消息必须点出对照的发行版本，否则无从判断是错配还是哈希分叉。
@@ -109,21 +112,21 @@ o="${tmp}/mismatch"
 mkfy "${o}" 0.0.3 "r1-abc"
 for k in "${NEVRA[@]:0:3}"; do rpm "${o}" "" "${k}"; done
 expect "派发 tag 与树内版本错配" 1 "不在发行摘要 v0.0.3 中" \
-    --out "${o}" --release-rpms "${o}/rel"
+    --out "${o}" --release-rpms "${o}/rel" --release-sum "${SUM_PATH}"
 
 # 3. 同版本但哈希分叉：发行摘要版本对得上，包不匹配。消息里应出现同一版号。
 o="${tmp}/fork"
 mkfy "${o}" 0.0.4 "r1-abc"
 for k in "${NEVRA[@]:0:3}"; do rpm "${o}" "" "${k}"; done
 expect "同版本哈希分叉" 1 "不在发行摘要 v0.0.4 中" \
-    --out "${o}" --release-rpms "${o}/rel"
+    --out "${o}" --release-rpms "${o}/rel" --release-sum "${SUM_PATH}"
 
 # 4. 数量下限：两包同源也不够——少于 3 个说明载荷内核不是整份发行内核。
 o="${tmp}/few"
 mkfy "${o}" 0.0.4 "r1-abc"
 for k in "${NEVRA[@]:0:2}"; do rpm "${o}" 0.0.4 "${k}"; done
 expect "载荷内核包不足 3 个" 1 "少于 3" \
-    --out "${o}" --release-rpms "${o}/rel"
+    --out "${o}" --release-rpms "${o}/rel" --release-sum "${SUM_PATH}"
 
 # 5. 来源指纹：镜像清单与 RPM 清单同值才归因得起来。
 o="${tmp}/bid"
@@ -131,7 +134,7 @@ mkfy "${o}" 0.0.4 "r1-abc"
 for k in "${NEVRA[@]:0:3}"; do rpm "${o}" 0.0.4 "${k}"; done
 printf 'build_id=r1-other\n' >"${o}/rpms/build-manifest.txt"
 expect "来源指纹不一致" 1 "来源指纹不一致" \
-    --out "${o}" --release-rpms "${o}/rel"
+    --out "${o}" --release-rpms "${o}/rel" --release-sum "${SUM_PATH}"
 
 # 6. 复用发行包就必须报 reuse：就地构建的清单混进来会让「ISO 内核来自
 #    发行」这条前提悄悄不成立。
@@ -146,7 +149,20 @@ printf 'tampered\n' >"${o}/desktop/iso/airymaxos-0.0.4-x86_64.iso"
 expect "ISO 摘要不一致" 1 "ISO 与清单摘要不一致" \
     --out "${o}" --expect-kernel reuse
 
-# 8. 参数校验：缺 --out 与非法 --expect-kernel 都退 5，未知参数退 1。
+# 8. 发行摘要清单的位置必须由取件方交出。给出 --release-rpms 却让门禁自己
+#    在目录里按通配符找，只在「RPM 与清单同目录」的发布页布局下成立；制品
+#    路径（dist/rpm/<arch>/）必然找不到。2026-11-07 的 image-build 就是照这
+#    条路把布局差异报成「发行目录没有校验和」。
+o="${tmp}/nosum"
+mkfy "${o}" 0.0.4 "r1-abc"
+for k in "${NEVRA[@]:0:3}"; do rpm "${o}" 0.0.4 "${k}"; done
+expect "缺发行摘要清单路径" 1 "必须同时给出发行摘要清单" \
+    --out "${o}" --release-rpms "${o}/rel"
+
+expect "发行摘要清单不存在" 1 "发行摘要清单不存在" \
+    --out "${o}" --release-rpms "${o}/rel" --release-sum "${o}/rel/absent.sha256sum"
+
+# 9. 参数校验：缺 --out 与非法 --expect-kernel 都退 5，未知参数退 1。
 expect "缺 --out" 5 "用法"
 expect "非法 --expect-kernel" 5 "只接受 pass|reuse" --out "${tmp}" --expect-kernel maybe
 expect "未知参数" 1 "未知参数" --out "${tmp}" --bogus
