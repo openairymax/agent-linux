@@ -58,7 +58,8 @@ EOF
     done
     mkdir -p "${FX}/kernel/configs"
     cat >"${FX}/kernel/configs/defconfig-agent" <<'EOF'
-CONFIG_I2C_DESIGNWARE_PCI=m
+# CONFIG_RT_GROUP_SCHED is not set
+# CONFIG_IMA_LOAD_X509 is not set
 EOF
 }
 
@@ -110,14 +111,14 @@ got="$(tar -tf "${tmp}/a/agent-linux-0.0.4-airy-defconfig.tar.xz" | sort)"
 [ "${got}" = "${want}" ] && ok "归档含四份架构配置、全架构片段与 README" ||
     bad "归档内容不符：$(printf '%s ' ${got})"
 
-# 全架构片段是硬件使能的唯一载体（触控板的 PCI glue 只由它打开）。丢了它，
-# 取件方照 README 合并出的 .config 与发行包就不是同一份。
+# 全架构片段是 agent 层取舍的唯一载体（RT 带宽与 IMA 的「未启用」只写在
+# 这里）。丢了它，取件方照 README 合并出的 .config 与发行包就不是同一份。
 rm -f "${FX}/kernel/configs/defconfig-agent"
 expect "缺全架构片段即判负" 1 "缺少" snapshot --ver 0.0.4 --out "${tmp}/h"
 
 seed
 printf 'CONFIG_DEBUG_INFO_NONE=y\n' >"${FX}/kernel/configs/defconfig-agent"
-expect "全架构片段丢硬件使能即判负" 1 "CONFIG_I2C_DESIGNWARE_PCI=m" \
+expect "全架构片段丢 RT 判据即判负" 1 '# CONFIG_RT_GROUP_SCHED is not set' \
     snapshot --ver 0.0.4 --out "${tmp}/i"
 
 seed
