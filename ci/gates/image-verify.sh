@@ -5,16 +5,24 @@
 #
 # 用法:
 #   ci/gates/image-verify.sh --out DIR [--expect-kernel pass|reuse]
-#                            [--release-rpms DIR] [--iso-rel SUB] [--payload-rel SUB]
+#                            [--release-rpms DIR --release-sum FILE]
+#                            [--iso-rel SUB] [--payload-rel SUB]
+#
+# --release-sum 是发行摘要清单的路径，由取件门禁（release-rpms.sh）交出。
+# 本门禁不按通配符在 --release-rpms 里找它：制品路径下 RPM 位于
+# dist/rpm/<arch>/，清单在制品根，两者不同目录；发布页路径两者平铺。按
+# 布局猜位置，只有在一种布局下碰巧成立，另一种会报「没有校验和」，把布局
+# 差异说成资产缺失。
 #
 # 校验链（任一步不符即失败）:
 #   1. image-ci-manifest.txt 存在且 stage rpm/iso 为 pass、result=pass；
 #   2. stage kernel 等于期望值（就地构建 pass / 复用发行包 reuse）；
 #   3. 清单记录的 ISO 摘要与磁盘文件一致，且同名 .sha256 存在；
 #   4. 给出 --release-rpms 时，载荷里每个内核包的摘要都必须命中发行
-#      .sha256sum，且至少 3 个——这是「ISO 与 Release 是同一份内核」的
-#      唯一判据。载荷再编一次内核就会同名包哈希分叉，此处必红；失败消息
-#      带出对照的发行版本，把「版本错配」与「同版但哈希分叉」分开；
+#      .sha256sum（--release-sum），且至少 3 个——这是「ISO 与 Release 是
+#      同一份内核」的唯一判据。载荷再编一次内核就会同名包哈希分叉，此处
+#      必红；失败消息带出对照的发行版本，把「版本错配」与「同版但哈希
+#      分叉」分开；
 #   5. 镜像清单的构建来源指纹与 RPM 清单同值且非空（REL-03）。
 #
 # 之所以独立成 gate：这些断言此前内联在 image-build.yml 里，只能靠两小时的
@@ -32,6 +40,7 @@ readonly EINVAL=5
 OUT=""
 EXPECT_KERNEL=""
 REL_RPMS="${AIRYMAX_REL_RPMS:-}"
+REL_SUM="${AIRYMAX_REL_SUM:-}"
 ISO_REL="desktop/iso"
 PAYLOAD_REL="desktop/payload/airymax"
 
@@ -39,7 +48,7 @@ usage()
 {
     cat <<'EOF'
 用法: ci/gates/image-verify.sh --out DIR [--expect-kernel pass|reuse]
-                               [--release-rpms DIR]
+                               [--release-rpms DIR --release-sum FILE]
                                [--iso-rel SUB] [--payload-rel SUB]
 EOF
 }
@@ -49,6 +58,7 @@ while [ "$#" -gt 0 ]; do
         --out)          OUT="${2:-}"; shift 2 ;;
         --expect-kernel) EXPECT_KERNEL="${2:-}"; shift 2 ;;
         --release-rpms) REL_RPMS="${2:-}"; shift 2 ;;
+        --release-sum)  REL_SUM="${2:-}"; shift 2 ;;
         --iso-rel)      ISO_REL="${2:-}"; shift 2 ;;
         --payload-rel)  PAYLOAD_REL="${2:-}"; shift 2 ;;
         -h|--help) usage; exit 0 ;;
@@ -111,33 +121,25 @@ say "ISO 摘要一致: ${got} ${name}"
 if [ -n "${REL_RPMS}" ]; then
     payload="${OUT}/${PAYLOAD_REL}/payload-manifest.txt"
     [ -f "${payload}" ] || die "缺少载荷清单: ${payload}"
-    shopt -s nullglob
-    sums=("${REL_RPMS}"/agent-linux-*.sha256sum)
-    shopt -u nullglob
-    [ "${#sums[@]}" -gt 0 ] || die "发行目录没有 agent-linux-*.sha256sum"
+    # 清单位置由取件方给出。这里不接受「目录里没有就再猜一次」：猜对一次
+    # 只是布局碰巧相同，猜错一次就把布局差异报成资产缺失，两者都不该发生。
+    [ -n "${REL_SUM}" ] ||
+        die "给出 --release-rpms 时必须同时给出发行摘要清单（--release-sum / AIRYMAX_REL_SUM）"
+    [ -r "${REL_SUM}" ] || die "发行摘要清单不存在: ${REL_SUM}"
 
     # 摘要文件名带发行版本（agent-linux-<ver>.sha256sum）。判据问的是「载荷
     # 与发行是不是同一版」：不同源时哈希当然不同，只说「摘要不一致」会把
     # 版本错配读成内核随机性分叉——0.0.3 收尾期用 release_tag=v0.0.3 派发
     # 0.0.4 的树，现场就是照这条消息去查内核构建的。带上版本号，一眼分开。
-    vers="$(for s in "${sums[@]}"; do
-        b="${s##*/}"
-        b="${b#agent-linux-}"
-        printf '%s\n' "${b%.sha256sum}"
-    done | sort -u | paste -sd, -)"
+    vers="${REL_SUM##*/}"
+    vers="${vers#agent-linux-}"
+    vers="${vers%.sha256sum}"
 
     n=0
     while read -r kind psum pname; do
         [ "${kind}" = rpm ] || continue
         case "${pname}" in airymaxos-kernel*) ;; *) continue ;; esac
-        hit=0
-        for s in "${sums[@]}"; do
-            if grep -qxF "${psum}  ${pname}" "${s}"; then
-                hit=1
-                break
-            fi
-        done
-        [ "${hit}" -eq 1 ] ||
+        grep -qxF "${psum}  ${pname}" "${REL_SUM}" ||
             die "${pname} 不在发行摘要 v${vers} 中（载荷内核与发行不同源）"
         n=$(( n + 1 ))
     done <"${payload}"

@@ -173,6 +173,11 @@ expect "制品路径按清单定位到架构目录" 0 "发行内核包就绪: 2 
 # 出口指向下载落盘目录而不是制品源目录：下游在 GH 环境里读的就是这个路径。
 expect "取件目录写进环境出口" 0 "export AIRYMAX_REL_RPMS=${OUT}/dist/rpm/${A}" \
     --tag v0.0.4 --repo o/r --dir "${OUT}" --run-id 77
+# 摘要清单与 RPM 目录必须同时交出：制品路径下两者不同目录，下游若自己按
+# 通配符找清单，只能在该布局下失败。
+expect "摘要清单路径写进环境出口" 0 \
+    "export AIRYMAX_REL_SUM=${OUT}/${SUM}" \
+    --tag v0.0.4 --repo o/r --dir "${OUT}" --run-id 77
 
 mkfix
 D="${FAKE}/art/78/release-artifacts-0.0.4/dist/rpm/aarch64"

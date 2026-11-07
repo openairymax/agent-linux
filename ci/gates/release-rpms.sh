@@ -107,5 +107,11 @@ have="$(find "${rpmdir}" -name "airymaxos-kernel*.${ARCH}.rpm" | wc -l)"
 [ "${have}" -eq "${want}" ] ||
     die "内核包 ${have} 个，校验和登记 ${want} 个"
 
+# 取件方要的是「发行资产在哪」，不止「内核包在哪」。制品路径把 RPM 留在
+# dist/rpm/<arch>/ 里，摘要清单留在制品根；发布页路径两者平铺。若只交出
+# RPM 目录，下游就得自己在里面按通配符找清单——平铺时碰巧找到，制品路径
+# 必然找不到，而失败消息会写成「发行目录没有校验和」，把布局差异伪装成
+# 资产缺失。布局由本门禁唯一掌握，两个出口一起给出，下游不再猜。
 env_set "${ENV_KEY}" "${rpmdir}"
+env_set AIRYMAX_REL_SUM "${sum}"
 say "发行内核包就绪: ${have} 个来自 ${TAG}"
