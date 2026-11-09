@@ -159,7 +159,10 @@ check_source()
     # 策略源本身与 spec 的键断言：任一被改回 true 都只在装机现场可见。
     want_line "${saver}" 'lock-enabled=false' "screensaver-policy"
     want_line "${saver}" 'idle-lock-enabled=false' "screensaver-policy"
+    want_line "${saver}" 'sleep-activation-enabled=false' "screensaver-policy"
     want_text "${spec}" 'lock-enabled=false' "spec-check/screensaver"
+    want_text "${spec}" 'sleep-activation-enabled=false' \
+        "spec-check/screensaver-sleep"
 
     # 展示名一处定义、多处派生：/etc/issue 首行、引导菜单、system-release
     # 全部取自 PRETTY_NAME，改版只改 os-release 时其余落点必须跟着走。
