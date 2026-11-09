@@ -24,7 +24,7 @@ fails=0
 FX="${tmp}/fx"
 DOC="${tmp}/docs"
 mkdir -p "${FX}/ci/gates" "${FX}/ci/lib" "${FX}/distro/lockfile" \
-    "${FX}/distro/comps" "${DOC}"
+    "${FX}/distro/comps" "${FX}/distro/specs" "${DOC}"
 cp "${GATE}" "${FX}/ci/gates/ukui-lock.sh"
 cp "${ROOT}/ci/lib/log.sh" "${FX}/ci/lib/log.sh"
 cp "${ROOT}/distro/lockfile/ukui_check.py" "${FX}/distro/lockfile/"
@@ -206,12 +206,21 @@ policy:
 EOF
 }
 
+# 桌面版本只在发行版 spec 里声明一次，台账的 ukui-control-center 版本必须
+# 与它相等。夹具缺这一行时门禁报 desktop/macro，等于没有夹具。
+spec()
+{
+    printf '%%global ukui_desktop_version 3.1.2\n' \
+        >"${FX}/distro/specs/airymaxos-release.spec"
+}
+
 mkfix()
 {
     base
     ledger
     comps
     seeds
+    spec
     docs
 }
 
@@ -306,6 +315,17 @@ sed -i '/name: ukui-shell/,/segment:/{s/state: absent/state: available/}' \
     "${FX}/distro/lockfile/ukui-components.yaml"
 out="$(run --source "${FX}")"
 check "不存在的包被登记为可用判拒绝" 1 "$?" "${out}" "ledger/absent"
+
+mkfix
+sed -i 's/ukui_desktop_version 3.1.2/ukui_desktop_version 3.1.1/' \
+    "${FX}/distro/specs/airymaxos-release.spec"
+out="$(run --source "${FX}")"
+check "桌面版本与控制中心台账不一致判拒绝" 1 "$?" "${out}" "desktop/version"
+
+mkfix
+sed -i '/ukui_desktop_version/d' "${FX}/distro/specs/airymaxos-release.spec"
+out="$(run --source "${FX}")"
+check "发行版未声明桌面版本判拒绝" 1 "$?" "${out}" "desktop/macro"
 
 mkfix
 sed -i 's/^  - ukui-menu$/  - ukui-menu\n  - ukui-shell/' \
