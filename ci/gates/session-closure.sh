@@ -157,9 +157,12 @@ check_source()
         "display-mode/ladder"
 
     # 策略源本身与 spec 的键断言：任一被改回 true 都只在装机现场可见。
+    want_line "${saver}" 'idle-activation-enabled=false' "screensaver-policy"
     want_line "${saver}" 'lock-enabled=false' "screensaver-policy"
     want_line "${saver}" 'idle-lock-enabled=false' "screensaver-policy"
     want_line "${saver}" 'sleep-activation-enabled=false' "screensaver-policy"
+    want_text "${spec}" 'idle-activation-enabled=false' \
+        "spec-check/screensaver-idle"
     want_text "${spec}" 'lock-enabled=false' "spec-check/screensaver"
     want_text "${spec}" 'sleep-activation-enabled=false' \
         "spec-check/screensaver-sleep"
