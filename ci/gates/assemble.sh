@@ -93,6 +93,12 @@ mkdir -p "${OUT}"
 
 mounts=(-v "${SRC}:/src:ro" -v "${OUT}:/out" -v "${MEDIA}:/media:ro"
         -v "${DNF_CACHE}:/var/cache/dnf:rw")
+# 上游仓库定义以只读方式挂进容器：ukui-control-center 是 EPOL 源码重建配方，
+# 它的一组 BuildRequires（qt5/kf5/mate）只在 EPOL 里有，而容器镜像自带的
+# repo 文件不含 EPOL。挂进去的就是目标机 /etc/yum.repos.d/airymaxos.repo 的
+# 同一份源文件，构建期与装机后看到同一张仓库表，不存在第二处 URL 清单。
+mounts+=(-v "${SRC}/distro/repo/airymax-os.repo"
+         ":/etc/yum.repos.d/99-airy-upstream.repo:ro")
 envs=(-e ACCEPTANCE="$(airy_profile)" -e ISO_BASE="${ISO_BASE}")
 # 构建来源指纹随容器传入：流水线给 AIRYMAX_RUN_ID + AIRYMAX_COMMIT，本地
 # 显式传 AIRYMAX_BUILD_ID。三者缺省时驱动回落到 git 短 sha 或配方摘要，
