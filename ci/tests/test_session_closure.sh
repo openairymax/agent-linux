@@ -116,6 +116,7 @@ spec()
 %check
 grep -qxF 'lock-enabled=false' "\${airy_saver}"
 grep -qxF 'sleep-activation-enabled=false' "\${airy_saver}"
+grep -qxF 'idle-activation-enabled=false' "\${airy_saver}"
 printf '%s\n' "\${airy_grub}" | grep -qxF '  set gfxmode=${GFXMODE}'
 printf '%s\n' "\${airy_grub}" | grep -qxF '  set gfxpayload=keep'
 test "\${airy_pretty}" = "\${airy_dist} \${airy_vid}"
@@ -180,6 +181,7 @@ saver_body()
 [org/ukui/screensaver]
 lock-enabled=false
 idle-lock-enabled=false
+idle-activation-enabled=false
 sleep-activation-enabled=false
 EOF
 }
