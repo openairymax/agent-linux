@@ -9,6 +9,16 @@
 #          —— pahole/BTF、模块签名、tracepoint、SDT 探针
 #   脚本侧  git python3 python3-devel perl tar gzip rsync diffutils which
 #          util-linux findutils ca-certificates —— run-image-ci.sh 的运行时依赖
+#   取源侧  curl —— 配方以 `# spec-lint: source-url` 声明上游 tarball 时，
+#          build-rpms.sh 用它下载并校验摘要
+#   重建侧  ukui-control-center 的 BuildRequires（qt5/kf5/mate 一组）——
+#          该包按 EPOL 源码重建，rpmbuild 在容器内按 rpmdb 解析 BR，缺一条
+#          就只会报「Failed build dependencies」，因此逐条列在这里，让
+#          工具链缓存一次预热、装配段严格离线。这些包只在 EPOL，容器镜像
+#          自带的 repo 文件不含 EPOL，由 ci/gates 挂 distro/repo/
+#          airymax-os.repo 补齐仓库表。
+#          改动重建配方的 BR 必须同步本清单：两份不同步的唯一后果是装配段
+#          构建失败，而失败信息指向配方，不指向这份清单。
 rpm-build
 lorax
 createrepo_c
@@ -43,3 +53,37 @@ diffutils
 which
 util-linux
 ca-certificates
+curl
+qt5-qtbase-devel
+qt5-qtdeclarative-devel
+qt5-qtsvg-devel
+qt5-qttools-devel
+qt5-qtx11extras-devel
+gsettings-qt-devel
+glib2-devel
+dconf-devel
+libmatekbd-devel
+libmatemixer-devel
+mate-desktop-devel
+libkscreen-qt5-devel
+kf5-ki18n-devel
+kf5-kwindowsystem-devel
+kf5-kxmlgui-devel
+kf5-kglobalaccel-devel
+kf5-kguiaddons-devel
+libxklavier-devel
+libxml2-devel
+libX11-devel
+libxkbfile-devel
+libxcb-devel
+boost-devel
+polkit-qt5-1-devel
+pulseaudio-libs-devel
+libpwquality-devel
+xorg-x11-server-devel
+upower-devel
+pam-devel
+cups-devel
+ukui-interface
+libddcutil-devel
+libkylin-chkname-devel
