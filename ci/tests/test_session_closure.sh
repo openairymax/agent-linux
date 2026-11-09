@@ -115,6 +115,7 @@ spec()
     w specs/airymaxos-release.spec <<EOF
 %check
 grep -qxF 'lock-enabled=false' "\${airy_saver}"
+grep -qxF 'sleep-activation-enabled=false' "\${airy_saver}"
 printf '%s\n' "\${airy_grub}" | grep -qxF '  set gfxmode=${GFXMODE}'
 printf '%s\n' "\${airy_grub}" | grep -qxF '  set gfxpayload=keep'
 test "\${airy_pretty}" = "\${airy_dist} \${airy_vid}"
@@ -179,6 +180,7 @@ saver_body()
 [org/ukui/screensaver]
 lock-enabled=false
 idle-lock-enabled=false
+sleep-activation-enabled=false
 EOF
 }
 
@@ -332,6 +334,14 @@ sed -i 's/^lock-enabled=false$/lock-enabled=true/' \
     "${FX}/distro/login/00-airymax-screensaver"
 out="$(run --source "${FX}")"
 check "策略源键为 true 判拒绝" 1 "$?" "${out}" "screensaver-policy"
+
+# 挂起锁定是第三条独立路径：只关空闲与屏保两个键，唤醒后仍会弹出空口令
+# 账户取不掉的锁屏（0.0.4 的 285H 实机现象），必须单独判拒绝。
+saver
+sed -i 's/^sleep-activation-enabled=false$/sleep-activation-enabled=true/' \
+    "${FX}/distro/login/00-airymax-screensaver"
+out="$(run --source "${FX}")"
+check "挂起锁定键为 true 判拒绝" 1 "$?" "${out}" "screensaver-policy"
 
 # 命名 SSoT：PRETTY_NAME 形状、ASCII 纯度、派生点存在、无第二事实源。
 mkfix
