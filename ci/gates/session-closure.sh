@@ -190,15 +190,24 @@ brand_sso()
     local osrel="${d}/distro/release/os-release"
     local spec="${d}/distro/specs/airymaxos-release.spec"
     local iso="${d}/distro/scripts/build-iso.sh"
-    local pretty vid dist hits
+    local pretty vid dist hits name
 
     [ -f "${osrel}" ] || { bad "brand/os-release: 缺少 ${osrel}"; return 0; }
     pretty=$(sed -n 's/^PRETTY_NAME="\(.*\)"$/\1/p' "${osrel}")
     vid=$(sed -n 's/^VERSION_ID="\(.*\)"$/\1/p' "${osrel}")
+    name=$(sed -n 's/^NAME="\(.*\)"$/\1/p' "${osrel}")
     [ -n "${pretty}" ] || { bad "brand/os-release: 无 PRETTY_NAME"; return 0; }
     [ -n "${vid}" ] || { bad "brand/os-release: 无 VERSION_ID"; return 0; }
 
     dist="${pretty% *}"
+    # NAME 走的是与控制台同一条非 UTF-8 通道：openEuler 的
+    # /etc/grub.d/10_linux 把 NAME 原样写进引导菜单标题，而 GRUB 只加载
+    # 无 CJK 字形的 unicode.pf2。故 NAME 必须等于 ASCII 短名本身，不允许
+    # 再挂人读后缀——285H 实测「开源极境」四字在菜单上整段不显示。
+    if [ "${name}" != "${dist}" ]; then
+        bad "brand/name: NAME「${name:-absent}」不等于短名「${dist}」"
+        return 0
+    fi
     if [ "${pretty}" != "${dist} ${vid}" ]; then
         bad "brand/pretty-shape: PRETTY_NAME「${pretty}」不等于「${dist} ${vid}」"
         return 0
