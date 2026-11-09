@@ -128,7 +128,7 @@ EOF
 osrel()
 {
     w release/os-release <<'EOF'
-NAME="OpenAirymax 开源极境"
+NAME="OpenAirymax"
 VERSION_ID="0.0.4"
 PRETTY_NAME="OpenAirymax 0.0.4"
 EOF
@@ -346,7 +346,7 @@ check "挂起锁定键为 true 判拒绝" 1 "$?" "${out}" "screensaver-policy"
 # 命名 SSoT：PRETTY_NAME 形状、ASCII 纯度、派生点存在、无第二事实源。
 mkfix
 w release/os-release <<'EOF'
-NAME="OpenAirymax 开源极境"
+NAME="OpenAirymax"
 VERSION_ID="0.0.4"
 PRETTY_NAME="OpenAirymax"
 EOF
@@ -355,12 +355,21 @@ check "展示名缺版本号判拒绝" 1 "$?" "${out}" "brand/pretty-shape"
 
 mkfix
 w release/os-release <<'EOF'
-NAME="OpenAirymax 开源极境"
+NAME="开源极境"
 VERSION_ID="0.0.4"
 PRETTY_NAME="开源极境 0.0.4"
 EOF
 out="$(run --source "${FX}")"
 check "非 ASCII 展示名判拒绝" 1 "$?" "${out}" "brand/ascii"
+
+mkfix
+w release/os-release <<'EOF'
+NAME="OpenAirymax 开源极境"
+VERSION_ID="0.0.4"
+PRETTY_NAME="OpenAirymax 0.0.4"
+EOF
+out="$(run --source "${FX}")"
+check "NAME 挂人读后缀判拒绝" 1 "$?" "${out}" "brand/name"
 
 mkfix
 printf '  menu label Install OpenAirymax 0.0.4\n' \
