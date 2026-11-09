@@ -76,8 +76,11 @@ EOF
 # 挂的是 distro/repo/airymax-os.repo——目标机 dnf 客户端配置的同一份源文件，
 # 构建期与装机后共用一张仓库表。装配段的离线重放必须挂同一份文件，否则
 # 缓存里的 EPOL 元数据找不到对应的 repo id，--cacheonly 解析失败。
-repo_mount=(-v "${ROOT}/distro/repo/airymax-os.repo"
-            ":/etc/yum.repos.d/99-airy-upstream.repo:ro")
+# -v 的实参是单个 src:dst[:opts] 字符串。拆成两个数组元素时 docker 只把
+# 源路径交给 -v，剩下的 ":dst:ro" 会被当成镜像名，报
+# "docker: invalid reference format"（run 42588557904）。
+repo_spec="${ROOT}/distro/repo/airymax-os.repo:/etc/yum.repos.d/99-airy-upstream.repo:ro"
+repo_mount=(-v "${repo_spec}")
 
 # timeout(1) 只执行外部命令，包在 shell 函数上会退成
 # 「timeout: failed to run command 'dnf_run'」（run 41613120035）。时限因此
