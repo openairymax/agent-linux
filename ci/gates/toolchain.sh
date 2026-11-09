@@ -70,6 +70,15 @@ dnf -y install "${opts[@]}" ${AIRYMAX_PKGS}
 stamp "工具链: ${AIRYMAX_MODE} 安装完成"
 EOF
 
+# 上游仓库定义以只读方式挂进容器。工具链里含 ukui-control-center 重建所需的
+# 一组 BuildRequires，它们只在 EPOL；容器镜像自带的 repo 文件不含 EPOL，
+# 不挂这一份就会在解析阶段报「没有可用软件包」，而配方本身没有问题。
+# 挂的是 distro/repo/airymax-os.repo——目标机 dnf 客户端配置的同一份源文件，
+# 构建期与装机后共用一张仓库表。装配段的离线重放必须挂同一份文件，否则
+# 缓存里的 EPOL 元数据找不到对应的 repo id，--cacheonly 解析失败。
+repo_mount=(-v "${ROOT}/distro/repo/airymax-os.repo"
+            ":/etc/yum.repos.d/99-airy-upstream.repo:ro")
+
 # timeout(1) 只执行外部命令，包在 shell 函数上会退成
 # 「timeout: failed to run command 'dnf_run'」（run 41613120035）。时限因此
 # 加在 docker 这一层：命令先装进数组，需要限时才在数组头部插 timeout。
@@ -77,7 +86,8 @@ EOF
 dnf_run()
 {
     local limit="$1" mode="$2"
-    local cmd=(docker run --rm -v "${CACHE}:/var/cache/dnf:rw")
+    local cmd=(docker run --rm -v "${CACHE}:/var/cache/dnf:rw"
+               "${repo_mount[@]}")
 
     if [ "${limit}" -gt 0 ]; then
         cmd=(timeout "${limit}" "${cmd[@]}")
@@ -100,7 +110,8 @@ else
             break
         fi
         warn "第 ${try} 次在线获取未完成"
-        docker run --rm -v "${CACHE}:/var/cache/dnf:rw" "${IMAGE}" \
+        docker run --rm -v "${CACHE}:/var/cache/dnf:rw" \
+            "${repo_mount[@]}" "${IMAGE}" \
             dnf clean metadata >/dev/null 2>&1 || true
         [ "${try}" -lt 3 ] || die "工具链在线获取三次未成功"
     done
