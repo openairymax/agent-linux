@@ -355,7 +355,10 @@ jobs:
       # 属于 accept。清单同时需要发行包与内核包自证 build 与载荷摘要，故在
       # 这里把两份包随产物交给 accept：跨 job 不共享文件系统，缺这一步
       # accept 就只能手写构建号，清单退回成一组看起来对的字符串。
-      # 两个制品根下载后层级不同，门禁按文件名递归取唯一一份。
+      # 两个制品根下载后层级不同，门禁按文件名递归取唯一一份。下载侧必须
+      # 与门禁同一条判据：release-rpms 解出的内核包保留 dist/rpm/<arch>/
+      # 层级（run 42527470419 的 Fetch 步骤日志已写明落点），固定一层 glob
+      # 只匹配到发行包一份，accept 的通道清单因此报「No kernel RPM」。
       - name: Upload release rpms
         if: success() && inputs.release_tag != '' && !inputs.acceptance
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -363,7 +366,7 @@ jobs:
           name: airymaxos-release-rpms
           path: |
             ${{ runner.temp }}/out/rpms/RPMS/*/airymaxos-release-*.noarch.rpm
-            ${{ runner.temp }}/rel-rpms/airymaxos-kernel*.x86_64.rpm
+            ${{ runner.temp }}/rel-rpms/**/airymaxos-kernel*.x86_64.rpm
           retention-days: 7
           if-no-files-found: error
 
