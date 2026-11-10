@@ -162,15 +162,28 @@ att_set_iso()
     printf '%s\t%s\n' "${1##*/}" "$(sha256sum "$1" | cut -d' ' -f1)" >"$2"
 }
 
+# 发布资产按发布页上的名字登记，而工作树里 RPM 按架构分目录存放、发布页是
+# 平铺的一层：只在 ${dir} 顶层找，会把「布局不同」误判成「资产缺失」。按名字
+# 在树内定位，证明的 subject 才与页面对得上。同名多份时无法确定证的是哪一份，
+# 必须失败而不是取第一个。
+att_rel_file()
+{
+    local dir="$1" name="$2" hits n
+    hits="$(find "${dir}" \( -name .git -prune \) -o -type f -name "${name}" -print)"
+    n="$(printf '%s\n' "${hits}" | awk 'NF { n++ } END { print n + 0 }')"
+    [ "${n}" -eq 1 ] || return 1
+    printf '%s\n' "${hits}"
+}
+
 att_set_rel()
 {
-    local dir="$1" out="$2" f
+    local dir="$1" out="$2" f p
     [ -d "${dir}" ] || die "发布目录不存在: ${dir}"
     airy_assets_want "${dir}" "${WORK}/assets" || die "无法从摘要清单推导发布资产集"
     : >"${out}"
     while IFS= read -r f; do
-        [ -f "${dir}/${f}" ] || die "发布资产缺失: ${f}"
-        printf '%s\t%s\n' "${f}" "$(sha256sum "${dir}/${f}" | cut -d' ' -f1)" >>"${out}"
+        p="$(att_rel_file "${dir}" "${f}")" || die "发布资产缺失或重名: ${f}"
+        printf '%s\t%s\n' "${f}" "$(sha256sum "${p}" | cut -d' ' -f1)" >>"${out}"
     done <"${WORK}/assets"
 }
 
