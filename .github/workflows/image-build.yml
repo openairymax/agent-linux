@@ -162,12 +162,15 @@ jobs:
       # 分叉，装机介质也就无法用发行校验和核验。
       # 位置在整条链路的最前：tag 写错、资产缺失、摘要不符都只花一分钟，
       # 而它排在工具链预热之后时，同样的错误要等 75 分钟才暴露。
+      # 按四个架构各取一份：制品本来就是整包下载，多架构只多几次校验，却让
+      # 后面的固件预演能同时看到每个架构的模块树——riscv64 没有实机兜底，
+      # ARM 的板载无线在 QEMU 里不出现，这条判据只能在这里成立。
       - name: Fetch release kernel RPMs
         if: inputs.release_tag != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ inputs.release_tag }}
-        run: ci/ci.sh release-rpms --tag "$TAG" --repo "$GITHUB_REPOSITORY" --arch x86_64 --dir "$RUNNER_TEMP/rel-rpms" ${{ inputs.rpms_run != '' && format('--run-id {0}', inputs.rpms_run) || '' }}
+        run: ci/ci.sh release-rpms --tag "$TAG" --repo "$GITHUB_REPOSITORY" --arch x86_64 --arch aarch64 --arch riscv64 --arch loongarch64 --dir "$RUNNER_TEMP/rel-rpms" ${{ inputs.rpms_run != '' && format('--run-id {0}', inputs.rpms_run) || '' }}
 
       # 介质由 sha256 固定、跨轮不变：整目录以摘要为键缓存。命中时 3.2 GiB
       # 下载（run 40485745100 的 ISO 单件就占 43 分钟）退化为本地解包，

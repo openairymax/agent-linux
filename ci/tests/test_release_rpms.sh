@@ -139,7 +139,14 @@ rpm()
     printf 'rpm:%s\n' "$1" >"$1"
 }
 
-# sums <清单> <目录> <文件名>... — 按 sha256sum 格式写清单（只写文件名）。
+# addsum <清单> <绝对路径> — 按 sha256sum 格式追加一行（只写文件名）。
+addsum()
+{
+    printf '%s  %s\n' "$(sha256sum "$2" | cut -d' ' -f1)" "$(basename "$2")" \
+        >>"$1"
+}
+
+# sums <清单> <目录> <文件名>... — 从空清单开始写，只写该目录下的文件。
 sums()
 {
     local list="$1" dir="$2" f
@@ -147,8 +154,7 @@ sums()
     shift 2
     : >"${list}"
     for f in "$@"; do
-        printf '%s  %s\n' \
-            "$(sha256sum "${dir}/${f}" | cut -d' ' -f1)" "${f}" >>"${list}"
+        addsum "${list}" "${dir}/${f}"
     done
 }
 
@@ -164,10 +170,9 @@ D="${FAKE}/art/77/release-artifacts-0.0.4/dist/rpm/${A}"
 rpm "${D}/${K1}"
 rpm "${D}/${K2}"
 rpm "${FAKE}/art/77/release-artifacts-0.0.4/dist/rpm/aarch64/${AR}"
-sums "${FAKE}/art/77/release-artifacts-0.0.4/${SUM}" "${D}" "${K1}" "${K2}" \
-    >/dev/null
-sha256sum "${FAKE}/art/77/release-artifacts-0.0.4/dist/rpm/aarch64/${AR}" |
-    sed "s#.*/##" >>"${FAKE}/art/77/release-artifacts-0.0.4/${SUM}"
+sums "${FAKE}/art/77/release-artifacts-0.0.4/${SUM}" "${D}" "${K1}" "${K2}"
+addsum "${FAKE}/art/77/release-artifacts-0.0.4/${SUM}" \
+    "${FAKE}/art/77/release-artifacts-0.0.4/dist/rpm/aarch64/${AR}"
 expect "制品路径按清单定位到架构目录" 0 "发行内核包就绪: 2 个" \
     --tag v0.0.4 --repo o/r --dir "${OUT}" --run-id 77
 # 出口指向下载落盘目录而不是制品源目录：下游在 GH 环境里读的就是这个路径。
@@ -184,11 +189,35 @@ D="${FAKE}/art/78/release-artifacts-0.0.4/dist/rpm/aarch64"
 A2=aarch64
 rpm "${D}/${AR}"
 rpm "${FAKE}/art/78/release-artifacts-0.0.4/dist/rpm/${A}/${K1}"
-sums "${FAKE}/art/78/release-artifacts-0.0.4/${SUM}" "${D}" "${AR}" >/dev/null
-sha256sum "${FAKE}/art/78/release-artifacts-0.0.4/dist/rpm/${A}/${K1}" |
-    sed "s#.*/##" >>"${FAKE}/art/78/release-artifacts-0.0.4/${SUM}"
+sums "${FAKE}/art/78/release-artifacts-0.0.4/${SUM}" "${D}" "${AR}"
+addsum "${FAKE}/art/78/release-artifacts-0.0.4/${SUM}" \
+    "${FAKE}/art/78/release-artifacts-0.0.4/dist/rpm/${A}/${K1}"
 expect "换架构只取该架构的包" 0 "发行内核包就绪: 1 个" \
     --tag v0.0.4 --repo o/r --dir "${OUT}" --run-id 78 --arch "${A2}"
+
+# 跨架构预演要同时看到每个架构的模块树，故一次取件可以复核多个架构。两例
+# 分开守两件事：全在场时逐架构各出一行结论；有一个架构没登记时照样判负，
+# 不被其他架构的齐全掩盖。
+mkfix
+D="${FAKE}/art/79/release-artifacts-0.0.4/dist/rpm/${A}"
+rpm "${D}/${K1}"
+rpm "${FAKE}/art/79/release-artifacts-0.0.4/dist/rpm/aarch64/${AR}"
+sums "${FAKE}/art/79/release-artifacts-0.0.4/${SUM}" "${D}" "${K1}"
+addsum "${FAKE}/art/79/release-artifacts-0.0.4/${SUM}" \
+    "${FAKE}/art/79/release-artifacts-0.0.4/dist/rpm/aarch64/${AR}"
+expect "多架构各自复核" 0 "发行内核包就绪: 1 个 x86_64" \
+    --tag v0.0.4 --repo o/r --dir "${OUT}" --run-id 79 --arch "${A}" --arch "${A2}"
+expect "多架构逐行报告" 0 "发行内核包就绪: 1 个 aarch64" \
+    --tag v0.0.4 --repo o/r --dir "${OUT}" --run-id 79 --arch "${A}" --arch "${A2}"
+expect "多架构出口取首个架构" 0 "export AIRYMAX_REL_RPMS=${OUT}/dist/rpm/${A}" \
+    --tag v0.0.4 --repo o/r --dir "${OUT}" --run-id 79 --arch "${A}" --arch "${A2}"
+
+mkfix
+D="${FAKE}/art/80/release-artifacts-0.0.4/dist/rpm/${A}"
+rpm "${D}/${K1}"
+sums "${FAKE}/art/80/release-artifacts-0.0.4/${SUM}" "${D}" "${K1}" >/dev/null
+expect "多架构缺一员仍判负" 1 "未登记 aarch64 内核包" \
+    --tag v0.0.4 --repo o/r --dir "${OUT}" --run-id 80 --arch "${A}" --arch "${A2}"
 
 # ---- 发布页路径：平铺，清单与包同目录 ----
 mkfix
