@@ -51,11 +51,12 @@ jobs:
     # 发布只重放已有制品时跳过整段构建：制品字节由 build-and-sign 一次产出并
     # 带摘要，重放与重构建是两件事，前者不产生任何新字节。
     if: inputs.publish_run == ''
-    # 上限由内核构建步的 210min 决定：前置 checkout/apt 实测 5.3min，
-    # 构建后还有 SDK、OCI 与签名约 15min，合计约 230min；240min 只剩
-    # 10min 余量，慢镜像即可吃光，故 job 预算提到 300min
-    # （GitHub 托管 runner 上限 360min）。
-    timeout-minutes: 300
+    # job 预算必须罩住「前置依赖安装 + 内核四腿 + 签名上传」三段之和，
+    # 且每段都要留出与其方差相称的余量。实测：前置 checkout/apt 5.3min
+    # （慢源上出现过 18min），内核四腿 209.8min，签名与上传约 20min。
+    # 取 360min（GitHub 托管 runner 硬上限）：四腿按 270min 封顶时，
+    # 28+270+20=318min，仍有 42min 富余。
+    timeout-minutes: 360
     # 步骤顺序按「失败代价递增」排列：静态门禁（秒）→ 版本与签名密钥自检
     # （秒）→ 依赖安装与 SBOM/SDK（分钟）→ 内核四腿（小时）→ 签名与上传。
     # 代价大的步骤排在不具依赖关系的廉价步骤之后，任何输入错误都在最便宜
@@ -160,12 +161,13 @@ jobs:
         run: ci/ci.sh release-deps
 
       # 4 架构内核 RPM：单 job 内顺序构建（管理仓 2 job 铁律，不得引入
-      # matrix job）。实测 x86_64 60.6min、aarch64 57.5min、riscv64 16.7min，
-      # 前三腿已占 135min；末腿 loongarch64 在第 150min 被杀时尚未出包。
-      # 旧的 150min 封顶恰好卡在末腿，整轮连同已完成的三个架构一起丢弃。
-      # 封顶按实测提到 210min（末腿留 75min），仍在 job 的 300min 之内。
+      # matrix job）。实测 x86_64 60.6min、aarch64 57.5min、riscv64 16.7min、
+      # loongarch64 75min，合计 209.8min。旧封顶取 210min，只比实测多 12 秒：
+      # 这不是余量，是把一次 3.5 小时的发布会话押在「今天不比上次慢」上，
+      # 任何一腿抖动一次就整轮作废（四腿同 job，前三腿的产物一起丢）。
+      # 故按「实测 + 约 29% 方差余量」取 270min，仍在 job 的 360min 之内。
       - name: Build kernel RPM (4 architectures)
-        timeout-minutes: 210
+        timeout-minutes: 270
         env:
           SOURCE_DATE_EPOCH: ${{ steps.epoch.outputs.value }}
         run: ci/ci.sh release-kernel build
