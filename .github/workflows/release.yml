@@ -348,7 +348,7 @@ jobs:
         if: steps.meta.outputs.pre_rel == 'false'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ci/ci.sh release-stage hold --tag "${{ steps.meta.outputs.tag }}" --repo "${{ github.repository }}"
+        run: ci/ci.sh release-stage --stage hold --tag "${{ steps.meta.outputs.tag }}" --repo "${{ github.repository }}"
 
       # 上传没有事务：glob 少一项、某个 PUT 被重试吞掉、或上传在 timeout
       # 边缘被截断，页面都会安静地少几件东西，而 action-gh-release 只要
