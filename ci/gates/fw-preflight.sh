@@ -7,8 +7,17 @@
 #                                --dnf-cache DIR --arch NAME [--arch NAME ...]
 #
 # 时机在镜像组装之前：判据的两半只有这一刻同时在场。固件名字集在闭包池里
-# （linux-firmware 是 noarch，四个架构共用一份），模块树的请求名在四个架构
-# 的内核模块包里。走过这一步，另外三个架构的模块树就不在宿主上了。
+# （固件包都是 noarch，四个架构共用一份），模块树的请求名在四个架构的内核
+# 模块包里。走过这一步，另外三个架构的模块树就不在宿主上了。
+#
+# 固件名字集按 distro/firmware/fw-manifest.txt 取，而不是写死 linux-firmware：
+# 镜像里的固件树是清单里所有提供包的并集，漏一个包就会把它提供的条目报成
+# 缺件（run 42797570216：regulatory.db 与 regulatory.db.p7s 由 wireless-regdb
+# 提供，却因为只读了 linux-firmware 而判负）。
+#
+# 不支持类器件走 distro/firmware/fw-exempt.txt 显式记账：表内命中打 exempt
+# 行、不计入 miss，表外缺件仍判负。判据不缩到某几个驱动，否则新驱动带来的
+# 缺件会静悄悄通过。
 #
 # 装机后的复核（T26）只看镜像自己的 rootfs，回答不了「该架构模块树请求的
 # 固件，固件树里到底有没有」。riscv64 没有实机兜底，ARM 的板载无线在 QEMU
@@ -50,7 +59,7 @@ usage()
         '                              --dnf-cache DIR --arch NAME [--arch NAME ...]' \
         '' \
         '  --image      构建容器镜像（提供 rpm、dnf）' \
-        '  --pool       闭包池，内含 linux-firmware 的 RPM' \
+        '  --pool       闭包池，内含固件清单声明的全部固件包' \
         '  --rpms       发行内核包目录，含各架构的 kernel-modules RPM' \
         '  --dnf-cache  工具链缓存，容器内据此离线补 cpio、kmod 与 findutils' \
         '  --arch       要预演的架构名，可重复'
@@ -90,12 +99,29 @@ POOL="$(cd "${POOL}" && pwd -P)"
 RPMS="$(cd "${RPMS}" && pwd -P)"
 DNF_CACHE="$(cd "${DNF_CACHE}" && pwd -P)"
 
-# 固件名字集只取一份：全架构共用同一个 noarch 包，按架构各取一次只会把
-# 「池里有几份 linux-firmware」变成结论的一部分，而那不是本门禁的问题。
-FW_RPM="$(find "${POOL}" -type f -name 'linux-firmware-*.rpm' -print |
-    sort | head -1)"
-[ -n "${FW_RPM}" ] || die "闭包池没有 linux-firmware: ${POOL}"
-say "固件名字集: $(basename "${FW_RPM}")"
+# 固件名字集取清单声明的每个提供包：镜像是这些包的并集，只读其中一个就会
+# 把另一个包的条目报成缺件。清单里同一包按文件重复出现，按包名去重。
+MANIFEST="${ROOT}/distro/firmware/fw-manifest.txt"
+EXEMPT="${ROOT}/distro/firmware/fw-exempt.txt"
+[ -r "${MANIFEST}" ] || die "固件清单不存在: ${MANIFEST}"
+[ -r "${EXEMPT}" ] || die "固件豁免表不存在: ${EXEMPT}"
+FW_RPMS=""
+fw_seen=" "
+while read -r fw_pkg _; do
+    case "${fw_pkg}" in
+        ''|'#'*) continue ;;
+    esac
+    case "${fw_seen}" in
+        *" ${fw_pkg} "*) continue ;;
+    esac
+    fw_seen="${fw_seen}${fw_pkg} "
+    fw_rpm="$(find "${POOL}" -type f -name "${fw_pkg}-*.rpm" -print |
+        sort | head -1)"
+    [ -n "${fw_rpm}" ] || die "闭包池没有 ${fw_pkg}: ${POOL}"
+    FW_RPMS="${FW_RPMS} --firmware-rpm /pool/$(basename "${fw_rpm}")"
+    say "固件名字集: $(basename "${fw_rpm}")"
+done <"${MANIFEST}"
+[ -n "${FW_RPMS}" ] || die "固件清单没有声明提供包: ${MANIFEST}"
 
 # 模块包在宿主上按架构定位，容器里只认路径：容器内没有 find 也照样能跑，
 # 且「哪个架构没有包」由宿主报，指向的是实际挂进来的目录。找不到的架构
@@ -136,8 +162,9 @@ for entry in ${MODS}; do
         fail=1
         continue
     fi
-    sh /src/distro/ci/fw-preflight.sh --firmware-rpm "${FW_RPM}" \
-        --modules-rpm "${mod}" --arch "${arch}" || fail=1
+    sh /src/distro/ci/fw-preflight.sh ${FW_RPMS} \
+        --modules-rpm "${mod}" --arch "${arch}" \
+        --exempt /src/distro/firmware/fw-exempt.txt || fail=1
 done
 exit "${fail}"
 EOF
@@ -153,7 +180,7 @@ trap 'rm -f "${log}"' EXIT INT TERM
 group "固件预演 ${ARCHES[*]}"
 docker run --rm "${mounts[@]}" \
     -e MODS="${MODS}" \
-    -e FW_RPM="/pool/$(basename "${FW_RPM}")" \
+    -e FW_RPMS="${FW_RPMS}" \
     "${IMAGE}" sh -c "${ctr_sh}" 2>&1 | tee "${log}"
 rc=${PIPESTATUS[0]}
 endgroup
