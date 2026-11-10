@@ -7,6 +7,10 @@
 #   内核侧  dwarves cpio openssl-devel libtraceevent-devel elfutils-libelf-devel
 #          clang llvm elfutils-devel libcap-devel numactl-devel systemtap-sdt-devel
 #          —— pahole/BTF、模块签名、tracepoint、SDT 探针
+#          kmod —— 固件预演（ci/gates/fw-preflight.sh）用 modinfo 从模块树
+#          读 MODULE_FIRMWARE() 自报的请求名，与安装期 fw-flat.sh 同一条取法。
+#          基础镜像是否自带 kmod 不作假设：缺它时预演报 fail=no-requests，
+#          也就是把「工具不在」误读成「没有固件请求」，这条依赖必须显式声明。
 #   脚本侧  git python3 python3-devel perl tar gzip rsync diffutils which
 #          util-linux findutils ca-certificates —— run-image-ci.sh 的运行时依赖
 #   取源侧  curl —— 配方以 `# spec-lint: source-url` 声明上游 tarball 时，
@@ -32,6 +36,7 @@ bison
 bc
 dwarves
 cpio
+kmod
 openssl-devel
 libtraceevent-devel
 elfutils-libelf-devel
