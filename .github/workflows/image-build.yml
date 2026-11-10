@@ -262,6 +262,18 @@ jobs:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ci/ci.sh pool-seed --dir "$RUNNER_TEMP/closure-cache" --token "$GHCR_TOKEN"
 
+      # 固件预演：判据的两半只有这一刻同时在场——固件名字集在闭包池里
+      # （linux-firmware 是 noarch，四个架构共用一份），模块树的请求名在
+      # 发行内核包目录里。走过这一步，另外三个架构的模块树就不在宿主上了。
+      # 装机后的 T26 只看镜像自己的 rootfs，回答不了「该架构模块树请求的
+      # 固件，固件树里到底有没有」；riscv64 没有实机，ARM 的板载无线在
+      # QEMU 里也不出现，能拦的只有这里。
+      # 走发行页取件时只有 x86_64 一份，按单架构预演并在日志里报覆盖数；
+      # 走流水线产物取件时四份都在，四个架构一起判。
+      - name: Preflight firmware layout per architecture
+        if: inputs.release_tag != ''
+        run: ci/ci.sh fw-preflight --image "$AIRYMAX_BUILD_IMAGE" --pool "$RUNNER_TEMP/closure-cache" --rpms "$RUNNER_TEMP/rel-rpms" ${{ inputs.rpms_run != '' && '--arch x86_64 --arch aarch64 --arch riscv64 --arch loongarch64' || '--arch x86_64' }}
+
       # step 级时限必须小于 job 时限（300）：job 超时是强制取消，取消态下
       # `if: failure()` 的 log-dump 与 `if: always()` 的产物上传都不会执行，
       # 等于跑满五小时后既没有 ISO 也没有日志（run 40997227280 的现象）。
