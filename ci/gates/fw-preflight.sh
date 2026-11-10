@@ -18,11 +18,13 @@
 # RPM、按架构各调一次、汇总覆盖了哪些架构。
 #
 # 工具链走 --dnf-cache 离线补齐，和镜像组装同一份缓存：基础镜像自带 rpm，
-# 但不带 cpio 与 kmod，直接在裸镜像里跑会把「工具」误报成「包坏」——run
-# 42774563541 的现场是四个架构全报 fail=no-modules，实际是 cpio 不在。
-# 四个架构共用一次 docker 会话，缓存只需解一次；这层补齐也把「工具缺」
-# 与「模块包缺内容」分成两条独立记号（no-toolchain / no-modules），不再
-# 让人对着一个笼统的 fail= 去猜。
+# 但不带 cpio、kmod 与 findutils，直接在裸镜像里跑会把「工具」误报成
+# 「包坏」——run 42774563541 的现场是四个架构全报 fail=no-modules，实际是
+# cpio 不在；run 42790132617 则是 cpio 在而 find 不在，模块树解出来却是零
+# 文件（命令被 2>/dev/null 吞掉，退出码也不报错）。四个架构共用一次 docker
+# 会话，缓存只需解一次；这层补齐也把「工具缺」与「模块包缺内容」分成两条
+# 独立记号（no-toolchain / no-modules），不再让人对着一个笼统的 fail= 去猜。
+# 装完逐个探一遍，缺哪个就直接点名，不再让下游把它读成包的问题。
 #
 # 退出码：0 请求的架构全部通过；1 有架构缺件或取件失败；5 参数不满足。
 # ===========================================================================
@@ -50,7 +52,7 @@ usage()
         '  --image      构建容器镜像（提供 rpm、dnf）' \
         '  --pool       闭包池，内含 linux-firmware 的 RPM' \
         '  --rpms       发行内核包目录，含各架构的 kernel-modules RPM' \
-        '  --dnf-cache  工具链缓存，容器内据此离线补 cpio 与 kmod' \
+        '  --dnf-cache  工具链缓存，容器内据此离线补 cpio、kmod 与 findutils' \
         '  --arch       要预演的架构名，可重复'
 }
 
@@ -114,10 +116,16 @@ MODS="$(printf '%s\n' "${mods[@]}")"
 # 可用仓库」，缓存里的 cpio/kmod 反而取不到。
 read -r -d '' ctr_sh <<'EOF'
 set -u
-dnf -y install --cacheonly --setopt=keepcache=1 cpio kmod >/dev/null || {
-    printf 'AIRYMAX-FW-PREFLIGHT fail=no-toolchain need="cpio kmod"\n'
+dnf -y install --cacheonly --setopt=keepcache=1 cpio kmod findutils \
+    >/dev/null || {
+    printf 'AIRYMAX-FW-PREFLIGHT fail=no-toolchain need="cpio kmod findutils"\n'
     exit 1
 }
+for tool in find cpio rpm2cpio; do
+    command -v "${tool}" >/dev/null 2>&1 && continue
+    printf 'AIRYMAX-FW-PREFLIGHT fail=no-toolchain need="%s"\n' "${tool}"
+    exit 1
+done
 fail=0
 for entry in ${MODS}; do
     arch=${entry%%:*}
