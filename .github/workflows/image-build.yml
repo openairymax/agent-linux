@@ -271,11 +271,13 @@ jobs:
       # 装机后的 T26 只看镜像自己的 rootfs，回答不了「该架构模块树请求的
       # 固件，固件树里到底有没有」；riscv64 没有实机，ARM 的板载无线在
       # QEMU 里也不出现，能拦的只有这里。
-      # 走发行页取件时只有 x86_64 一份，按单架构预演并在日志里报覆盖数；
-      # 走流水线产物取件时四份都在，四个架构一起判。
+      # 两条取件路径都交齐四个架构：build-and-sign 的矩阵本身就是四腿，
+      # 制品与发布页（dist/rpm/**/*.rpm）因而都带四份内核包。此前按「发布页
+      # 只有 x86_64」给发行页路径留了单架构分支，前提是错的，后果是那条路
+      # 上的 riscv64 无人判——而它没有实机兜底，这里漏掉就再没别处能拦。
       - name: Preflight firmware layout per architecture
         if: inputs.release_tag != ''
-        run: ci/ci.sh fw-preflight --image "$AIRYMAX_BUILD_IMAGE" --pool "$RUNNER_TEMP/closure-cache" --rpms "$RUNNER_TEMP/rel-rpms" ${{ inputs.rpms_run != '' && '--arch x86_64 --arch aarch64 --arch riscv64 --arch loongarch64' || '--arch x86_64' }}
+        run: ci/ci.sh fw-preflight --image "$AIRYMAX_BUILD_IMAGE" --pool "$RUNNER_TEMP/closure-cache" --rpms "$RUNNER_TEMP/rel-rpms" --arch x86_64 --arch aarch64 --arch riscv64 --arch loongarch64
 
       # step 级时限必须小于 job 时限（300）：job 超时是强制取消，取消态下
       # `if: failure()` 的 log-dump 与 `if: always()` 的产物上传都不会执行，
