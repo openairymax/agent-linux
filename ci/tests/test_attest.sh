@@ -216,6 +216,28 @@ case "${out}" in
 esac
 mv "${tmp}/moved.rpm" "${rel}/${rpm2}"
 
+# 发布页是平铺的一层，工作树是分架构的子目录（dist/rpm/<arch>/）。两种布局
+# 必须得到同一份 subject 集合，否则出证会在真实发布作业里按「资产缺失」失败。
+nest="${tmp}/nest"
+mkdir -p "${nest}/dist/rpm/x86_64"
+cp "${rel}/agent-linux-0.0.4.sha256sum" "${rel}/agent-linux-0.0.4.sha256sum.asc" \
+    "${rel}/agent-linux-0.0.4-release-notes.md" \
+    "${rel}/agent-linux-0.0.4-release-notes.md.asc" "${nest}/"
+cp "${rel}/${rpm1}" "${rel}/${rpm2}" "${nest}/dist/rpm/x86_64/"
+out="$(run verify --file "${rfile}" --dir "${nest}")"
+case "${out}" in
+*AIRYMAX-ATTEST-PASS*) ok "verify 按名字在子目录定位资产" ;;
+*) bad "verify 未按名字定位子目录资产"; printf '%s\n' "${out}" >&2 ;;
+esac
+
+# 同名两份时「证的是哪一份」无从确定，必须拒绝而不是取第一个。
+cp "${nest}/dist/rpm/x86_64/${rpm2}" "${nest}/"
+out="$(run verify --file "${rfile}" --dir "${nest}")"
+case "${out}" in
+*"发布资产缺失或重名"*) ok "verify 在资产重名时失败" ;;
+*) bad "verify 未拦住资产重名"; printf '%s\n' "${out}" >&2 ;;
+esac
+
 # 证明自身被删掉一条 subject：集合比对必须双向，反向漏检等于默认「少一项
 # 也算一致」。
 python3 - "${rfile}" "${tmp}/short.json" <<'PY'
