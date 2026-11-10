@@ -98,11 +98,13 @@ say "固件名字集: $(basename "${FW_RPM}")"
 # 模块包在宿主上按架构定位，容器里只认路径：容器内没有 find 也照样能跑，
 # 且「哪个架构没有包」由宿主报，指向的是实际挂进来的目录。找不到的架构
 # 仍占一行（路径为空），让容器统一打印 fail=no-rpm，不在这里提前退出——
-# 缺一个架构不该掩盖其余三个的判定结果。
+# 缺一个架构不该掩盖其余三个的判定结果。路径换成容器内的视角：宿主绝对
+# 路径在容器里不存在，照抄过去只会让每个架构都报取件失败。
 mods=()
 for arch in "${ARCHES[@]}"; do
     mod="$(find "${RPMS}" -type f \
         -name "airymaxos-kernel-modules-*.${arch}.rpm" -print | sort | head -1)"
+    [ -z "${mod}" ] || mod="/rpms${mod#"${RPMS}"}"
     mods+=("${arch}:${mod}")
 done
 MODS="$(printf '%s\n' "${mods[@]}")"
@@ -120,8 +122,9 @@ fail=0
 for entry in ${MODS}; do
     arch=${entry%%:*}
     mod=${entry#*:}
-    if [ -z "${mod}" ]; then
-        printf 'AIRYMAX-FW-PREFLIGHT arch=%s fail=no-rpm rpms=/rpms\n' "${arch}"
+    if [ -z "${mod}" ] || [ ! -f "${mod}" ]; then
+        printf 'AIRYMAX-FW-PREFLIGHT arch=%s fail=no-rpm path=%s\n' \
+            "${arch}" "${mod:-/rpms}"
         fail=1
         continue
     fi
