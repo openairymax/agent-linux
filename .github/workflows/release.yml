@@ -366,6 +366,12 @@ jobs:
       - name: Attest release assets
         run: ci/ci.sh attest build --kind rel --out . --tag "${{ steps.meta.outputs.tag }}"
 
+      # 出证写盘与推送 registry 是两件事，推送端用 oras 走 OCI；runner 镜像
+      # 不带它。同一份 ci/gates/attest.sh 在 image-build 与 payload-seed 里能
+      # 跑通，只因那两条流水线各自装了 oras——这里缺一步，发布就会在最后
+      # 一步以「缺少命令: oras」收场，页面已建、资产已传、唯独没有证明。
+      - uses: oras-project/setup-oras@22ce207df3b08e061f537244349aac6ae1d214f6 # v1
+
       - name: Publish release attestation
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
