@@ -63,21 +63,35 @@ def sig_bad(path):
         return "short"
     if blob[STRUCT:] != MARKER:
         return "no-marker"
+    return tail_bad(blob, size)
+
+
+def tail_bad(blob, size):
+    """构型与长度判读：签名段不得吞掉模块正文，长度不得为 0。"""
     ident, signer, key_id = blob[2], blob[3], blob[4]
+    why = id_bad(ident, signer, key_id)
+    if why:
+        return why
     sig_len = int.from_bytes(blob[8:12], "big")
-    if ident == PKCS7:
-        if signer or key_id:
-            return "bad-pkcs7"
-    elif ident == NOTE:
-        if not signer or not key_id:
-            return "bad-note"
-    else:
-        return "bad-id-type"
     if not sig_len:
         return "zero-sig"
     if sig_len + MIN + signer + key_id >= size:
         return "sig-overrun"
     return ""
+
+
+def id_bad(ident, signer, key_id):
+    """签名构型：PKCS#7 不带名字，NOTE 构型必须两者俱全。
+
+    这两个字段的判据来自 kernel/module/signing.c：ident 为 PKCS#7 时
+    signer/key_id 保留未用，必须为 0；为 NOTE 时是构型标记，必须非 0。
+    构型之外的取值只可能来自损坏或伪造的尾部，单独成码以免混进上面两类。
+    """
+    if ident == PKCS7:
+        return "bad-pkcs7" if signer or key_id else ""
+    if ident == NOTE:
+        return "" if signer and key_id else "bad-note"
+    return "bad-id-type"
 
 
 def rel_dirs(root, kernel):
