@@ -722,6 +722,35 @@ def layout_check(per_path, probe_failures):
     )
 
 
+def _dsl_fail(label, flags, probed):
+    """单条 dsl-* 路径的降级契约：开关在位，且探测到两路分支。"""
+    failures = []
+    if "-DAIRY_SC_FALLBACK" not in flags:
+        failures.append(f"  [{label}] 缺少 -DAIRY_SC_FALLBACK")
+    branches = probed.get(("D", "branches", ""))
+    if branches != DSL_BRANCHES:
+        failures.append(
+            f"  [{label}] AIRY_DSL_UAPI_BRANCHES={branches}, "
+            f"期望 {DSL_BRANCHES}"
+        )
+    return failures
+
+
+def _off_fail(label, probed):
+    """常规路径不得激活降级层：探针须回报未定义分支数。"""
+    branches = probed.get(("D", "branches", ""))
+    if branches == -1:
+        return []
+    return [f"  [{label}] 降级层意外激活 (branches={branches})"]
+
+
+def _dsl_labels():
+    """COMPILE_PATHS 里的 dsl-* 路径标签，保持清单顺序。"""
+    return [
+        label for label, _flags in COMPILE_PATHS if label.startswith(DSL_PREFIX)
+    ]
+
+
 def fallback_check(per_path):
     """Verify the [DSL] degraded contract on the dsl-* compile paths.
 
@@ -730,27 +759,22 @@ def fallback_check(per_path):
     that the degraded layer stayed inactive.
     """
     name = "[DSL] 降级路径契约 (__KERNEL__ / __linux__ 两路)"
-    dsl_labels = [
-        label for label, _flags in COMPILE_PATHS if label.startswith(DSL_PREFIX)
-    ]
+    dsl_labels = _dsl_labels()
     if not dsl_labels:
         return CheckResult(name, False, "  COMPILE_PATHS 未包含 [DSL] 降级路径")
 
-    flags_by_label = dict(COMPILE_PATHS)
-    failures = []
-    for label in dsl_labels:
-        if "-DAIRY_SC_FALLBACK" not in flags_by_label[label]:
-            failures.append(f"  [{label}] 缺少 -DAIRY_SC_FALLBACK")
-        branches = per_path.get(label, {}).get(("D", "branches", ""))
-        if branches != DSL_BRANCHES:
-            failures.append(
-                f"  [{label}] AIRY_DSL_UAPI_BRANCHES={branches}, "
-                f"期望 {DSL_BRANCHES}"
-            )
-    for label in (lbl for lbl, _flags in COMPILE_PATHS if lbl not in dsl_labels):
-        branches = per_path.get(label, {}).get(("D", "branches", ""))
-        if branches != -1:
-            failures.append(f"  [{label}] 降级层意外激活 (branches={branches})")
+    failures = [
+        item
+        for label, flags in COMPILE_PATHS
+        if label.startswith(DSL_PREFIX)
+        for item in _dsl_fail(label, flags, per_path.get(label, {}))
+    ]
+    failures += [
+        item
+        for label, _flags in COMPILE_PATHS
+        if not label.startswith(DSL_PREFIX)
+        for item in _off_fail(label, per_path.get(label, {}))
+    ]
     if failures:
         return CheckResult(name, False, "\n".join(failures))
     return CheckResult(
