@@ -1,4 +1,8 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0 -->
+
 # tools/lib — Cross-tool shared layer
+
+Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 
 This directory is **not** a CLI tool. It holds the code that several tool
 directories must share for their outputs to stay comparable; `tools/airy`
