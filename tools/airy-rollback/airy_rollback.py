@@ -785,37 +785,63 @@ def _apply(
 ) -> Outcome:
     plan, snap = _resolve(manifest, args)
     checks = preflight(manifest, plan, snap, runner)
-    bad = [check for check in checks if not check.ok]
+    bad = _first_bad(checks)
     if args.dry_run:
-        detail = "dry-run：未执行任何命令"
-        if bad:
-            return Outcome(
-                EXIT_PREFLIGHT,
-                f"{detail}；前置检查未通过: {bad[0].name}",
-                plan,
-                checks,
-            )
-        return Outcome(EXIT_OK, detail, plan, checks)
+        return _dry_outcome(bad, plan, checks)
     if bad:
-        return Outcome(
-            EXIT_PREFLIGHT, f"前置检查未通过: {bad[0].name}", plan, checks
-        )
+        return Outcome(EXIT_PREFLIGHT, f"前置检查未通过: {bad}", plan, checks)
     code, detail, _ = run_steps(plan.steps, runner, manifest.timeout_s)
     if code != EXIT_OK:
         return Outcome(code, detail, plan, checks)
     if plan.layer is Layer.L3:
         return _finish_l3(manifest, args, plan, checks, runner)
-    checks = checks + verify_units(manifest, runner)
-    bad = [check for check in checks if not check.ok]
+    return _verified(manifest, plan, checks, runner)
+
+
+def _first_bad(checks: tuple[Check, ...]) -> str:
+    """首个未通过项的名字；全通过时为空串。"""
+    for check in checks:
+        if not check.ok:
+            return check.name
+    return ""
+
+
+def _dry_outcome(
+    bad: str, plan: Plan, checks: tuple[Check, ...]
+) -> Outcome:
+    """dry-run：只报前置结论，不执行任何命令。"""
+    detail = "dry-run：未执行任何命令"
     if bad:
         return Outcome(
-            EXIT_VERIFY, f"回滚后校验未通过: {bad[0].name}", plan, checks
+            EXIT_PREFLIGHT,
+            f"{detail}；前置检查未通过: {bad}",
+            plan,
+            checks,
         )
+    return Outcome(EXIT_OK, detail, plan, checks)
+
+
+def _verified(
+    manifest: Manifest, plan: Plan, checks: tuple[Check, ...], runner: Runner
+) -> Outcome:
+    """回滚后校验：任一单元不符即保留 pending，留待人工处置。"""
+    checks = checks + verify_units(manifest, runner)
+    bad = _first_bad(checks)
+    if bad:
+        return Outcome(
+            EXIT_VERIFY, f"回滚后校验未通过: {bad}", plan, checks
+        )
+    return _settle(manifest, plan, checks, "回滚完成")
+
+
+def _settle(
+    manifest: Manifest, plan: Plan, checks: tuple[Check, ...], detail: str
+) -> Outcome:
+    """清理 pending 并给出结论；L1 须注明配置不走回滚。"""
     try:
         _clear_pending(manifest)
     except RollbackError as exc:
         return Outcome(exc.code, exc.detail, plan, checks)
-    detail = "回滚完成"
     if plan.layer is Layer.L1:
         detail += "；%config(noreplace) 配置未回滚（OS-OPS-023）"
     return Outcome(EXIT_OK, detail, plan, checks)
