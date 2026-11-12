@@ -30,6 +30,7 @@ mkdir -p "${FX}/ci/gates" "${FX}/ci/lib" "${FX}/distro/lockfile" \
     "${FX}/distro/comps" "${FX}/distro/kickstart"
 cp "${GATE}" "${FX}/ci/gates/wallpaper-set.sh"
 cp "${ROOT}/ci/lib/log.sh" "${FX}/ci/lib/log.sh"
+cp "${ROOT}/ci/lib/opts.sh" "${FX}/ci/lib/opts.sh"
 
 readonly A=alpha_photo.jpg
 readonly B=beta_photo.jpg

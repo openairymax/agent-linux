@@ -29,6 +29,7 @@ mkdir -p "${FX}/ci/gates" "${FX}/ci/lib" \
     "${FX}/distro/release" "${FX}/distro/scripts"
 cp "${GATE}" "${FX}/ci/gates/session-closure.sh"
 cp "${ROOT}/ci/lib/log.sh" "${FX}/ci/lib/log.sh"
+cp "${ROOT}/ci/lib/opts.sh" "${FX}/ci/lib/opts.sh"
 
 readonly GFXMODE='2880x1800,2560x1600,2240x1400,1920x1200,1920x1080,1680x1050,1600x900,1280x1024,1024x768,auto'
 

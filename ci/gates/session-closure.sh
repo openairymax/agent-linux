@@ -27,12 +27,13 @@
 # ===========================================================================
 set -uo pipefail
 
-readonly EINVAL=5
 # 候选串是 GRUB 与 spec 的共同事实源：降序并集之后必须以 auto 兜底。
 # 两侧只比前缀的话，改动末位兜底不会被发现，故按整串逐字比对。
 readonly GFXMODE='2880x1800,2560x1600,2240x1400,1920x1200,1920x1080,1680x1050,1600x900,1280x1024,1024x768,auto'
 # shellcheck source=../lib/log.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/log.sh"
+# shellcheck source=../lib/opts.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/opts.sh"
 
 SOURCE=""
 ROOT=""
@@ -45,26 +46,7 @@ usage()
 EOF
 }
 
-need_dir()
-{
-    [ -n "$2" ] || { err "$1 需要目录路径"; exit "${EINVAL}"; }
-    [ -d "$2" ] || { err "$1 目录不存在: $2"; exit "${EINVAL}"; }
-}
-
-while [ "$#" -gt 0 ]; do
-    case "$1" in
-        --source) need_dir "$1" "${2:-}"; SOURCE="$2"; shift 2 ;;
-        --root)   need_dir "$1" "${2:-}"; ROOT="$2"; shift 2 ;;
-        -h|--help) usage; exit 0 ;;
-        *) err "未知参数: $1"; exit "${EINVAL}" ;;
-    esac
-done
-
-[ -n "${SOURCE}" ] || [ -n "${ROOT}" ] || {
-    err "至少给出 --source 或 --root"
-    usage >&2
-    exit "${EINVAL}"
-}
+opts_tree "$@"
 
 bad() { err "$*"; FAILS=$((FAILS + 1)); }
 
