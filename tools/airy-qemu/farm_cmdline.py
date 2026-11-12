@@ -171,14 +171,14 @@ def build_run(target: Target, job: FarmJob, env: RunEnv) -> Argv:
     return tuple(argv)
 
 
-def _check(target: Target, job: FarmJob, env: RunEnv) -> None:
-    """校验目标、作业与运行环境的一致性。"""
-    if not isinstance(target, Target):
-        raise _cfg(f"target must be Target, got {type(target).__name__}")
-    if not isinstance(job, FarmJob):
-        raise _cfg(f"job must be FarmJob, got {type(job).__name__}")
-    if not isinstance(env, RunEnv):
-        raise _cfg(f"env must be RunEnv, got {type(env).__name__}")
+def _need_type(value: object, cls: type, name: str) -> None:
+    """单项类型对齐；报错带实际类型，便于定位调用方传错。"""
+    if not isinstance(value, cls):
+        raise _cfg(f"{name} must be {cls.__name__}, got {type(value).__name__}")
+
+
+def _need_match(target: Target, job: FarmJob) -> None:
+    """作业与目标必须同机、同加速器、同架构。"""
     if job.machine != target.machine:
         raise _cfg("job machine does not match resolved target")
     if job.accel is not target.accel:
@@ -190,10 +190,23 @@ def _check(target: Target, job: FarmJob, env: RunEnv) -> None:
             f"kernel arch {job.kernel.arch.value} does not match "
             f"target arch {target.arch.value}"
         )
+
+
+def _need_rootfs(target: Target, env: RunEnv) -> None:
+    """跨架构运行必须显式给出 rootfs，本机同架构才可走 9p。"""
     host = env.host if env.host is not None else host_arch()
     if env.rootfs is None and host is not target.arch:
         where = "unknown host" if host is None else host.value
         raise _cfg(f"{target.arch.value} requires rootfs when running on {where}")
+
+
+def _check(target: Target, job: FarmJob, env: RunEnv) -> None:
+    """校验目标、作业与运行环境的一致性。"""
+    _need_type(target, Target, "target")
+    _need_type(job, FarmJob, "job")
+    _need_type(env, RunEnv, "env")
+    _need_match(target, job)
+    _need_rootfs(target, env)
 
 
 def _root_args(env: RunEnv) -> list[str]:
