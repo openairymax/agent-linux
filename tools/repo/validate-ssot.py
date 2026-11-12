@@ -223,27 +223,27 @@ def scan_documents(docs_root, registered):
     return used
 
 
-def validate(registered, used):
-    """Run validation and report results."""
+def _issues(registered, used):
+    """逐条比对使用点与注册表：未注册记 error，已废弃记 warning。"""
     errors = []
     warnings = []
-
-    # Check for unregistered IDs
     for rid in sorted(used):
+        files = used[rid]
         if rid not in registered:
-            files = used[rid]
             errors.append(
                 f"ERROR: '{rid}' used in {len(files)} file(s) "
                 f"(first: {files[0]}) but NOT registered in SSoT"
             )
         elif registered[rid].get('status') == 'deprecated':
-            files = used[rid]
             warnings.append(
                 f"WARN: deprecated '{rid}' still referenced in "
                 f"{len(files)} file(s) (first: {files[0]})"
             )
+    return errors, warnings
 
-    # Report
+
+def _summary(registered, used, errors, warnings):
+    """表头与计数：先给全局规模，再看问题清单。"""
     print("=" * 72)
     print("SSoT Validation Report")
     print("=" * 72)
@@ -253,28 +253,39 @@ def validate(registered, used):
     print(f"  Warnings:        {len(warnings)}")
     print("-" * 72)
 
-    if errors:
-        print("\nERRORS (unregistered rule IDs):")
-        for e in errors:
-            print(f"  {e}")
 
-    if warnings:
-        print("\nWARNINGS (deprecated rule IDs still in use):")
-        for w in warnings[:20]:  # Limit warnings output
-            print(f"  {w}")
-        if len(warnings) > 20:
-            print(f"  ... and {len(warnings) - 20} more warnings")
+def _print_rows(title, items, limit=None):
+    """打印一组问题；limit 只裁剪展示条数，总数仍照实报出。"""
+    if not items:
+        return
+    print(f"\n{title}:")
+    shown = items[:limit] if limit else items
+    for item in shown:
+        print(f"  {item}")
+    if limit and len(items) > limit:
+        print(f"  ... and {len(items) - limit} more warnings")
 
-    print("-" * 72)
+
+def _verdict(errors, warnings):
+    """退出码：未注册即失败；只有废弃告警仍算通过。"""
     if errors:
         print("RESULT: FAIL — unregistered rule IDs found")
         return 1
-    elif warnings:
+    if warnings:
         print("RESULT: PASS (with deprecation warnings)")
         return 0
-    else:
-        print("RESULT: PASS — all rule IDs registered")
-        return 0
+    print("RESULT: PASS — all rule IDs registered")
+    return 0
+
+
+def validate(registered, used):
+    """Run validation and report results."""
+    errors, warnings = _issues(registered, used)
+    _summary(registered, used, errors, warnings)
+    _print_rows("ERRORS (unregistered rule IDs)", errors)
+    _print_rows("WARNINGS (deprecated rule IDs still in use)", warnings, 20)
+    print("-" * 72)
+    return _verdict(errors, warnings)
 
 
 def usage(stream=sys.stdout):
