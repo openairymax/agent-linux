@@ -45,14 +45,13 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Iterator, Mapping
 
-try:
-    import yaml
-except ImportError:  # pragma: no cover - 环境缺失时在入口统一报错
-    yaml = None
+# tools/lib 是契约检查工具的共享层：结果类型与报告格式只能有一份。
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+from check_report import CheckResult, lead, print_report, yaml
 
-__all__ = ["CheckResult", "RepoSpec", "ScaffoldError", "main"]
+__all__ = ["RepoSpec", "ScaffoldError", "main"]
 
 # ─── Constants ─────────────────────────────────────────────────────────────
 
@@ -84,6 +83,7 @@ NAME_SKELETON = "公共骨架"
 NAME_LICENSE = "许可证标识"
 NAME_BUILD = "构建入口"
 NAME_ENTRY = "可编译入口"
+TITLE = "agent-linux AirymaxOS 八子仓脚手架一致性报告"
 
 _PATH_RE = re.compile(r"^[A-Za-z0-9._-][A-Za-z0-9._/-]*$")
 _SUBDIR_RE = re.compile(r"add_subdirectory\s*\(\s*([\w./-]+)")
@@ -100,21 +100,6 @@ _SRC_CANDIDATES = (".c", ".S")
 
 
 # ─── Data model ────────────────────────────────────────────────────────────
-
-
-@dataclass(frozen=True)
-class CheckResult:
-    """单项检查结果。
-
-    Attributes:
-        name: 检查项名称。
-        passed: 是否通过。
-        details: 失败证据或补充说明。
-    """
-
-    name: str
-    passed: bool
-    details: str = ""
 
 
 @dataclass(frozen=True)
@@ -549,41 +534,18 @@ def check_entry(man: Mapping[str, Any], root: Path) -> CheckResult:
 def build_checks(man: Mapping[str, Any],
                  root: Path) -> list[CheckResult]:
     """按序构建全部检查；schema 失败时短路。"""
-    schema = check_schema(man)
-    if not schema.passed:
-        return [schema]
-    return [
-        schema,
-        check_registry(man, root),
-        check_checkout(man, root),
-        check_skeleton(man, root),
-        check_license(man, root),
-        check_build(man, root),
-        check_entry(man, root),
-    ]
+    return lead(check_schema(man), _checks(man, root))
 
 
-# ─── Report ────────────────────────────────────────────────────────────────
-
-
-def print_report(results: list[CheckResult], check_mode: bool) -> None:
-    """输出检查报告；CI 模式仅输出汇总与失败证据。"""
-    total = len(results)
-    failed = [result for result in results if not result.passed]
-    state = "FAIL" if failed else "PASS"
-    if check_mode:
-        print(f"REPO-SCAFFOLD: {state} "
-              f"({total - len(failed)}/{total} checks)")
-        for result in failed:
-            print(f"  FAIL {result.name}: {result.details}")
-        return
-    for result in results:
-        mark = "PASS" if result.passed else "FAIL"
-        print(f"[{mark}] {result.name}")
-        if result.details:
-            print(f"       {result.details}")
-    print(f"\nREPO-SCAFFOLD: {state} "
-          f"({total - len(failed)}/{total} checks)")
+def _checks(man: Mapping[str, Any],
+            root: Path) -> Iterator[CheckResult]:
+    """生成 schema 之后的检查结果，由 lead 在 schema 通过后消费。"""
+    yield check_registry(man, root)
+    yield check_checkout(man, root)
+    yield check_skeleton(man, root)
+    yield check_license(man, root)
+    yield check_build(man, root)
+    yield check_entry(man, root)
 
 
 # ─── Main ──────────────────────────────────────────────────────────────────
@@ -621,7 +583,8 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_USAGE
 
     results = build_checks(man, root)
-    print_report(results, args.check)
+    print_report(results, "REPO-SCAFFOLD", args.check, TITLE,
+                 str(man.get("version", "?")))
     return EXIT_FAIL if any(not item.passed for item in results) else EXIT_PASS
 
 

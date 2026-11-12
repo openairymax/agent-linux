@@ -51,10 +51,9 @@ import re
 import sys
 from pathlib import Path
 
-try:
-    import yaml
-except ImportError:  # pragma: no cover - 环境缺失时在入口统一报错
-    yaml = None
+# tools/lib 是契约检查工具的共享层：结果类型与报告格式只能有一份。
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+from check_report import CheckResult, ManifestError, print_report, yaml
 
 # ─── Constants ─────────────────────────────────────────────────────────────
 
@@ -78,22 +77,6 @@ BUDGET_KEYS = frozenset({"timeout_minutes", "max_jobs_per_workflow"})
 GATE_KEYS = frozenset({"required_tokens"})
 FAIL_KEYS = frozenset({"label", "reasons"})
 REASON_KEYS = frozenset({"cross_arch", "compiler", "other"})
-
-
-# ─── Data model ────────────────────────────────────────────────────────────
-
-
-class CheckResult:
-    """单项检查结果。"""
-
-    def __init__(self, name, passed, details=""):
-        self.name = name
-        self.passed = passed
-        self.details = details
-
-
-class ManifestError(Exception):
-    """清单不可读取或 schema 非法。"""
 
 
 # ─── Helpers ───────────────────────────────────────────────────────────────
@@ -491,44 +474,6 @@ def build_checks(manifest, repo_root):
 # ─── Reports ───────────────────────────────────────────────────────────────
 
 
-def print_report(results, manifest, check_mode):
-    """打印检查报告。"""
-    total = len(results)
-    passed = sum(1 for result in results if result.passed)
-    failed = total - passed
-
-    if check_mode:
-        if failed == 0:
-            print(f"CI-MATRIX: PASS ({passed}/{total} checks)")
-        else:
-            print(f"CI-MATRIX: FAIL ({passed}/{total} checks, "
-                  f"{failed} failed)")
-            for result in results:
-                if not result.passed:
-                    print(f"  FAIL: {result.name}")
-                    for line in result.details.splitlines():
-                        print(f"    {line}")
-        return
-
-    print("=" * 72)
-    print("agent-linux AirymaxOS CI 编译矩阵一致性报告")
-    print(f"清单版本: {manifest.get('version', '?')}")
-    print("=" * 72)
-    for result in results:
-        marker = "[+]" if result.passed else "[-]"
-        status = "PASS" if result.passed else "FAIL"
-        print(f"{marker} {status}: {result.name}")
-        if result.details:
-            for line in result.details.splitlines():
-                print(f"      {line}")
-    print("-" * 72)
-    if failed == 0:
-        print(f"RESULT: PASS — 全部 {total} 项检查通过")
-    else:
-        print(f"RESULT: FAIL — {failed} 项检查未通过")
-    print("-" * 72)
-
-
 def list_cells(manifest, arches):
     """逐行输出矩阵展开结果。"""
     cells = expand_cells(manifest, arches)
@@ -664,7 +609,9 @@ def main(argv=None):
             print(f"ERROR: {exc}", file=sys.stderr)
             return EXIT_USAGE
     results = build_checks(manifest, repo_root)
-    print_report(results, manifest, args.check)
+    print_report(results, "CI-MATRIX", args.check,
+                 "agent-linux AirymaxOS CI 编译矩阵一致性报告",
+                 str(manifest.get("version", "?")))
     failed = sum(1 for result in results if not result.passed)
     return EXIT_FAIL if failed else EXIT_PASS
 

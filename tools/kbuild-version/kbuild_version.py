@@ -56,18 +56,17 @@ from __future__ import annotations
 import argparse
 import re
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple, TypeAlias
 
-try:
-    import yaml
-except ImportError:  # pragma: no cover - 环境缺失时在入口统一报错
-    yaml = None
+# tools/lib 是契约检查工具的共享层：结果类型与报告格式只能有一份。
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+from check_report import CheckResult, ManifestError, print_report, yaml
 
+# 导出表只列本模块定义的名字：共享层的类型与报告函数按需显式导入，
+# 不转出口。否则各工具的导出表前几项必然逐字相同，读的人分不清哪一层
+# 是自己的 API。
 __all__ = [
-    "CheckResult",
-    "ManifestError",
     "build_checks",
     "check_contract",
     "check_include",
@@ -83,7 +82,6 @@ __all__ = [
     "load_manifest",
     "main",
     "parse_vars",
-    "print_report",
     "render_contract",
 ]
 
@@ -132,28 +130,6 @@ AIRYMAXOS_DEFINE_PREFIX = "#define AIRYMAXOS_"
 
 TupleMap: TypeAlias = Dict[str, Any]
 Assigns: TypeAlias = List[Tuple[str, str]]
-
-
-# ─── Data model ────────────────────────────────────────────────────────────
-
-
-@dataclass(frozen=True)
-class CheckResult:
-    """单项检查结果。
-
-    Attributes:
-        name: 检查项名称，用于报告输出。
-        passed: 是否通过。
-        details: 失败时的可读证据；通过时为空串。
-    """
-
-    name: str
-    passed: bool
-    details: str = ""
-
-
-class ManifestError(Exception):
-    """清单不可读取或 schema 非法。"""
 
 
 # ─── Helpers ───────────────────────────────────────────────────────────────
@@ -487,56 +463,6 @@ def check_version_h(manifest: TupleMap, version_h: str | Path) -> CheckResult:
                                                "\n".join(actual)))
 
 
-# ─── Report ────────────────────────────────────────────────────────────────
-
-
-def print_report(results: Sequence[CheckResult], manifest: TupleMap,
-                 check_mode: bool) -> None:
-    """打印检查报告。
-
-    Args:
-        results: 检查结果序列。
-        manifest: 清单映射，用于输出清单版本。
-        check_mode: 为 True 时只输出单行汇总，供 CI 消费。
-    """
-    total = len(results)
-    passed = sum(1 for r in results if r.passed)
-    failed = total - passed
-
-    if check_mode:
-        if failed == 0:
-            print(f"KBUILD-VERSION: PASS ({passed}/{total} checks)")
-        else:
-            print(f"KBUILD-VERSION: FAIL ({passed}/{total} checks, "
-                  f"{failed} failed)")
-            for result in results:
-                if not result.passed:
-                    print(f"  FAIL: {result.name}")
-                    for line in result.details.splitlines():
-                        print(f"    {line}")
-        return
-
-    print("=" * 72)
-    print("agent-linux AirymaxOS Kbuild 版本注入一致性报告")
-    print(f"清单版本: {manifest.get('version', '?')}")
-    print("=" * 72)
-    print()
-    for result in results:
-        marker = "[+]" if result.passed else "[-]"
-        status = "PASS" if result.passed else "FAIL"
-        print(f"{marker} {status}: {result.name}")
-        if result.details:
-            for line in result.details.splitlines():
-                print(f"      {line}")
-    print()
-    print("-" * 72)
-    if failed == 0:
-        print(f"RESULT: PASS — 全部 {total} 项检查通过")
-    else:
-        print(f"RESULT: FAIL — {failed} 项检查未通过")
-    print("-" * 72)
-
-
 # ─── Main ──────────────────────────────────────────────────────────────────
 
 
@@ -618,7 +544,9 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         sys.exit(EXIT_USAGE)
 
     results = build_checks(manifest, repo_root, args.version_h)
-    print_report(results, manifest, args.check)
+    print_report(results, "KBUILD-VERSION", args.check,
+                 "agent-linux AirymaxOS Kbuild 版本注入一致性报告",
+                 str(manifest.get("version", "?")))
 
     failed = sum(1 for result in results if not result.passed)
     sys.exit(EXIT_FAIL if failed else EXIT_PASS)

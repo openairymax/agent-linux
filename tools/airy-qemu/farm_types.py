@@ -61,6 +61,7 @@ __all__ = [
     "KernelImage",
     "Machine",
     "Suite",
+    "TapCounts",
     "TapSummary",
     "Target",
 ]
@@ -159,28 +160,14 @@ class JobState(str, Enum):
         return self in (JobState.FAILED, JobState.TIMEOUT, JobState.ERROR)
 
 
-@dataclass(frozen=True)
-class TapSummary:
-    """TAP 结果汇总。
+class TapCounts:
+    """TAP 计数的派生判据。
 
-    plan_total / ok_count / not_ok_count 与 tools/tap/parse-tap.py 的返回值
-    语义一致；skip_count 是携带 ``# SKIP`` 指令的用例数，按
-    OS-TEST-021 单独计数，不并入 ok_count。
+    字段由使用方的 dataclass 声明：TapSummary 汇总整个作业，SuiteTally
+    汇总单个套件。派生量（已执行、缺失、完整、通过）只推导一次——两处
+    各写一份时，任何一处口径修正都会让汇总与分套件明细分叉，而二者恰恰
+    要互相自洽。
     """
-
-    plan_total: int
-    ok_count: int
-    not_ok_count: int
-    skip_count: int = 0
-
-    def __post_init__(self) -> None:
-        for name in ("plan_total", "ok_count", "not_ok_count", "skip_count"):
-            _need_nonneg(getattr(self, name), name)
-        if self.executed > self.plan_total:
-            raise ValueError(
-                "executed exceeds plan_total: "
-                f"{self.executed} > {self.plan_total}"
-            )
 
     @property
     def executed(self) -> int:
@@ -201,6 +188,30 @@ class TapSummary:
     def passed(self) -> bool:
         """是否完整执行且无 not ok。"""
         return self.complete and self.not_ok_count == 0
+
+
+@dataclass(frozen=True)
+class TapSummary(TapCounts):
+    """TAP 结果汇总。
+
+    plan_total / ok_count / not_ok_count 与 tools/tap/parse-tap.py 的返回值
+    语义一致；skip_count 是携带 ``# SKIP`` 指令的用例数，按
+    OS-TEST-021 单独计数，不并入 ok_count。
+    """
+
+    plan_total: int
+    ok_count: int
+    not_ok_count: int
+    skip_count: int = 0
+
+    def __post_init__(self) -> None:
+        for name in ("plan_total", "ok_count", "not_ok_count", "skip_count"):
+            _need_nonneg(getattr(self, name), name)
+        if self.executed > self.plan_total:
+            raise ValueError(
+                "executed exceeds plan_total: "
+                f"{self.executed} > {self.plan_total}"
+            )
 
 
 @dataclass(frozen=True)
