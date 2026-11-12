@@ -64,7 +64,7 @@ def _c_literal(value: int) -> str:
     return f"0x{value:X}"
 
 
-def _condition_context(row: RowIR) -> list[dict[str, Any]]:
+def _cond_ctx(row: RowIR) -> list[dict[str, Any]]:
     return [
         {
             "field_index": cond.field_index,
@@ -80,7 +80,7 @@ def _row_context(row: RowIR) -> dict[str, Any]:
     return {
         "number": row.number,
         "cond_count": len(row.conditions),
-        "conds": _condition_context(row),
+        "conds": _cond_ctx(row),
         "verdict_value": int(row.verdict),
         "fault_literal": "0" if row.fault is None else f"0x{row.fault:04X}",
     }

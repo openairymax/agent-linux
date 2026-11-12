@@ -47,7 +47,7 @@ from dsl_types import (
     TokenKind,
     ValueType,
     Verdict,
-    format_diagnostic,
+    fmt_diagnostic,
 )
 
 # 2. 公开导出
@@ -76,7 +76,7 @@ class Parser:
         return self._current().kind is TokenKind.EOF
 
     def _error(self, token: Token, message: str) -> DslSyntaxError:
-        return DslSyntaxError(format_diagnostic(self._source_name, token.span, message))
+        return DslSyntaxError(fmt_diagnostic(self._source_name, token.span, message))
 
     # ── 断言助手 ──
     def _check_keyword(self, text: str) -> bool:
@@ -112,14 +112,14 @@ class Parser:
         return token.value
 
     # ── 终结符 ──
-    def _parse_value_type(self) -> ValueType:
+    def _val_type(self) -> ValueType:
         token = self._expect(TokenKind.IDENT, "value type (u8|u16|u32|u64)")
         value_type = VALUE_TYPES.get(token.text)
         if value_type is None:
             raise self._error(token, f"unknown value type {token.text!r}")
         return value_type
 
-    def _parse_verdict_name(self) -> Verdict:
+    def _verdict_name(self) -> Verdict:
         token = self._expect(TokenKind.IDENT, "verdict (ALLOW|DENY|AUDIT|COMPLAIN)")
         verdict = VERDICT_BY_NAME.get(token.text)
         if verdict is None:
@@ -151,7 +151,7 @@ class Parser:
         span = self._expect_keyword("input").span
         name = self._expect(TokenKind.IDENT, "input field name").text
         self._expect_punct(":")
-        value_type = self._parse_value_type()
+        value_type = self._val_type()
         self._expect_punct(";")
         return InputDecl(name=name, value_type=value_type, span=span)
 
@@ -182,9 +182,9 @@ class Parser:
             if self._check_keyword("when"):
                 conditions.append(self._parse_when())
             elif self._check_keyword("verdict"):
-                verdict = self._parse_rule_verdict(verdict)
+                verdict = self._rule_verdict(verdict)
             elif self._check_keyword("fault"):
-                fault = self._parse_rule_fault(fault)
+                fault = self._rule_fault(fault)
             else:
                 raise self._error(
                     self._current(),
@@ -193,15 +193,15 @@ class Parser:
         self._expect_punct("}")
         return self._make_rule(number, conditions, verdict, fault, span)
 
-    def _parse_rule_verdict(self, existing: Verdict | None) -> Verdict:
+    def _rule_verdict(self, existing: Verdict | None) -> Verdict:
         if existing is not None:
             raise self._error(self._current(), "duplicate verdict clause in rule")
         self._expect_keyword("verdict")
-        verdict = self._parse_verdict_name()
+        verdict = self._verdict_name()
         self._expect_punct(";")
         return verdict
 
-    def _parse_rule_fault(self, existing: int | None) -> int:
+    def _rule_fault(self, existing: int | None) -> int:
         if existing is not None:
             raise self._error(self._current(), "duplicate fault clause in rule")
         return self._parse_fault()
@@ -226,12 +226,12 @@ class Parser:
             span=span,
         )
 
-    def _parse_default_verdict(self, existing: Verdict | None) -> Verdict:
+    def _dflt_verdict(self, existing: Verdict | None) -> Verdict:
         if existing is not None:
             raise self._error(self._current(), "duplicate default verdict clause in table")
         self._expect_keyword("default")
         self._expect_keyword("verdict")
-        verdict = self._parse_verdict_name()
+        verdict = self._verdict_name()
         self._expect_punct(";")
         return verdict
 
@@ -255,7 +255,7 @@ class Parser:
             elif self._check_keyword("rule"):
                 rules.append(self._parse_rule())
             elif self._check_keyword("default"):
-                default = self._parse_default_verdict(default)
+                default = self._dflt_verdict(default)
             else:
                 raise self._error(
                     self._current(), f"unexpected token in table body: {self._current().text!r}"
