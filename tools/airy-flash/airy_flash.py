@@ -1732,16 +1732,9 @@ def _close(
     return report, code
 
 
-def write_report(report: Report, path: Path) -> None:
-    payload = report.as_dict(TOOL_VERSION)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if path.suffix == ".json":
-        path.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-        )
-        return
-    rows: list[str] = [f"airymax-flash-report v1 (airy-flash {TOOL_VERSION})"]
-    for key, value in (
+def _head_rows(report: Report) -> list[str]:
+    """身份字段：键序固定，缺值留空，读日志的人不必查找字段在哪。"""
+    fields = (
         ("result", report.result),
         ("command", report.command),
         ("host", report.host),
@@ -1751,34 +1744,88 @@ def write_report(report: Report, path: Path) -> None:
         ("argv", " ".join(report.argv)),
         ("error", report.error),
         ("hint", report.hint),
-    ):
-        rows.append(f"{key}={value}")
+    )
+    return [f"{key}={value}" for key, value in fields]
+
+
+def _image_rows(image: ImageFacts) -> list[str]:
+    """映像段：实际摘要与期望摘要并排，便于事后判断校验是否生效。"""
+    return [
+        f"image.path={image.path}",
+        f"image.bytes={image.size}",
+        f"image.sha256={image.digest}",
+        f"image.sha256.expected={image.expected}",
+        f"image.sha256.source={image.sums_file}",
+    ]
+
+
+def _device_rows(device: DeviceFacts) -> list[str]:
+    """目标设备段：型号与序列号是事后追查「写到了哪个盘」的唯一凭据。"""
+    return [
+        f"device.path={device.path}",
+        f"device.kind={device.kind}",
+        f"device.bytes={device.size}",
+        f"device.model={device.model}",
+        f"device.serial={device.serial}",
+    ]
+
+
+def _oci_rows(oci: OciLedger) -> list[str]:
+    """发布清单段：逐块留痕，缺块或错块能直接定位到层。"""
+    rows = [
+        f"oci.target={oci.target}",
+        f"oci.name={oci.name}",
+        f"oci.sha256={oci.sha256}",
+        f"oci.chunks={oci.chunks}",
+        f"oci.chunk_bytes={oci.chunk_size}",
+    ]
+    rows.extend(
+        f"oci.part.{part.index}={part.digest} {part.size} {part.name}"
+        for part in oci.parts
+    )
+    return rows
+
+
+def _opt_rows(report: Report) -> list[str]:
+    """可选段：本次未涉及的映像/设备/清单整段不出现，不做空占位。"""
+    rows: list[str] = []
     if report.image:
-        rows.append(f"image.path={report.image.path}")
-        rows.append(f"image.bytes={report.image.size}")
-        rows.append(f"image.sha256={report.image.digest}")
-        rows.append(f"image.sha256.expected={report.image.expected}")
-        rows.append(f"image.sha256.source={report.image.sums_file}")
+        rows.extend(_image_rows(report.image))
     if report.device:
-        rows.append(f"device.path={report.device.path}")
-        rows.append(f"device.kind={report.device.kind}")
-        rows.append(f"device.bytes={report.device.size}")
-        rows.append(f"device.model={report.device.model}")
-        rows.append(f"device.serial={report.device.serial}")
+        rows.extend(_device_rows(report.device))
     if report.oci:
-        rows.append(f"oci.target={report.oci.target}")
-        rows.append(f"oci.name={report.oci.name}")
-        rows.append(f"oci.sha256={report.oci.sha256}")
-        rows.append(f"oci.chunks={report.oci.chunks}")
-        rows.append(f"oci.chunk_bytes={report.oci.chunk_size}")
-        for part in report.oci.parts:
-            rows.append(f"oci.part.{part.index}={part.digest} {part.size} {part.name}")
-    for check in report.checks:
-        rows.append(
-            f"check.{check.name}={SKIP if check.skipped else ('pass' if check.ok else 'fail')}"
-        )
-    for stage in report.stages:
-        rows.append(f"stage.{stage.index}.{stage.name}={stage.status} ({stage.detail})")
+        rows.extend(_oci_rows(report.oci))
+    return rows
+
+
+def _check_row(check: Check) -> str:
+    """预检项：skipped 优先于 ok，因为跳过项的 ok 值没有意义。"""
+    state = SKIP if check.skipped else ("pass" if check.ok else "fail")
+    return f"check.{check.name}={state}"
+
+
+def _stage_row(stage: Stage) -> str:
+    """阶段行：保留耗时明细，卡住时据此判断停在哪个阶段。"""
+    return f"stage.{stage.index}.{stage.name}={stage.status} ({stage.detail})"
+
+
+def _write_json(payload: dict, path: Path) -> None:
+    """结构化报告：UTF-8 原样落盘，保留中文说明。"""
+    text = json.dumps(payload, ensure_ascii=False, indent=2)
+    path.write_text(text + "\n", encoding="utf-8")
+
+
+def write_report(report: Report, path: Path) -> None:
+    """落盘报告：.json 走结构化，其余走 key=value 行文本。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.suffix == ".json":
+        _write_json(report.as_dict(TOOL_VERSION), path)
+        return
+    rows: list[str] = [f"airymax-flash-report v1 (airy-flash {TOOL_VERSION})"]
+    rows.extend(_head_rows(report))
+    rows.extend(_opt_rows(report))
+    rows.extend(_check_row(check) for check in report.checks)
+    rows.extend(_stage_row(stage) for stage in report.stages)
     path.write_text("\n".join(rows) + "\n", encoding="utf-8")
 
 
