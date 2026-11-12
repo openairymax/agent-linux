@@ -116,9 +116,11 @@ CIGATES = ROOT / "ci" / "gates"
 SOURCE_LIB = re.compile(r"lib/([a-z0-9_-]+)\.sh")
 FUNC_DEF = re.compile(r"^([a-z][a-z0-9_]*)\(\)", re.MULTILINE)
 # 命令位：行首，或 if/then/elif/else/while/until/do 之后，或 && || ; | 之后。
+# 名字后紧跟 = 的是变量赋值（`bad=0` 这类累加器），不是函数调用；
+# 不排除会把「门禁自己记账」误报成「调用了没 source 的库函数」。
 FUNC_CALL = re.compile(
     r"(?:^|[;&|]\s*|\b(?:if|then|elif|else|while|until|do)\s+)"
-    r"([a-z][a-z0-9_]*)", re.MULTILINE)
+    r"([a-z][a-z0-9_]*)(?![\w=])", re.MULTILINE)
 
 # 权限与并发：只看列 0 的顶层键，避免把 job 内同名片段当成顶层声明。
 TOP_PERM = re.compile(r"^permissions:", re.MULTILINE)
