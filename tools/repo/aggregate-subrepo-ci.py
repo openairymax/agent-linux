@@ -172,7 +172,7 @@ def _ci_status(api, owner_repo, sha, token, run_count):
     return "green", f"{run_count} check runs，combined={combined}"
 
 
-def main():
+def _build_parser():
     parser = argparse.ArgumentParser(
         description="聚合叶子子仓的 CI 状态"
     )
@@ -196,7 +196,66 @@ def main():
         "--api", default="https://api.github.com",
         help="GitHub API 根（默认 https://api.github.com）",
     )
-    args = parser.parse_args()
+    return parser
+
+
+def _expect(root):
+    """.gitmodules 清单只用来补缺，读不出来就退回 status 里的条目。"""
+    expected, gm_err = sub_paths(root)
+    if gm_err is not None:
+        print(
+            f"WARN: 无法从 .gitmodules 派生清单（{gm_err}），"
+            "仅报告 git submodule status 中的子模块",
+            file=sys.stderr,
+        )
+    return expected
+
+
+def _seed(subs, expected):
+    """子模块缺失时也输出明确报告：以 ? 占位，让缺口出现在聚合表里。"""
+    found = {s[0] for s in subs}
+    return subs + [(n, "?", "-") for n in expected if n not in found]
+
+
+def _row(args, path, sha):
+    """一行的状态。不在 status 里的子仓没有 sha，连请求都不发。"""
+    if sha == "?":
+        return "unknown", "子仓未在 submodule status 中"
+    repo = f"{args.owner}/{path}"
+    owner_repo = urllib.parse.quote(repo, safe="/")
+    return fetch_ci_state(args.api, owner_repo, sha, args.token)
+
+
+def _table(subs, args):
+    """打印聚合表，返回 (red, unknown) 计数。"""
+    red = unknown = 0
+    for path, sha, _sign in subs:
+        state, detail = _row(args, path, sha)
+        print(f"  {path:<14} {sha[:12]:<12} {state:<8} {detail}")
+        if state == "red":
+            red += 1
+        elif state == "unknown":
+            unknown += 1
+    return red, unknown
+
+
+def _verdict(args, red, unknown):
+    """红子仓只在 --fail-on-red 下拦下；unknown 一律只告警。"""
+    if unknown > 0:
+        print(
+            f"WARN: {unknown} 个子仓 CI 状态未知"
+            "（叶子仓未接入 CI 时属预期）",
+            file=sys.stderr,
+        )
+    if args.fail_on_red and red > 0:
+        print("FAIL: 存在红（red）子仓（--fail-on-red 已启用）", file=sys.stderr)
+        return 1
+    print("OK: 聚合完成")
+    return 0
+
+
+def main():
+    args = _build_parser().parse_args()
 
     if not args.token.strip():
         print("SKIP: no token, design phase")
@@ -207,54 +266,13 @@ def main():
         print(f"ERROR: {err}", file=sys.stderr)
         return 2
 
-    expected, gm_err = sub_paths(args.root)
-    if gm_err is not None:
-        print(
-            f"WARN: 无法从 .gitmodules 派生清单（{gm_err}），"
-            "仅报告 git submodule status 中的子模块",
-            file=sys.stderr,
-        )
-
-    # 子模块缺失时也输出明确报告
-    found_paths = {s[0] for s in subs}
-    for name in expected:
-        if name not in found_paths:
-            subs.append((name, "?", "-"))
-
+    subs = _seed(subs, _expect(args.root))
     print(f"聚合 {len(subs)} 个子仓的 CI 状态（owner={args.owner}）：")
     print("-" * 72)
-    red_count = 0
-    unknown_count = 0
-    for path, sha, sign in subs:
-        repo = f"{args.owner}/{path}"
-        owner_repo = urllib.parse.quote(repo, safe="/")
-        if sha == "?":
-            state, detail = "unknown", "子仓未在 submodule status 中"
-        else:
-            state, detail = fetch_ci_state(
-                args.api, owner_repo, sha, args.token
-            )
-        print(f"  {path:<14} {sha[:12]:<12} {state:<8} {detail}")
-        if state == "red":
-            red_count += 1
-        elif state == "unknown":
-            unknown_count += 1
-
+    red, unknown = _table(subs, args)
     print("-" * 72)
-    print(f"汇总：red={red_count}，unknown={unknown_count}，"
-          f"total={len(subs)}")
-
-    if unknown_count > 0:
-        print(
-            f"WARN: {unknown_count} 个子仓 CI 状态未知"
-            "（叶子仓未接入 CI 时属预期）",
-            file=sys.stderr,
-        )
-    if args.fail_on_red and red_count > 0:
-        print("FAIL: 存在红（red）子仓（--fail-on-red 已启用）", file=sys.stderr)
-        return 1
-    print("OK: 聚合完成")
-    return 0
+    print(f"汇总：red={red}，unknown={unknown}，total={len(subs)}")
+    return _verdict(args, red, unknown)
 
 
 if __name__ == "__main__":
