@@ -997,6 +997,43 @@ def _bl_calls(baseline, ssot):
     return failures
 
 
+# 快照与文档逐项对齐的三类标量：(键, 报错前缀)。版本一项在两张表里同名
+# 但含义不同——报错沿用文档侧的称谓，避免读者以为快照另有一套版本号。
+DRIFT_FIELDS = (
+    ("linux_base", "linux_base"),
+    ("reserved_range", "reserved_range"),
+    ("version", "doc_version"),
+)
+
+
+def pair_map(src):
+    """syscall 名 → (宏, 编号)；快照漂移只认这两个字段。"""
+    return {s["name"]: (s["macro"], s["linux_number"])
+            for s in src["syscalls"]}
+
+
+def drift_fields(ssot, snap):
+    """三类标量各自只有一个副本可比，逐项对齐才谈得上同源。"""
+    return [f"  {label}: 文档={ssot[key]}, 快照={snap[key]}"
+            for key, label in DRIFT_FIELDS if snap[key] != ssot[key]]
+
+
+def drift_calls(doc, snap):
+    """宏与编号逐项对比；取两侧并集，缺失与改动都要报出来。"""
+    fails = []
+    for entry in sorted(set(doc) | set(snap)):
+        if entry not in snap:
+            fails.append(f"  syscall '{entry}' 在快照中缺失 "
+                         f"(文档={doc[entry]})")
+        elif entry not in doc:
+            fails.append(f"  syscall '{entry}' 在文档中缺失 "
+                         f"(快照={snap[entry]})")
+        elif doc[entry] != snap[entry]:
+            fails.append(f"  syscall '{entry}': 文档={doc[entry]}, "
+                         f"快照={snap[entry]}")
+    return fails
+
+
 def check_drift(ssot, snapshot, authoritative):
     """Verify the derived contract snapshot still matches the authoritative SSoT.
 
@@ -1020,32 +1057,9 @@ def check_drift(ssot, snapshot, authoritative):
             f"漂移比对不可用；本次以派生契约快照为 SSoT 来源。{provenance}")
 
     snap = snap_ssot(snapshot)
-    failures = []
-
-    if snap["linux_base"] != ssot["linux_base"]:
-        failures.append(f"  linux_base: 文档={ssot['linux_base']}, "
-                        f"快照={snap['linux_base']}")
-    if snap["reserved_range"] != ssot["reserved_range"]:
-        failures.append(f"  reserved_range: 文档={ssot['reserved_range']}, "
-                        f"快照={snap['reserved_range']}")
-    if snap["version"] != ssot["version"]:
-        failures.append(f"  doc_version: 文档={ssot['version']}, "
-                        f"快照={snap['version']}")
-
-    doc_map = {s["name"]: (s["macro"], s["linux_number"])
-               for s in ssot["syscalls"]}
-    snap_map = {s["name"]: (s["macro"], s["linux_number"])
-                for s in snap["syscalls"]}
-    for entry in sorted(set(doc_map) | set(snap_map)):
-        if entry not in snap_map:
-            failures.append(f"  syscall '{entry}' 在快照中缺失 "
-                            f"(文档={doc_map[entry]})")
-        elif entry not in doc_map:
-            failures.append(f"  syscall '{entry}' 在文档中缺失 "
-                            f"(快照={snap_map[entry]})")
-        elif doc_map[entry] != snap_map[entry]:
-            failures.append(f"  syscall '{entry}': 文档={doc_map[entry]}, "
-                            f"快照={snap_map[entry]}")
+    doc = pair_map(ssot)
+    failures = drift_fields(ssot, snap)
+    failures += drift_calls(doc, pair_map(snap))
 
     if failures:
         return CheckResult(
@@ -1054,7 +1068,7 @@ def check_drift(ssot, snapshot, authoritative):
             + "\n".join(failures))
     return CheckResult(
         name, True,
-        f"契约快照与权威 SSoT 完全一致（{len(doc_map)} syscalls）。"
+        f"契约快照与权威 SSoT 完全一致（{len(doc)} syscalls）。"
         f"{provenance}")
 
 
