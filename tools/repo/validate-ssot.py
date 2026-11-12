@@ -61,121 +61,84 @@ AGENTRT_PATTERN = re.compile(
 OS_STD_PLAIN_PATTERN = re.compile(r'\bOS-STD-\d{2,3}\b')
 
 
+def _id_num(rid):
+    """规则 ID 末段的数值；末段不是数字时为 None。"""
+    m = re.search(r'(\d+)$', rid)
+    return int(m.group(1)) if m else None
+
+
+def _id_prefix(rid):
+    """规则 ID 去掉末段数字后的前缀。"""
+    m = re.match(r'(.+?)-\d+$', rid)
+    return m.group(1) if m else rid
+
+
+def _expand(start, end):
+    """把 OS-KER-001 ~ OS-KER-228 这样的区间展开为逐个 ID。
+
+    零填充宽度取自起点串自身的末段数字：区间两侧宽度不一致时以起点为准，
+    这样 ``001~228`` 得到三位编号，而 ``1~28`` 不会补成三位。
+    """
+    start_num = _id_num(start)
+    end_num = _id_num(end)
+    if start_num is None or end_num is None:
+        return []
+    m = re.search(r'(\d+)$', start)
+    pad = len(m.group(1)) if m else 3
+    return [
+        f"{_id_prefix(start)}-{str(n).zfill(pad)}"
+        for n in range(start_num, end_num + 1)
+    ]
+
+
+def _record(entry):
+    """单个条目 → 登记记录。"""
+    return {
+        'status': entry.get('status', 'active'),
+        'desc': entry.get('desc', ''),
+        'section': entry.get('section', ''),
+    }
+
+
+def _collect(group, registered, dep_desc):
+    """把一个条目组并入登记表：实体条目、区间、废弃、离散条目。
+
+    两个规则域（OS-* 与 agentrt）的组结构相同，差异只有「不在活动区间内
+    的废弃 ID」的说明串，故由调用方给入，避免两份循环各自漂移。
+    """
+    for entry in group.get('entries', []):
+        registered[entry['id']] = _record(entry)
+    for span in group.get('ranges', []):
+        desc = f"Range entry: {span['start']} ~ {span['end']}"
+        for eid in _expand(span['start'], span['end']):
+            registered[eid] = {
+                'status': 'active',
+                'desc': desc,
+                'section': span.get('section', ''),
+            }
+    for dep_id in group.get('deprecated', []):
+        if dep_id in registered:
+            registered[dep_id]['status'] = 'deprecated'
+        else:
+            registered[dep_id] = {
+                'status': 'deprecated',
+                'desc': dep_desc,
+                'section': '',
+            }
+    for entry in group.get('individual_entries', []):
+        registered[entry['id']] = _record(entry)
+
+
 def load_ssot(yaml_path):
     """Load the SSoT YAML registry and expand ranges into a full ID set."""
     with open(yaml_path, 'r', encoding='utf-8') as f:
         data = yaml.safe_load(f)
 
     registered = {}  # id -> {status, desc, section}
-
-    def extract_number(rid):
-        """Extract the numeric part from a rule ID."""
-        m = re.search(r'(\d+)$', rid)
-        return int(m.group(1)) if m else None
-
-    def get_prefix(rid):
-        """Extract the prefix from a rule ID."""
-        m = re.match(r'(.+?)-\d+$', rid)
-        return m.group(1) if m else rid
-
-    def expand_range(start, end):
-        """Expand a range like OS-KER-001 ~ OS-KER-228 into individual IDs."""
-        start_num = extract_number(start)
-        end_num = extract_number(end)
-        prefix = get_prefix(start)
-        if start_num is None or end_num is None:
-            return []
-        # Determine zero-padding from the start string
-        m = re.search(r'(\d+)$', start)
-        pad = len(m.group(1)) if m else 3
-        return [
-            f"{prefix}-{str(n).zfill(pad)}"
-            for n in range(start_num, end_num + 1)
-        ]
-
-    # Process agent-linux (OS-*) rules
     for group in data.get('agentrt_linux_rules', []):
-        prefix = group.get('prefix', '')
-        entries = group.get('entries', [])
-        ranges = group.get('ranges', [])
-
-        # Full entries
-        for entry in entries:
-            eid = entry['id']
-            registered[eid] = {
-                'status': entry.get('status', 'active'),
-                'desc': entry.get('desc', ''),
-                'section': entry.get('section', ''),
-            }
-
-        # Range entries
-        for r in ranges:
-            for eid in expand_range(r['start'], r['end']):
-                registered[eid] = {
-                    'status': 'active',
-                    'desc': f"Range entry: {r['start']} ~ {r['end']}",
-                    'section': r.get('section', ''),
-                }
-
-        # Deprecated entries (override range entries)
-        for dep_id in group.get('deprecated', []):
-            if dep_id in registered:
-                registered[dep_id]['status'] = 'deprecated'
-            else:
-                registered[dep_id] = {
-                    'status': 'deprecated',
-                    'desc': 'Deprecated (not in active range)',
-                    'section': '',
-                }
-
-        # Individual non-contiguous entries
-        for entry in group.get('individual_entries', []):
-            eid = entry['id']
-            registered[eid] = {
-                'status': entry.get('status', 'active'),
-                'desc': entry.get('desc', ''),
-                'section': entry.get('section', ''),
-            }
-
-    # Process agentrt (non-OS) rules
+        _collect(group, registered, 'Deprecated (not in active range)')
     for group in data.get('agentrt_rules', []):
-        entries = group.get('entries', [])
-        ranges = group.get('ranges', [])
-
-        for entry in entries:
-            eid = entry['id']
-            registered[eid] = {
-                'status': entry.get('status', 'active'),
-                'desc': entry.get('desc', ''),
-                'section': entry.get('section', ''),
-            }
-
-        for r in ranges:
-            for eid in expand_range(r['start'], r['end']):
-                registered[eid] = {
-                    'status': 'active',
-                    'desc': f"Range entry: {r['start']} ~ {r['end']}",
-                    'section': r.get('section', ''),
-                }
-
-        for dep_id in group.get('deprecated', []):
-            if dep_id in registered:
-                registered[dep_id]['status'] = 'deprecated'
-            else:
-                registered[dep_id] = {
-                    'status': 'deprecated',
-                    'desc': 'Deprecated',
-                    'section': '',
-                }
-
-        for entry in group.get('individual_entries', []):
-            eid = entry['id']
-            registered[eid] = {
-                'status': entry.get('status', 'active'),
-                'desc': entry.get('desc', ''),
-                'section': entry.get('section', ''),
-            }
-
+        _collect(group, registered, 'Deprecated')
     return registered
 
 
