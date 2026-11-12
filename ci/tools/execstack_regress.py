@@ -86,6 +86,42 @@ def fail(msg: str) -> None:
     print(f"FAIL {msg}")
 
 
+def _elf_phdr(head: bytes) -> tuple[tuple[str, int, int, int] | None, str]:
+    """从 ELF 头取 (字节序前缀, 程序头偏移, 表项大小, 表项数)。
+
+    首个元素为 None 时第二项给出拒因：头长不足、魔数不符、编码未知都说明
+    这不是可解析的 ELF，后续程序头遍历没有意义。
+    """
+    if len(head) < 52 or head[:4] != MAGIC:
+        return None, "非 ELF"
+    cls, end = head[4], head[5]
+    fmt = {1: "<", 2: ">"}.get(end)
+    if fmt is None or cls not in (1, 2):
+        return None, "未知 ELF 编码"
+    if cls == 2:
+        phoff = struct.unpack_from(fmt + "Q", head, 32)[0]
+        phes, phnum = struct.unpack_from(fmt + "HH", head, 54)
+    else:
+        phoff = struct.unpack_from(fmt + "I", head, 28)[0]
+        phes, phnum = struct.unpack_from(fmt + "HH", head, 42)
+    return (fmt, phoff, phes, phnum), ""
+
+
+def _gnu_stack(
+    fh, fmt: str, phoff: int, phes: int, phnum: int
+) -> tuple[bool | None, str]:
+    """按程序头表逐项找 PT_GNU_STACK；找不到即该对象不在判定范围。"""
+    for i in range(phnum):
+        fh.seek(phoff + i * phes)
+        ph = fh.read(phes)
+        if len(ph) < 8:
+            break
+        p_type, p_flags = struct.unpack_from(fmt + "II", ph, 0)
+        if p_type == PT_GNU_STACK:
+            return bool(p_flags & PF_X), "RWE" if p_flags & PF_X else "RW"
+    return None, "无 PT_GNU_STACK"
+
+
 def elf_stack(path: str) -> tuple[bool | None, str]:
     """读 ELF 的 PT_GNU_STACK，返回 (是否可执行栈, 备注)。
 
@@ -94,30 +130,12 @@ def elf_stack(path: str) -> tuple[bool | None, str]:
     """
     try:
         with open(path, "rb") as fh:
-            head = fh.read(64)
-            if len(head) < 52 or head[:4] != MAGIC:
-                return None, "非 ELF"
-            cls, end = head[4], head[5]
-            fmt = {1: "<", 2: ">"}.get(end)
-            if fmt is None or cls not in (1, 2):
-                return None, "未知 ELF 编码"
-            if cls == 2:
-                phoff = struct.unpack_from(fmt + "Q", head, 32)[0]
-                phes, phnum = struct.unpack_from(fmt + "HH", head, 54)
-            else:
-                phoff = struct.unpack_from(fmt + "I", head, 28)[0]
-                phes, phnum = struct.unpack_from(fmt + "HH", head, 42)
-            for i in range(phnum):
-                fh.seek(phoff + i * phes)
-                ph = fh.read(phes)
-                if len(ph) < 8:
-                    break
-                p_type, p_flags = struct.unpack_from(fmt + "II", ph, 0)
-                if p_type == PT_GNU_STACK:
-                    return bool(p_flags & PF_X), "RWE" if p_flags & PF_X else "RW"
+            fields, reason = _elf_phdr(fh.read(64))
+            if fields is None:
+                return None, reason
+            return _gnu_stack(fh, *fields)
     except OSError as exc:
         return None, str(exc)
-    return None, "无 PT_GNU_STACK"
 
 
 def build_pair(tmp: str) -> tuple[str, str]:
