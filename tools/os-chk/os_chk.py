@@ -198,7 +198,7 @@ def find_repo_root(start: Optional[Path] = None) -> Path:
     return Path(__file__).resolve().parents[2]
 
 
-def _last_nonempty_line(text: str) -> str:
+def _last_line(text: str) -> str:
     for line in reversed(text.splitlines()):
         stripped = line.strip()
         if stripped:
@@ -207,7 +207,7 @@ def _last_nonempty_line(text: str) -> str:
 
 
 def _summarize(stdout: str, stderr: str) -> str:
-    detail = _last_nonempty_line(stdout) or _last_nonempty_line(stderr)
+    detail = _last_line(stdout) or _last_line(stderr)
     if not detail:
         return "(无输出)"
     if len(detail) > DETAIL_LIMIT:
@@ -315,7 +315,7 @@ def print_report(results: Sequence[GateResult], registry_version: str,
     print("-" * 72)
 
 
-def write_json_report(path: Path, registry_version: str, timestamp: str,
+def write_json(path: Path, registry_version: str, timestamp: str,
                       fail_on: str, results: Sequence[GateResult]) -> None:
     payload = {
         "registry_version": registry_version,
@@ -425,7 +425,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     if args.json:
         try:
-            write_json_report(Path(args.json), version, ts, args.fail_on,
+            write_json(Path(args.json), version, ts, args.fail_on,
                               results)
         except OSError as exc:
             print(f"ERROR: 无法写入 JSON 报告：{exc}", file=sys.stderr)

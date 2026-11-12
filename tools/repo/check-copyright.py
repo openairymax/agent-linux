@@ -25,7 +25,7 @@ import sys
 from pathlib import Path
 
 
-def list_tracked_markdown(root):
+def git_md_files(root):
     """返回 root 所在 git 仓库中被跟踪的 .md 相对路径列表。
 
     非 git 仓库或 git 不可用时返回 (None, 错误信息)。
@@ -49,7 +49,7 @@ def is_hidden_path(rel_path):
     return any(part.startswith(".") for part in Path(rel_path).parts)
 
 
-def has_copyright_header(path):
+def has_copyright(path):
     """检查文件第 1 行是否含 Copyright 或 SPDX-License-Identifier。"""
     try:
         with open(path, "r", encoding="utf-8", errors="replace") as fh:
@@ -75,7 +75,7 @@ def main():
         print(f"ERROR: --root 目录不存在：{args.root}", file=sys.stderr)
         return 2
 
-    tracked, err = list_tracked_markdown(root)
+    tracked, err = git_md_files(root)
     if err is not None:
         print(f"ERROR: 无法枚举被跟踪的 .md 文件：{err}", file=sys.stderr)
         return 2
@@ -86,7 +86,7 @@ def main():
         if is_hidden_path(rel):
             continue
         total += 1
-        if not has_copyright_header(root / rel):
+        if not has_copyright(root / rel):
             missing.append(rel)
 
     print(f"扫描 {total} 个被跟踪的 .md 文件，{len(missing)} 个缺失版权头")

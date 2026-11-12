@@ -838,7 +838,7 @@ def expand_argv(argv: Sequence[str], values: dict[str, str]) -> list[str]:
     return expanded
 
 
-def _evidence_missing(entry: Manifest, repo_root: Path) -> list[str]:
+def _ev_missing(entry: Manifest, repo_root: Path) -> list[str]:
     """返回重放后仍无产物落地的 evidence glob。"""
     return [glob for glob in entry.get("evidence", [])
             if not any(repo_root.glob(glob))]
@@ -888,7 +888,7 @@ def replay(manifest: Manifest, repo_root: Path, mid: str,
             return EXIT_FAIL
     if dry_run:
         return EXIT_PASS
-    missing = _evidence_missing(entry, repo_root)
+    missing = _ev_missing(entry, repo_root)
     if missing:
         print(f"ERROR: 物料 {mid} 重放后无产物: {', '.join(missing)}",
               file=sys.stderr)

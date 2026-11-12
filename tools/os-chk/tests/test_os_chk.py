@@ -336,7 +336,7 @@ class TestReport:
     def test_write_json_report(self, tmp_path):
         res = make_result(make_gate("A", "P0"), oc.STATUS_PASS)
         out = tmp_path / "r.json"
-        oc.write_json_report(out, "1.0.0", "T", "P1", [res])
+        oc.write_json(out, "1.0.0", "T", "P1", [res])
         payload = json.loads(out.read_text(encoding="utf-8"))
         assert payload["registry_version"] == "1.0.0"
         assert payload["summary"] == {"total": 1, "passed": 1, "failed": 0}

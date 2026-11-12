@@ -179,7 +179,7 @@ def load_ssot(yaml_path):
     return registered
 
 
-def list_markdown_files(docs_root):
+def md_files(docs_root):
     """枚举待扫描的 .md 文件。
 
     优先使用 ``git ls-files``（仅被跟踪文件，天然排除子模块内容与未跟踪
@@ -200,7 +200,7 @@ def list_markdown_files(docs_root):
     return [str(p) for p in Path(docs_root).rglob("*.md")]
 
 
-def expand_range_token(token):
+def parse_range(token):
     """把形如 ``PREFIX-N~M`` 的区间记号展开为逐个 ID。
 
     文档中常以区间简写引用连续编号（如 ``OS-IRON-001~016``）。此类记号
@@ -227,10 +227,10 @@ def scan_documents(docs_root, registered):
     skip_files = {'09-ssot-registry.md', 'ssot-registry.yaml'}
 
     def record(rid, rel_path):
-        for eid in expand_range_token(rid):
+        for eid in parse_range(rid):
             used.setdefault(eid, []).append(rel_path)
 
-    for md_path in list_markdown_files(docs_root):
+    for md_path in md_files(docs_root):
         if os.path.basename(md_path) in skip_files:
             continue
 
