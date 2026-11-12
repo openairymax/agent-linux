@@ -112,7 +112,7 @@ class TestHelpers:
         assert sc.find_repo_root() == repo_root
 
     def test_build_include_flags_mirrors_kbuild_order(self, tmp_path: Path) -> None:
-        flags = sc.build_include_flags(tmp_path)
+        flags = sc.inc_flags(tmp_path)
         assert flags.index(f"-I{tmp_path / 'include'}") < flags.index(
             f"-I{tmp_path / 'include' / 'uapi'}"
         )
@@ -130,12 +130,12 @@ class TestHelpers:
 
 class TestProbe:
     def test_build_probe_source_includes_probe_headers(self) -> None:
-        source = sc.build_probe_source()
+        source = sc.probe_src()
         for header in sc.PROBE_HEADERS:
             assert f"#include <linux/airymax/{header}>" in source
 
     def test_build_probe_source_emits_type_and_layout_prints(self) -> None:
-        source = sc.build_probe_source()
+        source = sc.probe_src()
         assert 'printf("T __u32 %zu\\n", sizeof(__u32));' in source
         assert 'printf("S airy_log_record %zu\\n", sizeof(struct airy_log_record));' in source
         assert (
@@ -144,7 +144,7 @@ class TestProbe:
         )
 
     def test_build_probe_source_pins_dsl_branch_contract(self) -> None:
-        source = sc.build_probe_source()
+        source = sc.probe_src()
         assert "AIRY_COMPILE_ASSERT(AIRY_DSL_UAPI_BRANCHES == 2" in source
         assert 'printf("D branches %d\\n", AIRY_PROBE_BRANCHES);' in source
 
@@ -167,20 +167,20 @@ class TestConsistency:
     def test_no_failure_when_all_paths_agree(self) -> None:
         per_path = {"kernel-space": {"k": 4}, "linux-user-space": {"k": 4}}
         failures: list[str] = []
-        sc.check_consistency("item", 4, per_path, "k", failures)
+        sc.check_consist("item", 4, per_path, "k", failures)
         assert failures == []
 
     def test_failure_on_drift(self) -> None:
         per_path = {"kernel-space": {"k": 4}, "third-party": {"k": 8}}
         failures: list[str] = []
-        sc.check_consistency("item", 4, per_path, "k", failures)
+        sc.check_consist("item", 4, per_path, "k", failures)
         assert len(failures) == 1
         assert "期望 4" in failures[0]
 
     def test_failure_on_missing_probe_value(self) -> None:
         per_path = {"kernel-space": {"k": 4}, "third-party": {}}
         failures: list[str] = []
-        sc.check_consistency("item", 4, per_path, "k", failures)
+        sc.check_consist("item", 4, per_path, "k", failures)
         assert len(failures) == 1
         assert "探针未返回" in failures[0]
 
@@ -289,7 +289,7 @@ class TestDslErrTable:
         }
 
     def test_probe_source_emits_err_line_and_values(self) -> None:
-        source = sc.build_probe_source()
+        source = sc.probe_src()
         assert 'printf("D errs 1\\n");' in source
         assert 'printf("D errs 0\\n");' in source
         for name in (*sc.DSL_ERR_CORE, *sc.DSL_ERR_ALIASES):
@@ -373,7 +373,7 @@ class TestDslErrTable:
 
 def _load_real(repo_root: Path) -> sc.SyscallSources:
     """Load the real [SC] syscall sources, asserting they parse cleanly."""
-    sources, failures = sc.load_syscall_sources(repo_root / sc.DEFAULT_HEADERS_REL)
+    sources, failures = sc.load_sc_src(repo_root / sc.DEFAULT_HEADERS_REL)
     assert failures == []
     assert sources is not None
     return sources
@@ -418,7 +418,7 @@ class TestParseCDefines:
 
 class TestParseSyscallXml:
     def test_valid_document(self) -> None:
-        xml = sc.parse_syscall_xml(_VALID_XML)
+        xml = sc.parse_sc_xml(_VALID_XML)
         assert xml.version == 256
         assert (xml.core_count, xml.reserved_count, xml.total_slots) == (4, 20, 24)
         assert xml.linux_base == 548
@@ -435,49 +435,49 @@ class TestParseSyscallXml:
 
     def test_malformed_xml_raises(self) -> None:
         with pytest.raises(ValueError, match="XML 解析失败"):
-            sc.parse_syscall_xml("<syscalls")
+            sc.parse_sc_xml("<syscalls")
 
     def test_wrong_root_tag_raises(self) -> None:
         with pytest.raises(ValueError, match="根元素"):
-            sc.parse_syscall_xml("<foo/>")
+            sc.parse_sc_xml("<foo/>")
 
     def test_missing_attribute_raises(self) -> None:
         doc = "<syscalls>" + _XML_META + _XML_CALL + _XML_RESERVED + "</syscalls>"
         with pytest.raises(ValueError, match="缺少属性"):
-            sc.parse_syscall_xml(doc)
+            sc.parse_sc_xml(doc)
 
     def test_missing_meta_raises(self) -> None:
         doc = _XML_ROOT + _XML_CALL + _XML_RESERVED + "</syscalls>"
         with pytest.raises(ValueError, match="缺少 <meta>"):
-            sc.parse_syscall_xml(doc)
+            sc.parse_sc_xml(doc)
 
     def test_missing_prefix_raises(self) -> None:
         doc = _XML_ROOT + "<meta><prefix_symbol>AIRY_SYS_</prefix_symbol></meta>"
         doc += _XML_CALL + _XML_RESERVED + "</syscalls>"
         with pytest.raises(ValueError, match="prefix_symbol/prefix_function"):
-            sc.parse_syscall_xml(doc)
+            sc.parse_sc_xml(doc)
 
     def test_entry_without_prefix_raises(self) -> None:
         doc = _XML_ROOT + _XML_META
         doc += "<syscall><name>call</name><number>0</number></syscall>"
         doc += _XML_RESERVED + "</syscalls>"
         with pytest.raises(ValueError, match="未带前缀"):
-            sc.parse_syscall_xml(doc)
+            sc.parse_sc_xml(doc)
 
     def test_duplicate_entry_raises(self) -> None:
         doc = _XML_ROOT + _XML_META + _XML_CALL + _XML_CALL + _XML_RESERVED + "</syscalls>"
         with pytest.raises(ValueError, match="重复"):
-            sc.parse_syscall_xml(doc)
+            sc.parse_sc_xml(doc)
 
     def test_missing_reserved_raises(self) -> None:
         doc = _XML_ROOT + _XML_META + _XML_CALL + "</syscalls>"
         with pytest.raises(ValueError, match="缺少 <reserved>"):
-            sc.parse_syscall_xml(doc)
+            sc.parse_sc_xml(doc)
 
 
 class TestLoadSyscallSources:
     def test_missing_directory_reports_failures(self, tmp_path: Path) -> None:
-        sources, failures = sc.load_syscall_sources(tmp_path / "absent")
+        sources, failures = sc.load_sc_src(tmp_path / "absent")
         assert sources is None
         assert len(failures) == 3
 
@@ -485,14 +485,14 @@ class TestLoadSyscallSources:
         for name in (sc.SYSCALL_CONTRACT_FILE, sc.SYSCALL_GENERATED_FILE):
             (tmp_path / name).write_text("#define AIRY_SYS_CALL 548\n", encoding="utf-8")
         (tmp_path / sc.SYSCALL_XML_FILE).write_text("<syscalls", encoding="utf-8")
-        sources, failures = sc.load_syscall_sources(tmp_path)
+        sources, failures = sc.load_sc_src(tmp_path)
         assert sources is None
         assert any("XML 解析失败" in failure for failure in failures)
 
 
 class TestSyscallDerivations:
     def test_contract_core_defines_excludes_metadata(self, repo_root: Path) -> None:
-        assert sc._contract_core_defines(_load_real(repo_root)) == {
+        assert sc._core_defs(_load_real(repo_root)) == {
             "CALL": 548,
             "ROVOL_CTL": 549,
             "SCHED_CTL": 550,
@@ -501,13 +501,13 @@ class TestSyscallDerivations:
 
     def test_generated_namespaces(self, repo_root: Path) -> None:
         sources = _load_real(repo_root)
-        assert sc._generated_idx_defines(sources) == {
+        assert sc._idx_defs(sources) == {
             "CALL": 0,
             "ROVOL_CTL": 1,
             "SCHED_CTL": 2,
             "CLT_NOTIFY": 3,
         }
-        assert sc._generated_nr_names(sources) == {
+        assert sc._nr_names(sources) == {
             "__NR_airy_sys_call": 548,
             "__NR_airy_sys_rovol_ctl": 549,
             "__NR_airy_sys_sched_ctl": 550,
@@ -515,7 +515,7 @@ class TestSyscallDerivations:
         }
 
     def test_expected_suffixes(self, repo_root: Path) -> None:
-        assert sc._expected_suffixes(_load_real(repo_root)) == {
+        assert sc._exp_suffix(_load_real(repo_root)) == {
             "CALL",
             "ROVOL_CTL",
             "SCHED_CTL",
@@ -525,74 +525,74 @@ class TestSyscallDerivations:
 
 class TestSyscallChecks:
     def test_symbol_name_check_passes_on_repo(self, repo_root: Path) -> None:
-        assert sc.syscall_symbol_name_check(_load_real(repo_root)) == []
+        assert sc.check_sc_sym(_load_real(repo_root)) == []
 
     def test_number_check_passes_on_repo(self, repo_root: Path) -> None:
-        assert sc.syscall_number_check(_load_real(repo_root)) == []
+        assert sc.check_sc_nr(_load_real(repo_root)) == []
 
     def test_symbol_name_check_detects_missing_macro(self, repo_root: Path) -> None:
         sources = _load_real(repo_root)
         contract = dict(sources.contract)
         del contract["AIRY_SYS_CLT_NOTIFY"]
-        failures = sc.syscall_symbol_name_check(_mutate(sources, contract=contract))
+        failures = sc.check_sc_sym(_mutate(sources, contract=contract))
         assert failures == ["  syscalls.h 核心宏: 缺失 CLT_NOTIFY"]
 
     def test_symbol_name_check_detects_extra_macro(self, repo_root: Path) -> None:
         sources = _load_real(repo_root)
         contract = dict(sources.contract)
         contract["AIRY_SYS_EXTRA"] = 999
-        failures = sc.syscall_symbol_name_check(_mutate(sources, contract=contract))
+        failures = sc.check_sc_sym(_mutate(sources, contract=contract))
         assert any("多出 EXTRA" in failure for failure in failures)
 
     def test_symbol_name_check_detects_missing_index(self, repo_root: Path) -> None:
         sources = _load_real(repo_root)
         generated = dict(sources.generated)
         del generated["AIRY_SYS_IDX_CALL"]
-        failures = sc.syscall_symbol_name_check(_mutate(sources, generated=generated))
+        failures = sc.check_sc_sym(_mutate(sources, generated=generated))
         assert any("AIRY_SYS_IDX_" in f and "缺失 CALL" in f for f in failures)
 
     def test_number_check_detects_registration_drift(self, repo_root: Path) -> None:
         sources = _load_real(repo_root)
         generated = dict(sources.generated)
         generated["__NR_airy_sys_call"] = 999
-        failures = sc.syscall_number_check(_mutate(sources, generated=generated))
+        failures = sc.check_sc_nr(_mutate(sources, generated=generated))
         assert any("__NR_airy_sys_call 期望 548, 实测 999" in f for f in failures)
 
     def test_number_check_detects_total_drift(self, repo_root: Path) -> None:
         sources = _load_real(repo_root)
         generated = dict(sources.generated)
         generated["AIRY_SYS_NR_TOTAL"] = 25
-        failures = sc.syscall_number_check(_mutate(sources, generated=generated))
+        failures = sc.check_sc_nr(_mutate(sources, generated=generated))
         assert any("AIRY_SYS_NR_TOTAL 期望 24, 实测 25" in f for f in failures)
 
     def test_number_check_detects_contract_drift(self, repo_root: Path) -> None:
         sources = _load_real(repo_root)
         contract = dict(sources.contract)
         contract["AIRY_SYS_SCHED_CTL"] = 700
-        failures = sc.syscall_number_check(_mutate(sources, contract=contract))
+        failures = sc.check_sc_nr(_mutate(sources, contract=contract))
         assert any("AIRY_SYS_SCHED_CTL 期望 550, 实测 700" in f for f in failures)
 
     def test_number_check_detects_reserved_span_drift(self, repo_root: Path) -> None:
         sources = _load_real(repo_root)
         xml = dataclasses.replace(sources.xml, reserved_from=5)
-        failures = sc.syscall_number_check(_mutate(sources, xml=xml))
+        failures = sc.check_sc_nr(_mutate(sources, xml=xml))
         assert any("<reserved> 区间 (5-23)" in f for f in failures)
 
     def test_number_check_detects_slot_arithmetic_drift(self, repo_root: Path) -> None:
         sources = _load_real(repo_root)
         xml = dataclasses.replace(sources.xml, core_count=5)
-        failures = sc.syscall_number_check(_mutate(sources, xml=xml))
+        failures = sc.check_sc_nr(_mutate(sources, xml=xml))
         assert any("core_count(5)" in f for f in failures)
 
 
 class TestSyscallAbiCheck:
     def test_passes_on_repo(self, repo_root: Path) -> None:
-        result = sc.syscall_abi_check(_load_real(repo_root), [])
+        result = sc.check_sc_abi(_load_real(repo_root), [])
         assert result.passed
         assert "548-571" in result.details
 
     def test_fails_when_sources_unavailable(self) -> None:
-        result = sc.syscall_abi_check(None, ["  boom"])
+        result = sc.check_sc_abi(None, ["  boom"])
         assert not result.passed
         assert "boom" in result.details
 
@@ -600,18 +600,18 @@ class TestSyscallAbiCheck:
         sources = _load_real(repo_root)
         contract = dict(sources.contract)
         del contract["AIRY_SYS_CALL"]
-        result = sc.syscall_abi_check(_mutate(sources, contract=contract), [])
+        result = sc.check_sc_abi(_mutate(sources, contract=contract), [])
         assert not result.passed
 
 
 @pytest.mark.skipif(_GCC is None, reason="gcc not available")
 class TestRealRepository:
     def _include_flags(self, repo_root: Path) -> list[str]:
-        return sc.build_include_flags(repo_root / sc.DEFAULT_KERNEL_REL)
+        return sc.inc_flags(repo_root / sc.DEFAULT_KERNEL_REL)
 
     def test_tri_compile_check_passes(self, repo_root: Path) -> None:
         headers = sorted((repo_root / sc.DEFAULT_HEADERS_REL).glob("*.h"))
-        result = sc.tri_compile_check(_GCC, self._include_flags(repo_root), headers)
+        result = sc.tri_check(_GCC, self._include_flags(repo_root), headers)
         assert result.passed, result.details
 
     def test_type_size_and_layout_checks_pass(self, repo_root: Path, tmp_path: Path) -> None:
