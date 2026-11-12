@@ -702,33 +702,47 @@ def hdr_xref(sc_header, unistd, tbl):
 
 def rsvd_issues(reserved, label):
     """Diagnose reserved slot coverage, naming and entry point."""
-    issues = []
-    seen = {}
+    seen, issues = rsvd_seen(reserved, label)
+    issues += rsvd_span(seen, label)
+    issues += rsvd_rows(seen, label)
+    return issues
+
+
+def rsvd_seen(reserved, label):
+    """按槽号索引；重复登记的槽保留先出现的一条，其后各报一条。"""
+    seen, issues = {}, []
     for s in reserved:
         num = s["linux_number"]
         if num in seen:
-            issues.append(
-                f"  {label}: {num} 重复登记 "
-                f"({seen[num]['name']} / {s['name']})")
+            issues.append(f"  {label}: {num} 重复登记 "
+                          f"({seen[num]['name']} / {s['name']})")
             continue
         seen[num] = s
+    return seen, issues
 
-    expected_nums = list(range(EXPECTED_RESERVED_START,
-                              EXPECTED_RESERVED_END + 1))
-    missing = [n for n in expected_nums if n not in seen]
-    extra = [n for n in sorted(seen) if n not in expected_nums]
+
+def rsvd_span(seen, label):
+    """覆盖判据：552-571 逐号在册，且不得出现区间外的槽。"""
+    expected = range(EXPECTED_RESERVED_START, EXPECTED_RESERVED_END + 1)
+    missing = [n for n in expected if n not in seen]
+    extra = [n for n in sorted(seen) if n not in expected]
+    issues = []
     if missing:
         issues.append(f"  {label}: 缺失预留槽 {missing}")
     if extra:
         issues.append(f"  {label}: 越界预留槽 {extra}")
+    return issues
 
+
+def rsvd_rows(seen, label):
+    """逐个在册槽核对命名与入口点。"""
+    issues = []
     for num in sorted(seen):
         s = seen[num]
-        expected_name = f"{RESERVED_NAME_PREFIX}{num - EXPECTED_BASE}"
-        if s["name"] != expected_name:
+        name = f"{RESERVED_NAME_PREFIX}{num - EXPECTED_BASE}"
+        if s["name"] != name:
             issues.append(
-                f"  {label}: {num} 命名 {s['name']} "
-                f"(期望 {expected_name})")
+                f"  {label}: {num} 命名 {s['name']} (期望 {name})")
         entry = s.get("entry")
         if entry is not None and entry != RESERVED_TBL_ENTRY:
             issues.append(
