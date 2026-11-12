@@ -317,32 +317,17 @@ class FarmJob:
     log_path: Path | None = None
 
     def __post_init__(self) -> None:
-        _need_text(self.job_id, "job_id")
-        if not _JOB_ID_RE.fullmatch(self.job_id):
-            raise ValueError(f"invalid job_id: {self.job_id!r}")
-        if not isinstance(self.machine, Machine):
-            raise ValueError("machine must be Machine")
-        if not isinstance(self.kernel, KernelImage):
-            raise ValueError("kernel must be KernelImage")
-        if self.kernel.arch is not self.machine.arch:
-            raise ValueError(
-                f"kernel arch {self.kernel.arch.value} does not match "
-                f"machine arch {self.machine.arch.value}"
-            )
-        if not isinstance(self.suites, tuple):
-            raise ValueError("suites must be a tuple")
-        if not self.suites:
-            raise ValueError("suites must not be empty")
-        if any(not isinstance(suite, Suite) for suite in self.suites):
-            raise ValueError("suites must contain only Suite instances")
-        names = [suite.name for suite in self.suites]
-        if len(names) != len(set(names)):
-            raise ValueError(f"duplicate suite names: {names}")
-        if not isinstance(self.accel, Accel):
-            raise ValueError(f"accel must be Accel, got {type(self.accel).__name__}")
+        _need_id(self.job_id)
+        _need_job_parts(self.machine, self.kernel)
+        _need_suites(self.suites)
+        _need_enum(self.accel, Accel, "accel")
         _need_pos(self.timeout_s, "timeout_s")
         _need_pos(self.mem_mb, "mem_mb")
         _need_pos(self.smp, "smp")
+        self._norm_log()
+
+    def _norm_log(self) -> None:
+        """字符串日志路径按 Path 归一（frozen 需经 object.__setattr__）。"""
         if isinstance(self.log_path, str):
             object.__setattr__(self, "log_path", Path(self.log_path))
 
@@ -370,32 +355,8 @@ class JobResult:
     qemu_argv: Argv = ()
 
     def __post_init__(self) -> None:
-        if not isinstance(self.job, FarmJob):
-            raise ValueError("job must be FarmJob")
-        if not isinstance(self.state, JobState):
-            raise ValueError(f"state must be JobState, got {type(self.state).__name__}")
-        if not self.state.terminal:
-            raise ValueError(f"state must be terminal, got {self.state.value}")
-        if self.duration_s < 0:
-            raise ValueError(f"duration_s must be non-negative, got {self.duration_s}")
-        if self.exit_code is not None and not isinstance(self.exit_code, int):
-            raise ValueError("exit_code must be int or None")
-        if self.tap is not None and not isinstance(self.tap, TapSummary):
-            raise ValueError("tap must be TapSummary or None")
-        if not isinstance(self.qemu_argv, tuple):
-            raise ValueError("qemu_argv must be a tuple")
-        if self.state is JobState.PASSED:
-            if self.exit_code != 0:
-                raise ValueError("passed result requires exit_code 0")
-            if self.tap is None or not self.tap.passed:
-                raise ValueError(
-                    "passed result requires a complete passing TAP summary"
-                )
-        elif self.state is JobState.FAILED:
-            if not self._fail_evid:
-                raise ValueError("failed result requires non-zero exit or failing TAP")
-        elif not self.reason.strip():
-            raise ValueError(f"{self.state.value} result requires a reason")
+        _need_result(self)
+        _need_evid(self)
 
     @property
     def _fail_evid(self) -> bool:
@@ -447,25 +408,11 @@ class FarmManifest:
     limits: FarmLimits = field(default_factory=FarmLimits)
 
     def __post_init__(self) -> None:
-        _need_text(self.version, "version")
-        if not _VERSION_RE.fullmatch(self.version):
-            raise ValueError(f"invalid version: {self.version!r}")
-        if not isinstance(self.machines, tuple) or not self.machines:
-            raise ValueError("machines must be a non-empty tuple")
-        if any(not isinstance(machine, Machine) for machine in self.machines):
-            raise ValueError("machines must contain only Machine instances")
-        arches = [machine.arch for machine in self.machines]
-        if len(arches) != len(set(arches)):
-            raise ValueError(f"duplicate machine arches: {[a.value for a in arches]}")
-        if not isinstance(self.suites, tuple) or not self.suites:
-            raise ValueError("suites must be a non-empty tuple")
-        if any(not isinstance(suite, Suite) for suite in self.suites):
-            raise ValueError("suites must contain only Suite instances")
-        names = [suite.name for suite in self.suites]
-        if len(names) != len(set(names)):
-            raise ValueError(f"duplicate suite names: {names}")
-        if not isinstance(self.limits, FarmLimits):
-            raise ValueError("limits must be FarmLimits")
+        _need_version(self.version)
+        _need_machines(self.machines)
+        _need_tup(self.suites, "suites")
+        _need_suite_mem(self.suites)
+        _need_enum(self.limits, FarmLimits, "limits")
 
     def machine_for(self, arch: Arch) -> Machine:
         """按架构查找机器定义。
@@ -524,3 +471,107 @@ def _need_nonneg(value: int, field_name: str) -> None:
     """校验非负整数字段（显式拒绝 bool）。"""
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         raise ValueError(f"{field_name} must be a non-negative integer, got {value!r}")
+
+
+def _need_enum(value, kind, label: str) -> None:
+    """枚举字段的类型判据；报出实际类型，便于定位误传的字符串。"""
+    if not isinstance(value, kind):
+        raise ValueError(
+            f"{label} must be {kind.__name__}, got {type(value).__name__}"
+        )
+
+
+def _need_tup(value, label: str) -> None:
+    """非空元组判据（清单级集合字段）。"""
+    if not isinstance(value, tuple) or not value:
+        raise ValueError(f"{label} must be a non-empty tuple")
+
+
+def _need_id(value: str) -> None:
+    """作业标识：非空且可被清单与其他作业引用。"""
+    _need_text(value, "job_id")
+    if not _JOB_ID_RE.fullmatch(value):
+        raise ValueError(f"invalid job_id: {value!r}")
+
+
+def _need_version(value: str) -> None:
+    """清单版本号：三段数字。"""
+    _need_text(value, "version")
+    if not _VERSION_RE.fullmatch(value):
+        raise ValueError(f"invalid version: {value!r}")
+
+
+def _need_job_parts(machine, kernel) -> None:
+    """机型与内核必须成对：类型正确且目标架构一致。
+
+    架构不一致的作业会在 QEMU 启动后才以「无法引导」的形式暴露，届时
+    日志里只剩模拟器报错，故在构造期就拒收。
+    """
+    if not isinstance(machine, Machine):
+        raise ValueError("machine must be Machine")
+    if not isinstance(kernel, KernelImage):
+        raise ValueError("kernel must be KernelImage")
+    if kernel.arch is not machine.arch:
+        raise ValueError(
+            f"kernel arch {kernel.arch.value} does not match "
+            f"machine arch {machine.arch.value}"
+        )
+
+
+def _need_suite_mem(value) -> None:
+    """套件成员判据：元素类型与名称唯一。作业与清单共用同一口径。"""
+    if any(not isinstance(suite, Suite) for suite in value):
+        raise ValueError("suites must contain only Suite instances")
+    names = [suite.name for suite in value]
+    if len(names) != len(set(names)):
+        raise ValueError(f"duplicate suite names: {names}")
+
+
+def _need_suites(value) -> None:
+    """作业级套件元组：类型与空集分开报，以区分「传了列表」与「没给套件」。"""
+    if not isinstance(value, tuple):
+        raise ValueError("suites must be a tuple")
+    if not value:
+        raise ValueError("suites must not be empty")
+    _need_suite_mem(value)
+
+
+def _need_machines(value) -> None:
+    """清单级机型元组：非空、元素类型、架构唯一。"""
+    _need_tup(value, "machines")
+    if any(not isinstance(machine, Machine) for machine in value):
+        raise ValueError("machines must contain only Machine instances")
+    arches = [machine.arch for machine in value]
+    if len(arches) != len(set(arches)):
+        raise ValueError(f"duplicate machine arches: {[a.value for a in arches]}")
+
+
+def _need_result(res) -> None:
+    """结果字段的类型与范围（与状态无关的部分）。"""
+    if not isinstance(res.job, FarmJob):
+        raise ValueError("job must be FarmJob")
+    _need_enum(res.state, JobState, "state")
+    if not res.state.terminal:
+        raise ValueError(f"state must be terminal, got {res.state.value}")
+    if res.duration_s < 0:
+        raise ValueError(f"duration_s must be non-negative, got {res.duration_s}")
+    if res.exit_code is not None and not isinstance(res.exit_code, int):
+        raise ValueError("exit_code must be int or None")
+    if res.tap is not None and not isinstance(res.tap, TapSummary):
+        raise ValueError("tap must be TapSummary or None")
+    if not isinstance(res.qemu_argv, tuple):
+        raise ValueError("qemu_argv must be a tuple")
+
+
+def _need_evid(res) -> None:
+    """终态证据：通过需零退出且 TAP 完整，失败需反证，其余需书面说明。"""
+    if res.state is JobState.PASSED:
+        if res.exit_code != 0:
+            raise ValueError("passed result requires exit_code 0")
+        if res.tap is None or not res.tap.passed:
+            raise ValueError("passed result requires a complete passing TAP summary")
+    elif res.state is JobState.FAILED:
+        if not res._fail_evid:
+            raise ValueError("failed result requires non-zero exit or failing TAP")
+    elif not res.reason.strip():
+        raise ValueError(f"{res.state.value} result requires a reason")
