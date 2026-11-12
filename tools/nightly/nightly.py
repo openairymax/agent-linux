@@ -597,32 +597,59 @@ def _call_probs(job: str, key: str, text: str) -> list[str]:
     return []
 
 
+def _call_lines(text: str, path: str) -> list[str]:
+    """helper 的调用行：正文中提及其路径的所有行。"""
+    return [line for line in text.splitlines() if path in line]
+
+
+def _argv_probs(entry: Mapping[str, Any], call: str) -> list[str]:
+    """登记的每个参数都必须出现在调用行里。"""
+    return [f"{entry['path']} 缺少参数 {token}"
+            for token in entry["argv"] if token not in call]
+
+
+def _defer_probs(entry: Mapping[str, Any], text: str, guard: str,
+                 root: Path) -> list[str]:
+    """deferred helper：守卫与 SKIP 标记在位，且脚本尚未落地。"""
+    path = entry["path"]
+    problems = []
+    if guard not in text:
+        problems.append(f"{path} 处于 deferred，但缺少存在性守卫")
+    if "SKIP:" not in text:
+        problems.append(f"{path} 处于 deferred，但缺少 SKIP 标记")
+    if (root / path).exists():
+        problems.append(
+            f"{path} 已落地，清单仍标 deferred"
+            "（须转为 available 并移除守卫）")
+    return problems
+
+
+def _avail_probs(entry: Mapping[str, Any], text: str, guard: str,
+                 root: Path) -> list[str]:
+    """available helper：脚本已落地，且不得再被存在性守卫包裹。"""
+    path = entry["path"]
+    problems = []
+    if guard in text:
+        problems.append(f"{path} 已实现，却仍被存在性守卫包裹")
+    if not (root / path).exists():
+        problems.append(f"{path} 标为 available，但文件不存在")
+    return problems
+
+
 def _helper_probs(job: str, entry: Mapping[str, Any],
                   text: str, root: Path) -> list[str]:
     """校验单个 helper 在指定 job 内的契约。"""
     path = entry["path"]
-    status = entry["status"]
-    lines = [line for line in text.splitlines() if path in line]
+    lines = _call_lines(text, path)
     if not lines:
         return [f"{job} 未调用 {path}"]
     call = " ".join(lines)
-    problems = [f"{path} 缺少参数 {token}"
-                for token in entry["argv"] if token not in call]
     guard = f"if [ -f {path} ]"
-    if status == "deferred":
-        if guard not in text:
-            problems.append(f"{path} 处于 deferred，但缺少存在性守卫")
-        if "SKIP:" not in text:
-            problems.append(f"{path} 处于 deferred，但缺少 SKIP 标记")
-        if (root / path).exists():
-            problems.append(
-                f"{path} 已落地，清单仍标 deferred"
-                "（须转为 available 并移除守卫）")
+    problems = _argv_probs(entry, call)
+    if entry["status"] == "deferred":
+        problems.extend(_defer_probs(entry, text, guard, root))
     else:
-        if guard in text:
-            problems.append(f"{path} 已实现，却仍被存在性守卫包裹")
-        if not (root / path).exists():
-            problems.append(f"{path} 标为 available，但文件不存在")
+        problems.extend(_avail_probs(entry, text, guard, root))
     return problems
 
 
