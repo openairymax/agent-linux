@@ -449,43 +449,52 @@ class CheckResult:
 
 # ─── Checks ────────────────────────────────────────────────────────────────
 
+# 三方对照的取值来源：(快照键, 缺项时的称谓, 不一致时的简称)。两种称谓来自
+# 既有报错原文——缺项要点名具体文件，不一致用简称才不把一行撑成两行。
+CORE_SOURCES = (
+    ("ssot", "SSoT", "SSoT"),
+    ("unistd", "unistd.h", "unistd"),
+    ("tbl", "syscall_64.tbl", "tbl"),
+)
+
+
+def syscall_map(src):
+    """syscall 表按名字索引编号；三方对照只关心名字与编号。"""
+    return {s["name"]: s["linux_number"] for s in src["syscalls"]}
+
+
+def core_row(name, maps):
+    """一个核心 syscall 在三方里的编号，缺失处留 None。"""
+    return [(miss, short, maps[key].get(name))
+            for key, miss, short in CORE_SOURCES]
+
+
+def core_issues(name, row):
+    """问题清单：缺项逐源各报一条，编号不一致合并报一次。"""
+    fails = [f"  {name}: 在 {miss} 中缺失"
+             for miss, _short, num in row if num is None]
+    nums = [num for _miss, _short, num in row if num is not None]
+    if len(set(nums)) > 1:
+        shown = ", ".join(f"{short}={num}" for _miss, short, num in row)
+        fails.append(f"  {name}: {shown} (不一致)")
+    return fails
+
+
 def check_3way(ssot, unistd, tbl):
     """Check 4 core syscalls are consistent across SSoT / unistd.h / tbl."""
+    maps = {"ssot": syscall_map(ssot), "unistd": syscall_map(unistd),
+            "tbl": syscall_map(tbl)}
     failures = []
-
-    ssot_map = {s["name"]: s["linux_number"] for s in ssot["syscalls"]}
-    unistd_map = {s["name"]: s["linux_number"] for s in unistd["syscalls"]}
-    tbl_map = {s["name"]: s["linux_number"] for s in tbl["syscalls"]}
-
     for name, _macro, _expected in CORE_SYSCALLS:
-        ssot_num = ssot_map.get(name)
-        unistd_num = unistd_map.get(name)
-        tbl_num = tbl_map.get(name)
-
-        if ssot_num is None:
-            failures.append(f"  {name}: 在 SSoT 中缺失")
-        if unistd_num is None:
-            failures.append(f"  {name}: 在 unistd.h 中缺失")
-        if tbl_num is None:
-            failures.append(f"  {name}: 在 syscall_64.tbl 中缺失")
-
-        nums = [n for n in (ssot_num, unistd_num, tbl_num) if n is not None]
-        if len(set(nums)) > 1:
-            failures.append(
-                f"  {name}: SSoT={ssot_num}, unistd={unistd_num}, "
-                f"tbl={tbl_num} (不一致)"
-            )
-
+        failures += core_issues(name, core_row(name, maps))
+    title = "三方一致性 (SSoT / unistd.h / syscall_64.tbl)"
     if failures:
-        return CheckResult(
-            "三方一致性 (SSoT / unistd.h / syscall_64.tbl)",
-            False, "\n".join(failures))
+        return CheckResult(title, False, "\n".join(failures))
 
     summary = ", ".join(
-        f"{n}={ssot_map[n]}" for n, _, _ in CORE_SYSCALLS)
+        f"{n}={maps['ssot'][n]}" for n, _, _ in CORE_SYSCALLS)
     return CheckResult(
-        "三方一致性 (SSoT / unistd.h / syscall_64.tbl)",
-        True, f"4 核心 syscall 编号三方一致: {summary}")
+        title, True, f"4 核心 syscall 编号三方一致: {summary}")
 
 
 def check_base_nr(ssot, unistd, tbl):
