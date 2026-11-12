@@ -238,7 +238,7 @@ def _proto_lines(spec: SyscallSpec) -> list[str]:
     return [head, tail]
 
 
-def _prototype_block(spec: SyscallSpec) -> list[str]:
+def _proto_block(spec: SyscallSpec) -> list[str]:
     block = ["/**", *_doc_lines(spec), " *", RETURN_DOC, " *"]
     block.append(f" * @since {spec.since}")
     block.append(f" * @stability {spec.stability}")
@@ -250,11 +250,11 @@ def _prototype_block(spec: SyscallSpec) -> list[str]:
     return block
 
 
-def _prototype_lines(contract: SyscallContract) -> list[str]:
-    return [line for spec in contract.syscalls for line in _prototype_block(spec)]
+def _proto_all(contract: SyscallContract) -> list[str]:
+    return [line for spec in contract.syscalls for line in _proto_block(spec)]
 
 
-def _slot_macro_lines(contract: SyscallContract) -> list[str]:
+def _slot_lines(contract: SyscallContract) -> list[str]:
     """基址与槽位计数宏（等宽列对齐，与已提交 syscall_gen.h 一致）。"""
     linux_end = contract.linux_base + contract.total_slots - 1
     return [
@@ -282,7 +282,7 @@ def _nr_lines(contract: SyscallContract) -> list[str]:
     ]
 
 
-def _reserved_slot_lines(contract: SyscallContract) -> list[str]:
+def _rsvd_slots(contract: SyscallContract) -> list[str]:
     """预留槽位编号宏（值为内部编号，注释给出 Linux 注册号）。"""
     return [
         f"#define {SLOT_MACRO}_{slot}\t{slot}  /* Linux {slot + contract.linux_base} */"
@@ -290,7 +290,7 @@ def _reserved_slot_lines(contract: SyscallContract) -> list[str]:
     ]
 
 
-def _tbl_syscall_lines(contract: SyscallContract) -> list[str]:
+def _syscall_lines(contract: SyscallContract) -> list[str]:
     """syscall_64.tbl 核心 syscall 行（nr / abi / name / entry）。"""
     return [
         f"{spec.linux_nr(contract.linux_base)}\t{TBL_ABI}\t{spec.name}\t\tsys_{spec.name}"
@@ -298,7 +298,7 @@ def _tbl_syscall_lines(contract: SyscallContract) -> list[str]:
     ]
 
 
-def _tbl_reserved_lines(contract: SyscallContract) -> list[str]:
+def _rsvd_lines(contract: SyscallContract) -> list[str]:
     """syscall_64.tbl 预留槽行（逐行登记为 ENOSYS stub，防止编号被误用）。"""
     return [
         f"{slot + contract.linux_base}\t{TBL_ABI}\t{TBL_RESERVED_NAME}{slot}"
@@ -309,16 +309,16 @@ def _tbl_reserved_lines(contract: SyscallContract) -> list[str]:
 
 def _reserved_slots(contract: SyscallContract) -> range:
     """预留槽位的内部编号序列（跨越多个 <reserved> 区间）。"""
-    start = _first_reserved_start(contract)
-    end = _last_reserved_end(contract)
+    start = _rsvd_start(contract)
+    end = _rsvd_end(contract)
     return range(start, end + 1)
 
 
-def _first_reserved_start(contract: SyscallContract) -> int:
+def _rsvd_start(contract: SyscallContract) -> int:
     return contract.reserved[0].start if contract.reserved else contract.core_count
 
 
-def _last_reserved_end(contract: SyscallContract) -> int:
+def _rsvd_end(contract: SyscallContract) -> int:
     return contract.reserved[-1].end if contract.reserved else contract.core_count - 1
 
 
@@ -399,7 +399,7 @@ def _go_arg_list(params: list[dict[str, object]], owner: str) -> str:
     return _format_params(padded, "{go_arg}")
 
 
-def _any_needs_unsafe(params: list[dict[str, object]]) -> bool:
+def _needs_unsafe(params: list[dict[str, object]]) -> bool:
     """参数列表是否含需要 import "unsafe" 的指针类型。"""
     return any(param["go_type"] == "unsafe.Pointer" for param in params)
 
@@ -431,7 +431,7 @@ def _binding(spec: SyscallSpec, linux_base: int) -> dict[str, object]:
         "py_args": _format_params(params, "{py_call}"),
         "go_params": _format_params(params, "{go_name} {go_type}"),
         "go_args": _go_arg_list(params, spec.name),
-        "go_needs_unsafe": _any_needs_unsafe(params),
+        "go_needs_unsafe": _needs_unsafe(params),
     }
 
 
@@ -455,20 +455,20 @@ def build_context(contract: SyscallContract) -> dict[str, object]:
         "control_count": contract.core_count - 1,
         "reserved_count": contract.reserved_count,
         "reserved_linux_start": contract.linux_base + contract.core_count,
-        "reserved_internal_start": _first_reserved_start(contract),
-        "reserved_internal_end": _last_reserved_end(contract),
+        "reserved_internal_start": _rsvd_start(contract),
+        "reserved_internal_end": _rsvd_end(contract),
         "total_slots": contract.total_slots,
         "index_max": contract.core_count - 1,
         "reserved_stub": TBL_RESERVED_ENTRY,
         "reserved_name_prefix": TBL_RESERVED_NAME,
         "tbl_cont_indent": TBL_CONT_INDENT,
-        "slot_macro_lines": _slot_macro_lines(contract),
+        "slot_macro_lines": _slot_lines(contract),
         "index_lines": _index_lines(contract),
         "nr_lines": _nr_lines(contract),
-        "reserved_slot_lines": _reserved_slot_lines(contract),
-        "prototype_lines": _prototype_lines(contract),
-        "syscall_lines": _tbl_syscall_lines(contract),
-        "reserved_stub_lines": _tbl_reserved_lines(contract),
+        "reserved_slot_lines": _rsvd_slots(contract),
+        "prototype_lines": _proto_all(contract),
+        "syscall_lines": _syscall_lines(contract),
+        "reserved_stub_lines": _rsvd_lines(contract),
         "bindings": bindings,
         "go_needs_unsafe": any(b["go_needs_unsafe"] for b in bindings),
     }
@@ -489,7 +489,7 @@ def render_outputs(repo_root: Path) -> dict[Path, str]:
     return {repo_root / rel: codegen_io.render(env, tpl, context) for rel, tpl in targets}
 
 
-def render_tbl_section(repo_root: Path) -> str:
+def render_section(repo_root: Path) -> str:
     """渲染 syscall_64.tbl Airymax 段片段（tbl 为上游共享文件，仅校验用）。"""
     contract = parse_contract(repo_root / SYSCALL_XML_REL)
     env = codegen_io.make_env()
@@ -510,7 +510,7 @@ def check_tbl(repo_root: Path) -> int:
     """校验 syscall_64.tbl 的 Airymax 段与生成片段逐字节一致（§9.3）。"""
     tbl_path = repo_root / TBL_REL
     try:
-        section = render_tbl_section(repo_root)
+        section = render_section(repo_root)
         content = codegen_io.read_text(tbl_path, "kernel syscall table")
     except CodegenError as exc:
         return codegen_io.fail(exc.message)

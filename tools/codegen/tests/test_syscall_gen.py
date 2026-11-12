@@ -67,7 +67,7 @@ class TestParseContract:
             "airy_sys_sched_ctl",
             "airy_sys_clt_notify",
         ]
-        assert contract.syscalls_by_number[0].name == "airy_sys_call"
+        assert contract.syscall_by_nr[0].name == "airy_sys_call"
         assert contract.syscalls[1].signature == "__u32 op, __u32 pid, __u64 arg"
 
     def test_real_contract_reserved(self, repo_root: Path) -> None:
@@ -178,9 +178,9 @@ class TestParamHelpers:
 
     def test_any_needs_unsafe(self) -> None:
         pointer = [syscall_gen._param_binding("const char *p", "airy_sys_sched_ctl")]
-        assert syscall_gen._any_needs_unsafe(pointer) is True
+        assert syscall_gen._needs_unsafe(pointer) is True
         scalar = [syscall_gen._param_binding("__u32 op", "airy_sys_rovol_ctl")]
-        assert syscall_gen._any_needs_unsafe(scalar) is False
+        assert syscall_gen._needs_unsafe(scalar) is False
 
 
 class TestLineBuilders:
@@ -217,7 +217,7 @@ class TestLineBuilders:
 
     def test_prototype_block_with_capability(self) -> None:
         spec = _spec(capability_required="AIRY_CAP_CHOWN")
-        block = syscall_gen._prototype_block(spec)
+        block = syscall_gen._proto_block(spec)
         assert block[0] == "/**"
         assert block[-1] == ""
         assert " * @since 1.0.1" in block
@@ -225,14 +225,14 @@ class TestLineBuilders:
         assert " * @capability AIRY_CAP_CHOWN" in block
 
     def test_prototype_block_without_capability(self) -> None:
-        block = syscall_gen._prototype_block(_spec())
+        block = syscall_gen._proto_block(_spec())
         assert not any(line.startswith(" * @capability") for line in block)
 
 
 class TestSlotAndTableLines:
     def test_slot_macro_lines(self, repo_root: Path) -> None:
         contract = syscall_gen.parse_contract(repo_root / syscall_gen.SYSCALL_XML_REL)
-        lines = syscall_gen._slot_macro_lines(contract)
+        lines = syscall_gen._slot_lines(contract)
         assert len(lines) == 4
         assert lines[0].startswith("#define AIRY_SYS_BASE")
         assert "548" in lines[0]
@@ -250,7 +250,7 @@ class TestSlotAndTableLines:
 
     def test_reserved_slot_lines(self, repo_root: Path) -> None:
         contract = syscall_gen.parse_contract(repo_root / syscall_gen.SYSCALL_XML_REL)
-        lines = syscall_gen._reserved_slot_lines(contract)
+        lines = syscall_gen._rsvd_slots(contract)
         assert len(lines) == 20
         assert lines[0] == "#define AIRY_SYS_RESERVED_4\t4  /* Linux 552 */"
         assert lines[-1] == "#define AIRY_SYS_RESERVED_23\t23  /* Linux 571 */"
@@ -258,11 +258,11 @@ class TestSlotAndTableLines:
 
     def test_tbl_lines(self, repo_root: Path) -> None:
         contract = syscall_gen.parse_contract(repo_root / syscall_gen.SYSCALL_XML_REL)
-        syscall_lines = syscall_gen._tbl_syscall_lines(contract)
+        syscall_lines = syscall_gen._syscall_lines(contract)
         assert syscall_lines[0] == "548\tcommon\tairy_sys_call\t\tsys_airy_sys_call"
         assert syscall_lines[3] == "551\tcommon\tairy_sys_clt_notify\t\tsys_airy_sys_clt_notify"
 
-        reserved_lines = syscall_gen._tbl_reserved_lines(contract)
+        reserved_lines = syscall_gen._rsvd_lines(contract)
         assert reserved_lines[0] == "552\tcommon\tairy_reserved_4\t\tsys_ni_syscall"
         assert reserved_lines[-1] == "571\tcommon\tairy_reserved_23\t\tsys_ni_syscall"
 
@@ -331,10 +331,10 @@ class TestBuildContextAndRender:
         assert all(content.strip() for content in first.values())
 
     def test_render_tbl_section(self, repo_root: Path) -> None:
-        section = syscall_gen.render_tbl_section(repo_root)
+        section = syscall_gen.render_section(repo_root)
         assert "airy_sys_call" in section
         assert "airy_reserved_23" in section
-        assert section == syscall_gen.render_tbl_section(repo_root)
+        assert section == syscall_gen.render_section(repo_root)
 
 
 class TestCheckEntrypoints:

@@ -11,7 +11,7 @@
 生成头不重复定义 struct —— 容器实体来自 [SC] 头（ipc.h / sched.h）或
 原生整型字，见 06-codegen-pipeline.md §3。
 
-生成前强制 structures_32.bf 与 structures_64.bf 的 layout_signature 一致。
+生成前强制 structures_32.bf 与 structures_64.bf 的 layout_sig 一致。
 
 Author:
     SPHARX Ltd. - Airymax Team
@@ -66,7 +66,7 @@ def _strip_comment(raw: str) -> str:
     return raw.split("--", 1)[0].strip()
 
 
-def _meaningful_lines(text: str) -> list[tuple[int, str]]:
+def _code_lines(text: str) -> list[tuple[int, str]]:
     """返回 (行号, 有效行) 序列，跳过空行与纯注释行。"""
     lines: list[tuple[int, str]] = []
     for lineno, raw in enumerate(text.splitlines(), 1):
@@ -76,7 +76,7 @@ def _meaningful_lines(text: str) -> list[tuple[int, str]]:
     return lines
 
 
-def _parse_block_header(line: str) -> tuple[str, int]:
+def _block_head(line: str) -> tuple[str, int]:
     match = _BLOCK_OPEN_RE.match(line)
     assert match is not None  # 由调用方 _consume 先行判定
     return match.group(1), int(match.group(2))
@@ -182,7 +182,7 @@ def _apply_field(asm: _BlockAssembler, line: str, path: Path, lineno: int) -> bo
     return False
 
 
-def _apply_directive(asm: _BlockAssembler, line: str, path: Path, lineno: int) -> None:
+def _apply_dir(asm: _BlockAssembler, line: str, path: Path, lineno: int) -> None:
     if _apply_bind(asm, line):
         return
     if _apply_field(asm, line, path, lineno):
@@ -201,7 +201,7 @@ class _BlockParser:
     def run(self, lines: list[tuple[int, str]]) -> tuple[BitfieldBlockSpec, ...]:
         for lineno, line in lines:
             self._consume(line, lineno)
-        self._require_no_open()
+        self._no_open()
         return tuple(self._blocks)
 
     def _consume(self, line: str, lineno: int) -> None:
@@ -210,12 +210,12 @@ class _BlockParser:
         elif _BLOCK_OPEN_RE.match(line):
             self._open(line, lineno)
         else:
-            _apply_directive(self._require_asm(lineno), line, self._path, lineno)
+            _apply_dir(self._require_asm(lineno), line, self._path, lineno)
 
     def _open(self, line: str, lineno: int) -> None:
         if self._asm is not None:
             raise ContractValidationError(f"{self._path}:{lineno}: nested block not allowed")
-        name, width = _parse_block_header(line)
+        name, width = _block_head(line)
         self._asm = _BlockAssembler(name, width)
 
     def _close(self, lineno: int) -> None:
@@ -228,22 +228,22 @@ class _BlockParser:
             raise ContractValidationError(f"{self._path}:{lineno}: directive outside a block")
         return self._asm
 
-    def _require_no_open(self) -> None:
+    def _no_open(self) -> None:
         if self._asm is not None:
             raise ContractValidationError(f"{self._path}: unexpected EOF inside block {self._asm.name}")
 
 
-def parse_bf_contract(bf_path: Path) -> BitfieldContract:
+def parse_bf(bf_path: Path) -> BitfieldContract:
     """解析 .bf 契约源为 BitfieldContract（含逐块语义校验）。"""
     text = codegen_io.read_text(bf_path, "bitfield contract source")
-    blocks = _BlockParser(bf_path).run(_meaningful_lines(text))
+    blocks = _BlockParser(bf_path).run(_code_lines(text))
     if not blocks:
         raise ContractSourceError(f"no blocks parsed from {bf_path}")
     return BitfieldContract(blocks=blocks)
 
 
-def _assert_layout_consistent(contract32: BitfieldContract, contract64: BitfieldContract) -> None:
-    if contract32.layout_signature() != contract64.layout_signature():
+def _assert_layout(contract32: BitfieldContract, contract64: BitfieldContract) -> None:
+    if contract32.layout_sig() != contract64.layout_sig():
         raise ContractValidationError(
             "structures_32.bf and structures_64.bf layouts are not bit-for-bit identical"
         )
@@ -251,9 +251,9 @@ def _assert_layout_consistent(contract32: BitfieldContract, contract64: Bitfield
 
 def load_contracts(repo_root: Path) -> tuple[BitfieldContract, BitfieldContract]:
     """解析 32/64 位契约源并强制跨架构布局一致。"""
-    contract64 = parse_bf_contract(repo_root / BF64_REL)
-    contract32 = parse_bf_contract(repo_root / BF32_REL)
-    _assert_layout_consistent(contract32, contract64)
+    contract64 = parse_bf(repo_root / BF64_REL)
+    contract32 = parse_bf(repo_root / BF32_REL)
+    _assert_layout(contract32, contract64)
     return contract32, contract64
 
 

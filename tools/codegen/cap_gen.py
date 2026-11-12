@@ -57,7 +57,7 @@ _CAP_ID_RE = re.compile(
 )
 
 
-def _read_cap_def_lines(def_path: Path) -> list[str]:
+def _cap_def_lines(def_path: Path) -> list[str]:
     return codegen_io.read_text(def_path, "capability contract source").splitlines()
 
 
@@ -74,7 +74,7 @@ def _prefix_symbol(raw_symbol: str) -> str:
     return CAP_ID_PREFIX + raw_symbol
 
 
-def _register_symbol(symbol: str, lineno: int, seen: dict[str, int], def_path: Path) -> None:
+def _reg_symbol(symbol: str, lineno: int, seen: dict[str, int], def_path: Path) -> None:
     if symbol in seen:
         raise ContractValidationError(
             f"{def_path}:{lineno}: duplicate capability symbol {symbol} "
@@ -88,7 +88,7 @@ def _make_cap_spec(
 ) -> CapIdSpec:
     raw_symbol, value, description = parsed
     symbol = _prefix_symbol(raw_symbol)
-    _register_symbol(symbol, lineno, seen, def_path)
+    _reg_symbol(symbol, lineno, seen, def_path)
     try:
         return CapIdSpec(
             symbol=symbol, value=value, description=description, raw_symbol=raw_symbol
@@ -97,14 +97,14 @@ def _make_cap_spec(
         raise ContractValidationError(f"{def_path}:{lineno}: {exc.message}") from exc
 
 
-def parse_cap_ids_def(def_path: Path) -> CapContract:
+def parse_cap_ids(def_path: Path) -> CapContract:
     """解析 airy_cap_ids.def 契约源（D-9 前缀转换 + 语义校验）。
 
     POSIX 裸名（如 CAP_CHOWN）补 AIRY_ 前缀；已带 AIRY_ 前缀者原样保留。
     """
     specs: list[CapIdSpec] = []
     seen: dict[str, int] = {}
-    for lineno, raw in enumerate(_read_cap_def_lines(def_path), 1):
+    for lineno, raw in enumerate(_cap_def_lines(def_path), 1):
         parsed = _parse_cap_line(raw)
         if parsed is None:
             continue
@@ -128,33 +128,33 @@ def _known_symbols(contract: CapContract) -> set[str]:
     return names
 
 
-def _capability_required(sc_elem) -> str:
+def _cap_required(sc_elem) -> str:
     return (sc_elem.findtext("capability_required") or "").strip()
 
 
-def _is_unconstrained(cap_req: str) -> bool:
+def _unconstrained(cap_req: str) -> bool:
     return not cap_req or cap_req == "0"
 
 
-def _undefined_cap_message(sc_elem, cap_req: str, syscall_xml: Path) -> str:
+def _undef_cap_msg(sc_elem, cap_req: str, syscall_xml: Path) -> str:
     sc_name = (sc_elem.findtext("name") or "<unnamed>").strip()
     return f"{syscall_xml}: syscall {sc_name} references undefined capability {cap_req}"
 
 
-def _validate_syscall_cap(sc_elem, known: set[str], syscall_xml: Path) -> None:
-    cap_req = _capability_required(sc_elem)
-    if _is_unconstrained(cap_req):
+def _val_sc_cap(sc_elem, known: set[str], syscall_xml: Path) -> None:
+    cap_req = _cap_required(sc_elem)
+    if _unconstrained(cap_req):
         return
     if cap_req not in known:
-        raise ContractValidationError(_undefined_cap_message(sc_elem, cap_req, syscall_xml))
+        raise ContractValidationError(_undef_cap_msg(sc_elem, cap_req, syscall_xml))
 
 
-def validate_capability_references(contract: CapContract, syscall_xml: Path) -> None:
+def cap_ref_check(contract: CapContract, syscall_xml: Path) -> None:
     """§5.4 跨契约校验：syscall.xml 引用符号必须存在于能力契约源。"""
     root = _load_xml_root(syscall_xml)
     known = _known_symbols(contract)
     for sc_elem in root.findall("syscall"):
-        _validate_syscall_cap(sc_elem, known, syscall_xml)
+        _val_sc_cap(sc_elem, known, syscall_xml)
 
 
 def build_context(contract: CapContract) -> dict[str, object]:
@@ -175,8 +175,8 @@ def build_context(contract: CapContract) -> dict[str, object]:
 
 def render_outputs(repo_root: Path) -> dict[Path, str]:
     """解析契约源并渲染全部产物，返回 {目标路径: 内容}。"""
-    contract = parse_cap_ids_def(repo_root / CAP_DEF_REL)
-    validate_capability_references(contract, repo_root / SYSCALL_XML_REL)
+    contract = parse_cap_ids(repo_root / CAP_DEF_REL)
+    cap_ref_check(contract, repo_root / SYSCALL_XML_REL)
     env = codegen_io.make_env()
     context = build_context(contract)
     return {repo_root / rel: codegen_io.render(env, name, context) for name, rel in OUTPUTS}

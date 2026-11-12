@@ -29,7 +29,7 @@ from pathlib import Path
 
 import codegen_io
 
-from bitfield_gen import parse_bf_contract
+from bitfield_gen import parse_bf
 from codegen_types import (
     GENERATOR_VERSION,
     IPC_BADGE_PREFIX,
@@ -49,7 +49,7 @@ from codegen_types import (
     BitfieldContract,
     BitfieldFieldSpec,
     ContractValidationError,
-    bitfield_value_type,
+    bf_value_type,
 )
 
 GENERATOR = "ipc_gen.py"
@@ -120,11 +120,11 @@ _CTYPE_TO_PY: dict[str, str] = {
 _CTYPE_TO_GO: dict[str, str] = {"__u16": "uint16", "__u32": "uint32", "__u64": "uint64"}
 
 
-def _expected_offsets() -> dict[str, int]:
+def _exp_offsets() -> dict[str, int]:
     return {name: offset for name, offset, _ in _EXPECTED_IPC_LAYOUT}
 
 
-def _validate_field_table(ipc_block, offsets: dict[str, int]) -> None:
+def _val_ftable(ipc_block, offsets: dict[str, int]) -> None:
     by_name = {f.name: f for f in ipc_block.fields}
     for name, offset, width in _EXPECTED_IPC_LAYOUT:
         field = by_name.get(name)
@@ -143,7 +143,7 @@ def _validate_field_table(ipc_block, offsets: dict[str, int]) -> None:
         raise ContractValidationError(f"{BF64_REL}: {IPC_BLOCK_NAME} offset table drift")
 
 
-def _validate_badge_table(badge_block) -> None:
+def _val_badge(badge_block) -> None:
     by_name = {f.name: f for f in badge_block.fields}
     if badge_block.width != 64:
         raise ContractValidationError(f"{BF64_REL}: {BADGE_BLOCK_NAME} width != 64")
@@ -158,7 +158,7 @@ def _validate_badge_table(badge_block) -> None:
             )
 
 
-def _validate_bf_layout(contract: BitfieldContract) -> None:
+def _val_bf(contract: BitfieldContract) -> None:
     """校验 .bf 布局与 contracts.md §2 期望布局逐位一致（§9.1）。"""
     blocks = contract.blocks_by_name
     ipc_block = blocks.get(IPC_BLOCK_NAME)
@@ -175,22 +175,22 @@ def _validate_bf_layout(contract: BitfieldContract) -> None:
     if IPC_MAGIC != 0x41524531:
         raise ContractValidationError(f"ipc magic constant drift: {MAGIC_LITERAL}")
     offsets = {name: offset for name, offset, _ in _EXPECTED_IPC_LAYOUT}
-    _validate_field_table(ipc_block, offsets)
-    _validate_badge_table(badge_block)
+    _val_ftable(ipc_block, offsets)
+    _val_badge(badge_block)
 
 
 def _ctypes(field: BitfieldFieldSpec) -> tuple[str, str]:
     """返回字段的 (C 类型, Rust 类型)。padding 以字节数组承载。"""
     if field.is_padding:
         return "__u8", f"[u8; {field.width // 8}]"
-    ctype = bitfield_value_type(field.width)
+    ctype = bf_value_type(field.width)
     return ctype, _CTYPE_TO_RUST[ctype]
 
 
 def _py_ctype(field: BitfieldFieldSpec) -> str:
     if field.is_padding:
         return f"ctypes.c_uint8 * {field.width // 8}"
-    return _CTYPE_TO_PY[bitfield_value_type(field.width)]
+    return _CTYPE_TO_PY[bf_value_type(field.width)]
 
 
 def _constant_lines() -> list[str]:
@@ -229,11 +229,11 @@ def _badge_fields(badge_block) -> tuple[BitfieldFieldSpec, ...]:
     return tuple(sorted(badge_block.fields, key=lambda f: f.low, reverse=True))
 
 
-def _badge_shift_macro(field: BitfieldFieldSpec) -> str:
+def _shift_macro(field: BitfieldFieldSpec) -> str:
     return IPC_BADGE_PREFIX + field.name.upper() + "_SHIFT"
 
 
-def _badge_mask_macro(field: BitfieldFieldSpec) -> str:
+def _mask_macro(field: BitfieldFieldSpec) -> str:
     return IPC_BADGE_PREFIX + field.name.upper() + "_MASK"
 
 
@@ -241,43 +241,43 @@ def _badge_mask_hex(field: BitfieldFieldSpec) -> str:
     return f"0x{(1 << field.width) - 1:X}"
 
 
-def _badge_shift_lines(fields: tuple[BitfieldFieldSpec, ...]) -> list[str]:
+def _shift_lines(fields: tuple[BitfieldFieldSpec, ...]) -> list[str]:
     return [
-        "#define " + _badge_shift_macro(f).ljust(23) + " " + str(f.low) for f in fields
+        "#define " + _shift_macro(f).ljust(23) + " " + str(f.low) for f in fields
     ]
 
 
-def _badge_mask_lines(fields: tuple[BitfieldFieldSpec, ...]) -> list[str]:
+def _mask_lines(fields: tuple[BitfieldFieldSpec, ...]) -> list[str]:
     return [
         "#define "
-        + _badge_mask_macro(f).ljust(23)
+        + _mask_macro(f).ljust(23)
         + " ((__u64)"
         + _badge_mask_hex(f)
         + " << "
-        + _badge_shift_macro(f)
+        + _shift_macro(f)
         + ")"
         for f in fields
     ]
 
 
-def _badge_extract_lines(fields: tuple[BitfieldFieldSpec, ...]) -> list[str]:
+def _extract_lines(fields: tuple[BitfieldFieldSpec, ...]) -> list[str]:
     return [
         "#define "
         + (IPC_BADGE_PREFIX + f.name.upper() + "(b)").ljust(21)
         + " "
-        + f"(((b) & {_badge_mask_macro(f)}) >> {_badge_shift_macro(f)})"
+        + f"(((b) & {_mask_macro(f)}) >> {_shift_macro(f)})"
         for f in fields
     ]
 
 
-def _badge_compile_block(fields: tuple[BitfieldFieldSpec, ...]) -> str:
+def _compile_block(fields: tuple[BitfieldFieldSpec, ...]) -> str:
     params = ", ".join(f.name for f in fields)
     parts = []
     for index, field in enumerate(fields):
         indent = "\t(" if index == 0 else "\t "
         expr = (
             f"((__u64)(({field.name}) & {_badge_mask_hex(field)})"
-            f" << {_badge_shift_macro(field)})"
+            f" << {_shift_macro(field)})"
         )
         parts.append(indent + expr)
     body = " | \\\n".join(parts) + ")"
@@ -331,10 +331,10 @@ def _go_ctype(field: BitfieldFieldSpec) -> str:
     """返回 Go 字段类型（padding 以定长字节数组承载）。"""
     if field.is_padding:
         return f"[{field.width // 8}]byte"
-    return _CTYPE_TO_GO[bitfield_value_type(field.width)]
+    return _CTYPE_TO_GO[bf_value_type(field.width)]
 
 
-def _go_opcode_consts() -> list[dict[str, object]]:
+def _opcode_consts() -> list[dict[str, object]]:
     return [
         {"name": "AiryIpcOp" + _pascal(op.suffix), "value": op.value_hex, "comment": op.comment}
         for op in IPC_OPCODE_SPECS
@@ -352,7 +352,7 @@ def _go_flag_consts() -> list[dict[str, object]]:
     ]
 
 
-def _go_badge_shift_consts(fields: tuple[BitfieldFieldSpec, ...]) -> list[dict[str, object]]:
+def _shift_consts(fields: tuple[BitfieldFieldSpec, ...]) -> list[dict[str, object]]:
     return [
         {
             "name": "AiryBadge" + _pascal(f.name) + "Shift",
@@ -363,7 +363,7 @@ def _go_badge_shift_consts(fields: tuple[BitfieldFieldSpec, ...]) -> list[dict[s
     ]
 
 
-def _go_badge_mask_consts(fields: tuple[BitfieldFieldSpec, ...]) -> list[dict[str, str]]:
+def _mask_consts(fields: tuple[BitfieldFieldSpec, ...]) -> list[dict[str, str]]:
     return [
         {
             "name": "AiryBadge" + _pascal(f.name) + "Mask",
@@ -402,14 +402,14 @@ def _reserved_bytes(fields: tuple[BitfieldFieldSpec, ...]) -> int:
     return next(f.width // 8 for f in fields if f.is_padding)
 
 
-def _size_assert_lines() -> list[str]:
+def _size_asserts() -> list[str]:
     return [
         f"_Static_assert(sizeof(struct {IPC_STRUCT_NAME}) == {IPC_HDR_SIZE_MACRO},",
         f'\t       "{IPC_SIZE_ASSERT_MESSAGE}");',
     ]
 
 
-def _offset_assert_lines(offsets: dict[str, int]) -> list[str]:
+def _offset_asserts(offsets: dict[str, int]) -> list[str]:
     lines = []
     for assert_spec in IPC_LAYOUT_ASSERTS:
         offset = offsets[assert_spec.field]
@@ -423,7 +423,7 @@ def _offset_assert_lines(offsets: dict[str, int]) -> list[str]:
 
 def _badge_shifts(fields: tuple[BitfieldFieldSpec, ...]) -> list[dict[str, object]]:
     return [
-        {"macro": _badge_shift_macro(f), "value": f.low, "comment": _BADGE_COMMENTS[f.name]}
+        {"macro": _shift_macro(f), "value": f.low, "comment": _BADGE_COMMENTS[f.name]}
         for f in fields
     ]
 
@@ -431,7 +431,7 @@ def _badge_shifts(fields: tuple[BitfieldFieldSpec, ...]) -> list[dict[str, objec
 def _badge_masks(fields: tuple[BitfieldFieldSpec, ...]) -> list[dict[str, str]]:
     return [
         {
-            "macro": _badge_mask_macro(f),
+            "macro": _mask_macro(f),
             "value_hex": f"0x{((1 << f.width) - 1) << f.low:X}",
             "comment": _BADGE_COMMENTS[f.name],
         }
@@ -444,7 +444,7 @@ def build_context(contract: BitfieldContract) -> dict[str, object]:
     blocks = contract.blocks_by_name
     fields = blocks[IPC_BLOCK_NAME].fields
     badge_fields = _badge_fields(blocks[BADGE_BLOCK_NAME])
-    offsets = _expected_offsets()
+    offsets = _exp_offsets()
     return {
         "generator": GENERATOR,
         "generator_version": GENERATOR_VERSION,
@@ -459,10 +459,10 @@ def build_context(contract: BitfieldContract) -> dict[str, object]:
         "constant_lines": _constant_lines(),
         "opcode_lines": _opcode_lines(),
         "flag_lines": _flag_lines(),
-        "badge_shift_lines": _badge_shift_lines(badge_fields),
-        "badge_mask_lines": _badge_mask_lines(badge_fields),
-        "badge_compile_block": _badge_compile_block(badge_fields),
-        "badge_extract_lines": _badge_extract_lines(badge_fields),
+        "badge_shift_lines": _shift_lines(badge_fields),
+        "badge_mask_lines": _mask_lines(badge_fields),
+        "badge_compile_block": _compile_block(badge_fields),
+        "badge_extract_lines": _extract_lines(badge_fields),
         "opcodes": IPC_OPCODE_SPECS,
         "flags": IPC_FLAG_SPECS,
         "badge_shifts": _badge_shifts(badge_fields),
@@ -470,25 +470,25 @@ def build_context(contract: BitfieldContract) -> dict[str, object]:
         "fields": _rust_fields(fields),
         "field_lines": _c_field_lines(fields, offsets),
         "py_field_lines": _py_field_lines(fields, offsets),
-        "go_opcodes": _go_opcode_consts(),
+        "go_opcodes": _opcode_consts(),
         "go_flags": _go_flag_consts(),
-        "go_badge_shifts": _go_badge_shift_consts(badge_fields),
-        "go_badge_masks": _go_badge_mask_consts(badge_fields),
+        "go_badge_shifts": _shift_consts(badge_fields),
+        "go_badge_masks": _mask_consts(badge_fields),
         "go_field_lines": _go_field_lines(fields),
         "ts_fields": _ts_fields(fields),
         "ts_offsets": _ts_offsets(fields, offsets),
         "badge_offset": offsets["capability_badge"],
         "reserved_offset": offsets["reserved"],
         "reserved_bytes": _reserved_bytes(fields),
-        "size_assert_lines": _size_assert_lines(),
-        "offset_assert_lines": _offset_assert_lines(offsets),
+        "size_assert_lines": _size_asserts(),
+        "offset_assert_lines": _offset_asserts(offsets),
     }
 
 
 def render_outputs(repo_root: Path) -> dict[Path, str]:
     """解析契约源、校验布局并渲染全部产物，返回 {目标路径: 内容}。"""
-    contract = parse_bf_contract(repo_root / BF64_REL)
-    _validate_bf_layout(contract)
+    contract = parse_bf(repo_root / BF64_REL)
+    _val_bf(contract)
     context = build_context(contract)
     env = codegen_io.make_env()
     return {

@@ -46,7 +46,7 @@ STAGES: dict[GeneratorName, tuple[str, tuple[str, ...]]] = {
 }
 
 
-def default_repo_root() -> Path:
+def default_root() -> Path:
     """agent-linux/ 仓库根（tools/codegen/ 上溯两级）。"""
     return TOOLS_DIR.parents[1]
 
@@ -91,7 +91,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--repo-root",
-        default=str(default_repo_root()),
+        default=str(default_root()),
         help="agent-linux 仓库根目录（默认: %(default)s）",
     )
     parser.add_argument(

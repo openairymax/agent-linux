@@ -20,7 +20,7 @@ from types import SimpleNamespace
 import pytest
 
 import ipc_gen
-from bitfield_gen import parse_bf_contract
+from bitfield_gen import parse_bf
 from codegen_types import (
     IPC_BADGE_PREFIX,
     IPC_FIELD_COMMENTS,
@@ -45,16 +45,16 @@ _OUTPUTS = ipc_gen.OUTPUTS
 
 @pytest.fixture()
 def ipc_block(repo_root: Path) -> BitfieldBlockSpec:
-    return parse_bf_contract(repo_root / ipc_gen.BF64_REL).blocks_by_name[ipc_gen.IPC_BLOCK_NAME]
+    return parse_bf(repo_root / ipc_gen.BF64_REL).blocks_by_name[ipc_gen.IPC_BLOCK_NAME]
 
 
 @pytest.fixture()
 def badge_block(repo_root: Path) -> BitfieldBlockSpec:
-    return parse_bf_contract(repo_root / ipc_gen.BF64_REL).blocks_by_name[ipc_gen.BADGE_BLOCK_NAME]
+    return parse_bf(repo_root / ipc_gen.BF64_REL).blocks_by_name[ipc_gen.BADGE_BLOCK_NAME]
 
 
 def _offsets() -> dict[str, int]:
-    return ipc_gen._expected_offsets()
+    return ipc_gen._exp_offsets()
 
 
 def _struct_block(name: str, width: int, low: int, high: int) -> BitfieldBlockSpec:
@@ -143,8 +143,8 @@ class TestConstantAndMacroLines:
 
     def test_badge_shift_and_mask_macros(self, badge_block: BitfieldBlockSpec) -> None:
         epoch = next(f for f in badge_block.fields if f.name == "epoch")
-        assert ipc_gen._badge_shift_macro(epoch) == IPC_BADGE_PREFIX + "EPOCH_SHIFT"
-        assert ipc_gen._badge_mask_macro(epoch) == IPC_BADGE_PREFIX + "EPOCH_MASK"
+        assert ipc_gen._shift_macro(epoch) == IPC_BADGE_PREFIX + "EPOCH_SHIFT"
+        assert ipc_gen._mask_macro(epoch) == IPC_BADGE_PREFIX + "EPOCH_MASK"
         assert ipc_gen._badge_mask_hex(epoch) == "0xFFFF"
 
 
@@ -155,7 +155,7 @@ class TestBadgeRendering:
 
     def test_badge_shift_lines(self, badge_block: BitfieldBlockSpec) -> None:
         fields = ipc_gen._badge_fields(badge_block)
-        tokens = [line.split() for line in ipc_gen._badge_shift_lines(fields)]
+        tokens = [line.split() for line in ipc_gen._shift_lines(fields)]
         assert tokens == [
             ["#define", "AIRY_BADGE_EPOCH_SHIFT", "48"],
             ["#define", "AIRY_BADGE_RANDTAG_SHIFT", "16"],
@@ -164,13 +164,13 @@ class TestBadgeRendering:
 
     def test_badge_extract_lines(self, badge_block: BitfieldBlockSpec) -> None:
         fields = ipc_gen._badge_fields(badge_block)
-        lines = ipc_gen._badge_extract_lines(fields)
+        lines = ipc_gen._extract_lines(fields)
         assert lines[0].startswith("#define AIRY_BADGE_EPOCH(b)")
         assert "AIRY_BADGE_EPOCH_MASK" in lines[0]
 
     def test_badge_compile_block(self, badge_block: BitfieldBlockSpec) -> None:
         fields = ipc_gen._badge_fields(badge_block)
-        block = ipc_gen._badge_compile_block(fields)
+        block = ipc_gen._compile_block(fields)
         assert block.startswith("#define AIRY_BADGE_COMPILE(epoch, randtag, perms)")
         assert block.endswith(")")
 
@@ -211,24 +211,24 @@ class TestFieldLineRendering:
         assert ipc_gen._reserved_bytes(ipc_block.fields) == 72
 
     def test_assert_lines(self) -> None:
-        size_lines = ipc_gen._size_assert_lines()
+        size_lines = ipc_gen._size_asserts()
         assert size_lines[0].startswith(f"_Static_assert(sizeof(struct {IPC_STRUCT_NAME})")
-        offset_lines = ipc_gen._offset_assert_lines(_offsets())
+        offset_lines = ipc_gen._offset_asserts(_offsets())
         assert any("offsetof(struct" in line for line in offset_lines)
 
     def test_go_const_helpers(self) -> None:
-        assert ipc_gen._go_opcode_consts()[0]["name"] == "AiryIpcOpSend"
+        assert ipc_gen._opcode_consts()[0]["name"] == "AiryIpcOpSend"
         assert ipc_gen._go_flag_consts()[0]["name"] == "AiryIpcFlagZerocopy"
 
 
 class TestValidateTables:
     def test_field_table_happy(self, ipc_block: BitfieldBlockSpec) -> None:
-        ipc_gen._validate_field_table(ipc_block, _offsets())
+        ipc_gen._val_ftable(ipc_block, _offsets())
 
     def test_field_table_missing_field(self, ipc_block: BitfieldBlockSpec) -> None:
         trimmed = tuple(f for f in ipc_block.fields if f.name != "crc32")
         with pytest.raises(ContractValidationError, match="missing field crc32"):
-            ipc_gen._validate_field_table(SimpleNamespace(fields=trimmed), _offsets())
+            ipc_gen._val_ftable(SimpleNamespace(fields=trimmed), _offsets())
 
     def test_field_table_offset_drift(self, ipc_block: BitfieldBlockSpec) -> None:
         drifted = tuple(
@@ -236,24 +236,24 @@ class TestValidateTables:
             for f in ipc_block.fields
         )
         with pytest.raises(ContractValidationError, match="magic offset/width"):
-            ipc_gen._validate_field_table(SimpleNamespace(fields=drifted), _offsets())
+            ipc_gen._val_ftable(SimpleNamespace(fields=drifted), _offsets())
 
     def test_field_table_extra_field(self, ipc_block: BitfieldBlockSpec) -> None:
         extra = ipc_block.fields + (BitfieldFieldSpec("bogus", high=1023, low=1023),)
         with pytest.raises(ContractValidationError, match="do not match IPC_FIELD_COMMENTS"):
-            ipc_gen._validate_field_table(SimpleNamespace(fields=extra), _offsets())
+            ipc_gen._val_ftable(SimpleNamespace(fields=extra), _offsets())
 
     def test_badge_table_happy(self, badge_block: BitfieldBlockSpec) -> None:
-        ipc_gen._validate_badge_table(badge_block)
+        ipc_gen._val_badge(badge_block)
 
     def test_badge_width_drift(self, badge_block: BitfieldBlockSpec) -> None:
         with pytest.raises(ContractValidationError, match="cap_badge width != 64"):
-            ipc_gen._validate_badge_table(SimpleNamespace(width=32, fields=badge_block.fields))
+            ipc_gen._val_badge(SimpleNamespace(width=32, fields=badge_block.fields))
 
     def test_badge_field_set_mismatch(self, badge_block: BitfieldBlockSpec) -> None:
         subset = tuple(f for f in badge_block.fields if f.name != "epoch")
         with pytest.raises(ContractValidationError, match="field set mismatch"):
-            ipc_gen._validate_badge_table(SimpleNamespace(width=64, fields=subset))
+            ipc_gen._val_badge(SimpleNamespace(width=64, fields=subset))
 
     def test_badge_shift_drift(self, badge_block: BitfieldBlockSpec) -> None:
         drifted = tuple(
@@ -261,39 +261,39 @@ class TestValidateTables:
             for f in badge_block.fields
         )
         with pytest.raises(ContractValidationError, match="badge epoch shift/width"):
-            ipc_gen._validate_badge_table(SimpleNamespace(width=64, fields=drifted))
+            ipc_gen._val_badge(SimpleNamespace(width=64, fields=drifted))
 
 
 class TestValidateBfLayout:
     def test_happy(self, repo_root: Path) -> None:
-        contract = parse_bf_contract(repo_root / ipc_gen.BF64_REL)
-        ipc_gen._validate_bf_layout(contract)
+        contract = parse_bf(repo_root / ipc_gen.BF64_REL)
+        ipc_gen._val_bf(contract)
 
     def test_missing_ipc_block(self, badge_block: BitfieldBlockSpec) -> None:
         with pytest.raises(ContractValidationError, match="block ipc_msg_hdr not found"):
-            ipc_gen._validate_bf_layout(BitfieldContract(blocks=(badge_block,)))
+            ipc_gen._val_bf(BitfieldContract(blocks=(badge_block,)))
 
     def test_missing_badge_block(self, ipc_block: BitfieldBlockSpec) -> None:
         with pytest.raises(ContractValidationError, match="block cap_badge not found"):
-            ipc_gen._validate_bf_layout(BitfieldContract(blocks=(ipc_block,)))
+            ipc_gen._val_bf(BitfieldContract(blocks=(ipc_block,)))
 
     def test_width_drift(self, badge_block: BitfieldBlockSpec) -> None:
         small = _struct_block("ipc_msg_hdr", 32, 0, 31)
         with pytest.raises(ContractValidationError, match="!= 1024 bits"):
-            ipc_gen._validate_bf_layout(BitfieldContract(blocks=(small, badge_block)))
+            ipc_gen._val_bf(BitfieldContract(blocks=(small, badge_block)))
 
     def test_magic_constant_drift(
         self, repo_root: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        contract = parse_bf_contract(repo_root / ipc_gen.BF64_REL)
+        contract = parse_bf(repo_root / ipc_gen.BF64_REL)
         monkeypatch.setattr(ipc_gen, "IPC_MAGIC", 0)
         with pytest.raises(ContractValidationError, match="ipc magic constant drift"):
-            ipc_gen._validate_bf_layout(contract)
+            ipc_gen._val_bf(contract)
 
 
 class TestBuildContextAndRender:
     def test_build_context_values(self, repo_root: Path) -> None:
-        contract = parse_bf_contract(repo_root / ipc_gen.BF64_REL)
+        contract = parse_bf(repo_root / ipc_gen.BF64_REL)
         context = ipc_gen.build_context(contract)
         assert context["hdr_size"] == IPC_HEADER_SIZE
         assert context["magic_hex"] == f"0x{IPC_MAGIC:08X}"

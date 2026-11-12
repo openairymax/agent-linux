@@ -89,8 +89,8 @@ __all__ = [
     "SyscallContract",
     "SyscallSpec",
     "TemplateRenderError",
-    "bitfield_mask_literal",
-    "bitfield_value_type",
+    "bf_mask_literal",
+    "bf_value_type",
 ]
 
 # 3. 契约版本与命名空间常量
@@ -266,7 +266,7 @@ class SyscallContract:
             raise ContractValidationError("syscall numbers must be contiguous from 0")
 
     @property
-    def syscalls_by_number(self) -> dict[int, SyscallSpec]:
+    def syscall_by_nr(self) -> dict[int, SyscallSpec]:
         """按内部编号索引的 syscall 映射。"""
         return {sc.number: sc for sc in self.syscalls}
 
@@ -320,7 +320,7 @@ class CapContract:
             raise ContractValidationError("capability ids must be contiguous from 0")
 
     @property
-    def cap_ids_by_value(self) -> dict[int, CapIdSpec]:
+    def cap_ids_map(self) -> dict[int, CapIdSpec]:
         """按数值索引的 capability 映射。"""
         return {c.value: c for c in self.cap_ids}
 
@@ -351,13 +351,13 @@ BITFIELD_WIDTH_TYPES: dict[int, str] = {8: "__u8", 16: "__u16", 32: "__u32", 64:
 BITFIELD_WORD_TYPES: dict[str, int] = {name: bits for bits, name in BITFIELD_WIDTH_TYPES.items()}
 
 
-def bitfield_value_type(width: int) -> str:
+def bf_value_type(width: int) -> str:
     """按位宽选取最小可容纳的整型类型名（非标准位宽向上取整）。
 
     Example:
-        >>> bitfield_value_type(16)
+        >>> bf_value_type(16)
         '__u16'
-        >>> bitfield_value_type(20)
+        >>> bf_value_type(20)
         '__u32'
     """
     for bits in (8, 16, 32, 64):
@@ -366,13 +366,13 @@ def bitfield_value_type(width: int) -> str:
     raise ContractValidationError(f"bitfield width exceeds 64 bits: {width}")
 
 
-def bitfield_mask_literal(width: int) -> str:
+def bf_mask_literal(width: int) -> str:
     """生成位宽对应的无符号掩码字面量（<=32 位用 u 后缀，否则 ULL）。
 
     Example:
-        >>> bitfield_mask_literal(16)
+        >>> bf_mask_literal(16)
         '0xffffu'
-        >>> bitfield_mask_literal(64)
+        >>> bf_mask_literal(64)
         '0xffffffffffffffffULL'
     """
     suffix = "ULL" if width > 32 else "u"
@@ -444,12 +444,12 @@ class BitfieldFieldSpec:
     @property
     def value_type(self) -> str:
         """访问器使用的 C 整型类型名。"""
-        return bitfield_value_type(self.width)
+        return bf_value_type(self.width)
 
     @property
     def mask_literal(self) -> str:
         """字段掩码字面量。"""
-        return bitfield_mask_literal(self.width)
+        return bf_mask_literal(self.width)
 
     @property
     def upper(self) -> str:
@@ -457,21 +457,21 @@ class BitfieldFieldSpec:
         return self.name.upper()
 
 
-def _check_contiguous(block_name: str, prev: BitfieldFieldSpec, cur: BitfieldFieldSpec) -> None:
+def _contiguous(block_name: str, prev: BitfieldFieldSpec, cur: BitfieldFieldSpec) -> None:
     if cur.low != prev.high + 1:
         raise ContractValidationError(
             f"block {block_name}: gap or overlap between {prev.name} and {cur.name}"
         )
 
 
-def _check_padding_alignment(block_name: str, field: BitfieldFieldSpec) -> None:
+def _pad_align(block_name: str, field: BitfieldFieldSpec) -> None:
     if not field.byte_aligned or field.width % BITFIELD_BYTE_BITS != 0:
         raise ContractValidationError(
             f"block {block_name}: padding {field.name or '<anon>'} must be byte aligned"
         )
 
 
-def _check_accessor_alignment(block_name: str, field: BitfieldFieldSpec) -> None:
+def _acc_align(block_name: str, field: BitfieldFieldSpec) -> None:
     if not field.byte_aligned or field.width not in BITFIELD_WIDTH_TYPES:
         raise ContractValidationError(
             f"block {block_name}: struct field {field.name} must be 8/16/32/64-bit byte aligned"
@@ -491,11 +491,11 @@ class BitfieldBlockSpec:
     pivot: str = ""
 
     def __post_init__(self) -> None:
-        self._validate_identity()
+        self._val_ident()
         self._validate_bind()
-        self._validate_fields()
+        self._val_fields()
 
-    def _validate_identity(self) -> None:
+    def _val_ident(self) -> None:
         if self.width <= 0:
             raise ContractValidationError(f"block {self.name}: non-positive width {self.width}")
         if not self.ctype:
@@ -505,29 +505,29 @@ class BitfieldBlockSpec:
         if self.container is BitfieldContainer.STRUCT and not self.header:
             raise ContractValidationError(f"block {self.name}: struct bind requires a header")
         if self.container is BitfieldContainer.WORD:
-            self._validate_word_width()
+            self._val_word_width()
 
-    def _validate_word_width(self) -> None:
+    def _val_word_width(self) -> None:
         declared = BITFIELD_WORD_TYPES.get(self.ctype)
         if declared != self.width:
             raise ContractValidationError(
                 f"block {self.name}: word width {self.width} != {self.ctype} width {declared}"
             )
 
-    def _validate_fields(self) -> None:
+    def _val_fields(self) -> None:
         if not self.fields:
             raise ContractValidationError(f"block {self.name}: no fields declared")
         ordered = tuple(sorted(self.fields, key=lambda f: f.low))
-        self._validate_coverage(ordered)
+        self._val_cover(ordered)
         self._validate_names()
-        self._validate_alignment(ordered)
+        self._val_align(ordered)
         self._validate_pivot()
 
-    def _validate_coverage(self, ordered: tuple[BitfieldFieldSpec, ...]) -> None:
+    def _val_cover(self, ordered: tuple[BitfieldFieldSpec, ...]) -> None:
         if ordered[0].low != 0:
             raise ContractValidationError(f"block {self.name}: fields must start at bit 0")
         for prev, cur in zip(ordered, ordered[1:]):
-            _check_contiguous(self.name, prev, cur)
+            _contiguous(self.name, prev, cur)
         if ordered[-1].high != self.width - 1:
             raise ContractValidationError(
                 f"block {self.name}: fields must cover up to bit {self.width - 1}"
@@ -540,14 +540,14 @@ class BitfieldBlockSpec:
                 raise ContractValidationError(f"block {self.name}: duplicate field {field.name}")
             seen.add(field.name)
 
-    def _validate_alignment(self, ordered: tuple[BitfieldFieldSpec, ...]) -> None:
+    def _val_align(self, ordered: tuple[BitfieldFieldSpec, ...]) -> None:
         if self.container is not BitfieldContainer.STRUCT:
             return
         for field in ordered:
             if field.is_padding:
-                _check_padding_alignment(self.name, field)
+                _pad_align(self.name, field)
             else:
-                _check_accessor_alignment(self.name, field)
+                _acc_align(self.name, field)
 
     def _validate_pivot(self) -> None:
         if self.pivot and self.pivot not in {f.name for f in self.fields}:
@@ -612,7 +612,7 @@ class BitfieldContract:
         """去重保序的 include 目标列表。"""
         return tuple(dict.fromkeys(b.include_header for b in self.blocks if b.include_header))
 
-    def layout_signature(self) -> tuple:
+    def layout_sig(self) -> tuple:
         """跨架构布局签名（供 32/64 位一致性校验比对）。"""
         return tuple(
             (
