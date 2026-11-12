@@ -30,11 +30,11 @@ import urllib.request
 # ─── 子仓配置 ────────────────────────────────────────────────────────
 # .gitmodules 中 url 为相对路径（../kernel.git），无法直接得到 owner。
 # 此处提供默认映射，可用环境变量 GITHUB_OWNER 覆盖 owner。
-# 子模块清单不硬编码，改由 .gitmodules 派生（见 list_submodule_paths）。
+# 子模块清单不硬编码，改由 .gitmodules 派生（见 sub_paths）。
 DEFAULT_OWNER = os.environ.get("GITHUB_OWNER", "openairymax")
 
 
-def list_submodule_paths(root):
+def sub_paths(root):
     """从 root/.gitmodules 派生声明的子模块路径清单。
 
     返回 (paths, 错误信息)。错误信息为 None 时 paths 有效；
@@ -94,7 +94,7 @@ def http_request(method, url, token, body=None):
         return 0, {"message": f"网络错误：{exc}"}
 
 
-def parse_submodule_status(root):
+def parse_sub_stat(root):
     """运行 ``git submodule status``，返回 [(path, sha, flags), ...]。
 
     flags 包含前缀符号：' ' 已检出，'-' 未初始化，'+' 不同步，'U' 冲突。
@@ -191,12 +191,12 @@ def main():
         print("SKIP: no token, design phase")
         return 0
 
-    subs, err = parse_submodule_status(args.root)
+    subs, err = parse_sub_stat(args.root)
     if err is not None:
         print(f"ERROR: {err}", file=sys.stderr)
         return 2
 
-    expected, gm_err = list_submodule_paths(args.root)
+    expected, gm_err = sub_paths(args.root)
     if gm_err is not None:
         print(
             f"WARN: 无法从 .gitmodules 派生清单（{gm_err}），"

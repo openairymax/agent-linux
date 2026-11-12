@@ -207,7 +207,7 @@ def test_parse_sums_accepts_binary_marker_and_dot_prefix() -> None:
 
 def test_resolve_expected_prefers_explicit_sha256(tmp_path: Path) -> None:
     image, digest = make_image(tmp_path)
-    expected, source = af.resolve_expected(image, sha256=digest.upper())
+    expected, source = af.resolve_exp(image, sha256=digest.upper())
     assert expected == digest
     assert source == "--sha256"
 
@@ -215,13 +215,13 @@ def test_resolve_expected_prefers_explicit_sha256(tmp_path: Path) -> None:
 def test_resolve_expected_rejects_malformed_sha256(tmp_path: Path) -> None:
     image, _ = make_image(tmp_path)
     with pytest.raises(FlashError) as excinfo:
-        af.resolve_expected(image, sha256="xyz")
+        af.resolve_exp(image, sha256="xyz")
     assert excinfo.value.code == EXIT_USAGE
 
 
 def test_resolve_expected_reads_sidecar(tmp_path: Path) -> None:
     image, digest = make_image(tmp_path)
-    expected, source = af.resolve_expected(image)
+    expected, source = af.resolve_exp(image)
     assert expected == digest
     assert source.endswith(".iso.sha256")
 
@@ -231,7 +231,7 @@ def test_resolve_expected_reads_sums_file(tmp_path: Path) -> None:
     image.with_suffix(image.suffix + ".sha256").unlink()
     sums = tmp_path / "SHA256SUMS"
     sums.write_text(f"{digest}  {image.name}\n", encoding="utf-8")
-    expected, source = af.resolve_expected(image)
+    expected, source = af.resolve_exp(image)
     assert (expected, source) == (digest, str(sums))
 
 
@@ -239,7 +239,7 @@ def test_resolve_expected_single_entry_sums_file_is_used(tmp_path: Path) -> None
     image, digest = make_image(tmp_path)
     sums = tmp_path / "peer.sha256"
     sums.write_text(f"{digest}  other-name.iso\n", encoding="utf-8")
-    expected, source = af.resolve_expected(image, sums=str(sums))
+    expected, source = af.resolve_exp(image, sums=str(sums))
     assert (expected, source) == (digest, str(sums))
 
 
@@ -248,14 +248,14 @@ def test_resolve_expected_multi_entry_sums_without_match_fails(tmp_path: Path) -
     sums = tmp_path / "peer.sha256"
     sums.write_text(f"{'a' * 64}  x.iso\n{'b' * 64}  y.iso\n", encoding="utf-8")
     with pytest.raises(FlashError) as excinfo:
-        af.resolve_expected(image, sums=str(sums))
+        af.resolve_exp(image, sums=str(sums))
     assert excinfo.value.code == EXIT_CHECK
 
 
 def test_resolve_expected_without_any_source_returns_empty(tmp_path: Path) -> None:
     image = tmp_path / "plain.iso"
     image.write_bytes(b"x")
-    assert af.resolve_expected(image) == ("", "")
+    assert af.resolve_exp(image) == ("", "")
 
 
 def test_sha256_file_reports_full_progress(tmp_path: Path) -> None:

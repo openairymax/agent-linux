@@ -94,7 +94,7 @@ __all__ = [
     "probe_image",
     "read_mounts",
     "readback",
-    "resolve_expected",
+    "resolve_exp",
     "sample_ranges",
     "sha256_file",
     "system_disks",
@@ -191,7 +191,7 @@ def parse_sums(text: str) -> dict[str, str]:
     return out
 
 
-def resolve_expected(
+def resolve_exp(
     image: Path, *, sha256: str = "", sums: str = ""
 ) -> tuple[str, str]:
     """返回 (期望摘要, 来源说明)；来源为空表示没有可用校验和。"""
@@ -1146,7 +1146,7 @@ def execute(args: argparse.Namespace) -> tuple[Report, int]:
 
 def _run(args: argparse.Namespace, report: Report, renderer: Renderer) -> None:
     image = probe_image(Path(args.image))
-    expected, source = resolve_expected(
+    expected, source = resolve_exp(
         image.path, sha256=args.sha256, sums=args.sums
     )
     image = ImageFacts(
@@ -1537,7 +1537,7 @@ def _fetch_steps(
     ]
 
 
-def _ledger_from_artifact(ref: str, oras: str) -> tuple[OciLedger, str]:
+def _ledger_from(ref: str, oras: str) -> tuple[OciLedger, str]:
     """先取 <tag>-ledger 制品里的 iso-oci.txt，未命中才回落清单注解。
 
     清单注解是发布侧写死的元数据，用户若按它手工重建块表，读错一处注解
@@ -1572,7 +1572,7 @@ def _ledger_arg(args: argparse.Namespace) -> tuple[OciLedger, str]:
         )
     if args.oci:
         return parse_oci(Path(args.oci)), str(Path(args.oci))
-    return _ledger_from_artifact(args.ref, args.oras)
+    return _ledger_from(args.ref, args.oras)
 
 
 def _run_fetch(
