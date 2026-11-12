@@ -115,90 +115,22 @@ install_bundle()
 
 # 自检判定与契约的比对。失败时要求：首个失败项就是归因项，其后每一项都
 # 记成被它阻塞并沿用同一归因，最后一项状态检查必须通过——判定没落盘就
-# 等于没判定。
+# 等于没判定。三份契约（JSON、行式、状态文件）的实现只在
+# ci/lib/llm_contract.py 一处，这里只负责把参数递过去。
 verdict()
 {
-    python3 - "${NAMES}" "$@" <<'PY'
-import json
-import sys
-
-names = sys.argv[1].split()
-raw, want_state, want_reason, want_fail = sys.argv[2:6]
-want_digest = sys.argv[6] if len(sys.argv) > 6 else ""
-obj = json.loads(raw)
-if sorted(obj) != ["backend", "checks", "digest", "reason", "state"]:
-    sys.exit(f"字段集合 {sorted(obj)!r} 偏离契约")
-rows = obj["checks"]
-got = [row.get("name") for row in rows]
-if got != names:
-    sys.exit(f"检查项顺序 {got!r} 偏离契约")
-for row in rows:
-    if sorted(row) != ["detail", "name", "ok", "reason"]:
-        sys.exit(f"{row.get('name')}: 元素字段 {sorted(row)!r} 偏离契约")
-    if not isinstance(row["ok"], bool):
-        sys.exit(f"{row['name']}: ok 必须是布尔值")
-if (obj["state"], obj["reason"]) != (want_state, want_reason or None):
-    sys.exit(f"state/reason {(obj['state'], obj['reason'])!r}，"
-             f"应为 {(want_state, want_reason or None)!r}")
-if want_digest and obj["digest"] != want_digest:
-    sys.exit(f"清单摘要 {obj['digest']!r}，应为 {want_digest!r}")
-bad = [row["name"] for row in rows if not row["ok"]]
-if not want_fail:
-    if bad:
-        sys.exit(f"不应有失败项: {bad!r}")
-    sys.exit(0)
-if not bad or bad[0] != want_fail:
-    sys.exit(f"首个失败项 {bad[:1]!r}，应为 {want_fail!r}")
-cause = rows[names.index(want_fail)]
-for row in rows[names.index(want_fail) + 1:-1]:
-    if row["ok"] or not row["detail"].startswith("blocked by "):
-        sys.exit(f"{row['name']}: 应记为被阻塞")
-    if row["reason"] != cause["reason"]:
-        sys.exit(f"{row['name']}: 阻塞归因 {row['reason']!r} 与失败项不符")
-if not rows[-1]["ok"] or rows[-1]["name"] != "status":
-    sys.exit("失败判定未落盘")
-PY
+    python3 "${ROOT}/ci/lib/llm_contract.py" json "${NAMES}" "$@"
 }
 
 # 行式输出是给人看的那一面：逐项一段，末行与 status 完全同形。
 lines_contract()
 {
-    python3 - "${NAMES}" "$1" <<'PY'
-import sys
-
-names = sys.argv[1].split()
-rows = sys.argv[2].strip().splitlines()
-if len(rows) != len(names) + 1:
-    sys.exit(f"行数 {len(rows)}，应为 {len(names) + 1}")
-for name, row in zip(names, rows):
-    if not row.startswith(f"{name}="):
-        sys.exit(f"第 {name} 行偏离契约: {row!r}")
-    if row != f"{name}=ok" and not row.startswith(f"{name}=ok "):
-        sys.exit(f"{name} 未通过: {row!r}")
-if not rows[-1].startswith("state="):
-    sys.exit(f"末行不是状态行: {rows[-1]!r}")
-PY
+    python3 "${ROOT}/ci/lib/llm_contract.py" lines "${NAMES}" "$1"
 }
 
 status_file()
 {
-    python3 - "$1" "$2" <<'PY'
-import json
-import sys
-
-home, raw = sys.argv[1:3]
-obj = json.loads(raw)
-want = {key: obj[key] for key in ("state", "backend", "reason", "digest")}
-with open(f"{home}/status.json", encoding="utf-8") as handle:
-    kept = json.load(handle)
-extra = sorted(set(kept) - {"schema"} - set(want))
-if extra:
-    sys.exit(f"状态文件含契约外字段: {extra!r}")
-for key, value in want.items():
-    if kept.get(key) != value:
-        sys.exit(f"状态文件 {key}={kept.get(key)!r}，"
-                 f"与自检判定 {value!r} 不一致")
-PY
+    python3 "${ROOT}/ci/lib/llm_contract.py" status "$1" "$2"
 }
 
 check_ready()
