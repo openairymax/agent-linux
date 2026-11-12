@@ -422,28 +422,47 @@ def pick_snap(
 ) -> Snapshot:
     """按 --snapshot / --to / 默认上一版本选择目标快照。"""
     if name:
-        match = [
-            snap
-            for snap in snaps
-            if snap.path.name == name or snap.created.startswith(name)
-        ]
-        if not match:
-            hit = [item for item in broken if item.startswith(name + ":")]
-            if hit:
-                raise RollbackError(EXIT_INTEGRITY, f"快照损坏: {hit[0]}")
-            raise RollbackError(EXIT_TARGET, f"未找到快照: {name}")
-        return max(match, key=_snap_ts)
+        return _pick_named(snaps, broken, name)
     if to_ver:
-        match = [snap for snap in snaps if snap.version == to_ver]
-        if not match:
-            raise RollbackError(EXIT_TARGET, f"未找到版本快照: {to_ver}")
-        return max(match, key=_snap_ts)
-    previous = [snap for snap in snaps if snap.version != current]
-    if not previous:
+        return _pick_ver(snaps, to_ver)
+    return _pick_prev(snaps, current)
+
+
+def _pick_named(
+    snaps: Sequence[Snapshot],
+    broken: Sequence[str],
+    name: str,
+) -> Snapshot:
+    """按文件名或创建时间前缀选；同名快照损坏时先报完整性错误。"""
+    hits = [
+        snap
+        for snap in snaps
+        if snap.path.name == name or snap.created.startswith(name)
+    ]
+    if hits:
+        return max(hits, key=_snap_ts)
+    hurt = [item for item in broken if item.startswith(name + ":")]
+    if hurt:
+        raise RollbackError(EXIT_INTEGRITY, f"快照损坏: {hurt[0]}")
+    raise RollbackError(EXIT_TARGET, f"未找到快照: {name}")
+
+
+def _pick_ver(snaps: Sequence[Snapshot], ver: str) -> Snapshot:
+    """按版本号选该版本最新的一个快照。"""
+    hits = [snap for snap in snaps if snap.version == ver]
+    if not hits:
+        raise RollbackError(EXIT_TARGET, f"未找到版本快照: {ver}")
+    return max(hits, key=_snap_ts)
+
+
+def _pick_prev(snaps: Sequence[Snapshot], current: str) -> Snapshot:
+    """默认回滚目标：不属于当前版本的最新快照。"""
+    pool = [snap for snap in snaps if snap.version != current]
+    if not pool:
         raise RollbackError(
             EXIT_TARGET, f"没有可回滚的历史快照（当前 {current}）"
         )
-    return max(previous, key=_snap_ts)
+    return max(pool, key=_snap_ts)
 
 
 def read_release(path: Path) -> str:
