@@ -126,26 +126,37 @@ def parse_sub_stat(root):
 
 def fetch_ci_state(api, owner_repo, sha, token):
     """获取 commit 的 check runs + combined status，返回 state 字符串。"""
+    runs, verdict = _ci_runs(api, owner_repo, sha, token)
+    if verdict is not None:
+        return verdict
+    return _ci_status(api, owner_repo, sha, token, len(runs))
+
+
+def _ci_runs(api, owner_repo, sha, token):
+    """check runs 的判定：返回 (runs, verdict)，无定论时 verdict 为 None。"""
     fail_conclusions = {
         "failure", "cancelled", "timed_out", "action_required",
     }
-    # check runs
     url = f"{api}/repos/{owner_repo}/commits/{sha}/check-runs?per_page=100"
     status, payload = http_request("GET", url, token)
     if status == 404:
-        return "unknown", "repo/commit 未找到"
+        return [], ("unknown", "repo/commit 未找到")
     if status != 200 or not isinstance(payload, dict):
-        return "unknown", f"check-runs HTTP {status}"
+        return [], ("unknown", f"check-runs HTTP {status}")
     runs = payload.get("check_runs", []) or []
     for run in runs:
         st = run.get("status")
         con = run.get("conclusion")
         if st in ("queued", "in_progress", "waiting", "pending"):
-            return "pending", f"{len(runs)} check runs（进行中）"
+            return runs, ("pending", f"{len(runs)} check runs（进行中）")
         if st == "completed" and con in fail_conclusions:
-            return "red", f"check run {run.get('name')!r} conclusion={con}"
+            return runs, ("red",
+                          f"check run {run.get('name')!r} conclusion={con}")
+    return runs, None
 
-    # combined status
+
+def _ci_status(api, owner_repo, sha, token, run_count):
+    """combined status 的判定：check runs 无定论时以它收口。"""
     url = f"{api}/repos/{owner_repo}/commits/{sha}/status"
     status, payload = http_request("GET", url, token)
     combined = None
@@ -156,9 +167,9 @@ def fetch_ci_state(api, owner_repo, sha, token):
     if combined == "pending":
         return "pending", "combined status=pending"
 
-    if not runs and combined in (None, "no status"):
+    if not run_count and combined in (None, "no status"):
         return "unknown", "无 check runs / status"
-    return "green", f"{len(runs)} check runs，combined={combined}"
+    return "green", f"{run_count} check runs，combined={combined}"
 
 
 def main():
