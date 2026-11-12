@@ -230,15 +230,20 @@ def _float(raw: Mapping[str, Any], key: str) -> float:
     return float(value)
 
 
+def _strs(
+    value: Any, key: str, code: int = EXIT_USAGE
+) -> tuple[str, ...]:
+    if not isinstance(value, list) or not value:
+        raise _fail(key, code)
+    if not all(isinstance(item, str) and item for item in value):
+        raise _fail(key, code)
+    return tuple(value)
+
+
 def _units(
     raw: Mapping[str, Any], code: int = EXIT_USAGE
 ) -> tuple[str, ...]:
-    value = raw.get("daemons")
-    if not isinstance(value, list) or not value:
-        raise _fail("daemons", code)
-    if not all(isinstance(item, str) and item for item in value):
-        raise _fail("daemons", code)
-    return tuple(value)
+    return _strs(raw.get("daemons"), "daemons", code)
 
 
 def _cmds(raw: Mapping[str, Any]) -> dict[str, tuple[str, ...]]:
@@ -249,11 +254,7 @@ def _cmds(raw: Mapping[str, Any]) -> dict[str, tuple[str, ...]]:
     for name, argv in block.items():
         if not isinstance(name, str) or not name:
             raise _fail("commands", EXIT_USAGE)
-        if not isinstance(argv, list) or not argv:
-            raise _fail(name, EXIT_USAGE)
-        if not all(isinstance(item, str) and item for item in argv):
-            raise _fail(name, EXIT_USAGE)
-        out[name] = tuple(argv)
+        out[name] = _strs(argv, name)
     return out
 
 
