@@ -335,6 +335,38 @@ def pipeline_globs(path: Path) -> Globs:
 # ─── Schema check ──────────────────────────────────────────────────────────
 
 
+def _entry_fields(where: str, entry: Manifest) -> list[str]:
+    """字段集合：未登记键与缺值必填键，两者都按名逐个报出。"""
+    problems = []
+    unknown = set(entry) - MATERIAL_KEYS
+    if unknown:
+        problems.append(f"{where} 未知字段: {', '.join(sorted(unknown))}")
+    problems.extend(f"{where} 缺少或为空值的必填字段: {key}"
+                    for key in REQUIRED_MATERIAL_KEYS if not entry.get(key))
+    return problems
+
+
+def _entry_id(where: str, entry: Manifest, seen: set[str]) -> list[str]:
+    """物料 id 必须存在且唯一；首次出现即登记，重复出现报错。"""
+    mid = entry.get("id")
+    if not isinstance(mid, str) or not mid:
+        return []
+    if mid in seen:
+        return [f"{where}.id 重复: {mid}"]
+    seen.add(mid)
+    return []
+
+
+def _entry_delivery(where: str, entry: Manifest) -> list[str]:
+    """交付状态：取值须在枚举内，且与该状态要求的字段组合自洽。"""
+    delivery = entry.get("delivery")
+    problems = []
+    if delivery is not None and delivery not in DELIVERY_CHOICES:
+        problems.append(f"{where}.delivery 必须是 {' 或 '.join(DELIVERY_CHOICES)}")
+    problems.extend(_delivery_errs(where, entry, delivery))
+    return problems
+
+
 def _entry_problems(idx: int, entry: Any, seen: set[str]) -> list[str]:
     """校验单条 materials 记录。
 
@@ -349,27 +381,9 @@ def _entry_problems(idx: int, entry: Any, seen: set[str]) -> list[str]:
     where = f"materials[{idx}]"
     if not isinstance(entry, dict):
         return [f"{where} 必须是映射"]
-
-    problems = []
-    unknown = set(entry) - MATERIAL_KEYS
-    if unknown:
-        problems.append(f"{where} 未知字段: {', '.join(sorted(unknown))}")
-    for key in REQUIRED_MATERIAL_KEYS:
-        if not entry.get(key):
-            problems.append(f"{where} 缺少或为空值的必填字段: {key}")
-
-    mid = entry.get("id")
-    if isinstance(mid, str) and mid:
-        if mid in seen:
-            problems.append(f"{where}.id 重复: {mid}")
-        else:
-            seen.add(mid)
-
-    delivery = entry.get("delivery")
-    if delivery is not None and delivery not in DELIVERY_CHOICES:
-        problems.append(f"{where}.delivery 必须是 {' 或 '.join(DELIVERY_CHOICES)}")
-    problems.extend(_delivery_errs(where, entry, delivery))
-    return problems
+    return (_entry_fields(where, entry)
+            + _entry_id(where, entry, seen)
+            + _entry_delivery(where, entry))
 
 
 def _delivery_errs(where: str, entry: Manifest, delivery: Any) -> list[str]:
