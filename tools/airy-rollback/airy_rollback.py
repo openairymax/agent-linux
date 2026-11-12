@@ -1063,31 +1063,46 @@ def main(argv: list[str] | None = None) -> int:
     if yaml is None:
         print("ERROR: PyYAML 不可用，请安装 pyyaml", file=sys.stderr)
         return EXIT_USAGE
-    path = args.manifest or DEFAULT_MANIFEST
     try:
-        manifest = load_manifest(path)
-        checks = check_manifest(manifest)
-        failed = [check for check in checks if not check.ok]
-        if failed:
-            show_checks(checks)
-            return EXIT_USAGE
-        runner = Subproc()
-        if args.cmd == "check":
-            show_checks(checks)
-            return EXIT_OK
-        if args.cmd == "plan":
-            return do_plan(manifest, args, runner)
-        if args.cmd == "verify":
-            return do_verify(manifest, _actor(args.actor), runner)
-        if args.cmd == "prune":
-            return do_prune(manifest, args, runner)
-        return do_apply(manifest, args, runner)
+        return _dispatch(args)
     except RollbackError as exc:
         print(f"airy-rollback: {exc.detail}", file=sys.stderr)
         return exc.code
     except OSError as exc:
         print(f"airy-rollback: {exc}", file=sys.stderr)
         return EXIT_FAIL
+
+
+def _bad(checks: tuple[Check, ...]) -> list[Check]:
+    """未通过的契约项；空列表说明清单可用。"""
+    return [check for check in checks if not check.ok]
+
+
+def _dispatch(args: argparse.Namespace) -> int:
+    """清单契约先于任何执行：不成立就只报结论，不碰系统。"""
+    manifest = load_manifest(args.manifest or DEFAULT_MANIFEST)
+    checks = check_manifest(manifest)
+    if _bad(checks):
+        show_checks(checks)
+        return EXIT_USAGE
+    return _route(args, manifest, checks)
+
+
+def _route(
+    args: argparse.Namespace, manifest: Manifest, checks: tuple[Check, ...]
+) -> int:
+    """按子命令分派；runner 统一在此创建，check 分支不执行命令。"""
+    runner = Subproc()
+    if args.cmd == "check":
+        show_checks(checks)
+        return EXIT_OK
+    if args.cmd == "plan":
+        return do_plan(manifest, args, runner)
+    if args.cmd == "verify":
+        return do_verify(manifest, _actor(args.actor), runner)
+    if args.cmd == "prune":
+        return do_prune(manifest, args, runner)
+    return do_apply(manifest, args, runner)
 
 
 if __name__ == "__main__":
