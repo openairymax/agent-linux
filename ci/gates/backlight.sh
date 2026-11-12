@@ -43,6 +43,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 TREE=""
 TMP=""
 FAILS=0
+# 缺件计数：声明面靠它决定后两层还判不判，故不是局部变量。
+PKG_MISS=0
 
 usage()
 {
@@ -60,27 +62,48 @@ opts_dir "$@"
 
 # 声明面 -------------------------------------------------------------------
 
-chk_pkg()
+# 包内文件是否齐全：源包目录、各模块、缺件计数。缺目录时连入口都无从谈起，
+# 由调用方直接收尾；缺模块时入口仍可检查，只是后两项要等补齐再判。
+pkg_files()
 {
-    local dir="$1/system/services/airybright" m missing=0
-    local bin="$1/system/bin/airy-bright"
+    local dir="$1/system/services/airybright" m
 
-    say "声明面 ${1}"
-    [ -d "${dir}" ] || { bad "package: 缺少 services/airybright"; return 0; }
+    if [ ! -d "${dir}" ]; then
+        bad "package: 缺少 services/airybright"
+        return 1
+    fi
     for m in ${MODULES}; do
-        [ -f "${dir}/${m}" ] || { bad "package: 缺少 ${m}"; missing=1; }
+        [ -f "${dir}/${m}" ] || { bad "package: 缺少 ${m}"; PKG_MISS=1; }
     done
-    [ -x "${bin}" ] || bad "entry: system/bin/airy-bright 不可执行"
-    [ -x "${bin}" ] || return 0
+    return 0
+}
+
+# 入口可执行、shebang 对、帮助里有四个子命令。不可执行时后面三条都无从
+# 检查，返回 1 让调用方收尾。
+pkg_entry()
+{
+    local bin="$1/system/bin/airy-bright" m
+
+    if [ ! -x "${bin}" ]; then
+        bad "entry: system/bin/airy-bright 不可执行"
+        return 1
+    fi
     [ "$(sed -n '1p' "${bin}")" = '#!/usr/bin/env python3' ] ||
         bad "entry: 首行不是 python3 shebang"
     for m in status set step config; do
-        "${bin}" --help 2>/dev/null | grep -qE "(^|[[:space:]])${m}([[:space:]]|$)" ||
+        "${bin}" --help 2>/dev/null |
+            grep -qE "(^|[[:space:]])${m}([[:space:]]|$)" ||
             bad "entry: 帮助里没有 ${m} 子命令"
     done
-    [ "${missing}" -eq 0 ] || return 0
+    return 0
+}
 
-    # 桩标记与机型硬编码：注释里的机型说明是取证记录，不算硬编码。
+# 包内实现不得留桩，也不得按机型名选设备。注释里的机型说明是取证记录，
+# 只有代码行才算硬编码。
+pkg_pure()
+{
+    local dir="$1/system/services/airybright"
+
     if grep -nE 'TODO|FIXME|NotImplementedError' "${dir}"/*.py; then
         bad "package: 存在桩标记"
     fi
@@ -88,10 +111,34 @@ chk_pkg()
         grep -vE '^[^:]+:[0-9]+:[[:space:]]*#'; then
         bad "package: 代码里硬编码了机型设备名"
     fi
-    grep -qF 'system/services/airybright' "$1/distro/specs/airymaxos-system.spec" ||
+}
+
+# spec 要既声明源包又安装入口：源码可用不等于装机镜像里有这条命令。
+pkg_spec()
+{
+    local spec="$1/distro/specs/airymaxos-system.spec"
+
+    grep -qF 'system/services/airybright' "${spec}" ||
         bad "spec: 未声明 services/airybright 源包"
-    grep -qF '%{_bindir}/airy-bright' "$1/distro/specs/airymaxos-system.spec" ||
+    grep -qF '%{_bindir}/airy-bright' "${spec}" ||
         bad "spec: 未安装 airy-bright"
+}
+
+# 声明面按「文件 → 入口 → 实现 → 装配」逐层收窄：缺件时后面的层次就是空
+# 判据（拿不到文件也无从查桩），照旧判一套只会把「缺一个模块」淹成十几条。
+chk_pkg()
+{
+    local root="$1"
+
+    say "声明面 ${root}"
+    PKG_MISS=0
+    pkg_files "${root}" || return 0
+    pkg_entry "${root}" || return 0
+    if [ "${PKG_MISS}" -ne 0 ]; then
+        return 0
+    fi
+    pkg_pure "${root}"
+    pkg_spec "${root}"
 }
 
 # 实物面 -------------------------------------------------------------------
