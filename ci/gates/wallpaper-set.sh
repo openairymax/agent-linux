@@ -111,25 +111,32 @@ chk_up()
 chk_src()
 {
     local d="$1"
-    local w="${d}/distro/release/wallpapers"
-    local spec="${d}/distro/specs/airymaxos-release.spec"
-    local reg="${d}/distro/desktop/wallpaper/airymaxos-default.xml"
-    local sch="${d}/distro/desktop/glib-2.0/schemas"
-    local have want f n s i
 
     say "静态集合 ${d}"
     load_lock "${d}/distro/lockfile/ukui-wallpapers.yaml"
     [ "${#NAMES[@]}" -eq "${COUNT}" ] || return 0
 
-    # 1) 实物集合按 basename 排序逐字比对；集合不一致时仍逐条报缺失项，
-    #    便于一次看清差在哪一张。
+    src_file "${d}/distro/release/wallpapers"
+    src_spec "${d}/distro/specs/airymaxos-release.spec"
+    src_reg "${d}/distro/desktop/wallpaper/airymaxos-default.xml" \
+        "${d}/distro/desktop/glib-2.0/schemas"
+    src_old "${d}"
+    chk_up "${d}"
+}
+
+# src_file DIR —— 实物集合与摘要。集合按 basename 排序逐字比对，不一致时
+# 仍逐条报缺失项，便于一次看清差在哪一张；同名不同内容说明有一侧被单独
+# 替换过，只比文件名不够。
+src_file()
+{
+    local w="$1" have want f n s i
+
     have=$(find "${w}" -maxdepth 1 -type f -name '*.jpg' \
         -printf '%f\n' 2>/dev/null | sort)
     want=$(printf '%s\n' "${NAMES[@]}" | sort)
     [ "${have}" = "${want}" ] ||
         bad "papers/set: 实物与台账不一致（${have//$'\n'/ }）"
 
-    # 2) digest：同名不同内容说明有一侧被单独替换过，只比文件名不够。
     for i in "${!NAMES[@]}"; do
         n="${NAMES[$i]}"
         f="${w}/${n}"
@@ -138,18 +145,28 @@ chk_src()
         [ "${s}" = "${SHAS[$i]}" ] ||
             bad "papers/sha256: ${n} 与台账摘要不符"
     done
+}
 
-    # 3) spec：每张壁纸都要有 Source 与 %files 落点。%files 缺项会让
-    #    rpmbuild 直接失败，但它只能证明「装了某个文件」，与 Source 成对
-    #    才说明装的是台账里那一个。
+# src_spec SPEC —— 每张壁纸都要有 Source 与 %files 落点。%files 缺项会让
+# rpmbuild 直接失败，但它只能证明「装了某个文件」，与 Source 成对才说明
+# 装的是台账里那一个。
+src_spec()
+{
+    local spec="$1" n
+
     for n in "${NAMES[@]}"; do
         grep -qE "^Source[0-9]+:[[:space:]]+${n}$" "${spec}" ||
             bad "spec/source: ${n} 无 Source 条目"
         grep -qxF "%{_datadir}/backgrounds/airymaxos/${n}" "${spec}" ||
             bad "spec/files: ${n} 未进 %files"
     done
+}
 
-    # 4) 注册表与 schema 默认值只能指向台账内的文件。
+# src_reg REG SCHEMA_DIR —— 注册表与 schema 默认值只能指向台账内的文件。
+src_reg()
+{
+    local reg="$1" sch="$2" have n
+
     have=$(grep -cE '<filename>[^<]+</filename>' "${reg}" 2>/dev/null)
     [ "${have:-0}" -eq "${COUNT}" ] ||
         bad "registry/count: 应恰为 ${COUNT} 条（实为 ${have:-0}）"
@@ -163,20 +180,23 @@ chk_src()
     [ -n "${n}" ] || bad "schema/default: 无 picture-filename 覆盖"
     [ -z "${n}" ] || has_name "${n##*/}" ||
         bad "schema/default: ${n##*/} 不在台账内"
+}
 
-    # 5) 旧别名不得复活：它只有一张图，会把默认壁纸变回改名后的产物。
-    #    changelog 与 README 的历史叙述不算残留，故只查真正决定安装结果的
-    #    配方（%changelog 之前）、注册表与 schema 覆盖。
-    if sed '/^%changelog$/,$d' "${spec}" 2>/dev/null |
-        grep -qF 'airymaxos-default.jpg'; then
+# src_old DIR —— 旧别名不得复活：它只有一张图，会把默认壁纸变回改名后的
+# 产物。changelog 与 README 的历史叙述不算残留，故只查真正决定安装结果
+# 的配方（%changelog 之前）、注册表与 schema 覆盖。
+src_old()
+{
+    local d="$1"
+
+    if sed '/^%changelog$/,$d' "${d}/distro/specs/airymaxos-release.spec" \
+        2>/dev/null | grep -qF 'airymaxos-default.jpg'; then
         bad "papers/legacy: 配方仍引用旧别名 airymaxos-default.jpg"
     fi
     if grep -rqF 'airymaxos-default.jpg' "${d}/distro/desktop/wallpaper" \
         "${d}/distro/desktop/glib-2.0" 2>/dev/null; then
         bad "papers/legacy: 注册表或 schema 仍引用旧别名"
     fi
-
-    chk_up "${d}"
 }
 
 chk_root()
