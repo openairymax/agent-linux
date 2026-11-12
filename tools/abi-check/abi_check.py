@@ -595,66 +595,87 @@ def check_x32(unistd, tbl):
 
 def check_sc_hdr(sc_header, ssot, unistd, tbl):
     """Check the [SC] contract header agrees with SSoT / unistd.h / tbl."""
-    failures = []
-
-    # 4 core macros present, equal to expected numbering and to SSoT
-    ssot_map = {s["name"]: s["linux_number"] for s in ssot["syscalls"]}
-    for name, macro, expected in CORE_SYSCALLS:
-        num = sc_header["core_macros"].get(macro)
-        if num is None:
-            failures.append(f"  {macro}: [SC] 契约头中缺失")
-            continue
-        if num != expected:
-            failures.append(f"  {macro} = {num} (期望 {expected})")
-        ssot_num = ssot_map.get(name)
-        if ssot_num is not None and ssot_num != num:
-            failures.append(
-                f"  {macro}: [SC]={num}, SSoT={ssot_num} (不一致)")
-
-    # Reserved marker macros
+    failures = (hdr_core(sc_header, ssot) + hdr_mark(sc_header) +
+                hdr_span(sc_header, ssot) + hdr_xref(sc_header, unistd, tbl))
+    if failures:
+        return CheckResult("[SC] 契约头一致 (syscalls.h)", False,
+                           "\n".join(failures))
     res = sc_header["reserved"]
     base = res.get("AIRY_SYS_RESERVED_BASE")
     end = res.get("AIRY_SYS_RESERVED_END")
     slots = res.get("AIRY_SYS_SLOTS_MAX")
+    return CheckResult(
+        "[SC] 契约头一致 (syscalls.h)", True,
+        f"4 核心宏 (548-551) + 预留标记 (BASE={base}, END={end}, "
+        f"SLOTS_MAX={slots}) 与 SSoT/unistd.h/tbl 一致")
 
-    if base is None:
-        failures.append("  AIRY_SYS_RESERVED_BASE: [SC] 契约头中缺失")
-    elif base != EXPECTED_RESERVED_START:
-        failures.append(
-            f"  AIRY_SYS_RESERVED_BASE = {base} "
-            f"(期望 {EXPECTED_RESERVED_START})")
-    if end is None:
-        failures.append("  AIRY_SYS_RESERVED_END: [SC] 契约头中缺失")
-    elif end != EXPECTED_RESERVED_END:
-        failures.append(
-            f"  AIRY_SYS_RESERVED_END = {end} "
-            f"(期望 {EXPECTED_RESERVED_END})")
-    if slots is None:
-        failures.append("  AIRY_SYS_SLOTS_MAX: [SC] 契约头中缺失")
-    elif slots != EXPECTED_SLOTS_MAX:
-        failures.append(
-            f"  AIRY_SYS_SLOTS_MAX = {slots} "
-            f"(期望 {EXPECTED_SLOTS_MAX})")
 
-    if base is not None and end is not None and slots is not None:
+def hdr_core(sc_header, ssot):
+    """4 个核心宏：存在、等于期望编号、与 SSoT 一致。"""
+    out = []
+    ssot_map = {s["name"]: s["linux_number"] for s in ssot["syscalls"]}
+    for name, macro, expected in CORE_SYSCALLS:
+        num = sc_header["core_macros"].get(macro)
+        if num is None:
+            out.append(f"  {macro}: [SC] 契约头中缺失")
+            continue
+        if num != expected:
+            out.append(f"  {macro} = {num} (期望 {expected})")
+        ssot_num = ssot_map.get(name)
+        if ssot_num is not None and ssot_num != num:
+            out.append(
+                f"  {macro}: [SC]={num}, SSoT={ssot_num} (不一致)")
+    return out
+
+
+def mark_issue(name, value, expect):
+    """单个标记宏的三态判定：缺失 / 值不符 / 通过。"""
+    if value is None:
+        return [f"  {name}: [SC] 契约头中缺失"]
+    if value != expect:
+        return [f"  {name} = {value} (期望 {expect})"]
+    return []
+
+
+def hdr_mark(sc_header):
+    """预留标记：存在、等于期望值，SLOTS_MAX 由两端差值推导。"""
+    res = sc_header["reserved"]
+    base = res.get("AIRY_SYS_RESERVED_BASE")
+    end = res.get("AIRY_SYS_RESERVED_END")
+    slots = res.get("AIRY_SYS_SLOTS_MAX")
+    out = []
+    out += mark_issue("AIRY_SYS_RESERVED_BASE", base, EXPECTED_RESERVED_START)
+    out += mark_issue("AIRY_SYS_RESERVED_END", end, EXPECTED_RESERVED_END)
+    out += mark_issue("AIRY_SYS_SLOTS_MAX", slots, EXPECTED_SLOTS_MAX)
+    if None not in (base, end, slots):
         derived = end - EXPECTED_BASE + 1
         if slots != derived:
-            failures.append(
+            out.append(
                 f"  AIRY_SYS_SLOTS_MAX={slots} != "
                 f"RESERVED_END-RESERVED_BASE+1 (={derived})")
+    return out
 
-    # Cross-check reserved markers against SSoT reserved_range
+
+def hdr_span(sc_header, ssot):
+    """预留段与 SSoT 的 reserved_range 交叉校验。"""
+    res = sc_header["reserved"]
+    base = res.get("AIRY_SYS_RESERVED_BASE")
+    end = res.get("AIRY_SYS_RESERVED_END")
+    if base is None or end is None:
+        return []
     ssot_range = ssot["reserved_range"]
-    if base is not None and end is not None:
-        if ssot_range is None:
-            failures.append(
-                "  SSoT 预留段缺失，无法与 [SC] 契约头交叉校验")
-        elif [base, end] != ssot_range:
-            failures.append(
-                f"  预留段: [SC]=[{base}, {end}], SSoT={ssot_range} "
-                f"(不一致)")
+    if ssot_range is None:
+        return ["  SSoT 预留段缺失，无法与 [SC] 契约头交叉校验"]
+    if [base, end] != ssot_range:
+        return [
+            f"  预留段: [SC]=[{base}, {end}], SSoT={ssot_range} "
+            f"(不一致)"]
+    return []
 
-    # Cross-check core numbering against unistd.h / tbl
+
+def hdr_xref(sc_header, unistd, tbl):
+    """核心编号与 unistd.h / syscall_64.tbl 交叉校验。"""
+    out = []
     unistd_map = {s["name"]: s["linux_number"] for s in unistd["syscalls"]}
     tbl_map = {s["name"]: s["linux_number"] for s in tbl["syscalls"]}
     for name, macro, _expected in CORE_SYSCALLS:
@@ -665,16 +686,9 @@ def check_sc_hdr(sc_header, ssot, unistd, tbl):
                              ("syscall_64.tbl", tbl_map)):
             other = src_map.get(name)
             if other is not None and other != num:
-                failures.append(
+                out.append(
                     f"  {macro}: [SC]={num}, {src}={other} (不一致)")
-
-    if failures:
-        return CheckResult("[SC] 契约头一致 (syscalls.h)", False,
-                           "\n".join(failures))
-    return CheckResult(
-        "[SC] 契约头一致 (syscalls.h)", True,
-        f"4 核心宏 (548-551) + 预留标记 (BASE={base}, END={end}, "
-        f"SLOTS_MAX={slots}) 与 SSoT/unistd.h/tbl 一致")
+    return out
 
 
 def rsvd_issues(reserved, label):
@@ -1074,7 +1088,8 @@ def print_report(results, ssot, unistd, tbl, sw_tbl, baseline, sources,
 
 # ─── Main ──────────────────────────────────────────────────────────────────
 
-def main():
+def parse_opts():
+    """命令行参数：每个路径都可显式覆盖，缺省按仓库布局推导。"""
     parser = argparse.ArgumentParser(
         description="agent-linux ABI stability checker (OS-IRON-001)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -1123,118 +1138,137 @@ def main():
     parser.add_argument(
         "--check", action="store_true",
         help="CI mode: minimal output, exit code only (0=pass, 1=fail)")
-    args = parser.parse_args()
+    return parser.parse_args()
 
-    # Determine repo root
+
+def resolve(args, repo_root):
+    """把每个可选路径落到具体位置：显式参数优先，否则用仓库缺省。"""
+    def pick(value, rel):
+        return Path(value) if value else repo_root / rel
+
+    return {
+        "ssot": pick(args.ssot_path, DEFAULT_SSOT_REL),
+        "snapshot": pick(args.snapshot_path, DEFAULT_SNAPSHOT_REL),
+        "unistd": pick(args.unistd_path, DEFAULT_UNISTD_REL),
+        "tbl": pick(args.tbl_path, DEFAULT_TBL_REL),
+        "sw64": pick(args.sw64_tbl_path, DEFAULT_SW64_TBL_REL),
+        "sc_hdr": pick(args.sc_header_path, DEFAULT_SC_HEADER_REL),
+        "baseline": pick(args.baseline, DEFAULT_BASELINE_REL),
+    }
+
+
+def gate_ssot(args, ssot_path):
+    """SSoT 的缺失语义：显式路径是硬契约，缺省路径只在硬要求时报错。"""
+    available = ssot_path.is_file()
+    if args.ssot_path and not available:
+        print(f"ERROR: file not found: {ssot_path}", file=sys.stderr)
+        sys.exit(2)
+    if not available and (args.require_ssot or args.update_snapshot):
+        reason = "--require-ssot" if args.require_ssot else "--update-snapshot"
+        print(f"ERROR: authoritative SSoT not found: {ssot_path} "
+              f"({reason})", file=sys.stderr)
+        sys.exit(2)
+    return available
+
+
+def emit_snap(ssot_path, snapshot_path, repo_root):
+    """--update-snapshot：从权威 SSoT 重建契约快照。"""
+    ssot = parse_ssot(read_file(ssot_path))
+    snapshot = build_snapshot(ssot, ssot_path, repo_root,
+                              src_commit(ssot_path))
+    write_snapshot(snapshot_path, snapshot)
+    print(f"snapshot written: {snapshot_path}")
+    print(f"  {describe_snap(snapshot)}")
+    print(f"  linux_base={snapshot['linux_base']} "
+          f"syscalls={len(snapshot['syscalls'])} "
+          f"reserved_range={snapshot['reserved_range']}")
+
+
+def load_ssot(ssot_path, snapshot_path, available):
+    """权威 SSoT 优先；docs 子模块缺席时回落到契约快照。"""
+    snapshot = load_snapshot(snapshot_path)
+    if available:
+        return parse_ssot(read_file(ssot_path)), snapshot, None
+    if snapshot is not None:
+        note = ("[INFO] SSoT source: contract snapshot "
+                "(../docs unavailable) — " + describe_snap(snapshot))
+        return snap_ssot(snapshot), snapshot, note
+    print(f"ERROR: neither SSoT ({ssot_path}) nor snapshot "
+          f"({snapshot_path}) is available", file=sys.stderr)
+    sys.exit(2)
+
+
+def load_srcs(paths):
+    """读取并解析内核侧的四个来源。"""
+    return {
+        "unistd": parse_unistd(read_file(paths["unistd"])),
+        "tbl": parse_tbl(read_file(paths["tbl"])),
+        "sw_tbl": parse_tbl(read_file(paths["sw64"])),
+        "sc_hdr": parse_sc_header(read_file(paths["sc_hdr"])),
+    }
+
+
+def run_checks(ssot, src, baseline, snapshot, repo_root, has_ssot):
+    """按契约顺序跑全部检查；基线缺席时不做基线比对。"""
+    results = [
+        check_3way(ssot, src["unistd"], src["tbl"]),
+        check_base_nr(ssot, src["unistd"], src["tbl"]),
+        check_range(ssot, src["unistd"], src["tbl"]),
+        check_sys_nr(src["unistd"]),
+        check_x32(src["unistd"], src["tbl"]),
+        check_sc_hdr(src["sc_hdr"], ssot, src["unistd"], src["tbl"]),
+        check_rsvd(src["unistd"], src["tbl"]),
+        check_tbl_abi(src["tbl"]),
+        check_sw64_tbl(ssot, src["sw_tbl"]),
+        check_arch_wire(repo_root),
+    ]
+    if baseline is not None:
+        results.append(check_baseline(ssot, src["unistd"], src["tbl"],
+                                      baseline))
+    results.append(check_drift(ssot, snapshot, has_ssot))
+    return results
+
+
+def src_rows(paths, snapshot, baseline, has_ssot, repo_root):
+    """报告里的来源清单，顺序即人读时的核对顺序。"""
+    label = (str(paths["ssot"]) if has_ssot
+             else f"{paths['snapshot']} (../docs unavailable)")
+    return [
+        ("SSoT", label),
+        ("snapshot", str(paths["snapshot"]) if snapshot else "(none)"),
+        ("unistd.h", str(paths["unistd"])),
+        ("syscall_64.tbl", str(paths["tbl"])),
+        ("sw_64 syscall.tbl", str(paths["sw64"])),
+        ("[SC] syscalls.h", str(paths["sc_hdr"])),
+        ("riscv table", str(repo_root / DEFAULT_RISCV_TBL_REL)),
+        ("loongarch table", str(repo_root / DEFAULT_LOONG_TBL_REL)),
+        ("baseline", str(paths["baseline"]) if baseline else "(none)"),
+    ]
+
+
+def main():
+    args = parse_opts()
     repo_root = Path(args.repo_root) if args.repo_root else find_repo_root()
     if not repo_root.is_dir():
         print(f"ERROR: repo root not found: {repo_root}", file=sys.stderr)
         sys.exit(2)
 
-    # Resolve all paths relative to repo root
-    ssot_path = (Path(args.ssot_path) if args.ssot_path
-                 else repo_root / DEFAULT_SSOT_REL)
-    snapshot_path = (Path(args.snapshot_path) if args.snapshot_path
-                     else repo_root / DEFAULT_SNAPSHOT_REL)
-    unistd_path = (Path(args.unistd_path) if args.unistd_path
-                   else repo_root / DEFAULT_UNISTD_REL)
-    tbl_path = (Path(args.tbl_path) if args.tbl_path
-                else repo_root / DEFAULT_TBL_REL)
-    sw64_tbl_path = (Path(args.sw64_tbl_path) if args.sw64_tbl_path
-                     else repo_root / DEFAULT_SW64_TBL_REL)
-    sc_header_path = (Path(args.sc_header_path) if args.sc_header_path
-                      else repo_root / DEFAULT_SC_HEADER_REL)
-    baseline_path = (Path(args.baseline) if args.baseline
-                     else repo_root / DEFAULT_BASELINE_REL)
-
-    # The authoritative SSoT lives in the docs submodule; an explicit
-    # --ssot-path is a hard contract and must exist, while the default path
-    # may legitimately be missing (mirror checkout) and falls back to the
-    # derived contract snapshot.
-    ssot_available = ssot_path.is_file()
-    if args.ssot_path and not ssot_available:
-        print(f"ERROR: file not found: {ssot_path}", file=sys.stderr)
-        sys.exit(2)
-    if not ssot_available and (args.require_ssot or args.update_snapshot):
-        reason = ("--require-ssot" if args.require_ssot
-                  else "--update-snapshot")
-        print(f"ERROR: authoritative SSoT not found: {ssot_path} "
-              f"({reason})", file=sys.stderr)
-        sys.exit(2)
-
+    paths = resolve(args, repo_root)
+    has_ssot = gate_ssot(args, paths["ssot"])
     if args.update_snapshot:
-        ssot = parse_ssot(read_file(ssot_path))
-        snapshot = build_snapshot(ssot, ssot_path, repo_root,
-                                  src_commit(ssot_path))
-        write_snapshot(snapshot_path, snapshot)
-        print(f"snapshot written: {snapshot_path}")
-        print(f"  {describe_snap(snapshot)}")
-        print(f"  linux_base={snapshot['linux_base']} "
-              f"syscalls={len(snapshot['syscalls'])} "
-              f"reserved_range={snapshot['reserved_range']}")
+        emit_snap(paths["ssot"], paths["snapshot"], repo_root)
         sys.exit(0)
 
-    snapshot = load_snapshot(snapshot_path)
-    if ssot_available:
-        ssot = parse_ssot(read_file(ssot_path))
-        ssot_note = None
-    elif snapshot is not None:
-        ssot = snap_ssot(snapshot)
-        ssot_note = ("[INFO] SSoT source: contract snapshot "
-                     "(../docs unavailable) — "
-                     + describe_snap(snapshot))
-    else:
-        print(f"ERROR: neither SSoT ({ssot_path}) nor snapshot "
-              f"({snapshot_path}) is available", file=sys.stderr)
-        sys.exit(2)
+    ssot, snapshot, note = load_ssot(paths["ssot"], paths["snapshot"],
+                                    has_ssot)
+    src = load_srcs(paths)
+    baseline = None if args.no_baseline else load_baseline(paths["baseline"])
+    results = run_checks(ssot, src, baseline, snapshot, repo_root, has_ssot)
+    print_report(results, ssot, src["unistd"], src["tbl"], src["sw_tbl"],
+                 baseline, src_rows(paths, snapshot, baseline, has_ssot,
+                                    repo_root),
+                 args.check, note)
 
-    # Read and parse the kernel-side sources
-    unistd_text = read_file(unistd_path)
-    tbl_text = read_file(tbl_path)
-    sw64_text = read_file(sw64_tbl_path)
-    sc_header_text = read_file(sc_header_path)
-
-    unistd = parse_unistd(unistd_text)
-    tbl = parse_tbl(tbl_text)
-    sw_tbl = parse_tbl(sw64_text)
-    sc_header = parse_sc_header(sc_header_text)
-
-    baseline = None if args.no_baseline else load_baseline(baseline_path)
-
-    # Run all checks
-    results = []
-    results.append(check_3way(ssot, unistd, tbl))
-    results.append(check_base_nr(ssot, unistd, tbl))
-    results.append(check_range(ssot, unistd, tbl))
-    results.append(check_sys_nr(unistd))
-    results.append(check_x32(unistd, tbl))
-    results.append(check_sc_hdr(sc_header, ssot, unistd, tbl))
-    results.append(check_rsvd(unistd, tbl))
-    results.append(check_tbl_abi(tbl))
-    results.append(check_sw64_tbl(ssot, sw_tbl))
-    results.append(check_arch_wire(repo_root))
-    if baseline is not None:
-        results.append(check_baseline(ssot, unistd, tbl, baseline))
-    results.append(check_drift(ssot, snapshot, ssot_available))
-
-    # Print report
-    ssot_label = str(ssot_path) if ssot_available else (
-        f"{snapshot_path} (../docs unavailable)")
-    sources = [
-        ("SSoT", ssot_label),
-        ("snapshot", str(snapshot_path) if snapshot else "(none)"),
-        ("unistd.h", str(unistd_path)),
-        ("syscall_64.tbl", str(tbl_path)),
-        ("sw_64 syscall.tbl", str(sw64_tbl_path)),
-        ("[SC] syscalls.h", str(sc_header_path)),
-        ("riscv table", str(repo_root / DEFAULT_RISCV_TBL_REL)),
-        ("loongarch table", str(repo_root / DEFAULT_LOONG_TBL_REL)),
-        ("baseline", str(baseline_path) if baseline else "(none)"),
-    ]
-    print_report(results, ssot, unistd, tbl, sw_tbl, baseline, sources,
-                 args.check, ssot_note)
-
-    # Exit code: 0=pass, 1=fail
     failed = sum(1 for r in results if not r.passed)
     sys.exit(1 if failed > 0 else 0)
 
