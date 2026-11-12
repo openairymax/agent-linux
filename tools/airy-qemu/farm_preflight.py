@@ -147,34 +147,9 @@ class Preflight:
     elf_mach: int | None = None
 
     def __post_init__(self) -> None:
-        if not isinstance(self.job, FarmJob):
-            raise _cfg("job must be FarmJob")
-        if not isinstance(self.fmt, KernelFormat):
-            kind = type(self.fmt).__name__
-            raise _cfg(f"fmt must be KernelFormat, got {kind}")
-        if isinstance(self.kernel_size, bool) or self.kernel_size <= 0:
-            raise _cfg(
-                f"kernel_size must be positive, got {self.kernel_size!r}"
-            )
-        if not isinstance(self.suite_tests, tuple):
-            raise _cfg("suite_tests must be a tuple")
-        for item in self.suite_tests:
-            if not isinstance(item, tuple) or len(item) != 2:
-                raise _cfg(f"invalid suite_tests entry: {item!r}")
-            name, count = item
-            if not isinstance(name, str) or not name:
-                raise _cfg(f"invalid suite_tests entry: {item!r}")
-            if isinstance(count, bool) or not isinstance(count, int):
-                raise _cfg(f"invalid suite_tests entry: {item!r}")
-            if count <= 0:
-                raise _cfg(f"invalid suite_tests entry: {item!r}")
-        if self.source is not None and not isinstance(self.source, Path):
-            raise _cfg("source must be Path or None")
-        if self.fmt is KernelFormat.ELF:
-            if self.elf_mach is None:
-                raise _cfg("ELF preflight requires elf_mach")
-        elif self.elf_mach is not None:
-            raise _cfg("non-ELF preflight must not carry elf_mach")
+        _need_scalar(self.job, self.fmt, self.kernel_size)
+        _need_pairs(self.suite_tests)
+        _need_mach(self.fmt, self.source, self.elf_mach)
 
     @property
     def suites(self) -> tuple[str, ...]:
@@ -341,6 +316,41 @@ def suite_timeout(path: Path) -> int:
             raise _cfg(f"{settings}:{lineno}: invalid timeout {value!r}")
         return int(value)
     return DEFAULT_GUEST_TIMEOUT_S
+
+
+def _need_scalar(job: object, fmt: object, size: object) -> None:
+    """作业、格式与镜像大小：证据靠这三项说明「测了什么」。"""
+    if not isinstance(job, FarmJob):
+        raise _cfg("job must be FarmJob")
+    if not isinstance(fmt, KernelFormat):
+        raise _cfg(f"fmt must be KernelFormat, got {type(fmt).__name__}")
+    if isinstance(size, bool) or size <= 0:
+        raise _cfg(f"kernel_size must be positive, got {size!r}")
+
+
+def _need_pairs(pairs: object) -> None:
+    """suite_tests 每项都要能定位到「哪个套件、多少用例」。"""
+    if not isinstance(pairs, tuple):
+        raise _cfg("suite_tests must be a tuple")
+    for item in pairs:
+        if not isinstance(item, tuple) or len(item) != 2:
+            raise _cfg(f"invalid suite_tests entry: {item!r}")
+        name, count = item
+        if not isinstance(name, str) or not name:
+            raise _cfg(f"invalid suite_tests entry: {item!r}")
+        if isinstance(count, bool) or not isinstance(count, int) or count <= 0:
+            raise _cfg(f"invalid suite_tests entry: {item!r}")
+
+
+def _need_mach(fmt: KernelFormat, source: object, mach: object) -> None:
+    """ELF 必带 e_machine，非 ELF 不得带：两者是同一事实的两面。"""
+    if source is not None and not isinstance(source, Path):
+        raise _cfg("source must be Path or None")
+    if fmt is KernelFormat.ELF:
+        if mach is None:
+            raise _cfg("ELF preflight requires elf_mach")
+    elif mach is not None:
+        raise _cfg("non-ELF preflight must not carry elf_mach")
 
 
 def _require_fmt(arch: Arch, fmt: KernelFormat, mach: int | None) -> None:
