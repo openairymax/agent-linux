@@ -893,34 +893,43 @@ def check_arch_wire(repo_root):
 
 def check_baseline(ssot, unistd, tbl, baseline):
     """Check current ABI matches baseline snapshot (immutability)."""
-    failures = []
+    failures = _bl_fields(baseline, ssot, unistd) + _bl_calls(baseline, ssot)
+    if failures:
+        return CheckResult("编号与基线快照一致", False,
+                           "\n".join(failures))
 
-    # linux_base
-    bl_base = baseline.get("linux_base")
-    if bl_base is not None and bl_base != ssot["linux_base"]:
-        failures.append(
-            f"  linux_base: 当前={ssot['linux_base']}, "
-            f"基线={bl_base}")
+    bl_map = {s["name"]: s["linux_number"]
+              for s in baseline.get("syscalls", [])}
+    bl_ver = baseline.get("version", "?")
+    return CheckResult(
+        "编号与基线快照一致", True,
+        f"当前 ABI 与基线 {bl_ver} 完全一致 "
+        f"({len(bl_map)} syscalls, base={baseline.get('linux_base')}, "
+        f"nr={baseline.get('nr_syscalls')})")
 
-    # nr_syscalls
-    bl_nr = baseline.get("nr_syscalls")
-    if bl_nr is not None and bl_nr != unistd["nr_syscalls"]:
-        failures.append(
-            f"  nr_syscalls: 当前={unistd['nr_syscalls']}, "
-            f"基线={bl_nr}")
 
-    # reserved_range
-    bl_range = baseline.get("reserved_range")
-    if bl_range is not None and bl_range != ssot["reserved_range"]:
-        failures.append(
-            f"  reserved_range: 当前={ssot['reserved_range']}, "
-            f"基线={bl_range}")
+def _bl_fields(baseline, ssot, unistd):
+    """标量字段（基线、号段上界、预留区间）的一致性差异。"""
+    pairs = (
+        ("linux_base", baseline.get("linux_base"), ssot["linux_base"]),
+        ("nr_syscalls", baseline.get("nr_syscalls"), unistd["nr_syscalls"]),
+        ("reserved_range", baseline.get("reserved_range"),
+         ssot["reserved_range"]),
+    )
+    return [
+        f"  {key}: 当前={cur}, 基线={bl}"
+        for key, bl, cur in pairs
+        if bl is not None and bl != cur
+    ]
 
-    # syscalls — compare name -> linux_number mapping
+
+def _bl_calls(baseline, ssot):
+    """syscall 名 → 编号映射的双向差异：缺失、编号变更、新增。"""
     bl_map = {s["name"]: s["linux_number"]
               for s in baseline.get("syscalls", [])}
     cur_map = {s["name"]: s["linux_number"] for s in ssot["syscalls"]}
 
+    failures = []
     for name, bl_num in sorted(bl_map.items()):
         cur_num = cur_map.get(name)
         if cur_num is None:
@@ -937,16 +946,7 @@ def check_baseline(ssot, unistd, tbl, baseline):
             failures.append(
                 f"  syscall '{name}' 在基线中缺失 "
                 f"(当前编号={cur_num}, 新增?)")
-
-    if failures:
-        return CheckResult("编号与基线快照一致", False,
-                           "\n".join(failures))
-
-    bl_ver = baseline.get("version", "?")
-    return CheckResult(
-        "编号与基线快照一致", True,
-        f"当前 ABI 与基线 {bl_ver} 完全一致 "
-        f"({len(bl_map)} syscalls, base={bl_base}, nr={bl_nr})")
+    return failures
 
 
 def check_drift(ssot, snapshot, authoritative):
