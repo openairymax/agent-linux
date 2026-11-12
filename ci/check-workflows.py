@@ -511,12 +511,20 @@ def check_doc(name: str = "README.md") -> list[str]:
     path = WORKFLOWS / name
     if not path.exists():
         return [f"{name}: 文件不存在，规则表无从对账"]
-    declared = rule_numbers()
     lines = path.read_text().splitlines()
-    try:
-        start = next(i for i, s in enumerate(lines) if s.startswith("## 4."))
-    except StopIteration:
+    start = _doc_start(lines)
+    if start is None:
         return [f"{name}: 缺少第 4 节规则表"]
+    return _doc_errors(name, rule_numbers(), _doc_seen(lines, start))
+
+
+def _doc_start(lines: list[str]) -> int | None:
+    """第 4 节的起始行号；节标题写作 `## 4.` 起头。"""
+    return next((i for i, s in enumerate(lines) if s.startswith("## 4.")), None)
+
+
+def _doc_seen(lines: list[str], start: int) -> list[int]:
+    """第 4 节内登记的规则号，遇到下一个二级标题即止。"""
     seen: list[int] = []
     for s in lines[start + 1:]:
         if s.startswith("## "):
@@ -524,6 +532,11 @@ def check_doc(name: str = "README.md") -> list[str]:
         m = RULE_ROW.match(s)
         if m is not None:
             seen.extend(int(x) for x in re.findall(r"\d+", m.group(1)))
+    return seen
+
+
+def _doc_errors(name: str, declared: list[int], seen: list[int]) -> list[str]:
+    """双向对账：漏登记与多登记都说明规则表与脚本脱节，重号另报。"""
     errors = [f"{name}: 规则 {n} 未出现在第 4 节表格（新增规则须同步登记）"
               for n in declared if n not in seen]
     errors += [f"{name}: 第 4 节表格登记了不存在的规则 {n}"
