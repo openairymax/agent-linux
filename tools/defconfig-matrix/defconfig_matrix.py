@@ -334,42 +334,71 @@ def check_ci_mtx(manifest, repo_root):
     """CI 构建矩阵与清单一致（airy-verify 精确匹配 / kernel-verify 为登记子集）。"""
     name = "CI 构建矩阵与清单一致 (OS-BUILD-028)"
     try:
-        airy = load_workflow(repo_root / CI_AIRY_REL)
-        kernel = load_workflow(repo_root / CI_KERNEL_REL)
-        include = airy["jobs"]["airy-build"]["strategy"]["matrix"]["include"]
-        karch = kernel["jobs"]["kernel-build"]["strategy"]["matrix"]["arch"]
+        include, karch = ci_mtx(repo_root)
     except (ManifestError, KeyError, TypeError) as exc:
         return CheckResult(name, False, f"读取 CI 工作流失败: {exc}")
 
-    problems = []
-    build_entries = [e for e in manifest.get("architectures", [])
-                     if e.get("build")]
-    build_arches = {e.get("arch") for e in build_entries}
-    matrix = {item.get("arch"): item for item in include}
+    entries = manifest.get("architectures", [])
+    build = [e for e in entries if e.get("build")]
+    problems = (mtx_drift(build, include) + mtx_extra(include, build)
+                + mtx_unk(karch, entries))
+    return CheckResult(name, not problems, "\n".join(problems))
 
-    for entry in build_entries:
+
+def ci_mtx(repo_root):
+    """两份 CI 工作流的矩阵字段：airy 为 include 条目，kernel 为架构名。"""
+    airy = load_workflow(repo_root / CI_AIRY_REL)
+    kernel = load_workflow(repo_root / CI_KERNEL_REL)
+    include = airy["jobs"]["airy-build"]["strategy"]["matrix"]["include"]
+    karch = kernel["jobs"]["kernel-build"]["strategy"]["matrix"]["arch"]
+    return include, karch
+
+
+def mtx_map(include):
+    """架构 → airy-verify 矩阵条目。"""
+    return {item.get("arch"): item for item in include}
+
+
+def mtx_drift(entries, include):
+    """清单 build=true 的每个架构，在 airy-verify 矩阵里逐一核对两个字段。"""
+    matrix = mtx_map(include)
+    problems = []
+    for entry in entries:
         arch = entry.get("arch")
         item = matrix.get(arch)
         if item is None:
             problems.append(f"airy-verify 构建矩阵缺少清单 build=true 架构: {arch}")
             continue
-        kdir = arch_kdir(entry)
-        if item.get("kdir") != kdir:
-            problems.append(
-                f"{arch}: kdir 漂移（清单 {kdir} / airy-verify {item.get('kdir')}）")
-        if item.get("cross") != entry.get("cross"):
-            problems.append(
-                f"{arch}: cross 漂移（清单 '{entry.get('cross')}' / "
-                f"airy-verify '{item.get('cross')}'）")
+        problems.extend(mtx_row(arch, entry, item))
+    return problems
 
-    for arch in sorted(set(matrix) - build_arches):
-        problems.append(f"airy-verify 构建矩阵含清单未标 build=true 的架构: {arch}")
 
-    known = {e.get("arch") for e in manifest.get("architectures", [])}
-    for arch in sorted(set(karch) - known):
-        problems.append(f"kernel-verify 构建矩阵含清单未登记架构: {arch}")
+def mtx_row(arch, entry, item):
+    """单个架构：kdir 由清单推导，cross 直接比对，两者独立报错。"""
+    kdir = arch_kdir(entry)
+    problems = []
+    if item.get("kdir") != kdir:
+        problems.append(
+            f"{arch}: kdir 漂移（清单 {kdir} / airy-verify {item.get('kdir')}）")
+    if item.get("cross") != entry.get("cross"):
+        problems.append(
+            f"{arch}: cross 漂移（清单 '{entry.get('cross')}' / "
+            f"airy-verify '{item.get('cross')}'）")
+    return problems
 
-    return CheckResult(name, not problems, "\n".join(problems))
+
+def mtx_extra(include, entries):
+    """airy-verify 矩阵不得含清单未标 build=true 的架构。"""
+    build_arches = {e.get("arch") for e in entries}
+    return [f"airy-verify 构建矩阵含清单未标 build=true 的架构: {arch}"
+            for arch in sorted(set(mtx_map(include)) - build_arches)]
+
+
+def mtx_unk(karch, entries):
+    """kernel-verify 矩阵只允许清单已登记的架构，build 与否不影响登记。"""
+    known = {e.get("arch") for e in entries}
+    return [f"kernel-verify 构建矩阵含清单未登记架构: {arch}"
+            for arch in sorted(set(karch) - known)]
 
 
 def check_ci_req(manifest, repo_root):
