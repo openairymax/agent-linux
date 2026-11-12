@@ -134,18 +134,39 @@ code_of()
     printf '%s' "$?"
 }
 
+# 实物面按「铺树 → 只读 → 写值 → 下限 → 键盘 → 相对调节 → 缺席 → 空树 →
+# 节点消失」分段，每段只判自己那一层的契约；bad 只记数不中断，最终由
+# FAILS 汇总，这样一次运行能暴露全部不符合项而不是只报第一条。
 chk_tree()
 {
-    local bl="${TMP}/backlight" leds="${TMP}/leds" out code
-
     say "实物面（临时 sysfs 树）"
+    tree_make
+    tree_ro
+    tree_set
+    tree_floor
+    tree_kbd
+    tree_step
+    tree_partial
+    tree_absent
+    tree_gone
+}
+
+# 两块面板（firmware 与 raw 各一）加两条 led，键盘背光靠名字里的
+# kbd_backlight 识别。
+tree_make()
+{
+    local bl="${TMP}/backlight" leds="${TMP}/leds"
     mkdir -p "${bl}" "${leds}"
     node "${bl}" intel_backlight 1000 400 firmware
     node "${bl}" panel0 937 468 raw
     led "${leds}" platform::kbd_backlight 3 2
     led "${leds}" input0::capslock 1 0
+}
 
-    # 1) 只读：firmware 优先，两块面板都在报告里。
+# 1) 只读：firmware 优先，两块面板都在报告里。
+tree_ro()
+{
+    local bl="${TMP}/backlight" leds="${TMP}/leds" out code
     code=$(code_of status --json --backlight "${bl}" --leds "${leds}")
     out=$(run status --json --backlight "${bl}" --leds "${leds}")
     [ "${code}" -eq 0 ] || bad "status: 退出码 ${code}，应为 0"
@@ -157,53 +178,80 @@ chk_tree()
         bad "status: 设备行数不是 2"
     [ "$(printf '%s' "${out}" | json_get 'd["devices"][0]["name"]')" = \
         intel_backlight ] || bad "status: 首行不是 firmware 型的 intel_backlight"
+}
 
-    # 2) 写 50%：1000 刻度的半分是 500。
+# 2) 写 50%：1000 刻度的半分是 500。
+tree_set()
+{
+    local bl="${TMP}/backlight" leds="${TMP}/leds" code
     code=$(code_of set screen 50 --backlight "${bl}" --leds "${leds}")
     [ "${code}" -eq 0 ] || bad "set: 写 50% 退出码 ${code}"
     [ "$(level_of "${bl}/intel_backlight/brightness")" = 500 ] ||
         bad "set: 刻度不是 500"
+}
 
-    # 3) 默认下限 1%：写 0% 落到最低一格，不黑屏。
+# 3) 默认下限 1%：写 0% 落到最低一格，不黑屏。
+# 4) 显式 --floor 0 才允许真的关屏。
+tree_floor()
+{
+    local bl="${TMP}/backlight" leds="${TMP}/leds" code
     code=$(code_of set screen 0 --backlight "${bl}" --leds "${leds}")
     [ "${code}" -eq 0 ] || bad "floor: 写 0% 退出码 ${code}"
     [ "$(level_of "${bl}/intel_backlight/brightness")" = 10 ] ||
         bad "floor: 默认下限未生效"
-
-    # 4) 显式 --floor 0 才允许真的关屏。
     code=$(code_of set screen 0 --floor 0 --backlight "${bl}" --leds "${leds}")
     [ "${code}" -eq 0 ] || bad "open-floor: 退出码 ${code}"
     [ "$(level_of "${bl}/intel_backlight/brightness")" = 0 ] ||
         bad "open-floor: 未真正关屏"
+}
 
-    # 5) 键盘不受屏幕下限保护：关掉键盘背光是合法用法。
-    code=$(code_of set keyboard 0 --backlight "${bl}" --leds "${leds}")
+# 5) 键盘不受屏幕下限保护：关掉键盘背光是合法用法。
+tree_kbd()
+{
+    local leds="${TMP}/leds" code
+    code=$(code_of set keyboard 0 --backlight "${TMP}/backlight" --leds "${leds}")
     [ "${code}" -eq 0 ] || bad "keyboard: 退出码 ${code}"
     [ "$(level_of "${leds}/platform::kbd_backlight/brightness")" = 0 ] ||
         bad "keyboard: 未落到 0"
+}
 
-    # 6) 相对调节以自身读数为基准：40% 走 +10 应到 50%。
+# 6) 相对调节以自身读数为基准：40% 走 +10 应到 50%。
+tree_step()
+{
+    local bl="${TMP}/backlight" leds="${TMP}/leds" code
     code_of set screen 40 --backlight "${bl}" --leds "${leds}" >/dev/null
     code=$(code_of step screen 10 --backlight "${bl}" --leds "${leds}")
     [ "${code}" -eq 0 ] || bad "step: 退出码 ${code}"
     [ "$(level_of "${bl}/intel_backlight/brightness")" = 500 ] ||
         bad "step: 刻度不是 500"
+}
 
-    # 7) 键盘缺席：整体 partial（3），屏幕照样落地。
+# 7) 键盘缺席：整体 partial（3），屏幕照样落地。
+tree_partial()
+{
+    local bl="${TMP}/backlight" leds="${TMP}/leds" code
     mv "${leds}/platform::kbd_backlight" "${TMP}/kbd-off"
     code=$(code_of set all 50 --backlight "${bl}" --leds "${leds}")
     [ "${code}" -eq 3 ] || bad "partial: 退出码 ${code}，应为 3"
     [ "$(level_of "${bl}/intel_backlight/brightness")" = 500 ] ||
         bad "partial: 屏幕未落地"
     mv "${TMP}/kbd-off" "${leds}/platform::kbd_backlight"
+}
 
-    # 8) 空树：absent（4），与「调好了」分开。
+# 8) 空树：absent（4），与「调好了」分开。
+tree_absent()
+{
+    local code
     mkdir -p "${TMP}/empty-bl" "${TMP}/empty-led"
     code=$(code_of status --backlight "${TMP}/empty-bl" \
         --leds "${TMP}/empty-led")
     [ "${code}" -eq 4 ] || bad "absent: 退出码 ${code}，应为 4"
+}
 
-    # 9) brightness 消失：failed（1）且错误为 gone，不写不猜。
+# 9) brightness 消失：failed（1）且错误为 gone，不写不猜。
+tree_gone()
+{
+    local bl="${TMP}/backlight" leds="${TMP}/leds" out code
     rm -f "${bl}/intel_backlight/brightness"
     out=$(run set screen 50 --json --backlight "${bl}" --leds "${leds}")
     code=$(code_of set screen 50 --backlight "${bl}" --leds "${leds}")
