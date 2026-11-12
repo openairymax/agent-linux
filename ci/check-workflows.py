@@ -129,6 +129,11 @@ PERM_WILD = re.compile(
 TOP_CONC = re.compile(r"^concurrency:", re.MULTILINE)
 CANCEL_IN = re.compile(r"^  cancel-in-progress:\s*(.+?)\s*$", re.MULTILINE)
 PR_TRIGGER = re.compile(r"^  pull_request(?:_target)?:", re.MULTILINE)
+# 触发器段内的三类行：新增 paths: 段、切到同级键、paths 条目。判据只认
+# 手写的四空格缩进，故不交给 YAML 解析器（``on`` 会被读成布尔真值）。
+TRIG_PATHS = re.compile(r"^\s+paths:\s*$")
+TRIG_SUB = re.compile(r"^\s+[\w-]+:")
+TRIG_ITEM = re.compile(r"^\s+-\s*'?([^'\s]+)'?\s*$")
 JOB_TIMEOUT = re.compile(r"^    timeout-minutes:\s*\S")
 
 # 门禁引用：ci/ci.sh 后面紧跟的门禁名（``--list``、``-h`` 等选项不算）。
@@ -273,28 +278,48 @@ def trigger_paths(text: str, key: str) -> list[str]:
     只认同级缩进的键切换，不引入 YAML 解析器：workflow 的实际形态是手写的
     四空格缩进，PyYAML 会把 ``on`` 读成布尔真值，反而多一层歧义。
     """
-    lines = text.splitlines()
-    try:
-        start = next(i for i, s in enumerate(lines)
-                     if re.match(rf"^  {key}:\s*$", s))
-    except StopIteration:
+    return path_items(trigger_block(text.splitlines(), key))
+
+
+def trigger_block(lines: list[str], key: str) -> list[str]:
+    """触发器键之下、属于该触发器的正文行；键不存在时为空。
+
+    空行与整行注释不结束本段：它们不携带缩进信息，按顶格处理会把一份
+    带注释的触发器读成没有判据，于是「PR 判据必须是 push 判据的子集」
+    这条规则静默失效。
+    """
+    pat = re.compile(rf"^  {key}:\s*$")
+    start = next((i for i, s in enumerate(lines) if pat.match(s)), None)
+    if start is None:
         return []
-    out: list[str] = []
-    in_paths = False
+    block: list[str] = []
     for s in lines[start + 1:]:
         if not s.strip() or s.lstrip().startswith("#"):
             continue
-        if not s.startswith("  ") or re.match(r"^  \S", s):
+        if not in_block(s):
             break
-        if re.match(r"^\s+paths:\s*$", s):
+        block.append(s)
+    return block
+
+
+def in_block(s: str) -> bool:
+    """这一行是否仍属于触发器段：缩进两格以上，且不是新的同/上级键。"""
+    return s.startswith("  ") and not re.match(r"^  \S", s)
+
+
+def path_items(block: list[str]) -> list[str]:
+    """块内 ``paths:`` 段的条目；出现同级键即离开该段。"""
+    out: list[str] = []
+    in_paths = False
+    for s in block:
+        if TRIG_PATHS.match(s):
             in_paths = True
-            continue
-        if re.match(r"^\s+[\w-]+:", s):
+        elif TRIG_SUB.match(s):
             in_paths = False
-            continue
-        m = re.match(r"^\s+-\s*'?([^'\s]+)'?\s*$", s)
-        if in_paths and m:
-            out.append(m.group(1))
+        elif in_paths:
+            m = TRIG_ITEM.match(s)
+            if m:
+                out.append(m.group(1))
     return out
 
 
