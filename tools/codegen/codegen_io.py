@@ -37,7 +37,7 @@ RenderOutputs = Callable[[Path], "dict[Path, str]"]
 Rendered = "dict[Path, str]"
 
 
-def default_repo_root() -> Path:
+def default_root() -> Path:
     """agent-linux/ 仓库根（tools/codegen/ 上溯两级）。"""
     return Path(__file__).resolve().parents[2]
 
@@ -78,7 +78,7 @@ def render(env: Environment, template_name: str, context: dict[str, object]) -> 
         raise TemplateRenderError(f"{template_name}: {exc}") from exc
 
 
-def _write_if_changed(out_path: Path, content: str) -> None:
+def _write_diff(out_path: Path, content: str) -> None:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     if out_path.is_file() and out_path.read_text(encoding="utf-8") == content:
         return
@@ -88,7 +88,7 @@ def _write_if_changed(out_path: Path, content: str) -> None:
 def write_outputs(rendered: dict[Path, str]) -> None:
     """将渲染结果写入磁盘（仅在内容变化时重写，保持幂等）。"""
     for out_path, content in rendered.items():
-        _write_if_changed(out_path, content)
+        _write_diff(out_path, content)
 
 
 def fail(message: str) -> int:
@@ -177,7 +177,7 @@ def build_parser(description: str) -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--repo-root",
-        default=str(default_repo_root()),
+        default=str(default_root()),
         help="agent-linux 仓库根目录（默认: %(default)s）",
     )
     parser.add_argument(

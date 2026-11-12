@@ -23,7 +23,7 @@ import codegen_io
 from codegen_io import (
     build_parser,
     check,
-    default_repo_root,
+    default_root,
     fail,
     generate,
     has_drift,
@@ -197,12 +197,12 @@ class TestCheck:
 
 class TestParserAndMain:
     def test_default_repo_root_is_agent_linux(self) -> None:
-        assert default_repo_root() == Path(codegen_io.__file__).resolve().parents[2]
+        assert default_root() == Path(codegen_io.__file__).resolve().parents[2]
 
     def test_parser_defaults(self) -> None:
         parser = build_parser("demo")
         args = parser.parse_args([])
-        assert args.repo_root == str(default_repo_root())
+        assert args.repo_root == str(default_root())
         assert args.check is False
 
     def test_main_generate(self, tmp_path: Path) -> None:

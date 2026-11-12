@@ -71,10 +71,10 @@ class TestStagesTable:
 
 class TestDefaultRepoRoot:
     def test_default_repo_root(self, repo_root: Path) -> None:
-        assert run_codegen.default_repo_root() == repo_root
+        assert run_codegen.default_root() == repo_root
 
     def test_default_repo_root_hosts_codegen(self) -> None:
-        assert (run_codegen.default_repo_root() / "tools" / "codegen").is_dir()
+        assert (run_codegen.default_root() / "tools" / "codegen").is_dir()
 
 
 class TestInvoke:
@@ -123,5 +123,5 @@ class TestMain:
         assert run_codegen.main(["--repo-root", str(repo_root), "--check"]) == int(ExitCode.SUCCESS)
 
     def test_main_default_repo_root(self, repo_root: Path) -> None:
-        default_root = run_codegen.default_repo_root().resolve()
-        assert default_root == repo_root.resolve()
+        root = run_codegen.default_root().resolve()
+        assert root == repo_root.resolve()

@@ -22,19 +22,19 @@ import cap_gen
 from cap_gen import (
     CAP_DEF_REL,
     OUTPUTS,
-    _capability_required,
-    _is_unconstrained,
+    _cap_required,
+    _unconstrained,
     _known_symbols,
     _load_xml_root,
     _make_cap_spec,
     _parse_cap_line,
     _prefix_symbol,
-    _register_symbol,
+    _reg_symbol,
     build_context,
     check,
-    parse_cap_ids_def,
+    parse_cap_ids,
     render_outputs,
-    validate_capability_references,
+    cap_ref_check,
 )
 from codegen_types import (
     CAP_EXTENSION_BASE,
@@ -91,13 +91,13 @@ class TestParseCapLine:
 class TestRegisterSymbol:
     def test_new_symbol_registered(self) -> None:
         seen: dict[str, int] = {}
-        _register_symbol("AIRY_CAP_X", 3, seen, Path("f.def"))
+        _reg_symbol("AIRY_CAP_X", 3, seen, Path("f.def"))
         assert seen == {"AIRY_CAP_X": 3}
 
     def test_duplicate_rejected(self) -> None:
         seen = {"AIRY_CAP_X": 3}
         with pytest.raises(ContractValidationError, match="duplicate capability symbol AIRY_CAP_X"):
-            _register_symbol("AIRY_CAP_X", 9, seen, Path("f.def"))
+            _reg_symbol("AIRY_CAP_X", 9, seen, Path("f.def"))
 
 
 class TestMakeCapSpec:
@@ -114,7 +114,7 @@ class TestMakeCapSpec:
 
 class TestParseCapIdsDef:
     def test_real_contract(self, repo_root: Path) -> None:
-        contract = parse_cap_ids_def(repo_root / CAP_DEF_REL)
+        contract = parse_cap_ids(repo_root / CAP_DEF_REL)
         assert len(contract.cap_ids) == CAP_ID_COUNT
         assert contract.cap_ids[0].symbol == "AIRY_CAP_CHOWN"
         assert contract.cap_ids[0].value == 0
@@ -123,20 +123,20 @@ class TestParseCapIdsDef:
         assert len(contract.extension_caps) == CAP_ID_COUNT - CAP_EXTENSION_BASE
 
     def test_synthetic_roundtrip(self, tmp_path: Path) -> None:
-        contract = parse_cap_ids_def(_write_def(tmp_path, _full_def_lines()))
+        contract = parse_cap_ids(_write_def(tmp_path, _full_def_lines()))
         assert sorted(c.value for c in contract.cap_ids) == list(range(CAP_ID_COUNT))
 
     def test_empty_source_rejected(self, tmp_path: Path) -> None:
         with pytest.raises(ContractSourceError, match="no AIRY_CAP_ID entries parsed"):
-            parse_cap_ids_def(_write_def(tmp_path, ["// nothing here"]))
+            parse_cap_ids(_write_def(tmp_path, ["// nothing here"]))
 
     def test_missing_source_rejected(self, tmp_path: Path) -> None:
         with pytest.raises(ContractSourceError, match="not found"):
-            parse_cap_ids_def(tmp_path / "absent.def")
+            parse_cap_ids(tmp_path / "absent.def")
 
     def test_duplicate_symbol_rejected(self, tmp_path: Path) -> None:
         with pytest.raises(ContractValidationError, match="duplicate capability symbol"):
-            parse_cap_ids_def(
+            parse_cap_ids(
                 _write_def(tmp_path, ['AIRY_CAP_ID(CAP_A, 0, "x")', 'AIRY_CAP_ID(CAP_A, 1, "y")'])
             )
 
@@ -153,50 +153,50 @@ class TestXmlHelpers:
             _load_xml_root(bad)
 
     def test_known_symbols_include_both_forms(self, repo_root: Path) -> None:
-        contract = parse_cap_ids_def(repo_root / CAP_DEF_REL)
+        contract = parse_cap_ids(repo_root / CAP_DEF_REL)
         known = _known_symbols(contract)
         assert "AIRY_CAP_CHOWN" in known
         assert "CAP_CHOWN" in known
 
     def test_capability_required_defaults_empty(self, tmp_path: Path) -> None:
         root = _load_xml_root(_write_xml(tmp_path, "<syscall><name>airy_sys_call</name></syscall>"))
-        assert _capability_required(root.find("syscall")) == ""
+        assert _cap_required(root.find("syscall")) == ""
 
     def test_is_unconstrained(self) -> None:
-        assert _is_unconstrained("") is True
-        assert _is_unconstrained("0") is True
-        assert _is_unconstrained("AIRY_CAP_X") is False
+        assert _unconstrained("") is True
+        assert _unconstrained("0") is True
+        assert _unconstrained("AIRY_CAP_X") is False
 
 
 class TestValidateCapabilityReferences:
     def test_undefined_capability_rejected(self, tmp_path: Path, repo_root: Path) -> None:
-        contract = parse_cap_ids_def(repo_root / CAP_DEF_REL)
+        contract = parse_cap_ids(repo_root / CAP_DEF_REL)
         xml = _write_xml(
             tmp_path,
             "<syscall><name>airy_sys_x</name>"
             "<capability_required>AIRY_CAP_NOPE</capability_required></syscall>",
         )
         with pytest.raises(ContractValidationError, match="references undefined capability"):
-            validate_capability_references(contract, xml)
+            cap_ref_check(contract, xml)
 
     def test_defined_capability_accepted(self, tmp_path: Path, repo_root: Path) -> None:
-        contract = parse_cap_ids_def(repo_root / CAP_DEF_REL)
+        contract = parse_cap_ids(repo_root / CAP_DEF_REL)
         xml = _write_xml(
             tmp_path,
             "<syscall><name>airy_sys_x</name>"
             "<capability_required>AIRY_CAP_CHOWN</capability_required></syscall>",
         )
-        validate_capability_references(contract, xml)
+        cap_ref_check(contract, xml)
 
     def test_unconstrained_accepted(self, tmp_path: Path, repo_root: Path) -> None:
-        contract = parse_cap_ids_def(repo_root / CAP_DEF_REL)
+        contract = parse_cap_ids(repo_root / CAP_DEF_REL)
         xml = _write_xml(tmp_path, "<syscall><name>airy_sys_x</name></syscall>")
-        validate_capability_references(contract, xml)
+        cap_ref_check(contract, xml)
 
 
 class TestBuildAndRender:
     def test_build_context_shape(self, repo_root: Path) -> None:
-        context = build_context(parse_cap_ids_def(repo_root / CAP_DEF_REL))
+        context = build_context(parse_cap_ids(repo_root / CAP_DEF_REL))
         assert set(context) == {
             "generator",
             "generator_version",

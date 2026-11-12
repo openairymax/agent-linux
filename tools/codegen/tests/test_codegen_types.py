@@ -59,8 +59,8 @@ from codegen_types import (
     SyscallContract,
     SyscallSpec,
     TemplateRenderError,
-    bitfield_mask_literal,
-    bitfield_value_type,
+    bf_mask_literal,
+    bf_value_type,
 )
 
 CAP_SYMBOL = "AIRY_CAP"
@@ -204,7 +204,7 @@ class TestSyscallContract:
     def test_valid_contract_indexes_by_number(self) -> None:
         contract = _syscall_contract()
         assert contract.core_count == 1
-        assert contract.syscalls_by_number[0].name == "airy_sys_call"
+        assert contract.syscall_by_nr[0].name == "airy_sys_call"
 
     def test_core_count_mismatch_rejected(self) -> None:
         with pytest.raises(ContractValidationError, match="core_count"):
@@ -269,7 +269,7 @@ class TestCapContract:
 
     def test_symbol_lookup_helpers(self) -> None:
         contract = _cap_contract()
-        assert contract.cap_ids_by_value[0].value == 0
+        assert contract.cap_ids_map[0].value == 0
         assert len(contract.symbol_names) == CAP_ID_COUNT
         assert contract.symbol_width == max(len(c.symbol) for c in contract.cap_ids) + 1
 
@@ -300,18 +300,18 @@ class TestBitfieldHelpers:
         [(1, "__u8"), (8, "__u8"), (16, "__u16"), (17, "__u32"), (32, "__u32"), (64, "__u64")],
     )
     def test_value_type_rounds_up(self, width: int, expected: str) -> None:
-        assert bitfield_value_type(width) == expected
+        assert bf_value_type(width) == expected
 
     def test_value_type_exceeds_64_rejected(self) -> None:
         with pytest.raises(ContractValidationError, match="exceeds 64 bits"):
-            bitfield_value_type(65)
+            bf_value_type(65)
 
     @pytest.mark.parametrize(
         ("width", "expected"),
         [(16, "0xffffu"), (32, "0xffffffffu"), (33, "0x1ffffffffULL"), (64, "0xffffffffffffffffULL")],
     )
     def test_mask_literal_suffix(self, width: int, expected: str) -> None:
-        assert bitfield_mask_literal(width) == expected
+        assert bf_mask_literal(width) == expected
 
 
 # ── BitfieldFieldSpec ──
@@ -472,7 +472,7 @@ class TestBitfieldContract:
         assert contract.includes == ("<linux/airymax/demo.h>",)
 
     def test_layout_signature_shape(self) -> None:
-        signature = BitfieldContract(blocks=(_word_block(),)).layout_signature()
+        signature = BitfieldContract(blocks=(_word_block(),)).layout_sig()
         name, width, container, ctype, header, pivot, fields = signature[0]
         assert (name, width, container, ctype, header, pivot) == (
             "cap_badge",
