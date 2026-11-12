@@ -107,60 +107,78 @@ class GateResult:
 # ─── Registry parsing ──────────────────────────────────────────────────────
 
 
-def _parse_gate(item, idx: int, seen: set) -> Gate:
-    where = f"gates[{idx}]"
-    if not isinstance(item, dict):
-        raise RegistryError(f"{where}: 必须是映射（mapping）")
-
-    unknown = sorted(set(item) - GATE_KEYS)
-    if unknown:
-        raise RegistryError(f"{where}: 未知字段：{', '.join(unknown)}")
-
+def _gate_id(item: dict, where: str, seen: set) -> str:
+    """id 是门禁的身份：既不能缺，也不能与已登记项重复。"""
     gid = item.get("id")
     if not isinstance(gid, str) or not gid.strip():
         raise RegistryError(f"{where}: 缺少合法 id")
     if gid in seen:
         raise RegistryError(f"{where}: 门禁 id 重复：{gid}")
+    return gid
 
+
+def _gate_name(item: dict, where: str, gid: str) -> str:
     name = item.get("name")
     if not isinstance(name, str) or not name.strip():
         raise RegistryError(f"{where} ({gid}): 缺少合法 name")
+    return name
 
+
+def _gate_sev(item: dict, where: str, gid: str) -> str:
+    """严重级只允许注册表已定义的档位，拼写错误不能退化为「不阻断」。"""
     severity = item.get("severity")
     if severity not in SEVERITY_ORDER:
         raise RegistryError(f"{where} ({gid}): severity 必须是 P0/P1/P2")
+    return severity
 
+
+def _gate_argv(item: dict, where: str, gid: str) -> Tuple[str, ...]:
     executor = item.get("executor")
     if not isinstance(executor, dict):
         raise RegistryError(f"{where} ({gid}): 缺少 executor 映射")
-
     unknown = sorted(set(executor) - EXECUTOR_KEYS)
     if unknown:
         raise RegistryError(
             f"{where} ({gid}): executor 未知字段：{', '.join(unknown)}")
-
     argv = executor.get("argv")
     if (not isinstance(argv, list) or not argv
             or not all(isinstance(a, str) and a for a in argv)):
         raise RegistryError(
             f"{where} ({gid}): executor.argv 必须是非空字符串列表")
+    return tuple(argv)
 
+
+def _gate_timeout(item: dict, where: str, gid: str) -> Optional[int]:
+    """缺省时限由调用方补齐；显式声明则必须是正整数秒。"""
     timeout_s = item.get("timeout_s")
     if timeout_s is not None and (
             not isinstance(timeout_s, int) or isinstance(timeout_s, bool)
             or timeout_s <= 0):
         raise RegistryError(f"{where} ({gid}): timeout_s 必须是正整数")
+    return timeout_s
 
-    seen.add(gid)
-    return Gate(
+
+def _parse_gate(item, idx: int, seen: set) -> Gate:
+    """逐段校验一条门禁；抛错顺序即报告顺序，调用方据此定位到具体字段。"""
+    where = f"gates[{idx}]"
+    if not isinstance(item, dict):
+        raise RegistryError(f"{where}: 必须是映射（mapping）")
+    unknown = sorted(set(item) - GATE_KEYS)
+    if unknown:
+        raise RegistryError(f"{where}: 未知字段：{', '.join(unknown)}")
+
+    gid = _gate_id(item, where, seen)
+    gate = Gate(
         id=gid,
-        name=name,
-        severity=severity,
+        name=_gate_name(item, where, gid),
+        severity=_gate_sev(item, where, gid),
         category=str(item.get("category", "")),
         authority=str(item.get("authority", "")),
-        argv=tuple(argv),
-        timeout_s=timeout_s,
+        argv=_gate_argv(item, where, gid),
+        timeout_s=_gate_timeout(item, where, gid),
     )
+    seen.add(gid)
+    return gate
 
 
 def parse_registry(text: str) -> Tuple[str, List[Gate]]:
@@ -375,62 +393,98 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: Optional[Sequence[str]] = None) -> int:
+def _parse_args(argv: Optional[Sequence[str]]):
+    """Usage 级校验在这里一次做完：非正数超时不会留到执行阶段。"""
     args = _build_parser().parse_args(argv)
-
     if args.timeout is not None and args.timeout <= 0:
         print("ERROR: --timeout 必须是正整数", file=sys.stderr)
-        return EXIT_USAGE
+        return None
+    return args
 
-    repo_root = (Path(args.repo_root).resolve() if args.repo_root
-                 else find_repo_root())
-    if not repo_root.is_dir():
-        print(f"ERROR: 仓库根不存在：{repo_root}", file=sys.stderr)
-        return EXIT_USAGE
 
-    registry_path = (Path(args.registry) if args.registry
-                     else repo_root / DEFAULT_REGISTRY_REL)
-    if not registry_path.is_file():
-        print(f"ERROR: 门禁注册表不存在：{registry_path}", file=sys.stderr)
-        return EXIT_USAGE
+def _repo_root(args) -> Optional[Path]:
+    root = (Path(args.repo_root).resolve() if args.repo_root
+            else find_repo_root())
+    if not root.is_dir():
+        print(f"ERROR: 仓库根不存在：{root}", file=sys.stderr)
+        return None
+    return root
 
+
+def _load_registry(root: Path, args) -> Optional[Tuple[str, List[Gate]]]:
+    """注册表缺失与 schema 非法都归为用法错误，让 CI 一眼看出配置面问题。"""
+    path = (Path(args.registry) if args.registry
+            else root / DEFAULT_REGISTRY_REL)
+    if not path.is_file():
+        print(f"ERROR: 门禁注册表不存在：{path}", file=sys.stderr)
+        return None
     try:
-        version, gates = parse_registry(
-            registry_path.read_text(encoding="utf-8"))
+        return parse_registry(path.read_text(encoding="utf-8"))
     except RegistryError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
+        return None
+
+
+def _pick(gates: List[Gate],
+          wanted: Optional[List[str]]) -> Optional[List[Gate]]:
+    """--gate 只做减法：未登记的 id 是用法错误，不静默跳过后当作已跑。"""
+    if not wanted:
+        return gates
+    chosen = set(wanted)
+    unknown = sorted(chosen - {g.id for g in gates})
+    if unknown:
+        print(f"ERROR: 未知门禁 id：{', '.join(unknown)}", file=sys.stderr)
+        return None
+    return [g for g in gates if g.id in chosen]
+
+
+def _list_gates(gates: List[Gate]) -> int:
+    for gate in gates:
+        print(f"{gate.severity}  {gate.id:22s} {gate.name}")
+    return EXIT_PASS
+
+
+def _dump_json(args, version: str, ts: str,
+               results: Sequence[GateResult]) -> int:
+    """JSON 报告是产线上的机读凭证：写失败必须让整轮门禁判为用法错误。"""
+    if not args.json:
+        return EXIT_PASS
+    try:
+        write_json(Path(args.json), version, ts, args.fail_on, results)
+    except OSError as exc:
+        print(f"ERROR: 无法写入 JSON 报告：{exc}", file=sys.stderr)
+        return EXIT_USAGE
+    return EXIT_PASS
+
+
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    args = _parse_args(argv)
+    if args is None:
         return EXIT_USAGE
 
-    if args.gate:
-        wanted = set(args.gate)
-        known = {g.id for g in gates}
-        unknown = sorted(wanted - known)
-        if unknown:
-            print(f"ERROR: 未知门禁 id：{', '.join(unknown)}", file=sys.stderr)
-            return EXIT_USAGE
-        gates = [g for g in gates if g.id in wanted]
-
+    root = _repo_root(args)
+    if root is None:
+        return EXIT_USAGE
+    loaded = _load_registry(root, args)
+    if loaded is None:
+        return EXIT_USAGE
+    version, gates = loaded
+    gates = _pick(gates, args.gate)
+    if gates is None:
+        return EXIT_USAGE
     if args.list:
-        for g in gates:
-            print(f"{g.severity}  {g.id:22s} {g.name}")
-        return EXIT_PASS
+        return _list_gates(gates)
 
     started = time.monotonic()
-    results = [run_gate(g, repo_root, args.timeout) for g in gates]
+    results = [run_gate(gate, root, args.timeout) for gate in gates]
     elapsed = time.monotonic() - started
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     print_report(results, version, elapsed, args.check, args.verbose, ts,
                  args.fail_on)
-
-    if args.json:
-        try:
-            write_json(Path(args.json), version, ts, args.fail_on,
-                              results)
-        except OSError as exc:
-            print(f"ERROR: 无法写入 JSON 报告：{exc}", file=sys.stderr)
-            return EXIT_USAGE
-
+    code = _dump_json(args, version, ts, results)
+    if code != EXIT_PASS:
+        return code
     blocking = evaluate(results, args.fail_on)
     return EXIT_BLOCKED if blocking else EXIT_PASS
 
