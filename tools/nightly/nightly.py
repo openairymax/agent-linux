@@ -231,24 +231,34 @@ def _schema_jobs(value: Any) -> list[str]:
     problems: list[str] = []
     names: set[str] = set()
     for entry in value:
-        if not isinstance(entry, dict):
-            problems.append("jobs 条目必须是映射")
-            continue
-        problems.extend(_need(entry, JOB_KEYS, "jobs[]."))
-        name = entry.get("name")
-        if not isinstance(name, str) or not name:
-            problems.append("jobs[].name 必须是非空字符串")
-            continue
-        if name in names:
-            problems.append(f"jobs[].name 重复: {name}")
-        names.add(name)
-        if not _is_int(entry.get("timeout_minutes")):
-            problems.append(f"jobs[{name}].timeout_minutes 必须是整数")
-        for key in ("needs", "helpers"):
-            if not _is_str_list(entry.get(key)):
-                problems.append(f"jobs[{name}].{key} 必须是字符串列表")
-        if "always" in entry and not isinstance(entry["always"], bool):
-            problems.append(f"jobs[{name}].always 必须是布尔值")
+        problems.extend(_schema_job(entry, names))
+    return problems
+
+
+def _schema_job(entry: Any, names: set[str]) -> list[str]:
+    """单个 job 条目：名字合法才继续核对字段，重名也照样登记。"""
+    if not isinstance(entry, dict):
+        return ["jobs 条目必须是映射"]
+    problems = _need(entry, JOB_KEYS, "jobs[].")
+    name = entry.get("name")
+    if not isinstance(name, str) or not name:
+        return problems + ["jobs[].name 必须是非空字符串"]
+    if name in names:
+        problems.append(f"jobs[].name 重复: {name}")
+    names.add(name)
+    return problems + _job_fields(entry, name)
+
+
+def _job_fields(entry: Mapping[str, Any], name: str) -> list[str]:
+    """timeout/needs/helpers/always 四项都以 job 名为前缀报错。"""
+    problems: list[str] = []
+    if not _is_int(entry.get("timeout_minutes")):
+        problems.append(f"jobs[{name}].timeout_minutes 必须是整数")
+    for key in ("needs", "helpers"):
+        if not _is_str_list(entry.get(key)):
+            problems.append(f"jobs[{name}].{key} 必须是字符串列表")
+    if "always" in entry and not isinstance(entry["always"], bool):
+        problems.append(f"jobs[{name}].always 必须是布尔值")
     return problems
 
 
