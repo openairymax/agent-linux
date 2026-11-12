@@ -216,32 +216,43 @@ def evaluate(root, only):
     return [(cid,) + CLASS_FN[cid](root) for cid in only]
 
 
-def emit(rows, need, as_json):
+def as_json(rows, summary, need, accept, missing):
+    """JSON 形态：判定行、汇总与选机结论一次交齐。"""
+    return json.dumps({
+        "classes": [{"id": r[0], "verdict": r[1],
+                     "evidence": r[2], "note": r[3]} for r in rows],
+        "summary": summary,
+        "select": {"require": need, "accept": accept, "missing": missing},
+    }, ensure_ascii=False)
+
+
+def as_text(rows, summary, need, accept, missing):
+    """行式形态：每类一行，末尾两行为汇总与选机结论。"""
+    for cid, verdict, evidence, note in rows:
+        label = "N/A" if verdict == "n/a" else verdict.upper()
+        line = "CLASS %s %s %s" % (cid, label, evidence)
+        if note:
+            line += " note=%s" % note
+        print(line)
+    print("HW-MATRIX pass=%d na=%d fail=%d"
+          % (summary["pass"], summary["n/a"], summary["fail"]))
+    if need:
+        print("SELECT machine %s%s"
+              % ("accept" if accept else "reject",
+                 "" if accept else " missing=" + ",".join(missing)))
+
+
+def emit(rows, need, as_json_mode):
+    """输出两类形态之一并给出退出码；墙钟与判定无关，只由 fail 与选机决定。"""
     summary = {"pass": 0, "n/a": 0, "fail": 0}
     for row in rows:
         summary[row[1]] += 1
     missing = [r[0] for r in rows if r[0] in need and r[1] != "pass"]
     accept = not missing
-    if as_json:
-        print(json.dumps({
-            "classes": [{"id": r[0], "verdict": r[1],
-                         "evidence": r[2], "note": r[3]} for r in rows],
-            "summary": summary,
-            "select": {"require": need, "accept": accept, "missing": missing},
-        }, ensure_ascii=False))
+    if as_json_mode:
+        print(as_json(rows, summary, need, accept, missing))
     else:
-        for cid, verdict, evidence, note in rows:
-            label = "N/A" if verdict == "n/a" else verdict.upper()
-            line = "CLASS %s %s %s" % (cid, label, evidence)
-            if note:
-                line += " note=%s" % note
-            print(line)
-        print("HW-MATRIX pass=%d na=%d fail=%d"
-              % (summary["pass"], summary["n/a"], summary["fail"]))
-        if need:
-            print("SELECT machine %s%s"
-                  % ("accept" if accept else "reject",
-                     "" if accept else " missing=" + ",".join(missing)))
+        as_text(rows, summary, need, accept, missing)
     ok = summary["fail"] == 0 and accept
     return 0 if ok else 1
 
