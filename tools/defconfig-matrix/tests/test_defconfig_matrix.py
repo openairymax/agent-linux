@@ -159,19 +159,19 @@ def _defconfig(tmp_path, arch) -> Path:
 class TestManifestSchema:
     def test_valid(self, tmp_path):
         manifest = dm.load_manifest(write_repo(tmp_path))
-        assert dm.check_manifest_schema(manifest).passed
+        assert dm.mf_schema(manifest).passed
 
     def test_build_true_requires_fragment(self, tmp_path):
         arches = [dict(GOOD_ARCHES[0], kind="full")]
         manifest = dm.load_manifest(write_repo(tmp_path, arches=arches))
-        result = dm.check_manifest_schema(manifest)
+        result = dm.mf_schema(manifest)
         assert not result.passed
         assert "kind=fragment" in result.details
 
     def test_duplicate_arch(self, tmp_path):
         arches = [GOOD_ARCHES[0], dict(GOOD_ARCHES[1], arch="x86_64")]
         manifest = dm.load_manifest(write_repo(tmp_path, arches=arches))
-        result = dm.check_manifest_schema(manifest)
+        result = dm.mf_schema(manifest)
         assert not result.passed
         assert "重复" in result.details
 
@@ -179,7 +179,7 @@ class TestManifestSchema:
         path = write_repo(tmp_path)
         path.write_text(path.read_text(encoding="utf-8") + "bogus: 1\n",
                         encoding="utf-8")
-        result = dm.check_manifest_schema(dm.load_manifest(path))
+        result = dm.mf_schema(dm.load_manifest(path))
         assert not result.passed
         assert "未知字段" in result.details
 
@@ -189,7 +189,7 @@ class TestManifestSchema:
             "    configs: arch/x86/configs/airy_defconfig",
             "    oops: 1\n    configs: arch/x86/configs/airy_defconfig")
         path.write_text(text, encoding="utf-8")
-        result = dm.check_manifest_schema(dm.load_manifest(path))
+        result = dm.mf_schema(dm.load_manifest(path))
         assert not result.passed
         assert "未知字段" in result.details
 
@@ -199,14 +199,14 @@ class TestManifestSchema:
             path.read_text(encoding="utf-8").replace(
                 "lsm_entry: airy", 'lsm_entry: ""'),
             encoding="utf-8")
-        result = dm.check_manifest_schema(dm.load_manifest(path))
+        result = dm.mf_schema(dm.load_manifest(path))
         assert not result.passed
         assert "lsm_entry" in result.details
 
     def test_required_configs_must_be_config(self, tmp_path):
         manifest = dm.load_manifest(
             write_repo(tmp_path, required=["SECURITY=y"]))
-        result = dm.check_manifest_schema(manifest)
+        result = dm.mf_schema(manifest)
         assert not result.passed
         assert "CONFIG_" in result.details
 
@@ -217,12 +217,12 @@ class TestManifestSchema:
 class TestManifestFs:
     def test_match(self, tmp_path):
         manifest = dm.load_manifest(write_repo(tmp_path))
-        assert dm.check_manifest_fs(manifest, tmp_path / "kernel").passed
+        assert dm.check_fs(manifest, tmp_path / "kernel").passed
 
     def test_registered_but_missing(self, tmp_path):
         manifest = dm.load_manifest(write_repo(tmp_path))
         _defconfig(tmp_path, GOOD_ARCHES[1]).unlink()
-        result = dm.check_manifest_fs(manifest, tmp_path / "kernel")
+        result = dm.check_fs(manifest, tmp_path / "kernel")
         assert not result.passed
         assert "文件缺失" in result.details
 
@@ -232,7 +232,7 @@ class TestManifestFs:
         extra.mkdir(parents=True)
         (extra / "airy_defconfig").write_text(
             _defconfig_text(), encoding="utf-8")
-        result = dm.check_manifest_fs(manifest, tmp_path / "kernel")
+        result = dm.check_fs(manifest, tmp_path / "kernel")
         assert not result.passed
         assert "未登记" in result.details
 
@@ -243,13 +243,13 @@ class TestManifestFs:
 class TestDefconfigFormat:
     def test_valid(self, tmp_path):
         manifest = dm.load_manifest(write_repo(tmp_path))
-        assert dm.check_defconfig_format(manifest, tmp_path / "kernel").passed
+        assert dm.check_fmt(manifest, tmp_path / "kernel").passed
 
     def test_missing_spdx(self, tmp_path):
         manifest = dm.load_manifest(write_repo(tmp_path))
         _defconfig(tmp_path, GOOD_ARCHES[0]).write_text(
             _defconfig_text().split("\n", 1)[1], encoding="utf-8")
-        result = dm.check_defconfig_format(manifest, tmp_path / "kernel")
+        result = dm.check_fmt(manifest, tmp_path / "kernel")
         assert not result.passed
         assert "SPDX" in result.details
 
@@ -257,7 +257,7 @@ class TestDefconfigFormat:
         manifest = dm.load_manifest(write_repo(tmp_path))
         _defconfig(tmp_path, GOOD_ARCHES[0]).write_text(
             _defconfig_text(extra="CONFIG_SECURITY=y\n"), encoding="utf-8")
-        result = dm.check_defconfig_format(manifest, tmp_path / "kernel")
+        result = dm.check_fmt(manifest, tmp_path / "kernel")
         assert not result.passed
         assert "重复配置键" in result.details
 
@@ -266,7 +266,7 @@ class TestDefconfigFormat:
         _defconfig(tmp_path, GOOD_ARCHES[0]).write_text(
             _defconfig_text(extra="this is not a config line\n"),
             encoding="utf-8")
-        result = dm.check_defconfig_format(manifest, tmp_path / "kernel")
+        result = dm.check_fmt(manifest, tmp_path / "kernel")
         assert not result.passed
         assert "非法行" in result.details
 
@@ -277,14 +277,14 @@ class TestDefconfigFormat:
 class TestRequiredConfigs:
     def test_valid(self, tmp_path):
         manifest = dm.load_manifest(write_repo(tmp_path))
-        assert dm.check_required_configs(manifest, tmp_path / "kernel").passed
+        assert dm.check_req_cfg(manifest, tmp_path / "kernel").passed
 
     def test_missing_item(self, tmp_path):
         manifest = dm.load_manifest(write_repo(tmp_path))
         _defconfig(tmp_path, GOOD_ARCHES[1]).write_text(
             _defconfig_text().replace("CONFIG_IO_URING=y\n", ""),
             encoding="utf-8")
-        result = dm.check_required_configs(manifest, tmp_path / "kernel")
+        result = dm.check_req_cfg(manifest, tmp_path / "kernel")
         assert not result.passed
         assert "CONFIG_IO_URING=y" in result.details
 
@@ -320,14 +320,14 @@ class TestLsmEntry:
 class TestCiMatrixSync:
     def test_valid(self, tmp_path):
         manifest = dm.load_manifest(write_repo(tmp_path))
-        assert dm.check_ci_matrix_sync(manifest, tmp_path).passed
+        assert dm.check_ci_mtx(manifest, tmp_path).passed
 
     def test_kdir_drift(self, tmp_path):
         manifest = dm.load_manifest(write_repo(tmp_path))
         path = tmp_path / ".github" / "workflows" / "airy-verify.yml"
         path.write_text(path.read_text(encoding="utf-8").replace(
             "kdir: x86\n", "kdir: x86_64\n"), encoding="utf-8")
-        result = dm.check_ci_matrix_sync(manifest, tmp_path)
+        result = dm.check_ci_mtx(manifest, tmp_path)
         assert not result.passed
         assert "kdir 漂移" in result.details
 
@@ -337,7 +337,7 @@ class TestCiMatrixSync:
         path.write_text(path.read_text(encoding="utf-8").replace(
             'cross: "aarch64-linux-gnu-"', 'cross: "aarch64-unknown-linux-"'),
             encoding="utf-8")
-        result = dm.check_ci_matrix_sync(manifest, tmp_path)
+        result = dm.check_ci_mtx(manifest, tmp_path)
         assert not result.passed
         assert "cross 漂移" in result.details
 
@@ -349,7 +349,7 @@ class TestCiMatrixSync:
             "            kdir: arm64\n"
             '            cross: "aarch64-linux-gnu-"\n', ""),
             encoding="utf-8")
-        result = dm.check_ci_matrix_sync(manifest, tmp_path)
+        result = dm.check_ci_mtx(manifest, tmp_path)
         assert not result.passed
         assert "缺少清单 build=true 架构" in result.details
 
@@ -362,7 +362,7 @@ class TestCiMatrixSync:
             "            kdir: riscv\n"
             '            cross: "riscv64-linux-gnu-"\n'
             "  airy-static:"), encoding="utf-8")
-        result = dm.check_ci_matrix_sync(manifest, tmp_path)
+        result = dm.check_ci_mtx(manifest, tmp_path)
         assert not result.passed
         assert "未标 build=true 的架构" in result.details
 
@@ -372,7 +372,7 @@ class TestCiMatrixSync:
         path.write_text(path.read_text(encoding="utf-8").replace(
             "arch: [x86_64, arm64]", "arch: [x86_64, arm64, riscv]"),
             encoding="utf-8")
-        result = dm.check_ci_matrix_sync(manifest, tmp_path)
+        result = dm.check_ci_mtx(manifest, tmp_path)
         assert not result.passed
         assert "未登记架构" in result.details
 
@@ -383,14 +383,14 @@ class TestCiMatrixSync:
 class TestCiRequiredSync:
     def test_valid(self, tmp_path):
         manifest = dm.load_manifest(write_repo(tmp_path))
-        assert dm.check_ci_required_sync(manifest, tmp_path).passed
+        assert dm.check_ci_req(manifest, tmp_path).passed
 
     def test_missing_item(self, tmp_path):
         manifest = dm.load_manifest(write_repo(tmp_path))
         path = tmp_path / "ci" / "gates" / "kernel-airy.sh"
         path.write_text(path.read_text(encoding="utf-8").replace(
             "    'CONFIG_IO_URING=y'\n", ""), encoding="utf-8")
-        result = dm.check_ci_required_sync(manifest, tmp_path)
+        result = dm.check_ci_req(manifest, tmp_path)
         assert not result.passed
         assert "缺少清单项" in result.details
 
@@ -401,21 +401,21 @@ class TestCiRequiredSync:
             "    'CONFIG_SECURITY=y'\n",
             "    'CONFIG_SECURITY=y'\n"
             "    'CONFIG_EXTRA=y'\n"), encoding="utf-8")
-        result = dm.check_ci_required_sync(manifest, tmp_path)
+        result = dm.check_ci_req(manifest, tmp_path)
         assert not result.passed
         assert "清单外项" in result.details
 
     def test_missing_kernel_gate(self, tmp_path):
         manifest = dm.load_manifest(write_repo(tmp_path))
         (tmp_path / "ci" / "gates" / "kernel-refbuild.sh").unlink()
-        result = dm.check_ci_required_sync(manifest, tmp_path)
+        result = dm.check_ci_req(manifest, tmp_path)
         assert not result.passed
         assert "kernel-refbuild.sh" in result.details
 
     def test_missing_airy_gate(self, tmp_path):
         manifest = dm.load_manifest(write_repo(tmp_path))
         (tmp_path / "ci" / "gates" / "kernel-airy.sh").unlink()
-        result = dm.check_ci_required_sync(manifest, tmp_path)
+        result = dm.check_ci_req(manifest, tmp_path)
         assert not result.passed
         assert "kernel-airy.sh" in result.details
 
@@ -425,7 +425,7 @@ class TestCiRequiredSync:
         text = path.read_text(encoding="utf-8")
         path.write_text(text[:text.index("REQUIRED_CONF=(")],
                         encoding="utf-8")
-        result = dm.check_ci_required_sync(manifest, tmp_path)
+        result = dm.check_ci_req(manifest, tmp_path)
         assert not result.passed
         assert "未找到 REQUIRED_CONF=" in result.details
 
@@ -442,7 +442,7 @@ class TestKconfigDeclared:
 
     def test_no_reference_passes(self, tmp_path):
         write_repo(tmp_path)
-        result = dm.check_kconfig_declared(tmp_path / "kernel")
+        result = dm.check_kdecl(tmp_path / "kernel")
         assert result.passed
 
     def test_declared_reference_passes(self, tmp_path):
@@ -451,7 +451,7 @@ class TestKconfigDeclared:
             tmp_path,
             "obj-$(CONFIG_SECURITY_AIRY) += airy.o\n",
             "config SECURITY_AIRY\n\tbool \"Airymax LSM\"\n")
-        assert dm.check_kconfig_declared(tmp_path / "kernel").passed
+        assert dm.check_kdecl(tmp_path / "kernel").passed
 
     def test_undeclared_reference_fails(self, tmp_path):
         write_repo(tmp_path)
@@ -459,7 +459,7 @@ class TestKconfigDeclared:
             tmp_path,
             "obj-$(CONFIG_AIRY_NOPE) += nope.o\n",
             "config SECURITY_AIRY\n\tbool \"Airymax LSM\"\n")
-        result = dm.check_kconfig_declared(tmp_path / "kernel")
+        result = dm.check_kdecl(tmp_path / "kernel")
         assert not result.passed
         assert "CONFIG_AIRY_NOPE" in result.details
 

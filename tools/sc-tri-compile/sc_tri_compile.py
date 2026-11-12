@@ -287,7 +287,7 @@ def find_repo_root():
     return Path(__file__).resolve().parent.parent.parent
 
 
-def build_include_flags(kernel_dir):
+def inc_flags(kernel_dir):
     """Return -I flags in Kbuild order for the given kernel source root."""
     return [f"-I{kernel_dir / sub}" for sub in INCLUDE_SUBDIRS]
 
@@ -372,7 +372,7 @@ def parse_c_defines(text):
     return defines
 
 
-def parse_syscall_xml(text):
+def parse_sc_xml(text):
     """Parse syscall.xml text into a SyscallXml.
 
     Raises ValueError when the document is not well-formed XML or is missing
@@ -448,7 +448,7 @@ def parse_syscall_xml(text):
     )
 
 
-def load_syscall_sources(headers_dir):
+def load_sc_src(headers_dir):
     """Load the three syscall ABI sources.
 
     Returns (sources, failures): on any read or parse error sources is None
@@ -466,7 +466,7 @@ def load_syscall_sources(headers_dir):
         return None, failures
 
     try:
-        xml = parse_syscall_xml(texts[SYSCALL_XML_FILE])
+        xml = parse_sc_xml(texts[SYSCALL_XML_FILE])
     except ValueError as exc:
         return None, [f"  {exc}"]
 
@@ -480,12 +480,12 @@ def load_syscall_sources(headers_dir):
     )
 
 
-def _expected_suffixes(sources):
+def _exp_suffix(sources):
     """Return the expected uppercase core-symbol suffix set from the SSoT."""
     return frozenset(sources.xml.core_names)
 
 
-def _contract_core_defines(sources):
+def _core_defs(sources):
     """Return {suffix: value} for the contract header's core syscall macros."""
     return {
         name[len(CONTRACT_SYMBOL_PREFIX):]: value
@@ -495,7 +495,7 @@ def _contract_core_defines(sources):
     }
 
 
-def _generated_nr_names(sources):
+def _nr_names(sources):
     """Return {__NR_* symbol: value} for syscall_gen.h registration numbers."""
     return {
         name: value
@@ -504,7 +504,7 @@ def _generated_nr_names(sources):
     }
 
 
-def _generated_idx_defines(sources):
+def _idx_defs(sources):
     """Return {suffix: value} for syscall_gen.h AIRY_SYS_IDX_* indices."""
     return {
         name[len(GENERATED_IDX_PREFIX):]: value
@@ -513,7 +513,7 @@ def _generated_idx_defines(sources):
     }
 
 
-def _report_set_delta(label, actual, expected):
+def _set_delta(label, actual, expected):
     """Return failure lines for symbols present in only one of two sets."""
     failures = []
     missing = sorted(expected - actual)
@@ -540,7 +540,7 @@ class CheckResult:
 # ─── Checks ────────────────────────────────────────────────────────────────
 
 
-def tri_compile_check(cc, include_flags, header_files):
+def tri_check(cc, include_flags, header_files):
     """Compile every header under every path; collect the first error each."""
     failures = []
     for label, flags in COMPILE_PATHS:
@@ -570,7 +570,7 @@ def tri_compile_check(cc, include_flags, header_files):
     )
 
 
-def build_probe_source():
+def probe_src():
     """Generate a C program printing type sizes, layouts and DSL markers."""
     lines = ["#include <stdio.h>"]
     lines += [f"#include <linux/airymax/{h}>" for h in PROBE_HEADERS]
@@ -632,7 +632,7 @@ def collect_probe(cc, include_flags, workdir):
     values; failures lists paths whose probe failed to compile or run.
     """
     src = Path(workdir) / "sc_probe.c"
-    src.write_text(build_probe_source(), encoding="utf-8")
+    src.write_text(probe_src(), encoding="utf-8")
     per_path = {}
     failures = []
     for label, flags in COMPILE_PATHS:
@@ -652,7 +652,7 @@ def collect_probe(cc, include_flags, workdir):
     return per_path, failures
 
 
-def check_consistency(item, expected, per_path, key, failures):
+def check_consist(item, expected, per_path, key, failures):
     """Record a failure unless every path reports `expected` for `key`."""
     values = {label: vals.get(key) for label, vals in per_path.items()}
     missing = [label for label, value in values.items() if value is None]
@@ -671,7 +671,7 @@ def type_size_check(per_path, probe_failures):
         return CheckResult(name, False, "\n".join(probe_failures))
     failures = []
     for tname, expected in TYPE_SIZES.items():
-        check_consistency(tname, expected, per_path, ("T", tname, ""), failures)
+        check_consist(tname, expected, per_path, ("T", tname, ""), failures)
     if failures:
         return CheckResult(name, False, "\n".join(failures))
     return CheckResult(name, True, f"{len(TYPE_SIZES)} 个定宽类型各路径大小一致")
@@ -685,10 +685,10 @@ def layout_check(per_path, probe_failures):
     failures = []
     field_count = 0
     for struct, size, fields in LAYOUT:
-        check_consistency(f"{struct} sizeof", size, per_path, ("S", struct, ""), failures)
+        check_consist(f"{struct} sizeof", size, per_path, ("S", struct, ""), failures)
         for field, off in fields:
             field_count += 1
-            check_consistency(
+            check_consist(
                 f"{struct}.{field}",
                 off,
                 per_path,
@@ -753,7 +753,7 @@ def scan_dsl_alias(header_text):
 
 def _dsl_delta(declared):
     """Return failures for aliases missing, extra, or mapped elsewhere."""
-    failures = _report_set_delta(
+    failures = _set_delta(
         f"{DSL_ERROR_HEADER} [DSL] 别名", set(declared), set(DSL_ERR_ALIASES)
     )
     for alias, core in sorted(declared.items()):
@@ -818,34 +818,34 @@ def dsl_err_check(per_path, header_text):
     )
 
 
-def syscall_symbol_name_check(sources):
+def check_sc_sym(sources):
     """Cross-check core syscall symbol-name sets across the three sources.
 
     Every core syscall in the SSoT must appear, and only it, as an
     AIRY_SYS_<SUFFIX> macro in syscalls.h, an AIRY_SYS_IDX_<SUFFIX> index and
     a __NR_<name> number in syscall_gen.h. Returns failure lines.
     """
-    expected = _expected_suffixes(sources)
-    failures = _report_set_delta(
+    expected = _exp_suffix(sources)
+    failures = _set_delta(
         "syscalls.h 核心宏",
-        set(_contract_core_defines(sources)),
+        set(_core_defs(sources)),
         set(expected),
     )
-    failures += _report_set_delta(
+    failures += _set_delta(
         "syscall_gen.h AIRY_SYS_IDX_ 符号",
-        set(_generated_idx_defines(sources)),
+        set(_idx_defs(sources)),
         set(expected),
     )
     expected_nr = {GENERATED_NR_PREFIX + name for name in sources.xml.core_names.values()}
-    failures += _report_set_delta(
+    failures += _set_delta(
         "syscall_gen.h __NR_ 符号",
-        set(_generated_nr_names(sources)),
+        set(_nr_names(sources)),
         expected_nr,
     )
     return failures
 
 
-def syscall_number_check(sources):
+def check_sc_nr(sources):
     """Check syscall numbering consistency across the three sources.
 
     Verifies the SSoT's slot arithmetic and reserved span, the contract
@@ -910,13 +910,13 @@ def _check_macro(failures, source, name, want, defines):
         failures.append(f"  {source}: {name} 期望 {want}, 实测 {got}")
 
 
-def syscall_abi_check(sources, load_failures):
+def check_sc_abi(sources, load_failures):
     """Aggregate syscall ABI tri-source consistency into one check result."""
     if sources is None:
         return CheckResult(SYSCALL_ABI_CHECK_NAME, False, "\n".join(load_failures))
     failures = list(load_failures)
-    failures += syscall_symbol_name_check(sources)
-    failures += syscall_number_check(sources)
+    failures += check_sc_sym(sources)
+    failures += check_sc_nr(sources)
     if failures:
         return CheckResult(SYSCALL_ABI_CHECK_NAME, False, "\n".join(failures))
     xml = sources.xml
@@ -1043,9 +1043,9 @@ def main(argv=None):
         print(f"ERROR: no [SC] headers in {headers_dir}", file=sys.stderr)
         sys.exit(2)
 
-    include_flags = build_include_flags(kernel_dir)
+    include_flags = inc_flags(kernel_dir)
 
-    results = [tri_compile_check(cc, include_flags, header_files)]
+    results = [tri_check(cc, include_flags, header_files)]
     with tempfile.TemporaryDirectory(prefix="sc-tri-compile-") as workdir:
         per_path, probe_failures = collect_probe(cc, include_flags, workdir)
     results.append(type_size_check(per_path, probe_failures))
@@ -1054,8 +1054,8 @@ def main(argv=None):
     err_header = (headers_dir / DSL_ERROR_HEADER).read_text(encoding="utf-8")
     results.append(dsl_err_check(per_path, err_header))
 
-    syscall_sources, syscall_failures = load_syscall_sources(headers_dir)
-    results.append(syscall_abi_check(syscall_sources, syscall_failures))
+    syscall_sources, syscall_failures = load_sc_src(headers_dir)
+    results.append(check_sc_abi(syscall_sources, syscall_failures))
 
     sources = [
         ("headers-dir", str(headers_dir)),

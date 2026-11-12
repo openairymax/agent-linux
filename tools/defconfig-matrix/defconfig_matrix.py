@@ -149,7 +149,7 @@ def arch_kdir(entry):
     return parts[1] if len(parts) >= 2 else ""
 
 
-def read_config_lines(path):
+def cfg_lines(path):
     """返回文件中的有效配置行（CONFIG_*=... 或 '# CONFIG_... is not set'）。"""
     lines = []
     for raw in path.read_text(encoding="utf-8").splitlines():
@@ -164,7 +164,7 @@ def config_key(line):
     return (CONFIG_VAL_RE.match(line) or CONFIG_SET_RE.match(line)).group(1)
 
 
-def non_comment_lines(path):
+def raw_lines(path):
     """逐行产出 (行号, 去空白行)；仅保留非空行。"""
     for num, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         stripped = raw.strip()
@@ -188,7 +188,7 @@ def load_workflow(path):
 # ─── Checks ────────────────────────────────────────────────────────────────
 
 
-def check_manifest_schema(manifest):
+def mf_schema(manifest):
     """校验清单 schema：必填字段、arch 唯一、取值与路径形态。"""
     problems = []
 
@@ -209,7 +209,7 @@ def check_manifest_schema(manifest):
     else:
         seen = set()
         for idx, entry in enumerate(architectures):
-            problems.extend(_arch_schema_problems(idx, entry, seen))
+            problems.extend(_arch_schema(idx, entry, seen))
 
     if isinstance(required, list):
         if not required:
@@ -222,7 +222,7 @@ def check_manifest_schema(manifest):
     return CheckResult("清单 schema 合法", not problems, "\n".join(problems))
 
 
-def _arch_schema_problems(idx, entry, seen):
+def _arch_schema(idx, entry, seen):
     """校验单条 architectures 记录，返回问题列表。"""
     where = f"architectures[{idx}]"
     problems = []
@@ -262,7 +262,7 @@ def _arch_schema_problems(idx, entry, seen):
     return problems
 
 
-def check_manifest_fs(manifest, kernel_dir):
+def check_fs(manifest, kernel_dir):
     """清单登记项与磁盘上的 airy_defconfig 双向一致（OS-BUILD-028）。"""
     problems = []
     registered = set()
@@ -286,7 +286,7 @@ def check_manifest_fs(manifest, kernel_dir):
         "\n".join(problems))
 
 
-def check_defconfig_format(manifest, kernel_dir):
+def check_fmt(manifest, kernel_dir):
     """首行 SPDX、CONFIG 语法合法、无重复配置键。"""
     problems = []
     for entry in manifest.get("architectures", []):
@@ -298,7 +298,7 @@ def check_defconfig_format(manifest, kernel_dir):
         if not lines or not lines[0].startswith("# SPDX-License-Identifier:"):
             problems.append(f"{configs}: 第 1 行缺少 SPDX 许可证标识")
         keys = {}
-        for num, stripped in non_comment_lines(path):
+        for num, stripped in raw_lines(path):
             is_config = bool(CONFIG_VAL_RE.match(stripped)
                              or CONFIG_SET_RE.match(stripped))
             if not is_config:
@@ -319,7 +319,7 @@ def check_defconfig_format(manifest, kernel_dir):
         "\n".join(problems))
 
 
-def check_required_configs(manifest, kernel_dir):
+def check_req_cfg(manifest, kernel_dir):
     """每个 airy_defconfig 均含全部必备 CONFIG（OS-BUILD-026）。"""
     required = manifest.get("required_configs", [])
     problems = []
@@ -328,7 +328,7 @@ def check_required_configs(manifest, kernel_dir):
         path = kernel_dir / str(configs)
         if not path.is_file():
             continue
-        present = set(read_config_lines(path))
+        present = set(cfg_lines(path))
         for want in required:
             if want not in present:
                 problems.append(f"{configs}: 缺少必备配置 {want}")
@@ -347,7 +347,7 @@ def check_lsm_entry(manifest, kernel_dir):
         if not path.is_file():
             continue
         value = None
-        for line in read_config_lines(path):
+        for line in cfg_lines(path):
             match = CONFIG_VAL_RE.match(line)
             if match and match.group(1) == "CONFIG_LSM":
                 value = match.group(2).strip().strip('"')
@@ -362,7 +362,7 @@ def check_lsm_entry(manifest, kernel_dir):
                        "\n".join(problems))
 
 
-def check_ci_matrix_sync(manifest, repo_root):
+def check_ci_mtx(manifest, repo_root):
     """CI 构建矩阵与清单一致（airy-verify 精确匹配 / kernel-verify 为登记子集）。"""
     name = "CI 构建矩阵与清单一致 (OS-BUILD-028)"
     try:
@@ -404,7 +404,7 @@ def check_ci_matrix_sync(manifest, repo_root):
     return CheckResult(name, not problems, "\n".join(problems))
 
 
-def check_ci_required_sync(manifest, repo_root):
+def check_ci_req(manifest, repo_root):
     """CI 的必备 CONFIG 清单与清单逐项相等（OS-BUILD-026）。"""
     name = "CI 必备 CONFIG 清单与清单一致 (OS-BUILD-026)"
     want = set(manifest.get("required_configs", []))
@@ -437,7 +437,7 @@ def check_ci_required_sync(manifest, repo_root):
     return CheckResult(name, not problems, "\n".join(problems))
 
 
-def collect_airy_kbuild_refs(kernel_dir):
+def kbuild_refs(kernel_dir):
     """收集 Airymax 路径下 Kbuild/Makefile 中的 $(CONFIG_*) 引用。"""
     refs = {}
     for rel in AIRY_KBUILD_DIRS:
@@ -454,7 +454,7 @@ def collect_airy_kbuild_refs(kernel_dir):
     return refs
 
 
-def collect_declared_configs(kernel_dir):
+def declared_cfg(kernel_dir):
     """扫描内核树全部 Kconfig*，收集已声明的 config 符号（带 CONFIG_）。"""
     declared = set()
     for kconfig in kernel_dir.rglob("Kconfig*"):
@@ -466,13 +466,13 @@ def collect_declared_configs(kernel_dir):
     return declared
 
 
-def check_kconfig_declared(kernel_dir):
+def check_kdecl(kernel_dir):
     """obj-$(CONFIG_*) 引用的宏须有 config 声明（OS-KER-025）。"""
-    refs = collect_airy_kbuild_refs(kernel_dir)
+    refs = kbuild_refs(kernel_dir)
     if not refs:
         return CheckResult("obj-$(CONFIG_*) 均有 Kconfig 声明 (OS-KER-025)",
                            True, "Airymax 路径下无 CONFIG 引用")
-    declared = collect_declared_configs(kernel_dir)
+    declared = declared_cfg(kernel_dir)
     problems = [
         f"{symbol} 被引用但无 Kconfig 声明"
         f"（引用处: {', '.join(sorted(refs[symbol]))}）"
@@ -531,18 +531,18 @@ def print_report(results, manifest, check_mode):
 
 def build_checks(manifest, repo_root, kernel_dir):
     """按清单 schema 结果决定是否继续执行内容类检查。"""
-    schema = check_manifest_schema(manifest)
+    schema = mf_schema(manifest)
     if not schema.passed:
         return [schema]
     return [
         schema,
-        check_manifest_fs(manifest, kernel_dir),
-        check_defconfig_format(manifest, kernel_dir),
-        check_required_configs(manifest, kernel_dir),
+        check_fs(manifest, kernel_dir),
+        check_fmt(manifest, kernel_dir),
+        check_req_cfg(manifest, kernel_dir),
         check_lsm_entry(manifest, kernel_dir),
-        check_ci_matrix_sync(manifest, repo_root),
-        check_ci_required_sync(manifest, repo_root),
-        check_kconfig_declared(kernel_dir),
+        check_ci_mtx(manifest, repo_root),
+        check_ci_req(manifest, repo_root),
+        check_kdecl(kernel_dir),
     ]
 
 
