@@ -235,19 +235,31 @@ def _read_text(path: Path) -> Optional[str]:
 # ─── Checks ────────────────────────────────────────────────────────────────
 
 
-def _tuple_problems(tuple_map: Any) -> List[str]:
-    """校验四元组字段与取值域（0..255，适配 ((a) << 8) + (b) 打包）。"""
+def _tuple_shape(tuple_map: Any) -> Optional[List[str]]:
+    """结构判据：映射形态与四个必填字段；合格返回 None，否则返回问题。"""
     if not isinstance(tuple_map, dict):
         return ["version_tuple 必须是映射（mapping）"]
     missing = [key for key in TUPLE_KEYS if key not in tuple_map]
-    if missing:
-        return [f"version_tuple 缺少字段: {', '.join(missing)}"]
-    problems = []
-    for key in ("lts", "major", "minor"):
-        value = tuple_map[key]
-        if isinstance(value, bool) or not isinstance(value, int) \
-                or not 0 <= value <= 255:
-            problems.append(f"version_tuple.{key} 必须是 0..255 的整数")
+    return [f"version_tuple 缺少字段: {', '.join(missing)}"] if missing else None
+
+
+def _byte_errs(tuple_map: TupleMap) -> List[str]:
+    """三个数值字段必须落在 0..255：版本码按 ((a) << 8) + (b) 打包。"""
+    return [
+        f"version_tuple.{key} 必须是 0..255 的整数"
+        for key in ("lts", "major", "minor")
+        if isinstance(tuple_map[key], bool)
+        or not isinstance(tuple_map[key], int)
+        or not 0 <= tuple_map[key] <= 255
+    ]
+
+
+def _tuple_problems(tuple_map: Any) -> List[str]:
+    """校验四元组字段与取值域（0..255，适配 ((a) << 8) + (b) 打包）。"""
+    shape = _tuple_shape(tuple_map)
+    if shape is not None:
+        return shape
+    problems = _byte_errs(tuple_map)
     if not isinstance(tuple_map["release"], str):
         problems.append("version_tuple.release 必须是字符串")
     return problems
