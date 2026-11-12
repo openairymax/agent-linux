@@ -14,6 +14,10 @@
 #   3. gfxmode 从 1920x1080 起选且无 gfxpayload，面板原生 2880x1800 从未启用。
 # 三者都不是单点写错，而是「交付物之间的引用关系」缺断言，因此单独成门禁。
 #
+# 0.0.4 另加一条通用性收口（G-03）：交付面不得出现机型绑定字面量。前三者
+# 判链路是否闭合，这一条判闭合方式是否依赖某一台机器——依赖机型的修法在
+# 装机前完全不可见，换机才暴露。
+#
 # 两种模式可同时给：
 #   --source DIR  仓库静态闭包：配方与 spec 里必须存在修复条款（默认仓库根）；
 #   --root DIR    已安装树闭包：dconf 生效三件套、sudoers、座位、PAM 顺序、
@@ -93,6 +97,40 @@ console_count() { # console_count <文件> <期望项数> <判据名>
     [ -n "${line}" ] || { bad "$3: $1 无 bootloader --append"; return 0; }
     n=$(printf '%s\n' "${line}" | tr ' ' '\n' | grep -c '^console=')
     [ "${n}" -eq "$2" ] || bad "$3: console= 计数 ${n} != $2"
+}
+
+# model_free DIR —— 交付面不得出现机型绑定字面量（G-03）。
+#
+# 通用性铁律要求分支只认能力：modinfo、sysfs、EDID、xrandr、/proc/cmdline。
+# 机型绑定值一旦回到配方或脚本，换一台机器就要改代码，而这类依赖在装机
+# 前完全不可见——0.0.3 的 285H 验收就是这么被写死的。
+#
+# 扫描范围是交付面（kickstart、桌面/登录/引导/构建脚本、spec scriptlet、
+# 运行时工具）；ci/、测试夹具与文档不在其列——那是记录与复现缺陷的地方，
+# 白名单由目录边界自然给出。行首注释白名单：交付面必须能写下「此处故意
+# 不认某机型」这样的说明，否则唯一解释为什么不写死的证据会被门禁逼掉。
+#
+# 命中按文件与行号逐条报出：只知道「有字面量」而不知道在哪，等于让下一个
+# 维护者把整棵树重扫一遍。
+model_free()
+{
+    local d="$1" hits
+    hits=$(grep -rnE --exclude-dir=tests --exclude-dir=fixture \
+        --include='*.sh' --include='*.py' --include='*.ks' \
+        --include='*.cfg' --include='*.spec' --include='*.conf' \
+        -e '83JK' -e 'XiaoXinPro' -e '8086:7d51' \
+        -e 'dmidecode' -e '/sys/(class|devices/virtual)/dmi' \
+        "${d}/distro/kickstart" "${d}/distro/desktop" \
+        "${d}/distro/login" "${d}/distro/boot" "${d}/distro/scripts" \
+        "${d}/distro/release" "${d}/distro/specs" "${d}/distro/tools" \
+        2>/dev/null | grep -vE ':[0-9]+:[[:space:]]*#' || true)
+    if [ -z "${hits}" ]; then
+        say "model-literal: 交付面无机型绑定字面量"
+        return 0
+    fi
+    while IFS= read -r hit; do
+        bad "model-literal: ${hit}"
+    done <<<"${hits}"
 }
 
 # ---------------------------------------------------------------------------
@@ -179,6 +217,10 @@ check_source()
     # 账户名一处定义、多处派生：0.0.3 的现场缺陷正是三处资产账户名不一致，
     # 桌面永远等不到自动登录的用户。
     acct_sso "${d}"
+
+    # 通用性收口（G-03）：交付面不得再按机型写死。上面各条断言管的是
+    # 「某条链路是否闭合」，这一条管「闭合方式是否依赖某一台机器」。
+    model_free "${d}"
 }
 
 # brand_sso DIR —— 命名 SSoT 静态断言。

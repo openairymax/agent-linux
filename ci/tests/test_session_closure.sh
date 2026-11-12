@@ -331,6 +331,25 @@ sed -i 's/^LADDER=.*/LADDER="1920x1080 1280x720"/' \
 out="$(run --source "${FX}")"
 check "阶梯缺高分段判拒绝" 1 "$?" "${out}" "display-mode/ladder"
 
+# G-03：机型绑定字面量。两条入口都要覆盖——按机型名写死与按 DMI 探测
+# 都意味着换机要改代码；注释白名单保证「此处故意不认某机型」的解释能写。
+mkfix
+printf 'PRODUCT=83JK\n' >>"${FX}/distro/desktop/display_mode.sh"
+out="$(run --source "${FX}")"
+check "机型名判拒绝" 1 "$?" "${out}" "PRODUCT=83JK"
+
+mkfix
+printf 'vendor=$(dmidecode -s system-product-name)\n' \
+    >>"${FX}/distro/kickstart/airymaxos-workstation.ks"
+out="$(run --source "${FX}")"
+check "DMI 探测判拒绝" 1 "$?" "${out}" "dmidecode -s system-product-name"
+
+mkfix
+printf '# 285H（83JK）上故意不写死，此处仅说明原因\n' \
+    >>"${FX}/distro/desktop/display_mode.sh"
+out="$(run --source "${FX}")"
+check "机型注释不误判" 0 "$?" "${out}" "交付面无机型绑定字面量"
+
 saver
 sed -i 's/^lock-enabled=false$/lock-enabled=true/' \
     "${FX}/distro/login/00-airymax-screensaver"
