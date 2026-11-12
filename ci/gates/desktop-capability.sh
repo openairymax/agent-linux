@@ -34,7 +34,6 @@
 # ===========================================================================
 set -uo pipefail
 
-readonly EINVAL=5
 readonly TAG="AIRYMAX-XSERVER"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
@@ -55,30 +54,12 @@ usage()
 EOF
 }
 
-cleanup()
-{
-    [ -n "${TMP}" ] && rm -rf "${TMP}"
-    return 0
-}
+# shellcheck source=../lib/check.sh
+. "${ROOT}/ci/lib/check.sh"
 
 trap cleanup EXIT
 
-while [ "$#" -gt 0 ]; do
-    case "$1" in
-        --tree)
-            [ -n "${2:-}" ] || { err "--tree 需要目录路径"; exit "${EINVAL}"; }
-            [ -d "$2" ] || { err "--tree 目录不存在: $2"; exit "${EINVAL}"; }
-            TREE="$2"
-            shift 2
-            ;;
-        -h|--help) usage; exit 0 ;;
-        *) err "未知参数: $1"; exit "${EINVAL}" ;;
-    esac
-done
-
-[ -n "${TREE}" ] || TREE="${ROOT}"
-
-bad() { err "$*"; FAILS=$((FAILS + 1)); }
+opts_dir "$@"
 
 # 声明面 -------------------------------------------------------------------
 
