@@ -298,21 +298,32 @@ def print_report(results: Sequence[GateResult], registry_version: str,
     blocking = evaluate(results, fail_on)
 
     if check_mode:
-        if not blocking:
-            extra = "" if not failed else f", {len(failed)} non-blocking"
-            print(f"OS-CHK: PASS ({passed}/{total} gates{extra}, "
-                  f"{elapsed_s:.1f}s)")
-            for r in failed:
-                print(f"  {_marker(r.status)} {r.gate.id} {r.gate.name}: "
-                      f"{r.detail}")
-        else:
-            print(f"OS-CHK: FAIL ({passed}/{total} gates, "
-                  f"{len(blocking)} blocking, {elapsed_s:.1f}s)")
-            for r in blocking:
-                print(f"  {_marker(r.status)} {r.gate.id} {r.gate.name}: "
-                      f"{r.detail}")
+        _rep_ci(results, failed, blocking, passed, total, elapsed_s)
         return
+    _rep_full(results, registry_version, failed, verbose, passed, total,
+              elapsed_s, ts)
 
+
+def _rep_ci(results, failed, blocking, passed, total, elapsed_s):
+    """CI 形态：一行判定，未通过项逐条列出；阻塞项另有计数。"""
+    if not blocking:
+        extra = "" if not failed else f", {len(failed)} non-blocking"
+        print(f"OS-CHK: PASS ({passed}/{total} gates{extra}, "
+              f"{elapsed_s:.1f}s)")
+        for r in failed:
+            print(f"  {_marker(r.status)} {r.gate.id} {r.gate.name}: "
+                  f"{r.detail}")
+        return
+    print(f"OS-CHK: FAIL ({passed}/{total} gates, "
+          f"{len(blocking)} blocking, {elapsed_s:.1f}s)")
+    for r in blocking:
+        print(f"  {_marker(r.status)} {r.gate.id} {r.gate.name}: "
+              f"{r.detail}")
+
+
+def _rep_full(results, registry_version, failed, verbose, passed, total,
+              elapsed_s, ts):
+    """详细形态：抬头、逐条判定（可按需附输出）与结论。"""
     print("=" * 72)
     print("AirymaxOS OS-CHK 门禁报告")
     print(f"注册表版本: {registry_version}")
@@ -324,6 +335,11 @@ def print_report(results: Sequence[GateResult], registry_version: str,
             for line in (r.stdout + r.stderr).splitlines():
                 print(f"    | {line}")
     print()
+    _rep_tail(failed, total, elapsed_s)
+
+
+def _rep_tail(failed, total, elapsed_s):
+    """结论横幅：全通过与非全通过两种措辞。"""
     print("-" * 72)
     if not failed:
         print(f"RESULT: PASS — 全部 {total} 条门禁通过（{elapsed_s:.1f}s）")
