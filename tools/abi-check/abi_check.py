@@ -284,7 +284,7 @@ def parse_sc_header(text):
     return result
 
 
-def parse_syscall_tbl(text):
+def parse_tbl(text):
     """Parse syscall_64.tbl to extract registered syscall entries.
 
     Returns dict: {syscalls, reserved}
@@ -340,7 +340,7 @@ def compute_sha256(path):
     return digest.hexdigest()
 
 
-def detect_source_commit(path):
+def src_commit(path):
     """Best-effort detection of the git commit owning `path`.
 
     Returns the commit hash, or None when the path is not inside a git work
@@ -358,7 +358,7 @@ def detect_source_commit(path):
     return commit if proc.returncode == 0 and commit else None
 
 
-def relative_source_path(ssot_path, repo_root):
+def rel_src_path(ssot_path, repo_root):
     """Render the SSoT path relative to the repo root, POSIX-separated."""
     try:
         rel = os.path.relpath(os.path.abspath(str(ssot_path)),
@@ -374,7 +374,7 @@ def build_snapshot(ssot, ssot_path, repo_root, commit=None):
         "schema_version": SNAPSHOT_SCHEMA_VERSION,
         "source": {
             "repo": "docs-linux",
-            "path": relative_source_path(ssot_path, repo_root),
+            "path": rel_src_path(ssot_path, repo_root),
             "commit": commit or "unknown",
             "sha256": compute_sha256(ssot_path),
             "doc_version": ssot.get("version"),
@@ -409,7 +409,7 @@ def load_snapshot(path):
         sys.exit(2)
 
 
-def snapshot_to_ssot(snapshot):
+def snap_ssot(snapshot):
     """Adapt a contract snapshot to the in-memory SSoT shape.
 
     Used only when the authoritative SSoT document is unavailable; the
@@ -426,7 +426,7 @@ def snapshot_to_ssot(snapshot):
     }
 
 
-def describe_snapshot(snapshot):
+def describe_snap(snapshot):
     """Render a one-line provenance summary of a contract snapshot."""
     source = snapshot.get("source", {})
     commit = str(source.get("commit", "unknown"))
@@ -449,7 +449,7 @@ class CheckResult:
 
 # ─── Checks ────────────────────────────────────────────────────────────────
 
-def check_three_way_consistency(ssot, unistd, tbl):
+def check_3way(ssot, unistd, tbl):
     """Check 4 core syscalls are consistent across SSoT / unistd.h / tbl."""
     failures = []
 
@@ -488,7 +488,7 @@ def check_three_way_consistency(ssot, unistd, tbl):
         True, f"4 核心 syscall 编号三方一致: {summary}")
 
 
-def check_base_number(ssot, unistd, tbl):
+def check_base_nr(ssot, unistd, tbl):
     """Check syscall base number is 548."""
     failures = []
 
@@ -517,7 +517,7 @@ def check_base_number(ssot, unistd, tbl):
         f"所有 airy syscall >= {EXPECTED_BASE}")
 
 
-def check_range_no_conflict(ssot, unistd, tbl):
+def check_range(ssot, unistd, tbl):
     """Check no duplicate numbers and all within 548-571."""
     failures = []
 
@@ -552,7 +552,7 @@ def check_range_no_conflict(ssot, unistd, tbl):
         f"[{AIRY_RANGE_START}, {AIRY_RANGE_END}] 范围内")
 
 
-def check_nr_syscalls(unistd):
+def check_sys_nr(unistd):
     """Check __NR_syscalls value is 572 (highest number 571 + 1)."""
     nr = unistd["nr_syscalls"]
     if nr is None:
@@ -568,7 +568,7 @@ def check_nr_syscalls(unistd):
         f"__NR_syscalls = {nr} (== {EXPECTED_NR_SYSCALLS})")
 
 
-def check_x32_forbidden(unistd, tbl):
+def check_x32(unistd, tbl):
     """Check no airy syscall in 512-547 (x32 forbidden zone)."""
     failures = []
 
@@ -593,7 +593,7 @@ def check_x32_forbidden(unistd, tbl):
         f"[{X32_FORBIDDEN_START}, {X32_FORBIDDEN_END}]")
 
 
-def check_sc_header_consistency(sc_header, ssot, unistd, tbl):
+def check_sc_hdr(sc_header, ssot, unistd, tbl):
     """Check the [SC] contract header agrees with SSoT / unistd.h / tbl."""
     failures = []
 
@@ -677,7 +677,7 @@ def check_sc_header_consistency(sc_header, ssot, unistd, tbl):
         f"SLOTS_MAX={slots}) 与 SSoT/unistd.h/tbl 一致")
 
 
-def reserved_slot_issues(reserved, label):
+def rsvd_issues(reserved, label):
     """Diagnose reserved slot coverage, naming and entry point."""
     issues = []
     seen = {}
@@ -714,10 +714,10 @@ def reserved_slot_issues(reserved, label):
     return issues
 
 
-def check_reserved_slots(unistd, tbl):
+def check_rsvd(unistd, tbl):
     """Check the 20 reserved slots (552-571) are registered consistently."""
-    failures = reserved_slot_issues(unistd["reserved"], "unistd.h")
-    failures += reserved_slot_issues(tbl["reserved"], "syscall_64.tbl")
+    failures = rsvd_issues(unistd["reserved"], "unistd.h")
+    failures += rsvd_issues(tbl["reserved"], "syscall_64.tbl")
 
     if failures:
         return CheckResult("预留槽登记一致 (552-571)", False,
@@ -729,7 +729,7 @@ def check_reserved_slots(unistd, tbl):
         f"入口 sys_ni_syscall")
 
 
-def tbl_entry_issues(syscalls, reserved, label):
+def entry_issues(syscalls, reserved, label):
     """Diagnose ABI column and entry point naming of airy tbl entries."""
     issues = []
 
@@ -752,9 +752,9 @@ def tbl_entry_issues(syscalls, reserved, label):
     return issues
 
 
-def check_tbl_abi_and_entry(tbl):
+def check_tbl_abi(tbl):
     """Check syscall_64.tbl ABI column and entry naming for airy entries."""
-    failures = tbl_entry_issues(tbl["syscalls"], tbl["reserved"],
+    failures = entry_issues(tbl["syscalls"], tbl["reserved"],
                                 "syscall_64.tbl")
 
     if failures:
@@ -789,9 +789,9 @@ def check_sw64_tbl(ssot, sw_tbl):
                 f"  {name}: sw_64={num}, SSoT={ssot_map.get(name)} "
                 f"(不一致)")
 
-    failures += reserved_slot_issues(sw_tbl["reserved"],
+    failures += rsvd_issues(sw_tbl["reserved"],
                                      "sw_64 syscall.tbl")
-    failures += tbl_entry_issues(sw_tbl["syscalls"], sw_tbl["reserved"],
+    failures += entry_issues(sw_tbl["syscalls"], sw_tbl["reserved"],
                                  "sw_64 syscall.tbl")
 
     if failures:
@@ -935,7 +935,7 @@ def check_baseline(ssot, unistd, tbl, baseline):
         f"({len(bl_map)} syscalls, base={bl_base}, nr={bl_nr})")
 
 
-def check_snapshot_drift(ssot, snapshot, authoritative):
+def check_drift(ssot, snapshot, authoritative):
     """Verify the derived contract snapshot still matches the authoritative SSoT.
 
     `authoritative` is True when the SSoT document was read from ../docs. If
@@ -950,14 +950,14 @@ def check_snapshot_drift(ssot, snapshot, authoritative):
             f"  契约快照缺失: {DEFAULT_SNAPSHOT_REL}\n"
             f"  运行 --update-snapshot 从权威 SSoT 重新导出")
 
-    provenance = describe_snapshot(snapshot)
+    provenance = describe_snap(snapshot)
     if not authoritative:
         return CheckResult(
             name, True,
             f"权威 SSoT 文档不可得（镜像未检出 ../docs），"
             f"漂移比对不可用；本次以派生契约快照为 SSoT 来源。{provenance}")
 
-    snap = snapshot_to_ssot(snapshot)
+    snap = snap_ssot(snapshot)
     failures = []
 
     if snap["linux_base"] != ssot["linux_base"]:
@@ -1165,10 +1165,10 @@ def main():
     if args.update_snapshot:
         ssot = parse_ssot(read_file(ssot_path))
         snapshot = build_snapshot(ssot, ssot_path, repo_root,
-                                  detect_source_commit(ssot_path))
+                                  src_commit(ssot_path))
         write_snapshot(snapshot_path, snapshot)
         print(f"snapshot written: {snapshot_path}")
-        print(f"  {describe_snapshot(snapshot)}")
+        print(f"  {describe_snap(snapshot)}")
         print(f"  linux_base={snapshot['linux_base']} "
               f"syscalls={len(snapshot['syscalls'])} "
               f"reserved_range={snapshot['reserved_range']}")
@@ -1179,10 +1179,10 @@ def main():
         ssot = parse_ssot(read_file(ssot_path))
         ssot_note = None
     elif snapshot is not None:
-        ssot = snapshot_to_ssot(snapshot)
+        ssot = snap_ssot(snapshot)
         ssot_note = ("[INFO] SSoT source: contract snapshot "
                      "(../docs unavailable) — "
-                     + describe_snapshot(snapshot))
+                     + describe_snap(snapshot))
     else:
         print(f"ERROR: neither SSoT ({ssot_path}) nor snapshot "
               f"({snapshot_path}) is available", file=sys.stderr)
@@ -1195,27 +1195,27 @@ def main():
     sc_header_text = read_file(sc_header_path)
 
     unistd = parse_unistd(unistd_text)
-    tbl = parse_syscall_tbl(tbl_text)
-    sw_tbl = parse_syscall_tbl(sw64_text)
+    tbl = parse_tbl(tbl_text)
+    sw_tbl = parse_tbl(sw64_text)
     sc_header = parse_sc_header(sc_header_text)
 
     baseline = None if args.no_baseline else load_baseline(baseline_path)
 
     # Run all checks
     results = []
-    results.append(check_three_way_consistency(ssot, unistd, tbl))
-    results.append(check_base_number(ssot, unistd, tbl))
-    results.append(check_range_no_conflict(ssot, unistd, tbl))
-    results.append(check_nr_syscalls(unistd))
-    results.append(check_x32_forbidden(unistd, tbl))
-    results.append(check_sc_header_consistency(sc_header, ssot, unistd, tbl))
-    results.append(check_reserved_slots(unistd, tbl))
-    results.append(check_tbl_abi_and_entry(tbl))
+    results.append(check_3way(ssot, unistd, tbl))
+    results.append(check_base_nr(ssot, unistd, tbl))
+    results.append(check_range(ssot, unistd, tbl))
+    results.append(check_sys_nr(unistd))
+    results.append(check_x32(unistd, tbl))
+    results.append(check_sc_hdr(sc_header, ssot, unistd, tbl))
+    results.append(check_rsvd(unistd, tbl))
+    results.append(check_tbl_abi(tbl))
     results.append(check_sw64_tbl(ssot, sw_tbl))
     results.append(check_arch_wire(repo_root))
     if baseline is not None:
         results.append(check_baseline(ssot, unistd, tbl, baseline))
-    results.append(check_snapshot_drift(ssot, snapshot, ssot_available))
+    results.append(check_drift(ssot, snapshot, ssot_available))
 
     # Print report
     ssot_label = str(ssot_path) if ssot_available else (

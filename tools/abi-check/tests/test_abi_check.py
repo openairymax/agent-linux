@@ -108,7 +108,7 @@ def parse_all(ssot=None, unistd=None, tbl=None, sc=None):
     return (
         ab.parse_ssot(ssot if ssot is not None else ssot_text()),
         ab.parse_unistd(unistd if unistd is not None else unistd_text()),
-        ab.parse_syscall_tbl(tbl if tbl is not None else tbl_text()),
+        ab.parse_tbl(tbl if tbl is not None else tbl_text()),
         ab.parse_sc_header(sc if sc is not None else sc_header_text()),
     )
 
@@ -225,14 +225,14 @@ class TestParseScHeader:
 
 class TestParseSyscallTbl:
     def test_core_entries(self) -> None:
-        t = ab.parse_syscall_tbl(tbl_text())
+        t = ab.parse_tbl(tbl_text())
         assert {s["name"]: s["linux_number"] for s in t["syscalls"]} == {
             name: num for name, _macro, num in CORE}
         assert all(s["abi"] == "common" for s in t["syscalls"])
         assert t["syscalls"][0]["entry"] == "sys_airy_sys_call"
 
     def test_reserved_entries(self) -> None:
-        t = ab.parse_syscall_tbl(tbl_text())
+        t = ab.parse_tbl(tbl_text())
         assert [s["linux_number"] for s in t["reserved"]] == RESERVED_NUMS
         assert all(s["entry"] == "sys_ni_syscall" for s in t["reserved"])
 
@@ -243,15 +243,15 @@ class TestParseSyscallTbl:
 class TestThreeWayConsistency:
     def test_pass(self) -> None:
         ssot, u, tbl, _sc = parse_all()
-        assert ab.check_three_way_consistency(ssot, u, tbl).passed
+        assert ab.check_3way(ssot, u, tbl).passed
 
     def test_fail_on_number_mismatch(self) -> None:
         ssot, u, _t, _sc = parse_all()
         # 人为把 tbl 中 airy_sys_call 编号改为 600
-        bad = ab.parse_syscall_tbl(
+        bad = ab.parse_tbl(
             tbl_text().replace("548\tcommon\tairy_sys_call",
                                "600\tcommon\tairy_sys_call"))
-        res = ab.check_three_way_consistency(ssot, u, bad)
+        res = ab.check_3way(ssot, u, bad)
         assert not res.passed
         assert "airy_sys_call" in res.details
 
@@ -259,56 +259,56 @@ class TestThreeWayConsistency:
 class TestBaseNumber:
     def test_pass(self) -> None:
         ssot, u, tbl, _sc = parse_all()
-        assert ab.check_base_number(ssot, u, tbl).passed
+        assert ab.check_base_nr(ssot, u, tbl).passed
 
     def test_fail_on_wrong_base(self) -> None:
         ssot, u, tbl, _sc = parse_all()
         ssot = dict(ssot, linux_base=500)
-        res = ab.check_base_number(ssot, u, tbl)
+        res = ab.check_base_nr(ssot, u, tbl)
         assert not res.passed
 
 
 class TestRangeNoConflict:
     def test_pass(self) -> None:
         ssot, u, tbl, _sc = parse_all()
-        assert ab.check_range_no_conflict(ssot, u, tbl).passed
+        assert ab.check_range(ssot, u, tbl).passed
 
     def test_fail_on_duplicate(self) -> None:
         ssot, u, tbl, _sc = parse_all()
-        dup = ab.parse_syscall_tbl(
+        dup = ab.parse_tbl(
             tbl_text().replace("549\tcommon\tairy_sys_rovol_ctl",
                                "548\tcommon\tairy_sys_rovol_ctl"))
-        res = ab.check_range_no_conflict(ssot, u, dup)
+        res = ab.check_range(ssot, u, dup)
         assert not res.passed
         assert "548" in res.details
 
 
 class TestNrSyscalls:
     def test_pass_572(self) -> None:
-        assert ab.check_nr_syscalls(ab.parse_unistd(unistd_text())).passed
+        assert ab.check_sys_nr(ab.parse_unistd(unistd_text())).passed
 
     def test_fail_552_regression(self) -> None:
         u = ab.parse_unistd(unistd_text(nr=552))
-        res = ab.check_nr_syscalls(u)
+        res = ab.check_sys_nr(u)
         assert not res.passed
         assert "552" in res.details
 
     def test_fail_when_missing(self) -> None:
         u = ab.parse_unistd(unistd_text().replace("#define __NR_syscalls", "#define X_NR_syscalls"))
-        res = ab.check_nr_syscalls(u)
+        res = ab.check_sys_nr(u)
         assert not res.passed
 
 
 class TestX32Forbidden:
     def test_pass(self) -> None:
         _ssot, u, tbl, _sc = parse_all()
-        assert ab.check_x32_forbidden(u, tbl).passed
+        assert ab.check_x32(u, tbl).passed
 
     def test_fail_on_x32_entry(self) -> None:
         _ssot, _u, _t, _sc = parse_all()
         u = ab.parse_unistd("#define __NR_airy_sys_call 520\n")
-        tbl = ab.parse_syscall_tbl("520\tcommon\tairy_sys_call\tsys_airy_sys_call\n")
-        res = ab.check_x32_forbidden(u, tbl)
+        tbl = ab.parse_tbl("520\tcommon\tairy_sys_call\tsys_airy_sys_call\n")
+        res = ab.check_x32(u, tbl)
         assert not res.passed
         assert "520" in res.details
 
@@ -316,26 +316,26 @@ class TestX32Forbidden:
 class TestScHeaderConsistency:
     def test_pass(self) -> None:
         ssot, u, tbl, sc = parse_all()
-        assert ab.check_sc_header_consistency(sc, ssot, u, tbl).passed
+        assert ab.check_sc_hdr(sc, ssot, u, tbl).passed
 
     def test_fail_on_slots_max(self) -> None:
         ssot, u, tbl, _ = parse_all()
         sc = ab.parse_sc_header(sc_header_text(slots=25))
-        res = ab.check_sc_header_consistency(sc, ssot, u, tbl)
+        res = ab.check_sc_hdr(sc, ssot, u, tbl)
         assert not res.passed
         assert "SLOTS_MAX" in res.details
 
     def test_fail_on_missing_core_macro(self) -> None:
         ssot, u, tbl, _ = parse_all()
         sc = ab.parse_sc_header(sc_header_text(skip=("AIRY_SYS_CALL",)))
-        res = ab.check_sc_header_consistency(sc, ssot, u, tbl)
+        res = ab.check_sc_hdr(sc, ssot, u, tbl)
         assert not res.passed
         assert "AIRY_SYS_CALL" in res.details
 
     def test_fail_on_ssot_reserved_mismatch(self) -> None:
         ssot, u, tbl, _ = parse_all(ssot=ssot_text(reserved=(552, 570)))
         sc = ab.parse_sc_header(sc_header_text())
-        res = ab.check_sc_header_consistency(sc, ssot, u, tbl)
+        res = ab.check_sc_hdr(sc, ssot, u, tbl)
         assert not res.passed
         assert "预留段" in res.details
 
@@ -343,29 +343,29 @@ class TestScHeaderConsistency:
 class TestReservedSlots:
     def test_pass(self) -> None:
         _ssot, u, tbl, _sc = parse_all()
-        assert ab.check_reserved_slots(u, tbl).passed
+        assert ab.check_rsvd(u, tbl).passed
 
     def test_fail_on_missing_slot(self) -> None:
         u = ab.parse_unistd(unistd_text(reserved=RESERVED_NUMS[:-1]))
-        tbl = ab.parse_syscall_tbl(tbl_text())
-        res = ab.check_reserved_slots(u, tbl)
+        tbl = ab.parse_tbl(tbl_text())
+        res = ab.check_rsvd(u, tbl)
         assert not res.passed
         assert "缺失预留槽" in res.details
 
     def test_fail_on_bad_name(self) -> None:
         u = ab.parse_unistd(
             unistd_text().replace("airy_reserved_4 552", "airy_reserved_99 552"))
-        tbl = ab.parse_syscall_tbl(tbl_text())
-        res = ab.check_reserved_slots(u, tbl)
+        tbl = ab.parse_tbl(tbl_text())
+        res = ab.check_rsvd(u, tbl)
         assert not res.passed
         assert "命名" in res.details
 
     def test_fail_on_bad_entry(self) -> None:
         u = ab.parse_unistd(unistd_text())
-        tbl = ab.parse_syscall_tbl(
+        tbl = ab.parse_tbl(
             tbl_text().replace("552\tcommon\tairy_reserved_4\t\tsys_ni_syscall",
                                "552\tcommon\tairy_reserved_4\t\tsys_bad"))
-        res = ab.check_reserved_slots(u, tbl)
+        res = ab.check_rsvd(u, tbl)
         assert not res.passed
         assert "入口点" in res.details
 
@@ -373,18 +373,18 @@ class TestReservedSlots:
 class TestTblAbiAndEntry:
     def test_pass(self) -> None:
         _ssot, _u, tbl, _sc = parse_all()
-        assert ab.check_tbl_abi_and_entry(tbl).passed
+        assert ab.check_tbl_abi(tbl).passed
 
     def test_fail_on_non_common_abi(self) -> None:
-        tbl = ab.parse_syscall_tbl(tbl_text(abi="x32"))
-        res = ab.check_tbl_abi_and_entry(tbl)
+        tbl = ab.parse_tbl(tbl_text(abi="x32"))
+        res = ab.check_tbl_abi(tbl)
         assert not res.passed
         assert "abi" in res.details
 
     def test_fail_on_core_entry_mismatch(self) -> None:
-        tbl = ab.parse_syscall_tbl(
+        tbl = ab.parse_tbl(
             tbl_text(core_entry={"airy_sys_call": "sys_wrong"}))
-        res = ab.check_tbl_abi_and_entry(tbl)
+        res = ab.check_tbl_abi(tbl)
         assert not res.passed
         assert "入口点" in res.details
 
@@ -457,12 +457,12 @@ class TestEndToEnd:
             ssot = ab.parse_ssot(ssot_file.read_text(encoding="utf-8"))
         else:
             assert snapshot is not None, "neither SSoT nor snapshot present"
-            ssot = ab.snapshot_to_ssot(snapshot)
+            ssot = ab.snap_ssot(snapshot)
         u = ab.parse_unistd(
             (root / ab.DEFAULT_UNISTD_REL).read_text(encoding="utf-8"))
-        tbl = ab.parse_syscall_tbl(
+        tbl = ab.parse_tbl(
             (root / ab.DEFAULT_TBL_REL).read_text(encoding="utf-8"))
-        sw_tbl = ab.parse_syscall_tbl(
+        sw_tbl = ab.parse_tbl(
             (root / ab.DEFAULT_SW64_TBL_REL).read_text(encoding="utf-8"))
         sc = ab.parse_sc_header(
             (root / ab.DEFAULT_SC_HEADER_REL).read_text(encoding="utf-8"))
@@ -470,18 +470,18 @@ class TestEndToEnd:
             (root / ab.DEFAULT_BASELINE_REL).read_text(encoding="utf-8"))
 
         results = [
-            ab.check_three_way_consistency(ssot, u, tbl),
-            ab.check_base_number(ssot, u, tbl),
-            ab.check_range_no_conflict(ssot, u, tbl),
-            ab.check_nr_syscalls(u),
-            ab.check_x32_forbidden(u, tbl),
-            ab.check_sc_header_consistency(sc, ssot, u, tbl),
-            ab.check_reserved_slots(u, tbl),
-            ab.check_tbl_abi_and_entry(tbl),
+            ab.check_3way(ssot, u, tbl),
+            ab.check_base_nr(ssot, u, tbl),
+            ab.check_range(ssot, u, tbl),
+            ab.check_sys_nr(u),
+            ab.check_x32(u, tbl),
+            ab.check_sc_hdr(sc, ssot, u, tbl),
+            ab.check_rsvd(u, tbl),
+            ab.check_tbl_abi(tbl),
             ab.check_sw64_tbl(ssot, sw_tbl),
             ab.check_arch_wire(root),
             ab.check_baseline(ssot, u, tbl, bl),
-            ab.check_snapshot_drift(ssot, snapshot, ssot_available),
+            ab.check_drift(ssot, snapshot, ssot_available),
         ]
         failed = [r.name for r in results if not r.passed]
         assert not failed, f"ABI 检查失败: {failed}"
@@ -575,7 +575,7 @@ class TestSnapshot:
         repo = tmp_path / "agent-linux"
         ssot = (tmp_path / "docs" / "docs-linux"
                 / "140-application-development" / "07-syscall-registry.md")
-        rel = ab.relative_source_path(ssot, repo)
+        rel = ab.rel_src_path(ssot, repo)
         assert rel == ("../docs/docs-linux/140-application-development"
                        "/07-syscall-registry.md")
 
@@ -611,14 +611,14 @@ class TestSnapshot:
         run_git(repo, "add", "--", "unrelated.md")
         run_git(repo, "commit", "-q", "-m", "unrelated")
         assert run_git(repo, "rev-parse", "HEAD") != owner
-        assert ab.detect_source_commit(ssot) == owner
+        assert ab.src_commit(ssot) == owner
 
     def test_snapshot_to_ssot_roundtrip(self, tmp_path: Path) -> None:
         src = tmp_path / "ssot.md"
         src.write_text(ssot_text(), encoding="utf-8")
         ssot = ab.parse_ssot(ssot_text())
         snap = ab.build_snapshot(ssot, src, tmp_path)
-        assert ab.snapshot_to_ssot(snap) == ssot
+        assert ab.snap_ssot(snap) == ssot
 
     def _snapshot(self, tmp_path: Path):
         src = tmp_path / "ssot.md"
@@ -628,31 +628,31 @@ class TestSnapshot:
 
     def test_drift_identical_passes(self, tmp_path: Path) -> None:
         ssot, snap = self._snapshot(tmp_path)
-        res = ab.check_snapshot_drift(ssot, snap, authoritative=True)
+        res = ab.check_drift(ssot, snap, authoritative=True)
         assert res.passed
 
     def test_drift_number_change_fails(self, tmp_path: Path) -> None:
         ssot, snap = self._snapshot(tmp_path)
         snap["syscalls"][0] = dict(snap["syscalls"][0], linux_number=999)
-        res = ab.check_snapshot_drift(ssot, snap, authoritative=True)
+        res = ab.check_drift(ssot, snap, authoritative=True)
         assert not res.passed
 
     def test_drift_version_change_fails(self, tmp_path: Path) -> None:
         ssot, snap = self._snapshot(tmp_path)
         snap["source"]["doc_version"] = "v9.9.9"
-        res = ab.check_snapshot_drift(ssot, snap, authoritative=True)
+        res = ab.check_drift(ssot, snap, authoritative=True)
         assert not res.passed
 
     def test_drift_missing_snapshot_fails(self) -> None:
         ssot = ab.parse_ssot(ssot_text())
-        res = ab.check_snapshot_drift(ssot, None, authoritative=True)
+        res = ab.check_drift(ssot, None, authoritative=True)
         assert not res.passed
 
     def test_drift_non_authoritative_records_provenance(self,
                                                         tmp_path: Path) -> None:
         ssot, snap = self._snapshot(tmp_path)
         snap["source"]["commit"] = "deadbeef" * 5
-        res = ab.check_snapshot_drift(ssot, snap, authoritative=False)
+        res = ab.check_drift(ssot, snap, authoritative=False)
         assert res.passed
         assert "漂移比对不可用" in res.details
         assert "deadbeefdead" in res.details
