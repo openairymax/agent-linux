@@ -184,30 +184,25 @@ def arch_entry(entry: Manifest, idx: int, rel: str) -> ArchEntry:
     return (arch, configs)
 
 
-def check_schema(manifest: Manifest) -> CheckResult:
-    """校验清单 schema：必填字段、取值与路径形态。
-
-    Args:
-        manifest: 待校验的 BTF 基线清单。
-
-    Returns:
-        schema 检查结果；失败时 details 汇总全部问题。
-    """
+def _schema_top(manifest: Manifest) -> list[str]:
+    """顶层字段：未知项、必填项与本清单要求的 .yaml 形态。"""
     problems: list[str] = []
-
     unknown = set(manifest) - MANIFEST_KEYS
     if unknown:
         problems.append(f"顶层未知字段: {', '.join(sorted(unknown))}")
-
     for key in ("version", "defconfig_matrix_manifest", "pahole_package"):
         if not manifest.get(key):
             problems.append(f"缺少或为空值的必填字段: {key}")
-
     matrix_rel = manifest.get("defconfig_matrix_manifest")
     if isinstance(matrix_rel, str) and matrix_rel \
             and not matrix_rel.endswith(".yaml"):
         problems.append("defconfig_matrix_manifest 必须是 .yaml 相对路径")
+    return problems
 
+
+def _schema_lists(manifest: Manifest) -> list[str]:
+    """四组列表字段各按自身形态校验。"""
+    problems: list[str] = []
     for key in CONFIG_LIST_KEYS:
         problems.extend(_cfg_list_errs(
             key, manifest.get(key), CONFIG_VAL_RE,
@@ -219,7 +214,19 @@ def check_schema(manifest: Manifest) -> CheckResult:
         problems.extend(_str_list_errs(key, manifest.get(key)))
     for key in WORKFLOW_LIST_KEYS:
         problems.extend(_path_list_errs(key, manifest.get(key)))
+    return problems
 
+
+def check_schema(manifest: Manifest) -> CheckResult:
+    """校验清单 schema：必填字段、取值与路径形态。
+
+    Args:
+        manifest: 待校验的 BTF 基线清单。
+
+    Returns:
+        schema 检查结果；失败时 details 汇总全部问题。
+    """
+    problems = _schema_top(manifest) + _schema_lists(manifest)
     return CheckResult("清单 schema 合法", not problems, "\n".join(problems))
 
 
