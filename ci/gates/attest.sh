@@ -428,18 +428,13 @@ if diff:
 PY
 }
 
-att_pub()
+# 注解里的 subject 口径随 subject 数量变：单件写它的摘要，多件写整份
+# 名字-摘要集合的摘要，并另记条数。回收端与反查端要的是「证明对上了
+# 哪一份东西」，条数让「集合被悄悄缩小」也能在注解层发现。
+# 输出四行：条数 / 单件摘要 / 集合摘要 / buildId，调用方按行读取。
+att_meta()
 {
-    local file sum bid n one set target have prev
-    [ -n "${OUT}" ] && [ -n "${TAG}" ] || { usage >&2; exit "${EINVAL}"; }
-    need_cmd oras python3 sha256sum
-    file="$(att_out)"
-    [ -s "${file}" ] || die "缺少证明，先运行 build: ${file}"
-    sum="$(sha256sum "${file}" | cut -d' ' -f1)"
-    # 注解里的 subject 口径随 subject 数量变：单件写它的摘要，多件写整份
-    # 名字-摘要集合的摘要，并另记条数。回收端与反查端要的是「证明对上了
-    # 哪一份东西」，条数让「集合被悄悄缩小」也能在注解层发现。
-    { read -r n; read -r one; read -r set; read -r bid; } < <(python3 - "${file}" <<'PY'
+    python3 - "$1" <<'PY'
 import hashlib
 import json
 import sys
@@ -455,37 +450,22 @@ print(one)
 print(set_digest)
 print(st["predicate"]["buildDefinition"]["internalParameters"]["buildId"])
 PY
-    )
-    [ -n "${bid}" ] || die "证明缺 buildId: ${file}"
-    att_login
-    target="${REF}:attest-${TAG}"
-    if att_fetch "${target}"; then
-        have="$(att_ann "${ANN}.sha256")"
-        if [ "${have}" = "${sum}" ]; then
-            say "同一份证明已发布，跳过: ${target}"
-            return 0
-        fi
-        mkdir -p "${WORK}/prev"
-        prev="${WORK}/prev/${file##*/}"
-        if oras pull "${target}" -o "${WORK}/prev" >/dev/null 2>&1 &&
-            [ -s "${prev}" ]; then
-            if att_facts "${file}" "${prev}" >"${WORK}/facts.log" 2>&1; then
-                say "已发布证明所证事实与本地一致，保留原证明: ${target}"
-                return 0
-            fi
-            awk '{ print "  差异: " $0 }' "${WORK}/facts.log" >&2
-        fi
-        [ "${FORCE}" -eq 1 ] ||
-            die "已存在不同证明（sha256=${have:-空}）；确认替换才加 --force"
-    fi
-    ( cd "${file%/*}" && oras push --artifact-type "${ATTEST_TYPE}" \
-        --annotation "${ANN}.sha256=${sum}" \
-        --annotation "${ANN}.build-id=${bid}" \
-        --annotation "${ANN}.subject-sha256=${one:-${set}}" \
-        --annotation "${ANN}.subjects=${n}" \
-        --annotation "${ANN}.tag=${TAG}" \
-        "${target}" "${file##*/}:${ATTEST_TYPE}" ) >"${WORK}/push.log" 2>&1 ||
-        die "推送证明失败: ${target}"
+}
+
+# 缺 buildId 的证明不能发：注解里会写空值，回收端与反查端都无从确认它是
+# 哪一轮产出。出证端已经拒过一次，发布端拿到旧文件时同样要拒。
+att_need_bid()
+{
+    local bid
+    bid="$(att_meta "$1" | sed -n '4p')"
+    [ -n "${bid}" ] || die "证明缺 buildId: $1"
+}
+
+# 回读：注解、buildId 与字节三处与本地逐项比对。推后不读回等于相信网络
+# 成功——body 可能被截断而客户端只看状态码。
+att_back()
+{
+    local target="$1" file="$2" sum="$3" bid="$4"
     att_fetch "${target}" || die "推送后取不回证明: ${target}"
     [ "$(att_ann "${ANN}.sha256")" = "${sum}" ] || die "回读摘要与本地不一致"
     [ "$(att_ann "${ANN}.build-id")" = "${bid}" ] || die "回读 buildId 与本地不一致"
@@ -494,6 +474,67 @@ PY
         die "取回证明失败: ${target}"
     cmp -s "${file}" "${WORK}/back/${file##*/}" ||
         die "取回字节与本地不一致: ${target}"
+}
+
+# 推送与回读是一件事：注解、buildId 与字节都要与本地一致，任一处不符即
+# 判失败，不留半份证明。
+att_put()
+{
+    local target="$1" file="$2" sum="$3" n one set bid
+    { read -r n; read -r one; read -r set; read -r bid; } < <(att_meta "${file}")
+    ( cd "${file%/*}" && oras push --artifact-type "${ATTEST_TYPE}" \
+        --annotation "${ANN}.sha256=${sum}" \
+        --annotation "${ANN}.build-id=${bid}" \
+        --annotation "${ANN}.subject-sha256=${one:-${set}}" \
+        --annotation "${ANN}.subjects=${n}" \
+        --annotation "${ANN}.tag=${TAG}" \
+        "${target}" "${file##*/}:${ATTEST_TYPE}" ) >"${WORK}/push.log" 2>&1 ||
+        die "推送证明失败: ${target}"
+    att_back "${target}" "${file}" "${sum}" "${bid}"
+}
+
+# 已发布证明与本地比：字节相同即同一份；不同则先比所证事实，事实相同保留
+# 原证明（重放轮不必为空白差异重写历史），事实不同才要求 --force。
+# 返回 1 表示已有等价证明、本轮不必推送，0 表示继续推送。
+att_prev()
+{
+    local target="$1" file="$2" sum="$3" have prev
+    att_fetch "${target}" || return 0
+    have="$(att_ann "${ANN}.sha256")"
+    if [ "${have}" = "${sum}" ]; then
+        say "同一份证明已发布，跳过: ${target}"
+        return 1
+    fi
+    mkdir -p "${WORK}/prev"
+    prev="${WORK}/prev/${file##*/}"
+    if oras pull "${target}" -o "${WORK}/prev" >/dev/null 2>&1 &&
+        [ -s "${prev}" ]; then
+        if att_facts "${file}" "${prev}" >"${WORK}/facts.log" 2>&1; then
+            say "已发布证明所证事实与本地一致，保留原证明: ${target}"
+            return 1
+        fi
+        awk '{ print "  差异: " $0 }' "${WORK}/facts.log" >&2
+    fi
+    [ "${FORCE}" -eq 1 ] ||
+        die "已存在不同证明（sha256=${have:-空}）；确认替换才加 --force"
+    return 0
+}
+
+# 发布按「前置 → 远端比对 → 推送回读」三段：前置只看本地证明能否发布，
+# 比对决定是否重推，推送回读保证远端与本地一致。
+att_pub()
+{
+    local file sum target
+    [ -n "${OUT}" ] && [ -n "${TAG}" ] || { usage >&2; exit "${EINVAL}"; }
+    need_cmd oras python3 sha256sum
+    file="$(att_out)"
+    [ -s "${file}" ] || die "缺少证明，先运行 build: ${file}"
+    sum="$(sha256sum "${file}" | cut -d' ' -f1)"
+    att_need_bid "${file}"
+    att_login
+    target="${REF}:attest-${TAG}"
+    att_prev "${target}" "${file}" "${sum}" || return 0
+    att_put "${target}" "${file}" "${sum}"
     say "证明已发布并回读一致: ${target}"
 }
 
