@@ -70,44 +70,45 @@ def after_preamble(lines):
 def parse_blocks(lines):
     """按块解析 MAINTAINERS，返回 (块名, [(路径, [所有者])]) 列表。"""
     blocks = []
-    name = ""
-    paths = []
-    owners = []
-
-    def flush():
-        if not paths:
-            return
-        if not owners:
-            raise FeedError(f"块「{name or '未命名'}」有 F: 却没有 O:，"
-                            "无法投影出合法 owner")
-        blocks.append((name, [(p, list(owners)) for p in paths]))
-
+    state = {"name": "", "paths": [], "owners": []}
     for line in lines:
-        if not line.strip() or COMMENT.match(line):
-            continue
-        if line[0] in " \t":
+        if not line.strip() or COMMENT.match(line) or line[0] in " \t":
             continue
         match = FIELD.match(line)
-        if not match:
-            flush()
-            name = line.strip()
-            paths = []
-            owners = []
+        if match:
+            field_add(state, match.group(1), match.group(2).strip())
             continue
-        key, value = match.group(1), match.group(2).strip()
-        if key == "F":
-            if not value or not PATH.match(value):
-                raise FeedError(f"块「{name}」的 F: 不是单一路径: {value!r}")
-            paths.append(value)
-        elif key == "O":
-            for handle in value.split():
-                if not HANDLE.match(handle):
-                    raise FeedError(
-                        f"块「{name}」的 O: 不是 GitHub 句柄: {handle!r}")
-                if handle not in owners:
-                    owners.append(handle)
-    flush()
+        flush_block(blocks, state)
+        state = {"name": line.strip(), "paths": [], "owners": []}
+    flush_block(blocks, state)
     return blocks
+
+
+def flush_block(blocks, state):
+    """块尾落库：只有 F: 的块必须带 O:，否则投影不出合法 owner。"""
+    paths, owners = state["paths"], state["owners"]
+    if not paths:
+        return
+    if not owners:
+        raise FeedError(f"块「{state['name'] or '未命名'}」有 F: 却没有 O:，"
+                        "无法投影出合法 owner")
+    blocks.append((state["name"], [(p, list(owners)) for p in paths]))
+
+
+def field_add(state, key, value):
+    """块内字段：F: 收单一路径，O: 收去重的 GitHub 句柄。"""
+    if key == "F":
+        if not value or not PATH.match(value):
+            raise FeedError(
+                f"块「{state['name']}」的 F: 不是单一路径: {value!r}")
+        state["paths"].append(value)
+    elif key == "O":
+        for handle in value.split():
+            if not HANDLE.match(handle):
+                raise FeedError(
+                    f"块「{state['name']}」的 O: 不是 GitHub 句柄: {handle!r}")
+            if handle not in state["owners"]:
+                state["owners"].append(handle)
 
 
 def render(blocks):
