@@ -740,19 +740,29 @@ def preflight(
     allow_unverified: bool = False,
 ) -> list[Check]:
     """写入前必须全部通过的判定；任一条 FAIL 即拒绝写设备。"""
-    checks: list[Check] = []
+    return _target_checks(device) + [
+        _capacity_check(device, image),
+        _digest_check(expected, source, allow_unverified),
+    ]
 
-    if device.kind == "block":
+
+def _target_checks(device: DeviceFacts) -> list[Check]:
+    """靶子四项：块设备、非系统盘、未挂载、非只读。
+
+    「非系统盘」「非只读」只对块设备有定义：普通文件靶子上判「系统盘:
+    （未识别）」既非通过也非失败，读起来像结论，实际什么也没说，整条标
+    skipped 才是准确的表述。顺序与报告里的阅读顺序一致，不要重排。
+    """
+    block = device.kind == "block"
+    checks: list[Check] = []
+    if block:
         checks.append(Check("目标是块设备", True, str(device.path)))
     else:
         checks.append(
             Check("目标是块设备", True, f"{device.path}（普通文件，测试模式）", skipped=True)
         )
-
-    # 「非系统盘」只对块设备有定义：普通文件靶子上判「系统盘: （未识别）」
-    # 既非通过也非失败，读起来像结论，实际什么也没说。
-    if device.kind == "block":
-        hosts = ", ".join(device.system_disks) or "（未识别）"
+    hosts = ", ".join(device.system_disks) or "（未识别）"
+    if block:
         checks.append(
             Check(
                 "非系统盘",
@@ -765,21 +775,17 @@ def preflight(
         )
     else:
         checks.append(Check("非系统盘", True, "普通文件靶子无系统盘概念", skipped=True))
-
     checks.append(
         Check(
             "未挂载",
             not device.mountpoints,
-            (
-                f"已挂载于 {', '.join(device.mountpoints)}，请先 umount"
-                if device.mountpoints
-                else "无挂载点"
-            ),
+            f"已挂载于 {', '.join(device.mountpoints)}，请先 umount"
+            if device.mountpoints
+            else "无挂载点",
             fix="umount 该盘上的所有挂载点后重试",
         )
     )
-
-    if device.kind == "block":
+    if block:
         checks.append(
             Check(
                 "非只读",
@@ -792,35 +798,31 @@ def preflight(
         )
     else:
         checks.append(Check("非只读", True, "普通文件读写", skipped=True))
+    return checks
 
+
+def _capacity_check(device: DeviceFacts, image: ImageFacts) -> Check:
     enough = device.size >= image.size
-    checks.append(
-        Check(
-            "容量充足",
-            enough,
-            f"{human_bytes(device.size)} {'≥' if enough else '<'} "
-            f"{human_bytes(image.size)}",
-            fix=f"换用容量不小于 {human_bytes(image.size)} 的设备",
-        )
+    return Check(
+        "容量充足",
+        enough,
+        f"{human_bytes(device.size)} {'≥' if enough else '<'} "
+        f"{human_bytes(image.size)}",
+        fix=f"换用容量不小于 {human_bytes(image.size)} 的设备",
     )
 
-    if expected:
-        checks.append(Check("校验和来源", True, source))
-    elif allow_unverified:
-        checks.append(
-            Check("校验和来源", True, "未提供发布摘要（--allow-unverified）", skipped=True)
-        )
-    else:
-        checks.append(
-            Check(
-                "校验和来源",
-                False,
-                "缺少发布 .sha256；用 --sha256/--sums 指定，或显式 --allow-unverified",
-                fix="从发布页取回同名 .sha256，或用 --sha256 直接给出摘要",
-            )
-        )
 
-    return checks
+def _digest_check(expected: str, source: str, allow_unverified: bool) -> Check:
+    if expected:
+        return Check("校验和来源", True, source)
+    if allow_unverified:
+        return Check("校验和来源", True, "未提供发布摘要（--allow-unverified）", skipped=True)
+    return Check(
+        "校验和来源",
+        False,
+        "缺少发布 .sha256；用 --sha256/--sums 指定，或显式 --allow-unverified",
+        fix="从发布页取回同名 .sha256，或用 --sha256 直接给出摘要",
+    )
 
 
 # ─── 写入与回读 ─────────────────────────────────────────────────────────────
