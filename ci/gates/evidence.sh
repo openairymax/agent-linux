@@ -89,52 +89,82 @@ take()
 #
 # 腿目录不存在（前一条腿失败后后续腿被跳过）不是参数错误：那正是需要
 # 记录的情形。按四件套全缺登记，其余腿的证据照常入包。
+#
+# 四类各自一个步骤：固定两件、启动日志、冒烟 TAP、其余日志。原先四段
+# 判据共用一个循环变量与一组 continue，多一类别就要再压一层分支，读的
+# 人还得记住「哪一段在前」才知道缺件登记的顺序。
+
+# all_miss LEG —— 腿目录不存在：按四件套全缺登记。
+all_miss()
+{
+    local f
+    for f in tap.txt install-manifest.txt 'run-*/boot.log' 'smoke-*.tap'; do
+        miss "$1/${f}"
+    done
+}
+
+# take_fixed LEG DIR NAME —— 四件套里的固定文件名。
+take_fixed()
+{
+    if [ -f "$2/$3" ]; then
+        take "$1" "$2" "$2/$3"
+    else
+        miss "$1/$3"
+    fi
+}
+
+# take_glob LEG DIR PATTERN REQUIRED —— 一层通配：命中逐条入包，不命中时
+# 验收剖面记缺件，产品剖面只计入「无冒烟 TAP」的告警数。
+#
+# 通配展开必须在本函数内开关 nullglob：调用方的 shopt 状态不受影响，也
+# 不会因为中途 return 而留在打开状态。
+take_glob()
+{
+    local -a hits=()
+    local f
+    shopt -s nullglob
+    # shellcheck disable=SC2206
+    hits=("$2"/$3)
+    shopt -u nullglob
+    if [ "${#hits[@]}" -ne 0 ]; then
+        for f in "${hits[@]}"; do
+            take "$1" "$2" "${f}"
+        done
+        return 0
+    fi
+    if [ "${4}" -eq 1 ]; then
+        miss "$1/$3"
+    else
+        NOTAP=$((NOTAP + 1))
+    fi
+}
+
+# take_logs LEG DIR —— 同目录下的其余日志，是失败归因的一手材料：
+# 存在即收，缺失不判。
+take_logs()
+{
+    local f
+    shopt -s nullglob
+    for f in "$2"/run-*/*.log; do
+        case "${f}" in */boot.log) continue ;; esac
+        take "$1" "$2" "${f}"
+    done
+    shopt -u nullglob
+}
+
 collect()
 {
-    local dir="$1" leg f
-    local -a quad=(tap.txt install-manifest.txt 'run-*/boot.log' 'smoke-*.tap')
+    local dir="$1" leg
     leg="$(basename "${dir}")"
     if [ ! -d "${dir}" ]; then
-        for f in "${quad[@]}"; do
-            miss "${leg}/${f}"
-        done
+        all_miss "${leg}"
         return
     fi
-    for f in tap.txt install-manifest.txt; do
-        if [ -f "${dir}/${f}" ]; then
-            take "${leg}" "${dir}" "${dir}/${f}"
-        else
-            miss "${leg}/${f}"
-        fi
-    done
-
-    shopt -s nullglob
-    local boots=("${dir}"/run-*/boot.log) taps=("${dir}"/smoke-*.tap)
-    shopt -u nullglob
-    if [ "${#boots[@]}" -eq 0 ]; then
-        miss "${leg}/run-*/boot.log"
-    else
-        for f in "${boots[@]}"; do take "${leg}" "${dir}" "${f}"; done
-    fi
-    if [ "${#taps[@]}" -eq 0 ]; then
-        # 产品 ISO 本就不产冒烟 TAP：不记缺件，但要在结论里说明，否则
-        # 「四件套齐全」会让人以为冒烟那一路也验过了。
-        if [ "${REQUIRE}" -eq 1 ]; then
-            miss "${leg}/smoke-*.tap"
-        else
-            NOTAP=$((NOTAP + 1))
-        fi
-    else
-        for f in "${taps[@]}"; do take "${leg}" "${dir}" "${f}"; done
-    fi
-
-    # 同目录下的其余日志是失败归因的一手材料，存在即收，缺失不判。
-    shopt -s nullglob
-    for f in "${dir}"/run-*/*.log; do
-        case "${f}" in */boot.log) continue ;; esac
-        take "${leg}" "${dir}" "${f}"
-    done
-    shopt -u nullglob
+    take_fixed "${leg}" "${dir}" tap.txt
+    take_fixed "${leg}" "${dir}" install-manifest.txt
+    take_glob "${leg}" "${dir}" 'run-*/boot.log' 1
+    take_glob "${leg}" "${dir}" 'smoke-*.tap' "${REQUIRE}"
+    take_logs "${leg}" "${dir}"
 }
 
 for d in "${DIRS[@]}"; do
