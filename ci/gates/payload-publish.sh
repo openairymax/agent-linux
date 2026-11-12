@@ -121,6 +121,8 @@ PP_SUM=()
 PP_BASE=()
 PP_COUNT=""
 PP_ARCH=""
+PP_HIT=0
+PP_N=0
 
 pp_read()
 {
@@ -274,15 +276,27 @@ pp_revoke()
     err "删除失败，请人工执行: oras manifest delete --force ${REF}:${TAG}"
 }
 
-pull()
+# pp_arch —— 架构门：清单声明的架构与请求不符时回落上游求解。请求未指定
+# 架构、或清单缺该字段，都不构成拒绝理由。
+pp_arch()
 {
-    local n=0 hit=0 base got i arch_note=""
+    [ -n "${ARCH}" ] || return 0
+    [ -n "${PP_ARCH}" ] || return 0
+    [ "${PP_ARCH}" != "${ARCH}" ] || return 0
+    say "制品架构不符（清单 ${PP_ARCH}，期望 ${ARCH}），回落上游求解"
+    return 1
+}
+
+# pp_get —— 拉取并解出载荷、读清单、过架构门；返回 1 表示回落上游求解
+# （原因已打印），返回 0 表示 ${tmp}/in/x 可用。
+pp_get()
+{
     login
     if ! oras pull "${REF}:${TAG}" -o "${tmp}/in" >"${tmp}/in.log" 2>&1; then
         if grep -qiE 'not found|404|manifest unknown|NAME_UNKNOWN' \
             "${tmp}/in.log"; then
             say "制品尚未发布（${REF}:${TAG}），回落上游求解"
-            return 0
+            return 1
         fi
         cat "${tmp}/in.log" >&2
         die "oras 拉取失败: ${REF}:${TAG}"
@@ -294,37 +308,50 @@ pull()
 
     pp_read "${tmp}/in/payload-manifest.txt" || {
         say "制品清单不可用（${REF}:${TAG}），回落上游求解"
-        return 0
+        return 1
     }
-    if [ -n "${ARCH}" ] && [ -n "${PP_ARCH}" ] && [ "${PP_ARCH}" != "${ARCH}" ]; then
-        say "制品架构不符（清单 ${PP_ARCH}，期望 ${ARCH}），回落上游求解"
-        return 0
-    fi
-    [ -n "${ARCH}" ] && arch_note=" arch=${PP_ARCH:-unknown}"
+    pp_arch || return 1
+    return 0
+}
+
+# pp_fill —— 逐包比对摘要后进池，计数写进 PP_HIT/PP_N。池只提供字节，
+# 不提供事实：不符的文件丢弃，其余照常进池，本轮由 dnf 从上游补回这一份。
+pp_fill()
+{
+    local base got i
 
     mkdir -p "${DIR}"
     for i in "${!PP_BASE[@]}"; do
         base="${PP_BASE[$i]}"
-        n=$((n + 1))
+        PP_N=$((PP_N + 1))
         [ -f "${tmp}/in/x/${base}" ] || continue
         got="$(sha256sum "${tmp}/in/x/${base}" | cut -d' ' -f1)"
         if [ "${got}" != "${PP_SUM[$i]}" ]; then
-            # 池只提供字节，不提供事实：不符的文件丢弃，其余照常进池，本轮
-            # 由 dnf 从上游补回这一份。
             say "丢弃 ${base}（sha256 与清单不符）"
             continue
         fi
         [ -f "${DIR}/${base}" ] && {
-            hit=$((hit + 1))
+            PP_HIT=$((PP_HIT + 1))
             continue
         }
         cp -p "${tmp}/in/x/${base}" "${DIR}/${base}" ||
             die "写入池失败: ${DIR}/${base}"
-        hit=$((hit + 1))
+        PP_HIT=$((PP_HIT + 1))
     done
-    printf 'tag=%s\nrpm=%s\ntotal=%s\nsource=ghcr\n' "${TAG}" "${hit}" "${n}" \
-        >"${DIR}/${MARK_SRC}"
-    say "回取 ${hit}/${n}${arch_note}（${REF}:${TAG}）"
+}
+
+pull()
+{
+    local arch_note=""
+
+    PP_HIT=0
+    PP_N=0
+    pp_get || return 0
+    [ -n "${ARCH}" ] && arch_note=" arch=${PP_ARCH:-unknown}"
+    pp_fill
+    printf 'tag=%s\nrpm=%s\ntotal=%s\nsource=ghcr\n' \
+        "${TAG}" "${PP_HIT}" "${PP_N}" >"${DIR}/${MARK_SRC}"
+    say "回取 ${PP_HIT}/${PP_N}${arch_note}（${REF}:${TAG}）"
 }
 
 case "${CMD}" in
