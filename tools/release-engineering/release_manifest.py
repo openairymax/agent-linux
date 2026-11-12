@@ -280,6 +280,29 @@ def _split_globs(value: Any) -> Globs:
             if normalize_glob(line)}
 
 
+def _step_globs(step: Any) -> Globs:
+    """按 step 的 uses 取它声明的产物 glob；非产出 step 返回空集。"""
+    if not isinstance(step, dict):
+        return set()
+    uses = str(step.get("uses", ""))
+    params = step.get("with") or {}
+    if uses.startswith(UPLOAD_ARTIFACT_USES):
+        return _split_globs(params.get("path"))
+    if uses.startswith(GH_RELEASE_USES):
+        return _split_globs(params.get("files"))
+    return set()
+
+
+def _job_globs(job: Any) -> Globs:
+    """单个 job 内全部产出 step 的 glob 并集。"""
+    if not isinstance(job, dict):
+        return set()
+    globs: Globs = set()
+    for step in job.get("steps") or []:
+        globs |= _step_globs(step)
+    return globs
+
+
 def pipeline_globs(path: Path) -> Globs:
     """收集发布流水线声明的全部产物 glob。
 
@@ -302,16 +325,7 @@ def pipeline_globs(path: Path) -> Globs:
 
     globs: Globs = set()
     for job in jobs.values():
-        steps = job.get("steps") if isinstance(job, dict) else None
-        for step in steps or []:
-            if not isinstance(step, dict):
-                continue
-            uses = str(step.get("uses", ""))
-            params = step.get("with") or {}
-            if uses.startswith(UPLOAD_ARTIFACT_USES):
-                globs |= _split_globs(params.get("path"))
-            elif uses.startswith(GH_RELEASE_USES):
-                globs |= _split_globs(params.get("files"))
+        globs |= _job_globs(job)
     if not globs:
         raise ToolError(f"发布流水线未声明任何产物（upload-artifact / release）："
                         f"{path}")
@@ -987,6 +1001,27 @@ def parse_nevra(path: Path) -> Nevra:
     return Nevra(**matched.groupdict())
 
 
+def _ledger_fields(lines: Sequence[str]) -> dict[str, str]:
+    """逐行取值：只认 LEDGER_KEYS，同键保留首次出现的值。"""
+    ledger: dict[str, str] = {}
+    for line in lines:
+        key, sep, value = line.partition("=")
+        if sep and key.strip() in LEDGER_KEYS:
+            ledger.setdefault(key.strip(), value.strip())
+    return ledger
+
+
+def _ledger_check(ledger: dict[str, str], path: Path) -> None:
+    """字段齐备性与取值合法性；任一项不成立即抛 ToolError。"""
+    missing = [key for key in LEDGER_KEYS if key not in ledger]
+    if missing:
+        raise ToolError(f"ISO 账本缺少字段 {'/'.join(missing)}：{path}")
+    if not DIGEST_RE.match(ledger["sha256"]):
+        raise ToolError(f"ISO 账本 sha256 非法：{ledger['sha256']}")
+    if not ledger["size"].isdigit():
+        raise ToolError(f"ISO 账本 size 非法：{ledger['size']}")
+
+
 def read_ledger(path: Path) -> dict[str, str]:
     """读取 iso-oci.txt 账本的单值字段。
 
@@ -1009,19 +1044,8 @@ def read_ledger(path: Path) -> dict[str, str]:
     except OSError as exc:
         raise ToolError(f"ISO 账本无法读取：{path}: {exc}") from exc
 
-    ledger: dict[str, str] = {}
-    for line in lines:
-        key, sep, value = line.partition("=")
-        if sep and key.strip() in LEDGER_KEYS:
-            ledger.setdefault(key.strip(), value.strip())
-
-    missing = [key for key in LEDGER_KEYS if key not in ledger]
-    if missing:
-        raise ToolError(f"ISO 账本缺少字段 {'/'.join(missing)}：{path}")
-    if not DIGEST_RE.match(ledger["sha256"]):
-        raise ToolError(f"ISO 账本 sha256 非法：{ledger['sha256']}")
-    if not ledger["size"].isdigit():
-        raise ToolError(f"ISO 账本 size 非法：{ledger['size']}")
+    ledger = _ledger_fields(lines)
+    _ledger_check(ledger, path)
     return ledger
 
 
