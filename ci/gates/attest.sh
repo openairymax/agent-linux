@@ -5,6 +5,7 @@
 #
 # 用法: ci/gates/attest.sh build   --out DIR --tag TAG [--kind iso|rel]
 #                                  [--iso-rel REL] [--manifest FILE]
+#                                  [--build-run RUN]
 #       ci/gates/attest.sh publish --out DIR --tag TAG [--kind iso|rel]
 #                                  [--iso-rel REL] [--ref REPO] [--token TOKEN]
 #                                  [--force]
@@ -27,14 +28,21 @@
 #   * buildId 取自镜像自带的构建清单（image-ci-manifest.txt），不是重新推导。
 #     重新推导会得到「本 gate 认为应该是的值」，与镜像内实际写入的值一旦
 #     分叉，证明就会替错误的镜像背书。清单缺失时才退回 buildid.sh 复算。
-#   * 时间戳一律不写。同一输入重跑必须得到同一份字节，否则幂等判断失效，
-#     每次重跑都会把证明刷成「与上次不同」而要求 --force。
+#     发布重放时作业本轮不是构建轮，--build-run 把指纹与 provenance 一并钉到
+#     产出资产的那一轮；否则同一批资产会因为「谁在发布」而得到两份证明。
+#   * 时间戳与 attempt 一律不写：同一构建轮加同一批资产必须产出同一份字节，
+#     重放才不需要 --force。此前把发布轮写进 runId/attempt，真重放时字节
+#     必然漂移，幂等判断无从成立。
 #   * subject 的摘要现算，比较按集合：名字集合相等且逐项摘要相等才算过。
 #     跳过某一项与改掉某一项是同一类错误，不能只查「清单里的都对得上」。
 #
 # 发布是内容寻址的：证明以 attest-<tag> 这个固定标签推入发行物所在仓库，
 # 因此 oras manifest fetch <repo>:attest-<tag> 就能看到它，不需要先知道
 # 产物摘要。推后回读比对注解、摘要与字节，任一处不符即失败，不留半份证明。
+#
+# 已发布证明与本地字节不同时，先比所证事实（buildId、commit、ref、kind、
+# tag、subject 集合）：事实相同即同一份证明的另一种写法，保留原证明并跳过，
+# 重放轮不必为空白差异重写历史；事实不同才拒绝，需 --force 才替换。
 #
 # 退出码: 0 成功；1 生成、校验、推送或回读失败；5 参数不满足。
 # ===========================================================================
@@ -71,10 +79,11 @@ FILE=""
 ISO=""
 SRC_DIR=""
 BID=""
+BUILD_RUN=""
 
 usage()
 {
-    echo "用法: ci/gates/attest.sh build   --out DIR --tag TAG [--kind iso|rel] [--iso-rel REL] [--manifest FILE]"
+    echo "用法: ci/gates/attest.sh build   --out DIR --tag TAG [--kind iso|rel] [--iso-rel REL] [--manifest FILE] [--build-run RUN]"
     echo "      ci/gates/attest.sh publish --out DIR --tag TAG [--kind iso|rel] [--iso-rel REL] [--ref REPO] [--token TOKEN] [--force]"
     echo "      ci/gates/attest.sh verify  --file FILE (--iso FILE | --dir DIR) [--build-id ID]"
 }
@@ -94,6 +103,7 @@ while [ "$#" -gt 0 ]; do
         --iso)      ISO="${2:-}"; shift 2 ;;
         --dir)      SRC_DIR="${2:-}"; shift 2 ;;
         --build-id) BID="${2:-}"; shift 2 ;;
+        --build-run) BUILD_RUN="${2:-}"; shift 2 ;;
         -h|--help)  usage; exit 0 ;;
         *) die "未知参数: $1" ;;
     esac
@@ -103,6 +113,10 @@ done
 case "${KIND}" in
 iso|rel) ;;
 *) err "--kind 只接受 iso 或 rel: ${KIND}"; exit "${EINVAL}" ;;
+esac
+case "${BUILD_RUN}" in
+"") ;;
+*[!0-9]*) err "--build-run 只接受数字 run id: ${BUILD_RUN}"; exit "${EINVAL}" ;;
 esac
 
 WORK="$(mktemp -d)"
@@ -146,10 +160,16 @@ att_bid()
 # 发布作业没有检出 distro 子模块，airy_build_id 会退到第 4 级「配方摘要」，
 # 而那里一个 spec 都读不到，结果是一个与产物无关的空摘要。run id 与检出
 # 提交都是手上已有的原生量，补进环境让指纹停在正确的优先级上。
+# --build-run 给出的是产出资产的那一轮，重放时它不等于作业本轮；指纹与
+# provenance 都必须跟它走，否则同一批资产会随发布轮不同而得到不同证明。
 att_run()
 {
-    [ -z "${AIRYMAX_RUN_ID:-}" ] && [ -n "${GITHUB_RUN_ID:-}" ] || return 0
-    export AIRYMAX_RUN_ID="${GITHUB_RUN_ID}"
+    if [ -n "${BUILD_RUN}" ]; then
+        export AIRYMAX_RUN_ID="${BUILD_RUN}"
+        export AIRYMAX_BUILD_RUN="${BUILD_RUN}"
+    elif [ -z "${AIRYMAX_RUN_ID:-}" ] && [ -n "${GITHUB_RUN_ID:-}" ]; then
+        export AIRYMAX_RUN_ID="${GITHUB_RUN_ID}"
+    fi
     AIRYMAX_COMMIT="${AIRYMAX_COMMIT:-$(git -C "${ROOT}" rev-parse HEAD)}"
     export AIRYMAX_COMMIT
 }
@@ -228,13 +248,11 @@ with open(subj_file, encoding="utf-8") as fh:
         subjects.append({"name": name, "digest": {"sha256": digest}})
 repo = os.environ.get("GITHUB_REPOSITORY") or "openairymax/agent-linux"
 server = os.environ.get("GITHUB_SERVER_URL") or "https://github.com"
-run = os.environ.get("GITHUB_RUN_ID") or ""
-attempt = os.environ.get("GITHUB_RUN_ATTEMPT") or "1"
+run = os.environ.get("AIRYMAX_BUILD_RUN") or os.environ.get("GITHUB_RUN_ID") or ""
 ref = os.environ.get("GITHUB_REF") or ("refs/tags/" + tag)
 builder = (server + "/" + repo + "/actions/runs/" + run) if run \
     else "local://ci/gates/attest.sh"
-inv = (repo + "/actions/runs/" + run + "/attempts/" + attempt) if run \
-    else "local"
+inv = (repo + "/actions/runs/" + run) if run else "local"
 build_type = {
     "iso": "https://openairymax.org/buildtypes/oci-iso/v1",
     "rel": "https://openairymax.org/buildtypes/release-assets/v1",
@@ -253,7 +271,7 @@ st = {
             "externalParameters": params,
             "internalParameters": {"buildId": bid, "commit": commit,
                                    "repository": repo, "runId": run,
-                                   "runAttempt": attempt, "ref": ref},
+                                   "ref": ref},
             "resolvedDependencies": [{
                 "uri": "git+" + server + "/" + repo + "@" + commit,
                 "digest": {"gitCommit": commit}}],
@@ -372,9 +390,45 @@ with open(sys.argv[1], encoding="utf-8") as fh:
 PY
 }
 
+# 两份证明是不是在说同一件事：所证事实（谁构建的、哪个提交、哪一批摘要）
+# 相同即等价，run 之外的行文差异（键顺序、空白、provenance 里的发布轮）
+# 不构成新证明。事实不同则必须由人确认，不能靠 --force 覆盖掉旧记录。
+att_facts()
+{
+    python3 - "$1" "$2" <<'PY'
+import json
+import sys
+
+
+def facts(path):
+    with open(path, encoding="utf-8") as fh:
+        st = json.load(fh)
+    bd = (st.get("predicate") or {}).get("buildDefinition") or {}
+    ib = bd.get("internalParameters") or {}
+    ext = bd.get("externalParameters") or {}
+    subj = sorted((s.get("name"), (s.get("digest") or {}).get("sha256"))
+                  for s in st.get("subject") or [])
+    return {"buildId": ib.get("buildId"), "commit": ib.get("commit"),
+            "ref": ib.get("ref"), "kind": ext.get("kind"),
+            "tag": ext.get("tag"), "subjects": subj}
+
+
+try:
+    mine, theirs = facts(sys.argv[1]), facts(sys.argv[2])
+except Exception as exc:  # 取回的不是证明 JSON，等同于「事实不可比」
+    print("已发布证明不可解析: %s" % exc, file=sys.stderr)
+    sys.exit(1)
+diff = [k for k in mine if mine[k] != theirs[k]]
+if diff:
+    for k in diff:
+        print("%s: 本地=%r 已发布=%r" % (k, mine[k], theirs[k]), file=sys.stderr)
+    sys.exit(1)
+PY
+}
+
 att_pub()
 {
-    local file sum bid n one set target have
+    local file sum bid n one set target have prev
     [ -n "${OUT}" ] && [ -n "${TAG}" ] || { usage >&2; exit "${EINVAL}"; }
     need_cmd oras python3 sha256sum
     file="$(att_out)"
@@ -405,9 +459,19 @@ PY
     target="${REF}:attest-${TAG}"
     if att_fetch "${target}"; then
         have="$(att_ann "${ANN}.sha256")"
-        if [ "${have}" = "${sum}" ] && [ "${FORCE}" -eq 0 ]; then
+        if [ "${have}" = "${sum}" ]; then
             say "同一份证明已发布，跳过: ${target}"
             return 0
+        fi
+        mkdir -p "${WORK}/prev"
+        prev="${WORK}/prev/${file##*/}"
+        if oras pull "${target}" -o "${WORK}/prev" >/dev/null 2>&1 &&
+            [ -s "${prev}" ]; then
+            if att_facts "${file}" "${prev}" >"${WORK}/facts.log" 2>&1; then
+                say "已发布证明所证事实与本地一致，保留原证明: ${target}"
+                return 0
+            fi
+            awk '{ print "  差异: " $0 }' "${WORK}/facts.log" >&2
         fi
         [ "${FORCE}" -eq 1 ] ||
             die "已存在不同证明（sha256=${have:-空}）；确认替换才加 --force"
