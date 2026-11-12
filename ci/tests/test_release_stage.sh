@@ -122,9 +122,14 @@ reset()
     TOKEN="test-token"
 }
 
+# 门禁的令牌来源是 TOKEN → GITHUB_TOKEN → GH_TOKEN 的回落链，"缺令牌"这一
+# 分支只在整条链都空时成立。开发机 shell 可能带着 GH_TOKEN、CI 带着
+# GITHUB_TOKEN，不隔离就让同一条用例在同一份代码上时红时绿；因此子进程只
+# 拿到本脚本显式给定的 TOKEN。
 run()
 {
-    out="$("${FX}/ci/gates/release-stage.sh" "$@" 2>&1)"
+    out="$(env -u GITHUB_TOKEN -u GH_TOKEN TOKEN="${TOKEN-}" \
+        "${FX}/ci/gates/release-stage.sh" "$@" 2>&1)"
     rc=$?
 }
 
