@@ -61,7 +61,8 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, TypeAlias
 
 # tools/lib 是契约检查工具的共享层：结果类型与报告格式只能有一份。
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
-from check_report import CheckResult, ManifestError, print_report, yaml
+from check_report import CheckResult
+from manifest_io import find_repo_root, load_manifest, run_gate
 
 # 导出表只列本模块定义的名字：共享层的类型与报告函数按需显式导入，
 # 不转出口。否则各工具的导出表前几项必然逐字相同，读的人分不清哪一层
@@ -88,7 +89,6 @@ __all__ = [
 # ─── Constants ─────────────────────────────────────────────────────────────
 
 DEFAULT_MANIFEST_REL = "tools/kbuild-version/manifest.yaml"
-DEFAULT_KERNEL_DIR = "kernel"
 
 EXIT_PASS = 0
 EXIT_FAIL = 1
@@ -133,46 +133,6 @@ Assigns: TypeAlias = List[Tuple[str, str]]
 
 
 # ─── Helpers ───────────────────────────────────────────────────────────────
-
-
-def find_repo_root() -> Path:
-    """从脚本位置自动探测 agent-linux 仓库根。
-
-    脚本位于 <repo_root>/tools/kbuild-version/kbuild_version.py。
-
-    Returns:
-        仓库根目录的绝对路径。
-    """
-    return Path(__file__).resolve().parent.parent.parent
-
-
-def load_manifest(path: str | Path) -> TupleMap:
-    """读取并解析清单。
-
-    Args:
-        path: 清单文件路径。
-
-    Returns:
-        清单映射。
-
-    Raises:
-        ManifestError: 文件缺失、不可读、YAML 非法或顶层非映射。
-    """
-    if yaml is None:
-        raise ManifestError(
-            "PyYAML 不可用：请安装 pyyaml（见 requirements-dev.txt）")
-    try:
-        with open(path, "r", encoding="utf-8") as fh:
-            data = yaml.safe_load(fh)
-    except FileNotFoundError as exc:
-        raise ManifestError(f"清单文件不存在：{path}") from exc
-    except OSError as exc:
-        raise ManifestError(f"清单文件不可读：{path}: {exc}") from exc
-    except yaml.YAMLError as exc:
-        raise ManifestError(f"清单 YAML 解析失败：{exc}") from exc
-    if not isinstance(data, dict):
-        raise ManifestError("清单顶层必须是映射（mapping）")
-    return data
 
 
 def parse_vars(text: str) -> Assigns:
@@ -519,37 +479,13 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
                         help="真实生成的 version.h；给出时追加第 8 项契约比对")
     parser.add_argument("--check", action="store_true",
                         help="CI 模式：精简输出，仅退出码")
-    args = parser.parse_args(argv)
-
-    if yaml is None:
-        print("ERROR: PyYAML 不可用，请安装 pyyaml", file=sys.stderr)
-        sys.exit(EXIT_USAGE)
-
-    repo_root = Path(args.repo_root) if args.repo_root else find_repo_root()
-    if not repo_root.is_dir():
-        print(f"ERROR: 仓库根不存在: {repo_root}", file=sys.stderr)
-        sys.exit(EXIT_USAGE)
-
-    kernel_dir = repo_root / DEFAULT_KERNEL_DIR
-    if not kernel_dir.is_dir():
-        print(f"ERROR: 内核源码目录不存在: {kernel_dir}", file=sys.stderr)
-        sys.exit(EXIT_USAGE)
-
-    manifest_path = (Path(args.manifest) if args.manifest
-                     else repo_root / DEFAULT_MANIFEST_REL)
-    try:
-        manifest = load_manifest(manifest_path)
-    except ManifestError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        sys.exit(EXIT_USAGE)
-
-    results = build_checks(manifest, repo_root, args.version_h)
-    print_report(results, "KBUILD-VERSION", args.check,
-                 "agent-linux AirymaxOS Kbuild 版本注入一致性报告",
-                 str(manifest.get("version", "?")))
-
-    failed = sum(1 for result in results if not result.passed)
-    sys.exit(EXIT_FAIL if failed else EXIT_PASS)
+    run_gate(
+        parser, argv, DEFAULT_MANIFEST_REL,
+        lambda gate: build_checks(gate.manifest, gate.root,
+                                  gate.args.version_h),
+        "KBUILD-VERSION",
+        "agent-linux AirymaxOS Kbuild 版本注入一致性报告",
+        kernel=True)
 
 
 if __name__ == "__main__":

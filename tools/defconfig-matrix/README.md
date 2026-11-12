@@ -38,7 +38,7 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 | 4 | 必备 CONFIG 齐备 | `OS-BUILD-026` |
 | 5 | `CONFIG_LSM` 含清单登记的 LSM 名 | `OS-BUILD-026` |
 | 6 | CI 构建矩阵与清单一致（airy-verify 精确匹配 / kernel-verify 登记子集） | `OS-BUILD-028` |
-| 7 | 必备 CONFIG 清单逐项相等（`kernel-airy.sh` 与 `kernel-refbuild.sh` 的 `REQUIRED_CONF`） | `OS-BUILD-026` |
+| 7 | 必备 CONFIG 清单逐项相等（`ci/lib/kernel.sh` 的 `REQUIRED_CONF`） | `OS-BUILD-026` |
 | 8 | `obj-$(CONFIG_*)` 引用均有 Kconfig 声明 | `OS-KER-025` |
 
 清单 schema 不合法时，仅报告该项并短路其余检查（避免在脏数据上生成噪声结论）。
@@ -72,7 +72,7 @@ python3 tools/defconfig-matrix/defconfig_matrix.py \
 新增受支持架构时：先在本表 `architectures` 登记（`arch` / `cross` / `kind` /
 `build` / `configs`），再落地 `kernel/<configs>` 文件，并在 `airy-verify.yml`
 （若 `build: true`）与 `kernel-verify.yml` 的矩阵、`ci/gates/kernel-airy.sh`
-与 `ci/gates/kernel-refbuild.sh` 的 `REQUIRED_CONF` 清单同步；随后运行本工具
+与 `ci/lib/kernel.sh` 的 `REQUIRED_CONF` 清单同步；随后运行本工具
 确认无漂移。`build: true` 要求 `kind: fragment`（CI 固定走
 `scripts/kconfig/merge_config.sh` 三步法）。
 

@@ -106,7 +106,7 @@ def _kernel_verify_text(arches) -> str:
     )
 
 
-def _gate_conf_text(required) -> str:
+def _conf_lib_text(required) -> str:
     req = "".join(f"    '{item}'\n" for item in required)
     return (
         "#!/usr/bin/env bash\n"
@@ -135,12 +135,10 @@ def write_repo(tmp_path, arches=None, required=None,
     (workflows / "kernel-verify.yml").write_text(
         _kernel_verify_text(arches), encoding="utf-8")
 
-    gates = tmp_path / "ci" / "gates"
-    gates.mkdir(parents=True, exist_ok=True)
-    (gates / "kernel-airy.sh").write_text(
-        _gate_conf_text(required), encoding="utf-8")
-    (gates / "kernel-refbuild.sh").write_text(
-        _gate_conf_text(required), encoding="utf-8")
+    lib = tmp_path / "ci" / "lib"
+    lib.mkdir(parents=True, exist_ok=True)
+    (lib / "kernel.sh").write_text(
+        _conf_lib_text(required), encoding="utf-8")
 
     manifest = tmp_path / "tools" / "defconfig-matrix" / "manifest.yaml"
     manifest.parent.mkdir(parents=True, exist_ok=True)
@@ -387,7 +385,7 @@ class TestCiRequiredSync:
 
     def test_missing_item(self, tmp_path):
         manifest = dm.load_manifest(write_repo(tmp_path))
-        path = tmp_path / "ci" / "gates" / "kernel-airy.sh"
+        path = tmp_path / "ci" / "lib" / "kernel.sh"
         path.write_text(path.read_text(encoding="utf-8").replace(
             "    'CONFIG_IO_URING=y'\n", ""), encoding="utf-8")
         result = dm.check_ci_req(manifest, tmp_path)
@@ -396,7 +394,7 @@ class TestCiRequiredSync:
 
     def test_extra_item(self, tmp_path):
         manifest = dm.load_manifest(write_repo(tmp_path))
-        path = tmp_path / "ci" / "gates" / "kernel-refbuild.sh"
+        path = tmp_path / "ci" / "lib" / "kernel.sh"
         path.write_text(path.read_text(encoding="utf-8").replace(
             "    'CONFIG_SECURITY=y'\n",
             "    'CONFIG_SECURITY=y'\n"
@@ -405,23 +403,16 @@ class TestCiRequiredSync:
         assert not result.passed
         assert "清单外项" in result.details
 
-    def test_missing_kernel_gate(self, tmp_path):
+    def test_missing_carrier(self, tmp_path):
         manifest = dm.load_manifest(write_repo(tmp_path))
-        (tmp_path / "ci" / "gates" / "kernel-refbuild.sh").unlink()
+        (tmp_path / "ci" / "lib" / "kernel.sh").unlink()
         result = dm.check_ci_req(manifest, tmp_path)
         assert not result.passed
-        assert "kernel-refbuild.sh" in result.details
-
-    def test_missing_airy_gate(self, tmp_path):
-        manifest = dm.load_manifest(write_repo(tmp_path))
-        (tmp_path / "ci" / "gates" / "kernel-airy.sh").unlink()
-        result = dm.check_ci_req(manifest, tmp_path)
-        assert not result.passed
-        assert "kernel-airy.sh" in result.details
+        assert "无法读取" in result.details
 
     def test_missing_block(self, tmp_path):
         manifest = dm.load_manifest(write_repo(tmp_path))
-        path = tmp_path / "ci" / "gates" / "kernel-airy.sh"
+        path = tmp_path / "ci" / "lib" / "kernel.sh"
         text = path.read_text(encoding="utf-8")
         path.write_text(text[:text.index("REQUIRED_CONF=(")],
                         encoding="utf-8")

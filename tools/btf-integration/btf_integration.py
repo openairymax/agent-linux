@@ -58,11 +58,12 @@ import argparse
 import re
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 # tools/lib 是契约检查工具的共享层：结果类型与报告格式只能有一份。
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
-from check_report import CheckResult, ManifestError, print_report, yaml
+from check_report import CheckResult, ManifestError
+from manifest_io import load_manifest, run_gate
 
 # 导出表只列本模块定义的名字：共享层的类型与报告函数按需显式导入，
 # 不转出口。否则各工具的导出表前几项必然逐字相同，读的人分不清哪一层
@@ -75,15 +76,12 @@ __all__ = [
     "check_frags",
     "check_schema",
     "check_trace",
-    "find_repo_root",
     "load_arches",
-    "load_manifest",
     "main",
     "read_configs",
 ]
 
 DEFAULT_MANIFEST_REL = "tools/btf-integration/manifest.yaml"
-DEFAULT_KERNEL_DIR = "kernel"
 
 EXIT_PASS = 0
 EXIT_FAIL = 1
@@ -112,43 +110,6 @@ CONFIG_SYM_RE = re.compile(r"^CONFIG_[A-Za-z0-9_]+$")
 Manifest = dict[str, Any]
 ArchEntry = tuple[str, str]
 Results = list[CheckResult]
-
-
-def find_repo_root() -> Path:
-    """从脚本位置自动探测 agent-linux 仓库根。
-
-    脚本位于 <repo_root>/tools/btf-integration/btf_integration.py。
-
-    Returns:
-        仓库根的绝对路径。
-    """
-    return Path(__file__).resolve().parent.parent.parent
-
-
-def load_manifest(path: Path) -> Manifest:
-    """读取并解析 YAML 清单。
-
-    Args:
-        path: 清单文件路径。
-
-    Returns:
-        清单顶层映射。
-
-    Raises:
-        ManifestError: PyYAML 不可用、文件缺失、YAML 非法或顶层非映射。
-    """
-    if yaml is None:
-        raise ManifestError("PyYAML 不可用：请安装 pyyaml（见 requirements-dev.txt）")
-    try:
-        with open(path, "r", encoding="utf-8") as fh:
-            data = yaml.safe_load(fh)
-    except FileNotFoundError:
-        raise ManifestError(f"清单文件不存在：{path}")
-    except yaml.YAMLError as exc:
-        raise ManifestError(f"清单 YAML 解析失败：{exc}")
-    if not isinstance(data, dict):
-        raise ManifestError("清单顶层必须是映射（mapping）")
-    return data
 
 
 def read_configs(path: Path) -> list[str]:
@@ -319,6 +280,24 @@ def check_frags(entries: list[ArchEntry], kernel_dir: Path) -> CheckResult:
     return CheckResult(GUARD_NAME, not missing, "\n".join(missing))
 
 
+def _fragment_cfgs(entries: list[ArchEntry], kernel_dir: Path
+                   ) -> Iterator[tuple[str, str, set[str]]]:
+    """逐项产出受检片段及其已配置行集合；缺失的片段跳过。
+
+    Args:
+        entries: 受检架构与片段的相对路径。
+        kernel_dir: 内核源码目录。
+
+    Yields:
+        ``(arch, configs, 已配置行集合)``。
+    """
+    for arch, configs in entries:
+        path = kernel_dir / configs
+        if not path.is_file():
+            continue
+        yield arch, configs, set(read_configs(path))
+
+
 def _check_present(name: str, entries: list[ArchEntry], kernel_dir: Path,
                    expected: list[str]) -> CheckResult:
     """确认每个受检片段逐项含 expected 中的配置行。
@@ -332,15 +311,12 @@ def _check_present(name: str, entries: list[ArchEntry], kernel_dir: Path,
     Returns:
         检查结果；缺失项按架构逐条记入 details。
     """
-    problems: list[str] = []
-    for arch, configs in entries:
-        path = kernel_dir / configs
-        if not path.is_file():
-            continue
-        present = set(read_configs(path))
-        for want in expected:
-            if want not in present:
-                problems.append(f"{arch} ({configs}): 缺少 {want}")
+    problems = [
+        f"{arch} ({configs}): 缺少 {want}"
+        for arch, configs, present in _fragment_cfgs(entries, kernel_dir)
+        for want in expected
+        if want not in present
+    ]
     return CheckResult(name, not problems, "\n".join(problems))
 
 
@@ -400,14 +376,11 @@ def check_btf(entries: list[ArchEntry], kernel_dir: Path,
     choice = manifest.get("debug_info_choice", [])
 
     problems: list[str] = []
-    for arch, configs in entries:
-        path = kernel_dir / configs
-        if not path.is_file():
-            continue
-        present = set(read_configs(path))
-        for want in expected:
-            if want not in present:
-                problems.append(f"{arch} ({configs}): 缺少 {want}")
+    for arch, configs, present in _fragment_cfgs(entries, kernel_dir):
+        problems.extend(
+            f"{arch} ({configs}): 缺少 {want}"
+            for want in expected
+            if want not in present)
         if choice and not any(item in present for item in choice):
             problems.append(
                 f"{arch} ({configs}): DEBUG_INFO 形态缺失"
@@ -528,37 +501,12 @@ def main(argv: list[str] | None = None) -> None:
                         help="基线清单（默认：tools/btf-integration/manifest.yaml）")
     parser.add_argument("--check", action="store_true",
                         help="CI 模式：精简输出，仅退出码")
-    args = parser.parse_args(argv)
-
-    if yaml is None:
-        print("ERROR: PyYAML 不可用，请安装 pyyaml", file=sys.stderr)
-        sys.exit(EXIT_USAGE)
-
-    repo_root = Path(args.repo_root) if args.repo_root else find_repo_root()
-    if not repo_root.is_dir():
-        print(f"ERROR: 仓库根不存在: {repo_root}", file=sys.stderr)
-        sys.exit(EXIT_USAGE)
-
-    kernel_dir = repo_root / DEFAULT_KERNEL_DIR
-    if not kernel_dir.is_dir():
-        print(f"ERROR: 内核源码目录不存在: {kernel_dir}", file=sys.stderr)
-        sys.exit(EXIT_USAGE)
-
-    manifest_path = (Path(args.manifest) if args.manifest
-                     else repo_root / DEFAULT_MANIFEST_REL)
-    try:
-        manifest = load_manifest(manifest_path)
-    except ManifestError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        sys.exit(EXIT_USAGE)
-
-    results = build_checks(manifest, repo_root, kernel_dir)
-    print_report(results, "BTF-INTEGRATION", args.check,
-                 "agent-linux AirymaxOS BTF / eBPF 基线一致性报告",
-                 str(manifest.get("version", "?")))
-
-    failed = sum(1 for result in results if not result.passed)
-    sys.exit(EXIT_FAIL if failed else EXIT_PASS)
+    run_gate(
+        parser, argv, DEFAULT_MANIFEST_REL,
+        lambda gate: build_checks(gate.manifest, gate.root, gate.kernel_dir),
+        "BTF-INTEGRATION",
+        "agent-linux AirymaxOS BTF / eBPF 基线一致性报告",
+        kernel=True)
 
 
 if __name__ == "__main__":

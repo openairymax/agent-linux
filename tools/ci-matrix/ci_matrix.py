@@ -54,6 +54,7 @@ from pathlib import Path
 # tools/lib 是契约检查工具的共享层：结果类型与报告格式只能有一份。
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
 from check_report import CheckResult, ManifestError, print_report, yaml
+from manifest_io import find_repo_root, load_manifest
 
 # ─── Constants ─────────────────────────────────────────────────────────────
 
@@ -80,28 +81,6 @@ REASON_KEYS = frozenset({"cross_arch", "compiler", "other"})
 
 
 # ─── Helpers ───────────────────────────────────────────────────────────────
-
-
-def find_repo_root():
-    """从脚本位置自动探测 agent-linux 仓库根。"""
-    return Path(__file__).resolve().parents[2]
-
-
-def load_manifest(path):
-    """读取并解析矩阵清单；缺失或 YAML 非法时抛 ManifestError。"""
-    if yaml is None:
-        raise ManifestError(
-            "PyYAML 不可用：请安装 pyyaml（见 requirements-dev.txt）")
-    try:
-        with open(path, "r", encoding="utf-8") as fh:
-            data = yaml.safe_load(fh)
-    except FileNotFoundError:
-        raise ManifestError(f"清单文件不存在：{path}")
-    except yaml.YAMLError as exc:
-        raise ManifestError(f"清单 YAML 解析失败：{exc}")
-    if not isinstance(data, dict):
-        raise ManifestError("清单顶层必须是映射（mapping）")
-    return data
 
 
 def _missing(mapping, keys, scope):
