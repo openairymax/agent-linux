@@ -507,29 +507,40 @@ def classify_cell(cell, passed, reasons):
     return reasons.get(config, reasons["other"])
 
 
-def run_summary(manifest, arches, path):
-    """比对逐格结果与矩阵定义，输出归因与 PR 标签。"""
-    seen = _index_summary(_read_summary(path))
-    expected = {_cell_key(cell): cell
-                for cell in expand_cells(manifest, arches)}
+def _expected(manifest, arches):
+    """矩阵定义应当出现的格，键为维度元组。"""
+    return {_cell_key(cell): cell for cell in expand_cells(manifest, arches)}
+
+
+def _split(seen, expected):
+    """把逐格结果分成通过、失败、缺失、越界四组。"""
     passed = {key for key, value in seen.items() if value == "success"}
     failed = {key: value for key, value in seen.items()
               if value != "success" and key in expected}
-    missing = sorted(set(expected) - set(seen))
-    unknown = sorted(set(seen) - set(expected))
-    reasons = manifest["failures"]["reasons"]
-    total = len(expected)
-    problems = []
+    return (passed, failed,
+            sorted(set(expected) - set(seen)),
+            sorted(set(seen) - set(expected)))
 
-    for key in missing:
-        problems.append(f"MISSING {key[1]}/{key[2]}/{key[0]}")
-    for key in unknown:
-        problems.append(f"UNKNOWN {key[1]}/{key[2]}/{key[0]}")
+
+def _problems(missing, unknown, failed, expected, passed, reasons):
+    """失败归因行：缺失与越界在前，失败格按 §3.4 语义分类。"""
+    rows = [f"MISSING {key[1]}/{key[2]}/{key[0]}" for key in missing]
+    rows += [f"UNKNOWN {key[1]}/{key[2]}/{key[0]}" for key in unknown]
     for key, value in sorted(failed.items()):
         cell = expected.get(key, dict(zip(DIMS, key)))
         reason = classify_cell(cell, passed, reasons)
-        problems.append(f"FAIL {key[1]}/{key[2]}/{key[0]}: {reason} "
-                        f"({value})")
+        rows.append(f"FAIL {key[1]}/{key[2]}/{key[0]}: {reason} ({value})")
+    return rows
+
+
+def run_summary(manifest, arches, path):
+    """比对逐格结果与矩阵定义，输出归因与 PR 标签。"""
+    seen = _index_summary(_read_summary(path))
+    expected = _expected(manifest, arches)
+    passed, failed, missing, unknown = _split(seen, expected)
+    problems = _problems(missing, unknown, failed, expected, passed,
+                         manifest["failures"]["reasons"])
+    total = len(expected)
 
     if not problems:
         print(f"CI-MATRIX SUMMARY: PASS ({len(passed)}/{total} cells)")
@@ -546,7 +557,7 @@ def run_summary(manifest, arches, path):
 # ─── Main ──────────────────────────────────────────────────────────────────
 
 
-def main(argv=None):
+def _parse(argv):
     parser = argparse.ArgumentParser(
         description="AirymaxOS CI 编译矩阵一致性检查器 "
                     "(OS-STD-TOOL-161, OS-STD-TEST-011)",
@@ -562,40 +573,48 @@ def main(argv=None):
                        help="展开矩阵并逐行输出")
     group.add_argument("--summary", metavar="FILE",
                        help="逐格结果 JSON，归因失败")
-    args = parser.parse_args(argv)
+    return parser.parse_args(argv)
 
+
+def _context(args):
+    """加载矩阵载体；缺依赖、根不存在、清单非法一律抛 ManifestError。"""
     if yaml is None:
-        print("ERROR: PyYAML 不可用，请安装 pyyaml", file=sys.stderr)
-        return EXIT_USAGE
-
+        raise ManifestError("PyYAML 不可用，请安装 pyyaml")
     repo_root = Path(args.repo_root) if args.repo_root else find_repo_root()
     if not repo_root.is_dir():
-        print(f"ERROR: 仓库根不存在: {repo_root}", file=sys.stderr)
-        return EXIT_USAGE
-
+        raise ManifestError(f"仓库根不存在: {repo_root}")
     manifest_path = (Path(args.manifest) if args.manifest
                      else repo_root / DEFAULT_MANIFEST_REL)
-    try:
-        manifest = load_manifest(manifest_path)
-        arches = resolve_arches(manifest, repo_root)
-    except ManifestError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        return EXIT_USAGE
+    manifest = load_manifest(manifest_path)
+    return repo_root, manifest, resolve_arches(manifest, repo_root)
 
-    if args.list:
-        return list_cells(manifest, arches)
-    if args.summary:
-        try:
-            return run_summary(manifest, arches, args.summary)
-        except ManifestError as exc:
-            print(f"ERROR: {exc}", file=sys.stderr)
-            return EXIT_USAGE
+
+def _check(args, repo_root, manifest):
+    """默认模式：跑全部一致性检查并输出报告。"""
     results = build_checks(manifest, repo_root)
     print_report(results, "CI-MATRIX", args.check,
                  "agent-linux AirymaxOS CI 编译矩阵一致性报告",
                  str(manifest.get("version", "?")))
-    failed = sum(1 for result in results if not result.passed)
-    return EXIT_FAIL if failed else EXIT_PASS
+    return EXIT_FAIL if any(not r.passed for r in results) else EXIT_PASS
+
+
+def _run(args):
+    """三种模式共用同一份载体：展开、归因、检查只在末尾分岔。"""
+    repo_root, manifest, arches = _context(args)
+    if args.list:
+        return list_cells(manifest, arches)
+    if args.summary:
+        return run_summary(manifest, arches, args.summary)
+    return _check(args, repo_root, manifest)
+
+
+def main(argv=None):
+    args = _parse(argv)
+    try:
+        return _run(args)
+    except ManifestError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return EXIT_USAGE
 
 
 if __name__ == "__main__":
