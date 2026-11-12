@@ -353,12 +353,16 @@ def _ann_int(ann: dict[str, str], key: str, ref: str) -> int:
     return _positive(_ann(ann, key, ref), f"{ANN}.{key}", ref)
 
 
+def _is_hex64(value: str) -> bool:
+    """裸 sha256：64 位小写十六进制；digest 与注解摘要共用这一判据。"""
+    return len(value) == 64 and all(c in "0123456789abcdef" for c in value)
+
+
 def _digest(value: str, ref: str) -> str:
     """layer digest → 裸 sha256；算法或长度不对当场拒，不猜「大概是它」。"""
     algo, _, hexd = value.partition(":")
     hexd = hexd.lower()
-    plain = len(hexd) == 64 and all(c in "0123456789abcdef" for c in hexd)
-    if algo != "sha256" or not plain:
+    if algo != "sha256" or not _is_hex64(hexd):
         raise FlashError(EXIT_CHECK, f"{ref} 的 layer digest 不是 sha256: {value}")
     return hexd
 
@@ -371,35 +375,35 @@ def _split_ref(ref: str) -> tuple[str, str]:
     return head, tail
 
 
-def ledger_of(ref: str, text: str) -> OciLedger:
-    """把 OCI 清单读成账本：tag 自身就是账本，不再依赖外部文件分发。
+def _manifest_doc(ref: str, text: str) -> dict:
+    """清单文本 → 清单对象；oras 1.2 起的外层信封在这里剥掉。
 
-    公开面只有 OCI 清单（注解 + layer）。账本文件此前只作为需登录的
-    Actions 制品上传，外部用户无从取件。此处以注解为元数据来源、以 layer
-    的标题与 digest 为逐块账本，使 --ref 与 --oci 得到同一份结论。
+    oras 1.2 起 `manifest fetch --format json` 输出
+    {reference, digest, size, content:{…}}，注解与 layers 都下沉到 content；
+    更早的 oras 直接吐裸 manifest。两种形态都认，否则取件在版本差异上会
+    误判成「tag 早于分块实现」。
     """
     try:
         doc = json.loads(text)
     except json.JSONDecodeError as exc:
         raise FlashError(EXIT_CHECK, f"{ref} 的清单不是合法 JSON: {exc}") from None
-    # oras 1.2 起 `manifest fetch --format json` 输出信封
-    # {reference, digest, size, content:{…}}，注解与 layers 都下沉到 content；
-    # 更早的 oras 直接吐裸 manifest。两种形态都认，否则取件在版本差异上
-    # 会误判成「tag 早于分块实现」。
     if isinstance(doc.get("content"), dict):
         doc = doc["content"]
-    ann = doc.get("annotations") or {}
+    return doc
+
+
+def _ledger_ann(ref: str, ann: dict[str, str]):
+    """注解即元数据：五项一次取齐，缺一项立刻拒而不是按缺省值往下走。"""
     name = _ann(ann, "name", ref)
     sha = _ann(ann, "sha256", ref).lower()
-    plain = len(sha) == 64 and all(c in "0123456789abcdef" for c in sha)
-    if not plain:
+    if not _is_hex64(sha):
         raise FlashError(EXIT_CHECK, f"{ref} 的 {ANN}.sha256 格式不对")
-    size = _ann_int(ann, "size", ref)
-    chunk = _ann_int(ann, "chunk-size", ref)
-    chunks = _ann_int(ann, "chunks", ref)
-    layers = doc.get("layers") or []
-    if len(layers) != chunks:
-        raise FlashError(EXIT_CHECK, f"{ref} 声明 {chunks} 块却列出 {len(layers)} 层")
+    return (name, sha, _ann_int(ann, "size", ref),
+            _ann_int(ann, "chunk-size", ref), _ann_int(ann, "chunks", ref))
+
+
+def _ledger_parts(ref: str, layers: list[dict]) -> list[OciPart]:
+    """逐层账本：标题、digest 与 size 三项缺一不可，缺谁都不猜。"""
     parts: list[OciPart] = []
     for index, layer in enumerate(layers):
         title = str((layer.get("annotations") or {}).get(TITLE) or "").strip()
@@ -414,12 +418,22 @@ def ledger_of(ref: str, text: str) -> OciLedger:
                 title,
             )
         )
-    if [part.name for part in parts] != sorted(part.name for part in parts):
+    return parts
+
+
+def _ledger_order(ref: str, parts: list[OciPart]) -> None:
+    """层序就是块序：清单被重排过时按序拼接会得到错位镜像。"""
+    names = [part.name for part in parts]
+    if names != sorted(names):
         raise FlashError(
             EXIT_CHECK,
             f"{ref} 的 layer 顺序与块序不一致",
             hint="清单被重排过；改用发布页给出的 tag",
         )
+
+
+def _ledger_sums(ref: str, parts: list[OciPart], size: int, chunk: int) -> None:
+    """分块账本的算术自洽：合计等于声明大小，除末块外每块等于块大小。"""
     joined = sum(part.size for part in parts)
     if joined != size:
         raise FlashError(
@@ -428,6 +442,25 @@ def ledger_of(ref: str, text: str) -> OciLedger:
         )
     if any(part.size != chunk for part in parts[:-1]):
         raise FlashError(EXIT_CHECK, f"{ref} 的块大小与 {ANN}.chunk-size 不一致")
+
+
+def ledger_of(ref: str, text: str) -> OciLedger:
+    """把 OCI 清单读成账本：tag 自身就是账本，不再依赖外部文件分发。
+
+    公开面只有 OCI 清单（注解 + layer）。账本文件此前只作为需登录的
+    Actions 制品上传，外部用户无从取件。此处以注解为元数据来源、以 layer
+    的标题与 digest 为逐块账本，使 --ref 与 --oci 得到同一份结论。
+    """
+    doc = _manifest_doc(ref, text)
+    ann = doc.get("annotations") or {}
+    name, sha, size, chunk, chunks = _ledger_ann(ref, ann)
+    layers = doc.get("layers") or []
+    if len(layers) != chunks:
+        raise FlashError(
+            EXIT_CHECK, f"{ref} 声明 {chunks} 块却列出 {len(layers)} 层")
+    parts = _ledger_parts(ref, layers)
+    _ledger_order(ref, parts)
+    _ledger_sums(ref, parts, size, chunk)
     repo, tag = _split_ref(ref)
     return OciLedger(
         ref=repo,
