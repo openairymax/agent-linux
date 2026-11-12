@@ -116,8 +116,8 @@ CIGATES = ROOT / "ci" / "gates"
 SOURCE_LIB = re.compile(r"lib/([a-z0-9_-]+)\.sh")
 FUNC_DEF = re.compile(r"^([a-z][a-z0-9_]*)\(\)", re.MULTILINE)
 # 命令位：行首，或 if/then/elif/else/while/until/do 之后，或 && || ; | 之后。
-# 名字后紧跟 = 的是变量赋值（`bad=0` 这类累加器），不是函数调用；
-# 不排除会把「门禁自己记账」误报成「调用了没 source 的库函数」。
+# 名字后紧跟 = 的是变量赋值（`bad=0` 这类累加器），不是函数调用；不排除
+# 会把「门禁自己记账」误报成「调用了没 source 的库函数」。
 FUNC_CALL = re.compile(
     r"(?:^|[;&|]\s*|\b(?:if|then|elif|else|while|until|do)\s+)"
     r"([a-z][a-z0-9_]*)(?![\w=])", re.MULTILINE)
@@ -534,71 +534,105 @@ def check_doc(name: str = "README.md") -> list[str]:
     return errors
 
 
-def main() -> int:
-    budgets = load_budgets()
-    files = sorted(p.name for p in WORKFLOWS.glob("*.yml"))
-    errors: list[str] = check_gate_libs()
-    errors.extend(check_doc())
+def check_registry(budgets: dict[str, tuple[int, int]],
+                   files: list[str]) -> list[str]:
+    """预算表与文件集合互为对照：少登记会静默放宽，多登记会掩盖改名。"""
+    errors = [f"{name}: 未登记预算（请写入 ci/workflow-budgets.txt）"
+              for name in files if name not in budgets]
+    errors += [f"{name}: 预算已登记但文件不存在"
+               for name in budgets if name not in files]
+    return errors
+
+
+def wf_size(name: str, inline: int, jobs: int,
+            budget: tuple[int, int], base: int | None) -> list[str]:
+    """规模判据：内联与 job 数不得超预算，也不得高于 HEAD 的同一文件。"""
+    max_inline, max_jobs = budget
+    errors: list[str] = []
+    if inline > max_inline:
+        errors.append(f"{name}: 内联 run 块 {inline} > 预算 {max_inline}")
+    if jobs > max_jobs:
+        errors.append(f"{name}: job 数 {jobs} > 预算 {max_jobs}")
+    if jobs == 0:
+        errors.append(f"{name}: 没有解析到任何 job")
+    if base is not None and inline > base and inline > max_inline:
+        errors.append(f"{name}: 内联块由 HEAD 的 {base} 增至 {inline}（棘轮回退）")
+    return errors
+
+
+def hits(name: str, text: str, rules, tpl: str) -> list[str]:
+    """逐行套一组 (正则, 入口)：命中的行号与入口写进同一条错误。"""
+    out: list[str] = []
+    for pat, entry in rules:
+        for no, s in enumerate(text.splitlines(), 1):
+            if pat.search(s):
+                out.append(f"{name}:{no}: " + tpl.format(pat=pat.pattern,
+                                                        entry=entry))
+    return out
+
+
+def wf_ban(name: str, text: str, max_inline: int) -> list[str]:
+    """已迁移文件不得回流被 gate 收编的模式；apt-get 在任何文件都禁止。"""
+    errors: list[str] = []
+    if max_inline == 0:
+        errors += hits(name, text, FORBIDDEN,
+                       "已收编逻辑回流（{pat}），应走 {entry}")
+    return errors + hits(name, text, ALWAYS_FORBIDDEN, "直接调用 apt-get，应走 {entry}")
+
+
+def wf_checks(name: str, text: str, label: str | None) -> list[str]:
+    """单个 workflow 的静态判据（规模与回流禁令由 wf_size/wf_ban 负责）。"""
+    errors = check_name(name, text)
+    errors += check_family(name, text)
+    errors += check_runner(name, text)
+    if label is not None:
+        errors += wf_label_rule(name, text, label)
+    errors += check_policy(name, text)
+    errors += check_triggers(name, text)
+    errors += check_gate_refs(name, text)
+    errors += check_ref_kind(name, text)
+    return errors + check_pins(name, text)
+
+
+def wf_file(name: str, text: str, budgets: dict[str, tuple[int, int]],
+            label: str | None) -> tuple[list[str], int]:
+    """一个文件的完整判定；未登记预算时只做静态判据（登记本身另判）。"""
+    inline = count_inline(text)
+    errors = wf_checks(name, text, label)
+    if name not in budgets:
+        return errors, inline
+    budget = budgets[name]
+    errors += wf_size(name, inline, count_jobs(text), budget, head_inline(name))
+    return errors + wf_ban(name, text, budget[0]), inline
+
+
+def scan_workflows(files: list[str],
+                   budgets: dict[str, tuple[int, int]]) -> tuple[list[str], int]:
+    """全树扫描：先判跨文件契约（库调用、规则表、形状、预算登记），
+    再逐个文件判定。
+
+    顺序即错误报告顺序：跨文件问题只出现一次，排在单文件问题之前。
+    """
+    errors = check_gate_libs() + check_doc()
     label = runner_label()
     if label is None:
         errors.append(
             "tools/nightly/manifest.yaml: 未登记 runner.label，runs-on 无对照基准")
-
     for path in shape_sites():
         errors.extend(
             check_shape(str(path.relative_to(ROOT)), path.read_text()))
-
-    for name in files:
-        if name not in budgets:
-            errors.append(f"{name}: 未登记预算（请写入 ci/workflow-budgets.txt）")
-    for name in budgets:
-        if name not in files:
-            errors.append(f"{name}: 预算已登记但文件不存在")
-
+    errors += check_registry(budgets, files)
     total = 0
     for name in files:
-        text = (WORKFLOWS / name).read_text()
-        errors.extend(check_name(name, text))
-        errors.extend(check_family(name, text))
-        errors.extend(check_runner(name, text))
-        if label is not None:
-            errors.extend(wf_label_rule(name, text, label))
-        errors.extend(check_policy(name, text))
-        errors.extend(check_triggers(name, text))
-        errors.extend(check_gate_refs(name, text))
-        errors.extend(check_ref_kind(name, text))
-        errors.extend(check_pins(name, text))
-        inline = count_inline(text)
-        jobs = count_jobs(text)
+        got, inline = wf_file(name, (WORKFLOWS / name).read_text(), budgets, label)
+        errors += got
         total += inline
-        if name not in budgets:
-            continue
-        max_inline, max_jobs = budgets[name]
+    return errors, total
 
-        if inline > max_inline:
-            errors.append(f"{name}: 内联 run 块 {inline} > 预算 {max_inline}")
-        if jobs > max_jobs:
-            errors.append(f"{name}: job 数 {jobs} > 预算 {max_jobs}")
-        if jobs == 0:
-            errors.append(f"{name}: 没有解析到任何 job")
 
-        base = head_inline(name)
-        if base is not None and inline > base and inline > max_inline:
-            errors.append(f"{name}: 内联块由 HEAD 的 {base} 增至 {inline}（棘轮回退）")
-
-        if max_inline == 0:
-            for pat, gate in FORBIDDEN:
-                for no, s in enumerate(text.splitlines(), 1):
-                    if pat.search(s):
-                        errors.append(
-                            f"{name}:{no}: 已收编逻辑回流（{pat.pattern}），应走 {gate}")
-
-        for pat, entry in ALWAYS_FORBIDDEN:
-            for no, s in enumerate(text.splitlines(), 1):
-                if pat.search(s):
-                    errors.append(
-                        f"{name}:{no}: 直接调用 apt-get，应走 {entry}")
-
+def main() -> int:
+    files = sorted(p.name for p in WORKFLOWS.glob("*.yml"))
+    errors, total = scan_workflows(files, load_budgets())
     if errors:
         print("workflow 薄化与命名检查未通过:", file=sys.stderr)
         for e in errors:
