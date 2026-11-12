@@ -135,6 +135,8 @@ TRIG_PATHS = re.compile(r"^\s+paths:\s*$")
 TRIG_SUB = re.compile(r"^\s+[\w-]+:")
 TRIG_ITEM = re.compile(r"^\s+-\s*'?([^'\s]+)'?\s*$")
 JOB_TIMEOUT = re.compile(r"^    timeout-minutes:\s*\S")
+# 一级 job 名：two-space 缩进的 ``<name>:``，不含值。
+JOB_HEAD = re.compile(r"^  ([A-Za-z0-9_-]+):\s*$")
 
 # 门禁引用：ci/ci.sh 后面紧跟的门禁名（``--list``、``-h`` 等选项不算）。
 GATE_REF = re.compile(r"ci/ci\.sh\s+([a-z][a-z0-9-]*)")
@@ -195,26 +197,42 @@ def count_inline(text: str) -> int:
     return n
 
 
-def job_blocks(text: str) -> list[tuple[str, int, list[str]]]:
-    """按 ``jobs:`` 解析一级 job：返回 (job 名, 行号, 该 job 的正文行)。"""
-    lines = text.splitlines()
-    try:
-        start = next(i for i, s in enumerate(lines) if s.rstrip() == "jobs:")
-    except StopIteration:
-        return []
-    out: list[tuple[str, int, list[str]]] = []
-    cur: tuple[str, int, list[str]] | None = None
+def jobs_key(lines: list[str]) -> int | None:
+    """``jobs:`` 顶格键的行号；不存在时为 None（无 job 的判据在 wf_size）。"""
+    return next((i for i, s in enumerate(lines) if s.rstrip() == "jobs:"), None)
+
+
+def job_rows(lines: list[str], start: int) -> list[tuple[int, str]]:
+    """``jobs:`` 段内的正文行及其原行号。
+
+    空行不携带缩进信息，跳过而不是当作段尾；顶格键是 ``jobs:`` 的兄弟键，
+    其后内容不属于任何 job，到此为止。
+    """
+    out: list[tuple[int, str]] = []
     for i in range(start + 1, len(lines)):
         s = lines[i]
         if not s.strip():
             continue
         if not s.startswith(" "):
             break
-        m = re.match(r"^  ([A-Za-z0-9_-]+):\s*$", s)
-        if m:
+        out.append((i + 1, s))
+    return out
+
+
+def job_blocks(text: str) -> list[tuple[str, int, list[str]]]:
+    """按 ``jobs:`` 解析一级 job：返回 (job 名, 行号, 该 job 的正文行)。"""
+    lines = text.splitlines()
+    start = jobs_key(lines)
+    if start is None:
+        return []
+    out: list[tuple[str, int, list[str]]] = []
+    cur: tuple[str, int, list[str]] | None = None
+    for no, s in job_rows(lines, start):
+        m = JOB_HEAD.match(s)
+        if m is not None:
             if cur is not None:
                 out.append(cur)
-            cur = (m.group(1), i + 1, [])
+            cur = (m.group(1), no, [])
         elif cur is not None:
             cur[2].append(s)
     if cur is not None:
@@ -227,23 +245,44 @@ def count_jobs(text: str) -> int:
     return len(job_blocks(text))
 
 
-def check_policy(name: str, text: str) -> list[str]:
-    """最小权限、job 级超时、PR 并发：三条都是「缺了就静默退化」的默认值。"""
+def wild_lines(text: str) -> list[tuple[int, str]]:
+    """权限通配行：``write-all`` 与 ``*: write`` 让令牌范围不再可审。"""
+    return [(no, s) for no, s in enumerate(text.splitlines(), 1)
+            if PERM_WILD.search(s)]
+
+
+def perm_errors(name: str, text: str) -> list[str]:
+    """顶层 ``permissions:`` 须显式声明，且逐项列出。"""
     errors: list[str] = []
     if not TOP_PERM.search(text):
         errors.append(f"{name}: 缺少顶层 permissions:（须显式声明 contents: read 起的权限集）")
-    for no, s in enumerate(text.splitlines(), 1):
-        if PERM_WILD.search(s):
-            errors.append(f"{name}:{no}: 权限通配（{s.strip()}），须逐项列出")
-    for job, no, body in job_blocks(text):
-        if not any(JOB_TIMEOUT.match(s) for s in body):
-            errors.append(f"{name}:{no}: job {job} 缺少 timeout-minutes（默认 360 分钟等于无上限）")
-    if PR_TRIGGER.search(text):
-        if not TOP_CONC.search(text):
-            errors.append(f"{name}: PR 触发但缺少顶层 concurrency:")
-        elif not (m := CANCEL_IN.search(text)) or m.group(1) != "true":
-            errors.append(f"{name}: PR 触发的 concurrency 须 cancel-in-progress: true")
+    for no, s in wild_lines(text):
+        errors.append(f"{name}:{no}: 权限通配（{s.strip()}），须逐项列出")
     return errors
+
+
+def timeout_errors(name: str, text: str) -> list[str]:
+    """每个 job 都要有 ``timeout-minutes:``：缺省 360 分钟等于没有上限。"""
+    return [f"{name}:{no}: job {job} 缺少 timeout-minutes（默认 360 分钟等于无上限）"
+            for job, no, body in job_blocks(text)
+            if not any(JOB_TIMEOUT.match(s) for s in body)]
+
+
+def conc_errors(name: str, text: str) -> list[str]:
+    """PR 触发的 workflow 必须按 PR 取消旧轮，否则旧结论会与新 HEAD 抢额度。"""
+    if not PR_TRIGGER.search(text):
+        return []
+    if not TOP_CONC.search(text):
+        return [f"{name}: PR 触发但缺少顶层 concurrency:"]
+    m = CANCEL_IN.search(text)
+    if m is None or m.group(1) != "true":
+        return [f"{name}: PR 触发的 concurrency 须 cancel-in-progress: true"]
+    return []
+
+
+def check_policy(name: str, text: str) -> list[str]:
+    """最小权限、job 级超时、PR 并发：三条都是「缺了就静默退化」的默认值。"""
+    return perm_errors(name, text) + timeout_errors(name, text) + conc_errors(name, text)
 
 
 def load_budgets() -> dict[str, tuple[int, int]]:
