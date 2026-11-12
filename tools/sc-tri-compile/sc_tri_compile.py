@@ -1022,7 +1022,8 @@ def _print_one(r):
 # ─── Main ──────────────────────────────────────────────────────────────────
 
 
-def main(argv=None):
+def _build_parser():
+    """命令行定义：参数顺序即帮助里的顺序，改动会改变对外契约。"""
     parser = argparse.ArgumentParser(
         description="agent-linux [SC] tri-compile & layout checker " "(OS-IRON-014)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -1052,34 +1053,47 @@ def main(argv=None):
         action="store_true",
         help="CI mode: minimal output, exit code only (0=pass, 1=fail)",
     )
-    args = parser.parse_args(argv)
+    return parser
 
+
+def _fail(msg):
+    """输入面错误统一走退出码 2（与环境不可用同义，区别于判定失败）。"""
+    print(f"ERROR: {msg}", file=sys.stderr)
+    sys.exit(2)
+
+
+def _dirs(args):
+    """定出契约头目录与内核源码根；两者缺失都无法给出判定，直接收场。"""
     repo_root = Path(args.repo_root) if args.repo_root else find_repo_root()
     if not repo_root.is_dir():
-        print(f"ERROR: repo root not found: {repo_root}", file=sys.stderr)
-        sys.exit(2)
+        _fail(f"repo root not found: {repo_root}")
 
-    headers_dir = Path(args.headers_dir) if args.headers_dir else repo_root / DEFAULT_HEADERS_REL
-    kernel_dir = Path(args.kernel_dir) if args.kernel_dir else repo_root / DEFAULT_KERNEL_REL
+    headers_dir = (Path(args.headers_dir) if args.headers_dir
+                   else repo_root / DEFAULT_HEADERS_REL)
+    kernel_dir = (Path(args.kernel_dir) if args.kernel_dir
+                  else repo_root / DEFAULT_KERNEL_REL)
     if not headers_dir.is_dir():
-        print(f"ERROR: headers dir not found: {headers_dir}", file=sys.stderr)
-        sys.exit(2)
+        _fail(f"headers dir not found: {headers_dir}")
     if not kernel_dir.is_dir():
-        print(f"ERROR: kernel dir not found: {kernel_dir}", file=sys.stderr)
-        sys.exit(2)
+        _fail(f"kernel dir not found: {kernel_dir}")
+    return headers_dir, kernel_dir
 
-    cc = args.cc or os.environ.get("CC") or "gcc"
+
+def _pick_cc(arg):
+    """编译器按「显式参数 → 环境变量 → gcc」定，找到才算数。"""
+    cc = arg or os.environ.get("CC") or "gcc"
     if shutil.which(cc) is None:
-        print(f"ERROR: compiler not found: {cc}", file=sys.stderr)
-        sys.exit(2)
+        _fail(f"compiler not found: {cc}")
+    return cc
 
+
+def _run_checks(headers_dir, kernel_dir, cc):
+    """跑满五路判定：多路编译、类型尺寸、布局、回退面与 ABI。"""
     header_files = sorted(headers_dir.glob("*.h"))
     if not header_files:
-        print(f"ERROR: no [SC] headers in {headers_dir}", file=sys.stderr)
-        sys.exit(2)
+        _fail(f"no [SC] headers in {headers_dir}")
 
     include_flags = inc_flags(kernel_dir)
-
     results = [tri_check(cc, include_flags, header_files)]
     with tempfile.TemporaryDirectory(prefix="sc-tri-compile-") as workdir:
         per_path, probe_failures = collect_probe(cc, include_flags, workdir)
@@ -1091,6 +1105,14 @@ def main(argv=None):
 
     syscall_sources, syscall_failures = load_sc_src(headers_dir)
     results.append(check_sc_abi(syscall_sources, syscall_failures))
+    return results, header_files
+
+
+def main(argv=None):
+    args = _build_parser().parse_args(argv)
+    headers_dir, kernel_dir = _dirs(args)
+    cc = _pick_cc(args.cc)
+    results, header_files = _run_checks(headers_dir, kernel_dir, cc)
 
     sources = [
         ("headers-dir", str(headers_dir)),
