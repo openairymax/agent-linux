@@ -262,8 +262,8 @@ def _schema_repo(entry: Any, names: set[str],
     return problems
 
 
-def check_schema(man: Mapping[str, Any]) -> CheckResult:
-    """校验清单 schema；失败时其余检查短路。"""
+def _schema_head(man: Mapping[str, Any]) -> list[str]:
+    """顶层字段：必填项、未登记项、标量类型与路径形态。"""
     problems = _need(man, MANIFEST_KEYS, "清单")
     unknown = set(man) - MANIFEST_KEYS
     problems += [f"清单未登记字段: {key}" for key in sorted(unknown)]
@@ -274,14 +274,22 @@ def check_schema(man: Mapping[str, Any]) -> CheckResult:
         problems.append("gitmodules 路径非法")
     if "excluded" in man and not _is_str_list(man["excluded"]):
         problems.append("excluded 必须是字符串列表")
+    return problems
+
+
+def _schema_maps(man: Mapping[str, Any]) -> list[str]:
+    """两张映射表：skeletons 被逐仓引用，licenses 逐项校验。"""
+    problems: list[str] = []
     if "skeletons" in man:
         problems.extend(_schema_skels(man["skeletons"]))
     if "licenses" in man:
         problems.extend(_schema_lics(man["licenses"]))
-    repos = man.get("subrepos")
-    if not isinstance(repos, list) or not repos:
-        problems.append("subrepos 必须是非空列表")
-        return _result(NAME_SCHEMA, problems)
+    return problems
+
+
+def _schema_list(man: Mapping[str, Any], repos: list) -> list[str]:
+    """八仓清单：数量、逐仓契约与 path 唯一性。"""
+    problems: list[str] = []
     if len(repos) != EXPECTED_REPOS:
         problems.append(
             f"subrepos 必须恰好 {EXPECTED_REPOS} 项，实际 {len(repos)}")
@@ -295,6 +303,17 @@ def check_schema(man: Mapping[str, Any]) -> CheckResult:
             if path in seen:
                 problems.append(f"subrepos[].path 重复: {path}")
             seen.add(path)
+    return problems
+
+
+def check_schema(man: Mapping[str, Any]) -> CheckResult:
+    """校验清单 schema；失败时其余检查短路。"""
+    problems = _schema_head(man) + _schema_maps(man)
+    repos = man.get("subrepos")
+    if not isinstance(repos, list) or not repos:
+        problems.append("subrepos 必须是非空列表")
+        return _result(NAME_SCHEMA, problems)
+    problems += _schema_list(man, repos)
     return _result(NAME_SCHEMA, problems)
 
 
