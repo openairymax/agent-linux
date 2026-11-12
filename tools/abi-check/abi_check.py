@@ -818,6 +818,72 @@ def check_sw64_tbl(ssot, sw_tbl):
         f"预留入口 sys_ni_syscall，abi 均为 common")
 
 
+def _wire_srcs(repo_root):
+    """Load the five sources the asm-generic wiring is pinned on."""
+    sources = (
+        ("riscv uapi unistd.h", DEFAULT_RISCV_UAPI_REL),
+        ("riscv syscall_table.c", DEFAULT_RISCV_TBL_REL),
+        ("loongarch uapi unistd.h", DEFAULT_LOONG_UAPI_REL),
+        ("loongarch syscall.c", DEFAULT_LOONG_TBL_REL),
+        ("include/linux/syscalls.h", DEFAULT_SYS_H_REL),
+    )
+    texts = {}
+    missing = []
+    for label, rel in sources:
+        text = read_if_exists(repo_root / rel)
+        if text is None:
+            missing.append(f"  缺失: {label} ({rel})")
+        texts[label] = text
+    return texts, missing
+
+
+def _wire_inc(riscv_uapi, loong_uapi):
+    """Both UAPI headers must pull the shared asm-generic numbering in."""
+    fails = []
+    for label, text in (("riscv", riscv_uapi), ("loongarch", loong_uapi)):
+        if GENERIC_UAPI_INCLUDE not in text:
+            fails.append(f"  {label} uapi unistd.h 未包含 "
+                         "<asm-generic/unistd.h>")
+    return fails
+
+
+def _wire_riscv(tbl):
+    """riscv keeps its own wrapper prefix and includes the header twice."""
+    fails = []
+    if not RISCV_EXPAND_RE.search(tbl):
+        fails.append("  riscv syscall_table.c 未以 "
+                     "[nr] = __riscv_##call, 展开")
+    includes = tbl.count(RISCV_TBL_INCLUDE)
+    if includes != 2:
+        fails.append(f"  riscv syscall_table.c 包含 <asm/unistd.h> "
+                     f"{includes} 次 (期望 2: 原型 + 表项)")
+    if RISCV_TABLE_DECL not in tbl:
+        fails.append("  riscv syscall_table.c 缺 "
+                     "void * const sys_call_table[__NR_syscalls]")
+    return fails
+
+
+def _wire_loong(tbl):
+    """loongarch expands the bare symbol without the riscv wrapper."""
+    fails = []
+    if not LOONG_EXPAND_RE.search(tbl):
+        fails.append("  loongarch syscall.c 未以 [nr] = (call), 展开")
+    if LOONG_TABLE_DECL not in tbl:
+        fails.append("  loongarch syscall.c 缺 "
+                     "void *sys_call_table[__NR_syscalls]")
+    return fails
+
+
+def _wire_proto(sys_h):
+    """Every Airymax core call needs a bare prototype for the wrapper."""
+    fails = []
+    for cname, _macro, _num in CORE_SYSCALLS:
+        if f"asmlinkage long sys_{cname}(" not in sys_h:
+            fails.append(f"  include/linux/syscalls.h 缺 sys_{cname} "
+                         f"裸原型")
+    return fails
+
+
 def check_arch_wire(repo_root):
     """Verify asm-generic architectures keep the Airymax block wired.
 
@@ -829,59 +895,18 @@ def check_arch_wire(repo_root):
     include chain and expansion forms here.
     """
     name = "riscv/loongarch 通用表接线"
-    sources = (
-        ("riscv uapi unistd.h", DEFAULT_RISCV_UAPI_REL),
-        ("riscv syscall_table.c", DEFAULT_RISCV_TBL_REL),
-        ("loongarch uapi unistd.h", DEFAULT_LOONG_UAPI_REL),
-        ("loongarch syscall.c", DEFAULT_LOONG_TBL_REL),
-        ("include/linux/syscalls.h", DEFAULT_SYS_H_REL),
-    )
+    texts, missing = _wire_srcs(repo_root)
+    if missing:
+        return CheckResult(name, False, "\n".join(missing))
 
-    texts = {}
-    failures = []
-    for label, rel in sources:
-        text = read_if_exists(repo_root / rel)
-        if text is None:
-            failures.append(f"  缺失: {label} ({rel})")
-        texts[label] = text
-    if failures:
-        return CheckResult(name, False, "\n".join(failures))
-
-    riscv_uapi = texts["riscv uapi unistd.h"]
-    riscv_tbl = texts["riscv syscall_table.c"]
-    loong_uapi = texts["loongarch uapi unistd.h"]
-    loong_tbl = texts["loongarch syscall.c"]
     sys_h = texts["include/linux/syscalls.h"]
-
-    if GENERIC_UAPI_INCLUDE not in riscv_uapi:
-        failures.append("  riscv uapi unistd.h 未包含 "
-                        "<asm-generic/unistd.h>")
-    if GENERIC_UAPI_INCLUDE not in loong_uapi:
-        failures.append("  loongarch uapi unistd.h 未包含 "
-                        "<asm-generic/unistd.h>")
-
-    if not RISCV_EXPAND_RE.search(riscv_tbl):
-        failures.append("  riscv syscall_table.c 未以 "
-                        "[nr] = __riscv_##call, 展开")
-    includes = riscv_tbl.count(RISCV_TBL_INCLUDE)
-    if includes != 2:
-        failures.append(f"  riscv syscall_table.c 包含 <asm/unistd.h> "
-                        f"{includes} 次 (期望 2: 原型 + 表项)")
-    if RISCV_TABLE_DECL not in riscv_tbl:
-        failures.append("  riscv syscall_table.c 缺 "
-                        "void * const sys_call_table[__NR_syscalls]")
-
-    if not LOONG_EXPAND_RE.search(loong_tbl):
-        failures.append("  loongarch syscall.c 未以 [nr] = (call), 展开")
-    if LOONG_TABLE_DECL not in loong_tbl:
-        failures.append("  loongarch syscall.c 缺 "
-                        "void *sys_call_table[__NR_syscalls]")
-
-    for cname, _macro, _num in CORE_SYSCALLS:
-        if f"asmlinkage long sys_{cname}(" not in sys_h:
-            failures.append(f"  include/linux/syscalls.h 缺 sys_{cname} "
-                            f"裸原型")
-
+    failures = (
+        _wire_inc(texts["riscv uapi unistd.h"],
+                  texts["loongarch uapi unistd.h"])
+        + _wire_riscv(texts["riscv syscall_table.c"])
+        + _wire_loong(texts["loongarch syscall.c"])
+        + _wire_proto(sys_h)
+    )
     if failures:
         return CheckResult(name, False, "\n".join(failures))
     return CheckResult(
