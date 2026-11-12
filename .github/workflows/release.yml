@@ -363,8 +363,11 @@ jobs:
       # 出证与推送分两步：推送失败可以对着同一份产物重试，不必重跑整轮
       # 构建。指纹由 runner 自带的 GITHUB_RUN_ID 与检出提交决定，发布作业
       # 不检出 distro 子模块也不会退化成空配方摘要。
+      # 重放时产出资产的是 PUBLISH_RUN 那一轮，作业本轮只负责发布；不把
+      # 构建轮显式传下去，同一批资产会因为「谁在发布」而得到两份证明，
+      # 重放要么被拒、要么得 --force 覆盖掉原本有效的记录。
       - name: Attest release assets
-        run: ci/ci.sh attest build --kind rel --out . --tag "${{ steps.meta.outputs.tag }}"
+        run: ci/ci.sh attest build --kind rel --out . --tag "${{ steps.meta.outputs.tag }}" --build-run "${PUBLISH_RUN}"
 
       # 出证写盘与推送 registry 是两件事，推送端用 oras 走 OCI；runner 镜像
       # 不带它。同一份 ci/gates/attest.sh 在 image-build 与 payload-seed 里能

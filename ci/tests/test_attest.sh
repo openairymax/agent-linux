@@ -133,7 +133,27 @@ case "${out}" in
 *) bad "同份重推未跳过"; printf '%s\n' "${out}" >&2 ;;
 esac
 
+# 字节变了但所证事实没变（空白差异、键顺序、发布轮不同）：同一份证明的
+# 另一种写法，保留原记录即可，不应当成「另一份证明」要求 --force。
 printf ' ' >>"${file}"
+out="$(run publish --out "${tmp}/image" --tag v0.0.4 --ref ghcr.io/x/y)"
+case "${out}" in
+*"所证事实与本地一致"*) ok "字节不同但事实一致时保留原证明" ;;
+*) bad "事实一致却被判成异份"; printf '%s\n' "${out}" >&2 ;;
+esac
+
+# 真的事实差异（受证摘要被改）必须拒绝，不能被上面的等价判断放过去。
+python3 - "${file}" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as fh:
+    st = json.load(fh)
+st["subject"][0]["digest"]["sha256"] = "f" * 64
+with open(sys.argv[1], "w", encoding="utf-8") as fh:
+    json.dump(st, fh, sort_keys=True, indent=2)
+    fh.write("\n")
+PY
 out="$(run publish --out "${tmp}/image" --tag v0.0.4 --ref ghcr.io/x/y)"
 case "${out}" in
 *"已存在不同证明"*) ok "异份未加 --force 时拒绝" ;;
@@ -265,5 +285,24 @@ sha="$(git -C "${ROOT}" rev-parse HEAD | cut -c1-12)"
 grep -q "\"buildId\": \"r4242-g${sha}\"" "${rfile}" &&
     ok "流水线内指纹取 run id + 检出提交" ||
     bad "流水线内指纹未取原生量"
+
+# 重放：作业轮换了（7777），而产出资产的是 4242 那一轮。证明必须与 4242
+# 那一轮逐字节相同，否则 ghcr 里已发布的证明拦不住「每次重放换一份」。
+sum_build="$(sha256sum "${rfile}" | cut -d' ' -f1)"
+out="$(FAKE_STORE="${tmp}/store" PATH="${tmp}/bin:${PATH}" \
+    AIRYMAX_BUILD_ID='' GITHUB_RUN_ID=7777 \
+    bash "${GATE}" build --kind rel --out "${rel}" --tag v0.0.4 \
+    --build-run 4242 2>&1)"
+grep -q "\"buildId\": \"r4242-g${sha}\"" "${rfile}" &&
+    ok "重放取构建轮而非发布轮" ||
+    bad "重放指纹跟了发布轮"
+[ "$(sha256sum "${rfile}" | cut -d' ' -f1)" = "${sum_build}" ] &&
+    ok "重放与构建轮产出同一份字节" ||
+    bad "重放证明字节漂移"
+
+out="$(run build --kind rel --out "${rel}" --tag v0.0.4 --build-run abc 2>&1)"
+[ "$?" -eq 5 ] &&
+    ok "--build-run 非数字时按参数错误退出" ||
+    bad "--build-run 未校验数字"
 
 exit "${fails}"
