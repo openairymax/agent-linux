@@ -191,36 +191,49 @@ def parse_sums(text: str) -> dict[str, str]:
     return out
 
 
+def _explicit_sum(raw: str) -> str:
+    """--sha256 必须自带 64 位小写十六进制；大小写不敏感。"""
+    value = raw.strip().lower()
+    if not _is_hex64(value):
+        raise FlashError(EXIT_USAGE, f"--sha256 不是 64 位十六进制: {raw}")
+    return value
+
+
+def _sum_files(image: Path, sums: str) -> list[Path]:
+    """校验和候选：显式 --sums 优先，其次是镜像旁的 .sha256 与 SHA256SUMS。"""
+    extra = [Path(sums)] if sums else []
+    return extra + [image.with_suffix(image.suffix + ".sha256"),
+                    image.parent / "SHA256SUMS"]
+
+
+def _sum_pick(candidate: Path, image: Path,
+              explicit: bool) -> tuple[str, str] | None:
+    """从单个校验和文件取摘要；显式给出却查无此项当场报错。"""
+    try:
+        text = candidate.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    table = parse_sums(text)
+    if image.name in table:
+        return table[image.name], str(candidate)
+    if not explicit:
+        return None
+    if len(table) == 1:
+        return next(iter(table.values())), str(candidate)
+    raise FlashError(EXIT_CHECK,
+                     f"{candidate} 中没有 {image.name} 的摘要")
+
+
 def resolve_exp(
     image: Path, *, sha256: str = "", sums: str = ""
 ) -> tuple[str, str]:
     """返回 (期望摘要, 来源说明)；来源为空表示没有可用校验和。"""
     if sha256:
-        value = sha256.strip().lower()
-        if len(value) != 64 or any(c not in "0123456789abcdef" for c in value):
-            raise FlashError(EXIT_USAGE, f"--sha256 不是 64 位十六进制: {sha256}")
-        return value, "--sha256"
-
-    candidates: list[Path] = []
-    if sums:
-        candidates.append(Path(sums))
-    candidates.extend(
-        [image.with_suffix(image.suffix + ".sha256"), image.parent / "SHA256SUMS"]
-    )
-    for candidate in candidates:
-        try:
-            text = candidate.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            continue
-        table = parse_sums(text)
-        if image.name in table:
-            return table[image.name], str(candidate)
-        if sums and len(table) == 1:
-            return next(iter(table.values())), str(candidate)
-        if sums:
-            raise FlashError(
-                EXIT_CHECK, f"{candidate} 中没有 {image.name} 的摘要"
-            )
+        return _explicit_sum(sha256), "--sha256"
+    for candidate in _sum_files(image, sums):
+        hit = _sum_pick(candidate, image, bool(sums))
+        if hit is not None:
+            return hit
     return "", ""
 
 
