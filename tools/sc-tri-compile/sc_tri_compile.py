@@ -957,17 +957,39 @@ def print_report(results, header_files, cc, sources, check_mode):
     failed = total - passed
 
     if check_mode:
-        if failed == 0:
-            print(f"SC TRI-COMPILE: PASS ({passed}/{total} checks)")
-        else:
-            print(f"SC TRI-COMPILE: FAIL ({passed}/{total} checks, " f"{failed} failed)")
-            for r in results:
-                if not r.passed:
-                    print(f"  FAIL: {r.name}")
-                    for line in r.details.splitlines():
-                        print(f"    {line}")
+        _print_ci(results, passed, total, failed)
         return
+    _print_body(results, header_files, cc, sources, passed, total, failed)
 
+
+def _print_ci(results, passed, total, failed):
+    """CI 模式：一行判定加失败项明细，便于在流水线日志里定位。"""
+    if failed == 0:
+        print(f"SC TRI-COMPILE: PASS ({passed}/{total} checks)")
+        return
+    print(f"SC TRI-COMPILE: FAIL ({passed}/{total} checks, {failed} failed)")
+    for r in results:
+        if not r.passed:
+            print(f"  FAIL: {r.name}")
+            for line in r.details.splitlines():
+                print(f"    {line}")
+
+
+def _print_body(results, header_files, cc, sources, passed, total, failed):
+    """详细模式：来源与编译器、逐项判定、结论横幅。"""
+    _print_head(header_files, cc, sources, passed, total, failed)
+    for r in results:
+        _print_one(r)
+    print("-" * 72)
+    if failed == 0:
+        print("RESULT: PASS — all [SC] tri-compile checks passed (OS-IRON-014)")
+    else:
+        print(f"RESULT: FAIL — {failed} check(s) failed (OS-IRON-014 violation)")
+    print("-" * 72)
+
+
+def _print_head(header_files, cc, sources, passed, total, failed):
+    """报告抬头：契约来源、编译器与判定计数。"""
     print("=" * 72)
     print("agent-linux [SC] Tri-Compile & Layout Check Report")
     print("OS-IRON-014: [SC] 共享契约头多路编译与二进制布局一致")
@@ -985,21 +1007,16 @@ def print_report(results, header_files, cc, sources, check_mode):
     print("-" * 72)
     print()
 
-    for r in results:
-        marker = "[+]" if r.passed else "[-]"
-        status = "PASS" if r.passed else "FAIL"
-        print(f"{marker} {status}: {r.name}")
-        if r.details:
-            for line in r.details.splitlines():
-                print(f"      {line}")
-        print()
 
-    print("-" * 72)
-    if failed == 0:
-        print("RESULT: PASS — all [SC] tri-compile checks passed (OS-IRON-014)")
-    else:
-        print(f"RESULT: FAIL — {failed} check(s) failed (OS-IRON-014 violation)")
-    print("-" * 72)
+def _print_one(r):
+    """单项判定：标记、状态、名称与明细。"""
+    marker = "[+]" if r.passed else "[-]"
+    status = "PASS" if r.passed else "FAIL"
+    print(f"{marker} {status}: {r.name}")
+    if r.details:
+        for line in r.details.splitlines():
+            print(f"      {line}")
+    print()
 
 
 # ─── Main ──────────────────────────────────────────────────────────────────
