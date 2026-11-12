@@ -39,7 +39,7 @@ from typing import Final
 
 from osaccrt_boot import BootLog
 from osaccrt_judge import CAPTURE_ROOT
-from osaccrt_model import Verdict
+from osaccrt_model import Verdict, blocked_fws, rank_verdict
 from osaccrt_spec import SpecTable, meet
 
 __all__ = [
@@ -54,7 +54,6 @@ __all__ = [
 ]
 
 CHAIN_KEY: Final[str] = "boot.service"
-_RANK: Final[tuple[Verdict, ...]] = (Verdict.FAIL, Verdict.BLOCKED)
 _GLYPH: Final[str] = " │├└─┌┐┘┬┴┼"
 _TOK: Final[re.Pattern[str]] = re.compile(r"(\d+(?:\.\d+)?)(us|ms|min|h|s)")
 _UNIT: Final[Mapping[str, float]] = {
@@ -133,19 +132,12 @@ class Chain:
     @property
     def verdict(self) -> Verdict:
         """任一固件失败即失败；否则任一缺口即阻塞；全绿才通过。"""
-        states = {item.state for item in self.trails}
-        for state in _RANK:
-            if state in states:
-                return state
-        return Verdict.PASS
+        return rank_verdict(item.state for item in self.trails)
 
     @property
     def gaps(self) -> tuple[str, ...]:
         """结论为阻塞的固件名，供失败分类直接引用。"""
-        return tuple(
-            item.fw for item in self.trails
-            if item.state is Verdict.BLOCKED
-        )
+        return blocked_fws(self.trails)
 
 
 def judge(logs: Mapping[str, BootLog], table: SpecTable) -> Chain:

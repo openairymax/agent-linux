@@ -48,16 +48,14 @@ from __future__ import annotations
 import argparse
 import re
 import sys
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Iterator, Mapping
 
-try:
-    import yaml
-except ImportError:  # pragma: no cover - 环境缺失时在入口统一报错
-    yaml = None
+# tools/lib 是契约检查工具的共享层：结果类型与报告格式只能有一份。
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+from check_report import CheckResult, lead, print_report, yaml
 
-__all__ = ["CheckResult", "NightlyError", "main"]
+__all__ = ["NightlyError", "main"]
 
 # ─── Constants ─────────────────────────────────────────────────────────────
 
@@ -90,6 +88,7 @@ NAME_VARS = "shell 变量"
 NAME_SURFACE = "helper 登记"
 NAME_HELPERS = "helper 契约"
 NAME_BUDGET = "CI 总时长预算"
+TITLE = "agent-linux AirymaxOS nightly workflow 契约检查报告"
 
 _EXPR_RE = re.compile(r"\$\{\{.*?\}\}", re.S)
 _VAR_RE = re.compile(r"\$\{?([A-Z][A-Z0-9_]*)\}?")
@@ -101,21 +100,6 @@ _VAR_ALLOWED = frozenset({
 
 
 # ─── Data model ────────────────────────────────────────────────────────────
-
-
-@dataclass(frozen=True)
-class CheckResult:
-    """单项检查结果。
-
-    Attributes:
-        name: 检查项名称。
-        passed: 是否通过。
-        details: 失败证据或补充说明。
-    """
-
-    name: str
-    passed: bool
-    details: str = ""
 
 
 class NightlyError(Exception):
@@ -640,43 +624,22 @@ def _budget_job(man: Mapping[str, Any],
 def build_checks(man: Mapping[str, Any], wf: Mapping[str, Any],
                  root: Path) -> list[CheckResult]:
     """按序构建全部检查；schema 失败时短路。"""
-    schema = check_schema(man)
-    if not schema.passed:
-        return [schema]
-    return [
-        schema,
-        check_trigger(man, wf),
-        check_flight(man, wf),
-        check_perms(man, wf),
-        check_jobs(man, wf),
-        check_runner(man, wf),
-        check_timeout(man, wf),
-        check_vars(man, wf),
-        check_surface(man, wf, root),
-        check_helpers(man, wf, root),
-        check_budget(man, wf, root),
-    ]
+    return lead(check_schema(man), _checks(man, wf, root))
 
 
-# ─── Report ────────────────────────────────────────────────────────────────
-
-
-def print_report(results: list[CheckResult], check_mode: bool) -> None:
-    """输出检查报告；CI 模式仅输出汇总与失败证据。"""
-    total = len(results)
-    failed = [result for result in results if not result.passed]
-    state = "FAIL" if failed else "PASS"
-    if check_mode:
-        print(f"NIGHTLY: {state} ({total - len(failed)}/{total} checks)")
-        for result in failed:
-            print(f"  FAIL {result.name}: {result.details}")
-        return
-    for result in results:
-        mark = "PASS" if result.passed else "FAIL"
-        print(f"[{mark}] {result.name}")
-        if result.details:
-            print(f"       {result.details}")
-    print(f"\nNIGHTLY: {state} ({total - len(failed)}/{total} checks)")
+def _checks(man: Mapping[str, Any], wf: Mapping[str, Any],
+            root: Path) -> Iterator[CheckResult]:
+    """生成 schema 之后的检查结果，由 lead 在 schema 通过后消费。"""
+    yield check_trigger(man, wf)
+    yield check_flight(man, wf)
+    yield check_perms(man, wf)
+    yield check_jobs(man, wf)
+    yield check_runner(man, wf)
+    yield check_timeout(man, wf)
+    yield check_vars(man, wf)
+    yield check_surface(man, wf, root)
+    yield check_helpers(man, wf, root)
+    yield check_budget(man, wf, root)
 
 
 # ─── Main ──────────────────────────────────────────────────────────────────
@@ -715,18 +678,21 @@ def main(argv: list[str] | None = None) -> int:
 
     schema = check_schema(man)
     if not schema.passed:
-        print_report([schema], args.check)
+        print_report([schema], "NIGHTLY", args.check, TITLE,
+                     str(man.get("version", "?")))
         return EXIT_FAIL
 
     try:
         wf = load_yaml(root / man["workflow"])
     except NightlyError as exc:
         print_report([CheckResult("workflow 可解析", False, str(exc))],
-                     args.check)
+                     "NIGHTLY", args.check, TITLE,
+                     str(man.get("version", "?")))
         return EXIT_FAIL
 
     results = build_checks(man, wf, root)
-    print_report(results, args.check)
+    print_report(results, "NIGHTLY", args.check, TITLE,
+                 str(man.get("version", "?")))
     return EXIT_FAIL if any(not item.passed for item in results) else EXIT_PASS
 
 

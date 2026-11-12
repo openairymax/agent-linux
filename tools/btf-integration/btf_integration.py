@@ -57,18 +57,17 @@ from __future__ import annotations
 import argparse
 import re
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-try:
-    import yaml
-except ImportError:  # pragma: no cover - 环境缺失时在入口统一报错
-    yaml = None
+# tools/lib 是契约检查工具的共享层：结果类型与报告格式只能有一份。
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+from check_report import CheckResult, ManifestError, print_report, yaml
 
+# 导出表只列本模块定义的名字：共享层的类型与报告函数按需显式导入，
+# 不转出口。否则各工具的导出表前几项必然逐字相同，读的人分不清哪一层
+# 是自己的 API。
 __all__ = [
-    "CheckResult",
-    "ManifestError",
     "build_checks",
     "check_bpf",
     "check_btf",
@@ -80,7 +79,6 @@ __all__ = [
     "load_arches",
     "load_manifest",
     "main",
-    "print_report",
     "read_configs",
 ]
 
@@ -109,25 +107,6 @@ MUTEX_FMT = "# {key} is not set"
 CONFIG_VAL_RE = re.compile(r"^(CONFIG_[A-Za-z0-9_]+)=(.*)$")
 CONFIG_SET_RE = re.compile(r"^# (CONFIG_[A-Za-z0-9_]+) is not set$")
 CONFIG_SYM_RE = re.compile(r"^CONFIG_[A-Za-z0-9_]+$")
-
-
-@dataclass(frozen=True)
-class CheckResult:
-    """单项检查结果。
-
-    Attributes:
-        name: 检查项名称，同时作为报告中的稳定标识。
-        passed: 该项是否通过。
-        details: 失败证据，多行文本；通过时为空串。
-    """
-
-    name: str
-    passed: bool
-    details: str = ""
-
-
-class ManifestError(Exception):
-    """清单不可读取或 schema 非法。"""
 
 
 Manifest = dict[str, Any]
@@ -497,53 +476,6 @@ def check_ci_supply(manifest: Manifest, repo_root: Path) -> CheckResult:
                        not problems, "\n".join(problems))
 
 
-def print_report(results: Results, manifest: Manifest,
-                 check_mode: bool) -> None:
-    """打印检查报告。
-
-    Args:
-        results: 已执行的检查结果。
-        manifest: BTF 基线清单，用于展示版本号。
-        check_mode: 为真时输出 CI 精简格式，否则输出完整报告。
-    """
-    total = len(results)
-    passed = sum(1 for r in results if r.passed)
-    failed = total - passed
-
-    if check_mode:
-        if failed == 0:
-            print(f"BTF-INTEGRATION: PASS ({passed}/{total} checks)")
-        else:
-            print(f"BTF-INTEGRATION: FAIL ({passed}/{total} checks, "
-                  f"{failed} failed)")
-            for result in results:
-                if not result.passed:
-                    print(f"  FAIL: {result.name}")
-                    for line in result.details.splitlines():
-                        print(f"    {line}")
-        return
-
-    print("=" * 72)
-    print("agent-linux AirymaxOS BTF / eBPF 基线一致性报告")
-    print(f"清单版本: {manifest.get('version', '?')}")
-    print("=" * 72)
-    print()
-    for result in results:
-        marker = "[+]" if result.passed else "[-]"
-        status = "PASS" if result.passed else "FAIL"
-        print(f"{marker} {status}: {result.name}")
-        if result.details:
-            for line in result.details.splitlines():
-                print(f"      {line}")
-    print()
-    print("-" * 72)
-    if failed == 0:
-        print(f"RESULT: PASS — 全部 {total} 项检查通过")
-    else:
-        print(f"RESULT: FAIL — {failed} 项检查未通过")
-    print("-" * 72)
-
-
 def build_checks(manifest: Manifest, repo_root: Path,
                  kernel_dir: Path) -> Results:
     """按清单 schema 与片段存在性决定是否继续执行内容类检查。
@@ -621,7 +553,9 @@ def main(argv: list[str] | None = None) -> None:
         sys.exit(EXIT_USAGE)
 
     results = build_checks(manifest, repo_root, kernel_dir)
-    print_report(results, manifest, args.check)
+    print_report(results, "BTF-INTEGRATION", args.check,
+                 "agent-linux AirymaxOS BTF / eBPF 基线一致性报告",
+                 str(manifest.get("version", "?")))
 
     failed = sum(1 for result in results if not result.passed)
     sys.exit(EXIT_FAIL if failed else EXIT_PASS)

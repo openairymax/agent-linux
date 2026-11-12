@@ -20,6 +20,9 @@ verification, build SBOMs, and orchestrate the `[SC]` dual-CI mirror flow.
 ```text
 tools/
 ├── README.md                    # This file
+├── lib/                         # Cross-tool shared layer (not a CLI tool)
+│   ├── check_report.py          # Contract-check result type + report contract
+│   └── README.md                # Tool-group documentation
 ├── repo/                        # Repository-governance CLIs (no build inputs, only worktree state)
 │   ├── validate-ssot.py         # SSoT rule-ID consistency validator
 │   ├── aggregate-subrepo-ci.py  # Leaf-repo CI status aggregator

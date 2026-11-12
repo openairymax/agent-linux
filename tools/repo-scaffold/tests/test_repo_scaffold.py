@@ -415,15 +415,16 @@ def test_entry_detects_empty_probe(repo: Path) -> None:
 
 def test_report_lists_failures(capsys) -> None:
     result = rs.CheckResult(rs.NAME_BUILD, False, "missing")
-    rs.print_report([result], True)
+    rs.print_report([result], "REPO-SCAFFOLD", True)
     out = capsys.readouterr().out
-    assert "REPO-SCAFFOLD: FAIL (0/1 checks)" in out
-    assert "FAIL 构建入口: missing" in out
+    assert "REPO-SCAFFOLD: FAIL (0/1 checks, 1 failed)" in out
+    assert "FAIL: 构建入口" in out
+    assert "missing" in out
 
 
 def test_report_succeeds_quietly(repo: Path, capsys) -> None:
     results = rs.build_checks(_man(), repo)
-    rs.print_report(results, True)
+    rs.print_report(results, "REPO-SCAFFOLD", True)
     assert "REPO-SCAFFOLD: PASS (7/7 checks)" in capsys.readouterr().out
 
 

@@ -32,7 +32,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Final, Protocol
+from typing import Final, Iterable, Protocol
 
 __all__ = [
     "EXP_ID_RE",
@@ -43,10 +43,12 @@ __all__ = [
     "Step",
     "Threshold",
     "Verdict",
+    "blocked_fws",
     "need_line",
     "need_relpath",
     "need_signers",
     "need_text",
+    "rank_verdict",
 ]
 
 EXP_ID_RE: Final[re.Pattern[str]] = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
@@ -60,6 +62,46 @@ class Verdict(Enum):
     FAIL = "FAIL"
     WAIVED = "WAIVED"
     BLOCKED = "BLOCKED"
+
+
+# 归纳次序：失败必须先于阻塞被看见——一台机器冒烟失败时，把整批判成
+# 「阻塞」会掩盖已经拿到的反证。
+_RANK: Final[tuple[Verdict, ...]] = (Verdict.FAIL, Verdict.BLOCKED)
+
+
+class Rated(Protocol):
+    """带单固件结论的事实（冒烟样本、关键链表项）。"""
+
+    fw: str
+    state: Verdict
+
+
+def rank_verdict(states: Iterable[Verdict]) -> Verdict:
+    """按失败优先于阻塞的次序归纳一组单固件结论。
+
+    Args:
+        states: 各固件的结论。
+
+    Returns:
+        归纳结论；全部通过时返回 PASS。
+    """
+    got = set(states)
+    for state in _RANK:
+        if state in got:
+            return state
+    return Verdict.PASS
+
+
+def blocked_fws(facts: Iterable[Rated]) -> tuple[str, ...]:
+    """列出结论为阻塞的固件名，供失败分类直接引用。
+
+    Args:
+        facts: 各固件的事实。
+
+    Returns:
+        阻塞固件名元组，保持输入次序。
+    """
+    return tuple(item.fw for item in facts if item.state is Verdict.BLOCKED)
 
 
 class Step(Enum):

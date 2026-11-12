@@ -38,7 +38,7 @@ from typing import Final
 from osaccrt_boot import TAG_READY, BootLog, load_env
 from osaccrt_img import Boot, Image
 from osaccrt_judge import CAPTURE_ROOT
-from osaccrt_model import Verdict
+from osaccrt_model import Verdict, blocked_fws, rank_verdict
 from osaccrt_spec import SpecTable, meet
 
 __all__ = [
@@ -51,7 +51,6 @@ __all__ = [
 ]
 
 COLD_KEY: Final[str] = "boot.cold"
-_RANK: Final[tuple[Verdict, ...]] = (Verdict.FAIL, Verdict.BLOCKED)
 
 
 @dataclass(frozen=True)
@@ -116,19 +115,12 @@ class Smoke:
     @property
     def verdict(self) -> Verdict:
         """任一固件失败即失败；否则任一缺口即阻塞；全绿才通过。"""
-        states = {item.state for item in self.samples}
-        for state in _RANK:
-            if state in states:
-                return state
-        return Verdict.PASS
+        return rank_verdict(item.state for item in self.samples)
 
     @property
     def gaps(self) -> tuple[str, ...]:
         """结论为阻塞的固件名，供失败分类直接引用。"""
-        return tuple(
-            item.fw for item in self.samples
-            if item.state is Verdict.BLOCKED
-        )
+        return blocked_fws(self.samples)
 
 
 def judge(image: Image, logs: Mapping[str, BootLog],

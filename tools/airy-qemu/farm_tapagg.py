@@ -52,6 +52,7 @@ from farm_types import (
     AIRY_QEMU_ERROR,
     FarmConfigError,
     FarmError,
+    TapCounts,
     TapSummary,
 )
 
@@ -86,7 +87,7 @@ _SKIP: Final[int] = 2
 
 
 @dataclass(frozen=True)
-class SuiteTally:
+class SuiteTally(TapCounts):
     """单个 kselftest 套件的 TAP 统计。"""
 
     name: str
@@ -105,26 +106,6 @@ class SuiteTally:
                 f"executed exceeds plan_total: {self.executed} > "
                 f"{self.plan_total}"
             )
-
-    @property
-    def executed(self) -> int:
-        """已上报结果的用例数（含跳过）。"""
-        return self.ok_count + self.not_ok_count + self.skip_count
-
-    @property
-    def missing(self) -> int:
-        """计划中缺失结果的用例数。"""
-        return self.plan_total - self.executed
-
-    @property
-    def complete(self) -> bool:
-        """计划是否完整执行。"""
-        return self.plan_total > 0 and self.missing == 0
-
-    @property
-    def passed(self) -> bool:
-        """是否完整执行且无失败用例。"""
-        return self.complete and self.not_ok_count == 0
 
 
 @dataclass(frozen=True)

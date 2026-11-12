@@ -52,10 +52,9 @@ import re
 import sys
 from pathlib import Path, PurePosixPath
 
-try:
-    import yaml
-except ImportError:  # pragma: no cover - 环境缺失时在入口统一报错
-    yaml = None
+# tools/lib 是契约检查工具的共享层：结果类型与报告格式只能有一份。
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+from check_report import CheckResult, ManifestError, print_report, yaml
 
 # ─── Constants ─────────────────────────────────────────────────────────────
 
@@ -98,22 +97,6 @@ KCONFIG_DECL_RE = re.compile(
     r"^\s*(?:menuconfig|config)\s+([A-Za-z0-9_]+)\s*$", re.MULTILINE)
 REQUIRED_ARRAY_RE = re.compile(r"REQUIRED_CONF=\((.*?)^\s*\)", re.DOTALL | re.MULTILINE)
 REQUIRED_ITEM_RE = re.compile(r"'([^']+)'")
-
-
-# ─── Data model ────────────────────────────────────────────────────────────
-
-
-class CheckResult:
-    """单项检查结果。"""
-
-    def __init__(self, name, passed, details=""):
-        self.name = name
-        self.passed = passed
-        self.details = details
-
-
-class ManifestError(Exception):
-    """清单不可读取或 schema 非法。"""
 
 
 # ─── Helpers ───────────────────────────────────────────────────────────────
@@ -482,50 +465,6 @@ def check_kdecl(kernel_dir):
                        not problems, "\n".join(problems))
 
 
-# ─── Report ────────────────────────────────────────────────────────────────
-
-
-def print_report(results, manifest, check_mode):
-    """打印检查报告。"""
-    total = len(results)
-    passed = sum(1 for r in results if r.passed)
-    failed = total - passed
-
-    if check_mode:
-        if failed == 0:
-            print(f"DEFCONFIG-MATRIX: PASS ({passed}/{total} checks)")
-        else:
-            print(f"DEFCONFIG-MATRIX: FAIL ({passed}/{total} checks, "
-                  f"{failed} failed)")
-            for result in results:
-                if not result.passed:
-                    print(f"  FAIL: {result.name}")
-                    for line in result.details.splitlines():
-                        print(f"    {line}")
-        return
-
-    print("=" * 72)
-    print("agent-linux AirymaxOS defconfig 矩阵一致性报告")
-    print(f"清单版本: {manifest.get('version', '?')}    "
-          f"架构数: {len(manifest.get('architectures', []))}")
-    print("=" * 72)
-    print()
-    for result in results:
-        marker = "[+]" if result.passed else "[-]"
-        status = "PASS" if result.passed else "FAIL"
-        print(f"{marker} {status}: {result.name}")
-        if result.details:
-            for line in result.details.splitlines():
-                print(f"      {line}")
-    print()
-    print("-" * 72)
-    if failed == 0:
-        print(f"RESULT: PASS — 全部 {total} 项检查通过")
-    else:
-        print(f"RESULT: FAIL — {failed} 项检查未通过")
-    print("-" * 72)
-
-
 # ─── Main ──────────────────────────────────────────────────────────────────
 
 
@@ -583,7 +522,11 @@ def main(argv=None):
         sys.exit(EXIT_USAGE)
 
     results = build_checks(manifest, repo_root, kernel_dir)
-    print_report(results, manifest, args.check)
+    print_report(
+        results, "DEFCONFIG-MATRIX", args.check,
+        "agent-linux AirymaxOS defconfig 矩阵一致性报告",
+        str(manifest.get("version", "?")),
+        f"架构数: {len(manifest.get('architectures', []))}")
 
     failed = sum(1 for result in results if not result.passed)
     sys.exit(EXIT_FAIL if failed else EXIT_PASS)

@@ -13,8 +13,8 @@
 #   · 未登记的重复片段（连续 WINDOW 行规范化窗口）一律判红；
 #   · 存量超标函数与重复窗口按基线登记，只减不增：--update 拒绝抬高数量。
 #
-# 为什么不直接按 2.5 判全树：本仓自有代码的均值约 4.1、超标函数 217 个，
-# 一次压到 2.5 只能靠机械拆函数，与「边开发边测试、稳定性优先」相冲突。
+# 为什么不直接按 2.5 判全树：本仓自有代码实测圈复杂度均值 3.70、超 10 的函数
+# 116 个，一次压到 2.5 只能靠机械拆函数，与「边开发边测试、稳定性优先」相冲突。
 # 棘轮让新增代码不再恶化，存量靠后续重构消化，且差额每次运行都打印出来，
 # 不会因为「没判据」而悄悄回到原点。
 #
@@ -22,6 +22,9 @@
 #   · 只量 shell 与 python——与 ci/name_lint.py 同一交付面（ci tools distro
 #     system），kernel 是上游树、不参与本仓度量（ALK-01 亦要求内核侧零改动）；
 #   · tests/fixture 不量：那里的重复与分支是刻意构造的负例；
+#   · 注释不算代码：shell 的整行 `#` 与 python 的文档字符串都剔除。规范要求
+#     每个文件带中文文件头，若把它计进重复率，压低数字的唯一办法就是删掉
+#     规范要求的文件头——度量不该逼人违规；
 #   · 圈复杂度是判定点计数（McCabe）：python 走 AST（if/for/while/except/
 #     ifexp/assert/comprehension/bool 运算），shell 走行内关键字与 &&/||；
 #     嵌套定义的判定点只计入它自己，不摊给外层；
@@ -47,6 +50,8 @@ DEFAULT = ("ci", "tools", "distro", "system")
 SKIP = frozenset(("tests", "fixture", "__pycache__", ".git", "node_modules"))
 SUFFIX = (".sh", ".py")
 PY_DEF = (ast.FunctionDef, ast.AsyncFunctionDef)
+# 可携带文档字符串的节点：模块、类、函数。
+DOC_NODES = PY_DEF + (ast.Module, ast.ClassDef)
 PY_STEP = (ast.If, ast.For, ast.AsyncFor, ast.While, ast.IfExp,
            ast.Assert, ast.ExceptHandler)
 SH_DEF = re.compile(r"^\s*(?:function\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*\)")
@@ -85,11 +90,33 @@ def py_cc(node):
     return total
 
 
-def py_funcs(path):
-    """返回 [(函数名, 圈复杂度)]，语法错误向上抛给调用点计缺陷。"""
-    tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
-    return [(n.name, 1 + py_cc(n))
-            for n in ast.walk(tree) if isinstance(n, PY_DEF)]
+def doc_rows(tree):
+    """文档字符串占据的行号集合。
+
+    文档字符串是注释的 python 形态：项目规范要求每个文件带中文文件头，
+    那是必须写的东西，不是可以合并的代码。把它算进重复率，唯一能压低
+    数字的做法就是删掉规范要求的文件头——度量反而逼人违规，所以按注释
+    剔除，与 shell 侧的整行 `#` 同一口径。
+    """
+    rows = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, DOC_NODES) or not node.body:
+            continue
+        first = node.body[0]
+        if (isinstance(first, ast.Expr)
+                and isinstance(first.value, ast.Constant)
+                and isinstance(first.value.value, str)):
+            rows.update(range(first.lineno, (first.end_lineno or first.lineno) + 1))
+    return rows
+
+
+def py_scan(path):
+    """一次解析产出 (函数清单, 规范化行)；语法错误向上抛给调用点计缺陷。"""
+    text = path.read_text(encoding="utf-8", errors="replace")
+    tree = ast.parse(text)
+    got = [(n.name, 1 + py_cc(n))
+           for n in ast.walk(tree) if isinstance(n, PY_DEF)]
+    return got, norm(text.splitlines(), doc_rows(tree))
 
 
 def sh_funcs(path):
@@ -116,14 +143,21 @@ def sh_funcs(path):
     return out
 
 
-def code_lines(path):
-    """规范化后的有效行：去空白与整行注释，脚手架行（then/fi/}）不计。"""
+def norm(rows, skip=()):
+    """规范化：去空白、整行注释与脚手架行；skip 是剔掉的行号（文档字符串）。"""
     out = []
-    for raw in path.read_text(encoding="utf-8", errors="replace").splitlines():
+    for no, raw in enumerate(rows, 1):
         line = raw.strip()
+        if no in skip:
+            continue
         if line and not line.startswith("#") and line not in SCAFFOLD:
             out.append(line)
     return out
+
+
+def code_lines(path):
+    """shell 侧的有效行；python 的文档字符串处理见 py_scan。"""
+    return norm(path.read_text(encoding="utf-8", errors="replace").splitlines())
 
 
 def windows(lines):
@@ -139,15 +173,18 @@ def scan(roots):
     for base in roots:
         for path in sources(base):
             try:
-                got = py_funcs(path) if path.suffix == ".py" else sh_funcs(path)
+                if path.suffix == ".py":
+                    got, rows = py_scan(path)
+                else:
+                    got, rows = sh_funcs(path), code_lines(path)
             except SyntaxError as exc:
                 print("%s:%s: E002 cannot parse (%s)" % (path, exc.lineno, exc.msg),
                       file=sys.stderr)
                 bad += 1
                 continue
-            lines += len(code_lines(path))
+            lines += len(rows)
             funcs += [(str(path), name, cc) for name, cc in got]
-            dup.update(windows(code_lines(path)))
+            dup.update(windows(rows))
     return funcs, dup, lines, bad
 
 
