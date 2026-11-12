@@ -639,6 +639,66 @@ def probe_image(path: Path) -> ImageFacts:
     return ImageFacts(path=target, size=info.st_size)
 
 
+def _stat_target(target: Path) -> os.stat_result:
+    """目标必须可 stat；不可达时给出权限提示而不是裸 OSError。"""
+    try:
+        return target.stat()
+    except OSError as exc:  # pragma: no cover - exists() 已过
+        raise FlashError(
+            EXIT_CHECK,
+            f"无法 stat 目标: {target}",
+            hint="确认该节点在当前用户可见（写块设备需 sudo）",
+        ) from exc
+
+
+def _mount_points(table: Sequence[Mount], prefix: str) -> tuple[str, ...]:
+    """目标自身及其分区的挂载点，去重后按字典序。"""
+    hits = {m.point for m in table
+            if m.source == prefix or m.source.startswith(prefix)}
+    return tuple(sorted(hits))
+
+
+def _block_facts(target: Path, table: Sequence[Mount],
+                 sys_block: Path) -> DeviceFacts:
+    """块设备：容量、型号、序列号、总线与只读位全部取自 sysfs。"""
+    entry = Path(sys_block) / target.name
+    dev = entry / "device"
+    sectors = _read_attr(entry / "size")
+    size = int(sectors) * BLOCK_SECTOR if sectors.isdigit() else 0
+    parts, parts_bytes = _partitions(entry, target.name)
+    return DeviceFacts(
+        path=target,
+        kind="block",
+        size=size,
+        model=_read_attr(dev / "model"),
+        serial=_read_attr(dev / "serial"),
+        tran=_read_attr(dev / "transport") or _read_attr(dev / "subsystem"),
+        removable=_read_attr(entry / "removable") == "1",
+        read_only=_read_attr(entry / "ro") == "1",
+        mountpoints=_mount_points(table, target.as_posix()),
+        system_disks=system_disks(table, sys_block),
+        parts=parts,
+        parts_bytes=parts_bytes,
+    )
+
+
+def _file_facts(target: Path, info: os.stat_result,
+                allow_file: bool) -> DeviceFacts:
+    """普通文件只在显式 --allow-file 时接受，用于虚拟机镜像与测试。"""
+    if not allow_file:
+        raise FlashError(
+            EXIT_CHECK,
+            f"{target} 是普通文件；写镜像到文件需显式 --allow-file",
+            hint="目标应为整块设备；仅虚拟机镜像或测试才用 --allow-file",
+        )
+    return DeviceFacts(
+        path=target,
+        kind="file",
+        size=info.st_size,
+        note="普通文件靶子（测试/虚拟机镜像）",
+    )
+
+
 def probe_device(
     path: Path,
     *,
@@ -653,61 +713,13 @@ def probe_device(
             EXIT_CHECK, f"目标不存在: {target}", hint="用 lsblk 取整盘节点，如 /dev/sdb"
         )
 
-    try:
-        info = target.stat()
-    except OSError as exc:  # pragma: no cover - exists() 已过
-        raise FlashError(
-            EXIT_CHECK,
-            f"无法 stat 目标: {target}",
-            hint="确认该节点在当前用户可见（写块设备需 sudo）",
-        ) from exc
-
+    info = _stat_target(target)
     table = list(mounts) if mounts is not None else read_mounts()
-    prefix = target.as_posix()
 
     if stat.S_ISBLK(info.st_mode):
-        entry = Path(sys_block) / target.name
-        sectors = _read_attr(entry / "size")
-        size = int(sectors) * BLOCK_SECTOR if sectors.isdigit() else 0
-        parts, parts_bytes = _partitions(entry, target.name)
-        points = tuple(
-            sorted(
-                {
-                    m.point
-                    for m in table
-                    if m.source == prefix or m.source.startswith(prefix)
-                }
-            )
-        )
-        return DeviceFacts(
-            path=target,
-            kind="block",
-            size=size,
-            model=_read_attr(entry / "device" / "model"),
-            serial=_read_attr(entry / "device" / "serial"),
-            tran=_read_attr(entry / "device" / "transport")
-            or _read_attr(entry / "device" / "subsystem"),
-            removable=_read_attr(entry / "removable") == "1",
-            read_only=_read_attr(entry / "ro") == "1",
-            mountpoints=points,
-            system_disks=system_disks(table, sys_block),
-            parts=parts,
-            parts_bytes=parts_bytes,
-        )
-
+        return _block_facts(target, table, sys_block)
     if stat.S_ISREG(info.st_mode):
-        if not allow_file:
-            raise FlashError(
-                EXIT_CHECK,
-                f"{target} 是普通文件；写镜像到文件需显式 --allow-file",
-                hint="目标应为整块设备；仅虚拟机镜像或测试才用 --allow-file",
-            )
-        return DeviceFacts(
-            path=target,
-            kind="file",
-            size=info.st_size,
-            note="普通文件靶子（测试/虚拟机镜像）",
-        )
+        return _file_facts(target, info, allow_file)
 
     raise FlashError(
         EXIT_CHECK,
