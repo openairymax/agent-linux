@@ -228,26 +228,31 @@ def _schema_lics(value: Any) -> list[str]:
     return problems
 
 
-def _schema_repo(entry: Any, names: set[str],
-                 lics: Any) -> list[str]:
-    if not isinstance(entry, dict):
-        return ["subrepos 条目必须是映射"]
-    problems = _need(entry, REPO_KEYS, "subrepos[].")
-    unknown = set(entry) - REPO_KEYS - {PROBE_KEY}
-    problems += [f"subrepos[] 未登记字段: {key}" for key in sorted(unknown)]
+def _repo_path(entry: Mapping[str, Any], problems: list[str]) -> str:
+    """path 必须是相对路径；非法时仍给出可读标签，便于定位条目。"""
     path = entry.get("path")
     if not _rel_ok(path):
         problems.append(f"subrepos[].path 非法: {path!r}")
-    label = path if isinstance(path, str) else "?"
+    return path if isinstance(path, str) else "?"
+
+
+def _repo_refs(entry: Mapping[str, Any], label: str, names: set[str],
+               lics: Any, problems: list[str]) -> None:
+    """skeleton 与 license 必须引用清单里已经定义的条目。"""
     if entry.get("skeleton") not in names:
         problems.append(
             f"subrepos[{label}].skeleton 未定义: "
             f"{entry.get('skeleton')!r}")
-    known_lics = lics if isinstance(lics, dict) else {}
-    if entry.get("license") not in known_lics:
+    known = lics if isinstance(lics, dict) else {}
+    if entry.get("license") not in known:
         problems.append(
             f"subrepos[{label}].license 未定义: "
             f"{entry.get('license')!r}")
+
+
+def _repo_probe(entry: Mapping[str, Any], label: str,
+                problems: list[str]) -> None:
+    """entry_probe 只对 native 入口有意义；其余入口出现即为误配。"""
     entry_file = entry.get("build_entry")
     if entry_file not in KINDS_BY_ENTRY:
         problems.append(
@@ -259,6 +264,18 @@ def _schema_repo(entry: Any, names: set[str],
             problems.append(f"subrepos[{label}].entry_probe 必须合法且非空")
     elif probe is not None:
         problems.append(f"subrepos[{label}].entry_probe 仅 Makefile 入口可用")
+
+
+def _schema_repo(entry: Any, names: set[str],
+                 lics: Any) -> list[str]:
+    if not isinstance(entry, dict):
+        return ["subrepos 条目必须是映射"]
+    problems = _need(entry, REPO_KEYS, "subrepos[].")
+    unknown = set(entry) - REPO_KEYS - {PROBE_KEY}
+    problems += [f"subrepos[] 未登记字段: {key}" for key in sorted(unknown)]
+    label = _repo_path(entry, problems)
+    _repo_refs(entry, label, names, lics, problems)
+    _repo_probe(entry, label, problems)
     return problems
 
 
