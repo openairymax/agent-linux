@@ -74,27 +74,60 @@ def gpu_bus(root):
                for dev in nodes(root / "sys/bus/pci/devices", "*"))
 
 
-def class_display(root):
+def drm_nodes(root):
+    """卡节点与连接器节点；Writeback 不是可扫描输出，卡节点名不含短横。"""
     drm = root / "sys/class/drm"
     cards = [p for p in nodes(drm, "card[0-9]*") if "-" not in p.name]
     conns = [p for p in nodes(drm, "card*-*") if "Writeback" not in p.name]
-    if not cards and not gpu_bus(root) and not (root / "sys/class/graphics/fb0").exists():
-        return ("n/a", "no-display-hardware", "本机无显示硬件")
-    if not conns:
-        return ("fail", "no-connector", "有显示设备但无连接器节点")
-    kms = sorted(d for d in {drv_name(c) for c in cards}
-                 if d and d != "simple-framebuffer")
-    if not kms:
-        return ("fail", "no-kms", "仅 simpledrm 或未绑定 KMS 驱动")
-    tied = [c for c in conns if read(c / "status") == "connected"]
+    return cards, conns
+
+
+def no_display(root, cards):
+    """无 card 节点不足以判「本机无显示硬件」：驱动未绑定时同样缺卡节点。
+
+    只有 PCI 显示类设备与 fb0 都不存在，才说明硬件不在位；否则结论必须
+    落在 fail，让「硬件在但缺能力」与「没有这类硬件」分得开。
+    """
+    if cards:
+        return False
+    return not gpu_bus(root) and not (root / "sys/class/graphics/fb0").exists()
+
+
+def kms_drivers(cards):
+    """已绑定的 KMS 驱动名；simpledrm 只搬帧缓冲，不提供 KMS 能力。"""
+    return sorted(d for d in {drv_name(c) for c in cards}
+                  if d and d != "simple-framebuffer")
+
+
+def tied_outputs(conns):
+    """status 为 connected 的连接器。"""
+    return [c for c in conns if read(c / "status") == "connected"]
+
+
+def screen_state(conns, driver):
+    """连通性之上的证据链：pass 需要连接器、模式与 EDID 同时成立。"""
+    tied = tied_outputs(conns)
     if not tied:
         return ("fail", "no-output", "无已连接输出")
     both = [c for c in tied if read(c / "modes") and read(c / "edid")]
     if both:
-        return ("pass", "driver=%s,connector=%s,edid=1" % (kms[0], both[0].name), "")
+        return ("pass", "driver=%s,connector=%s,edid=1" % (driver, both[0].name), "")
     if not any(read(c / "modes") for c in tied):
         return ("fail", "no-mode", "已连接输出无可枚举模式")
     return ("fail", "no-edid", "已连接输出 EDID 为空")
+
+
+def class_display(root):
+    """显示类按「硬件在位 → 连接器 → KMS 绑定 → 输出证据」四段判定。"""
+    cards, conns = drm_nodes(root)
+    if no_display(root, cards):
+        return ("n/a", "no-display-hardware", "本机无显示硬件")
+    if not conns:
+        return ("fail", "no-connector", "有显示设备但无连接器节点")
+    kms = kms_drivers(cards)
+    if not kms:
+        return ("fail", "no-kms", "仅 simpledrm 或未绑定 KMS 驱动")
+    return screen_state(conns, kms[0])
 
 
 def class_wireless(root):
