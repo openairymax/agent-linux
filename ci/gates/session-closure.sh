@@ -322,17 +322,33 @@ acct_sso()
 check_root()
 {
     local r="$1"
-    local saver="${r}/etc/dconf/db/local.d/00-airymax-screensaver"
-    local profile="${r}/etc/dconf/profile/user"
-    local db="${r}/etc/dconf/db/local"
-    local sudoers="${r}/etc/sudoers.d/90-airymax"
     local seat="${r}/etc/lightdm/lightdm.conf.d/50-airymax.conf"
-    local checkpass
-    local pam found acct
 
     say "已安装树闭包 ${r}"
 
     # 1) dconf 生效三件套：源 → profile 引用 → 编译产物。
+    chk_saver "${r}"
+    # 2) 两份 grub.cfg 的模式行必须逐字一致：品牌副本才是 NVRAM 实际读取的
+    #    那一份，只更新 openEuler 副本时本机分辨率毫无变化（D-07）。
+    grub_pair "${r}"
+    # 3) 提权策略：账户名从座位取自 SSoT，改名不让门禁失效。
+    chk_sudo "${r}" "${seat}"
+    # 4) 座位：自动登录账户必须存在，它同时是 sudoers 判据的账户来源。
+    want_text "${seat}" 'autologin-user=' "root/lightdm-autologin"
+    # 5) 锁屏鉴权：setuid 位与 PAM 首行直通。
+    chk_pass "${r}"
+    chk_pam "${r}"
+}
+
+# chk_saver ROOT —— dconf 三件套：策略源、profile 引用、编译产物。
+# 源在盘上而编译产物里没有，等于锁屏策略根本没生效。
+chk_saver()
+{
+    local r="$1"
+    local saver="${r}/etc/dconf/db/local.d/00-airymax-screensaver"
+    local profile="${r}/etc/dconf/profile/user"
+    local db="${r}/etc/dconf/db/local"
+
     want_line "${saver}" 'lock-enabled=false' "root/screensaver-policy"
     want_text "${profile}" 'system-db:local' "root/screensaver-profile"
     if [ -f "${db}" ]; then
@@ -341,45 +357,53 @@ check_root()
     else
         bad "root/screensaver-db: 缺少 ${db}（dconf update 未执行）"
     fi
+}
 
-    # 2) 两份 grub.cfg 的模式行必须逐字一致：品牌副本才是 NVRAM 实际读取的
-    #    那一份，只更新 openEuler 副本时本机分辨率毫无变化（D-07）。
-    grub_pair "${r}"
+# chk_sudo ROOT SEAT —— 提权策略：权限 440、有效行唯一、账户与座位一致。
+# 多出的规则和缺规则同属失败：多出来的那一行会放大授权面。
+chk_sudo()
+{
+    local sudoers="$1/etc/sudoers.d/90-airymax"
+    local acct
 
-    # 3) 提权策略：账户名从座位取自 SSoT，改名不让门禁失效；有效行必须唯一，
-    #    多出的规则同样属于「源在盘上但语义被放大」。
-    acct=$(seat_user "${seat}")
-    if [ -n "${acct}" ]; then
-        if [ -f "${sudoers}" ]; then
-            [ "$(stat -c %a "${sudoers}")" = 440 ] ||
-                bad "root/sudo-policy-mode: $(stat -c %a "${sudoers}") != 440"
-            [ "$(awk 'NF && $1 !~ /^#/' "${sudoers}" | wc -l)" -eq 1 ] ||
-                bad "root/sudo-policy-lines: ${sudoers} 有效行不唯一"
-            grep -qxF "${acct} ALL=(ALL) NOPASSWD: ALL" "${sudoers}" ||
-                bad "root/sudo-policy-line: 规则与账户 ${acct} 不符"
-        else
-            bad "root/sudo-policy: 缺少 ${sudoers}"
-        fi
+    acct=$(seat_user "$2")
+    [ -n "${acct}" ] || return 0
+    if [ ! -f "${sudoers}" ]; then
+        bad "root/sudo-policy: 缺少 ${sudoers}"
+        return 0
     fi
+    [ "$(stat -c %a "${sudoers}")" = 440 ] ||
+        bad "root/sudo-policy-mode: $(stat -c %a "${sudoers}") != 440"
+    [ "$(awk 'NF && $1 !~ /^#/' "${sudoers}" | wc -l)" -eq 1 ] ||
+        bad "root/sudo-policy-lines: ${sudoers} 有效行不唯一"
+    grep -qxF "${acct} ALL=(ALL) NOPASSWD: ALL" "${sudoers}" ||
+        bad "root/sudo-policy-line: 规则与账户 ${acct} 不符"
+}
 
-    # 4) 座位：自动登录账户必须存在，它同时是上面 sudoers 判据的账户来源。
-    want_text "${seat}" 'autologin-user=' "root/lightdm-autologin"
+# chk_pass ROOT —— 锁屏鉴权二进制存在就必须是 4755，否则 account 阶段
+# 必然 EPERM。桌面版本差异导致二进制缺失时跳过，不据此判红。
+chk_pass()
+{
+    local f
 
-    # 5) 锁屏鉴权：setuid 位与 PAM 首行直通。二进制不存在时跳过（桌面版本
-    #    差异），但存在就必须是 4755——否则 account 阶段必然 EPERM。
-    for checkpass in "${r}/usr/bin/ukui-screensaver-checkpass" \
-        "${r}/usr/lib/ukui-screensaver/ukui-screensaver-checkpass"; do
-        [ -f "${checkpass}" ] || continue
-        [ "$(stat -c %a "${checkpass}")" = 4755 ] ||
-            bad "root/screensaver-setuid: $(stat -c %a "${checkpass}") != 4755"
+    for f in "$1/usr/bin/ukui-screensaver-checkpass" \
+        "$1/usr/lib/ukui-screensaver/ukui-screensaver-checkpass"; do
+        [ -f "${f}" ] || continue
+        [ "$(stat -c %a "${f}")" = 4755 ] ||
+            bad "root/screensaver-setuid: $(stat -c %a "${f}") != 4755"
         break
     done
+}
 
-    # 5) PAM 栈：succeed_if 必须出现在第一条 pam_unix 之前，否则空口令账户
-    #    仍会走到读 shadow 的分支。只对存在的服务文件判定。
-    found=0
-    for pam in "${r}/etc/pam.d/ukui-screensaver" \
-        "${r}/etc/pam.d/ukui-screensaver-qt"; do
+# chk_pam ROOT —— succeed_if 必须先于第一条 pam_unix，否则空口令账户仍会
+# 走到读 shadow 的分支。只对存在的服务文件判定。
+chk_pam()
+{
+    local pam
+    local found=0
+
+    for pam in "$1/etc/pam.d/ukui-screensaver" \
+        "$1/etc/pam.d/ukui-screensaver-qt"; do
         [ -f "${pam}" ] || continue
         found=1
         awk '
