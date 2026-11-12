@@ -41,12 +41,6 @@ usage()
 EOF
 }
 
-need_dir()
-{
-    [ -n "$2" ] || { err "$1 需要目录路径"; exit "${EINVAL}"; }
-    [ -d "$2" ] || { err "$1 目录不存在: $2"; exit "${EINVAL}"; }
-}
-
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --tree) need_dir "$1" "${2:-}"; TREE="$2"; shift 2 ;;

@@ -24,12 +24,13 @@
 # ===========================================================================
 set -uo pipefail
 
-readonly EINVAL=5
 # 安装后的壁纸目录；注册表与 schema 默认值都指向这里。
 readonly PAPERS=/usr/share/backgrounds/airymaxos
 readonly COUNT=3
 # shellcheck source=../lib/log.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/log.sh"
+# shellcheck source=../lib/opts.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/opts.sh"
 
 SOURCE=""
 ROOT=""
@@ -45,26 +46,7 @@ usage()
 EOF
 }
 
-need_dir()
-{
-    [ -n "$2" ] || { err "$1 需要目录路径"; exit "${EINVAL}"; }
-    [ -d "$2" ] || { err "$1 目录不存在: $2"; exit "${EINVAL}"; }
-}
-
-while [ "$#" -gt 0 ]; do
-    case "$1" in
-        --source) need_dir "$1" "${2:-}"; SOURCE="$2"; shift 2 ;;
-        --root)   need_dir "$1" "${2:-}"; ROOT="$2"; shift 2 ;;
-        -h|--help) usage; exit 0 ;;
-        *) err "未知参数: $1"; exit "${EINVAL}" ;;
-    esac
-done
-
-[ -n "${SOURCE}" ] || [ -n "${ROOT}" ] || {
-    err "至少给出 --source 或 --root"
-    usage >&2
-    exit "${EINVAL}"
-}
+opts_tree "$@"
 
 bad() { err "$*"; FAILS=$((FAILS + 1)); }
 

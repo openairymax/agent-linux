@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 # ===========================================================================
-# ci/lib/log.sh — 统一日志与注解原语
+# ci/lib/log.sh — 统一日志、注解与前置校验原语
 #
 # 目的：让同一条门禁在本地终端与 GitHub Actions 里输出同形。CI 专属的
 # ::group:: 与 ::error:: 语法在本地退化为普通文本，不改变语义，也不引入
@@ -82,6 +82,22 @@ need_cmd()
     if [ "${#missing[@]}" -gt 0 ]; then
         die "缺少命令: ${missing[*]}"
     fi
+}
+
+# 参数不满足时门禁统一的退出码。与各 gate 自己的 EINVAL 同值，集中在此
+# 是因为 need_dir 在这里定义：判定与它的退出码不该分居两个文件。调用方
+# 另用自己的 EINVAL 表示同一约定时值必须相等，否则同一份门禁在不同分支
+# 退出不同的码，编排层无法把它与「判定失败」区分开。
+readonly CI_EINVAL=5
+
+# need_dir OPT DIR —— 目录类选项的前置校验，缺参或目录不存在即退 5。
+#
+# 7 个 gate 曾各自抄一份同样的三行：两行判据加一行函数头，规范化后与
+# 参数解析循环拼成同一个重复窗口。判定只有一份，落点也就只能有一处。
+need_dir()
+{
+    [ -n "$2" ] || { err "$1 需要目录路径"; exit "${CI_EINVAL}"; }
+    [ -d "$2" ] || { err "$1 目录不存在: $2"; exit "${CI_EINVAL}"; }
 }
 
 # env_set KEY VALUE —— 写入 GitHub Actions 的环境文件；本地运行时只打印，

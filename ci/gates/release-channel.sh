@@ -62,12 +62,6 @@ usage()
 EOF
 }
 
-need_dir()
-{
-    [ -n "$2" ] || { err "$1 需要目录路径"; exit "${EINVAL}"; }
-    [ -d "$2" ] || { err "$1 目录不存在: $2"; exit "${EINVAL}"; }
-}
-
 # pick DIR PATTERN LABEL —— 唯一命中项写入 PICK；零份或多份返回 5。
 #
 # 递归而不是按固定层级取件：发行包与内核包在本地产物里同层，跨 job 传递
