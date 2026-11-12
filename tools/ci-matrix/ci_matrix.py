@@ -74,6 +74,17 @@ MANIFEST_KEYS = frozenset(
 MATRIX_KEYS = frozenset(
     {"workflow", "job", "configs", "compilers", "exclude",
      "expected_cells", "fail_fast", "max_parallel"})
+# 矩阵段的字段类型表：顺序即报错顺序。字符串列表单列，因为它的判据不是
+# isinstance，而是「列表且每项都是字符串」。
+MATRIX_STRS = ("configs", "compilers")
+MATRIX_PLAIN = (
+    ("exclude", list, "列表"),
+    ("expected_cells", int, "整数"),
+    ("max_parallel", int, "整数"),
+    ("fail_fast", bool, "布尔值"),
+    ("workflow", str, "字符串"),
+    ("job", str, "字符串"),
+)
 BUDGET_KEYS = frozenset({"timeout_minutes", "max_jobs_per_workflow"})
 GATE_KEYS = frozenset({"required_tokens"})
 FAIL_KEYS = frozenset({"label", "reasons"})
@@ -95,20 +106,12 @@ def _is_str_list(value):
 
 def _matrix_types(matrix):
     """校验 matrix 段各字段类型；缺失字段由 _missing 单独报告。"""
-    problems = []
-    for key in ("configs", "compilers"):
-        if key in matrix and not _is_str_list(matrix[key]):
-            problems.append(f"matrix.{key} 必须是字符串列表")
-    if "exclude" in matrix and not isinstance(matrix["exclude"], list):
-        problems.append("matrix.exclude 必须是列表")
-    for key in ("expected_cells", "max_parallel"):
-        if key in matrix and not isinstance(matrix[key], int):
-            problems.append(f"matrix.{key} 必须是整数")
-    if "fail_fast" in matrix and not isinstance(matrix["fail_fast"], bool):
-        problems.append("matrix.fail_fast 必须是布尔值")
-    for key in ("workflow", "job"):
-        if key in matrix and not isinstance(matrix[key], str):
-            problems.append(f"matrix.{key} 必须是字符串")
+    problems = [f"matrix.{key} 必须是字符串列表"
+                for key in MATRIX_STRS
+                if key in matrix and not _is_str_list(matrix[key])]
+    problems.extend(f"matrix.{key} 必须是{desc}"
+                    for key, kind, desc in MATRIX_PLAIN
+                    if key in matrix and not isinstance(matrix[key], kind))
     return problems
 
 
