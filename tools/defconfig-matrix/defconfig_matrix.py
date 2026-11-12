@@ -192,17 +192,28 @@ def mf_schema(manifest):
 def _arch_schema(idx, entry, seen):
     """校验单条 architectures 记录，返回问题列表。"""
     where = f"architectures[{idx}]"
-    problems = []
     if not isinstance(entry, dict):
         return [f"{where} 必须是映射"]
+    problems = _arch_keys(entry, where)
+    _arch_ident(entry, where, seen, problems)
+    _arch_paths(entry, where, problems)
+    return problems
 
+
+def _arch_keys(entry, where):
+    """字段集合：未知字段与缺失字段都说明这份清单与校验器不同版本。"""
+    problems = []
     unknown = set(entry) - ARCH_KEYS
     if unknown:
         problems.append(f"{where} 未知字段: {', '.join(sorted(unknown))}")
     for key in sorted(ARCH_KEYS):
         if key not in entry:
             problems.append(f"{where} 缺少字段: {key}")
+    return problems
 
+
+def _arch_ident(entry, where, seen, problems):
+    """arch 是唯一键；kind/build/cross 决定这条记录怎么被构建。"""
     arch = entry.get("arch")
     if not isinstance(arch, str) or not arch:
         problems.append(f"{where}.arch 必须是非空字符串")
@@ -218,6 +229,9 @@ def _arch_schema(idx, entry, seen):
     if not isinstance(entry.get("cross"), str):
         problems.append(f"{where}.cross 必须是字符串")
 
+
+def _arch_paths(entry, where, problems):
+    """configs 路径形态，以及 build=true 与 kind=fragment 的固定搭配。"""
     configs = entry.get("configs")
     if not isinstance(configs, str) or not configs.startswith("arch/") \
             or not configs.endswith("/configs/airy_defconfig"):
@@ -226,7 +240,6 @@ def _arch_schema(idx, entry, seen):
     if entry.get("build") is True and entry.get("kind") != KIND_FRAGMENT:
         problems.append(
             f"{where}: build=true 要求 kind=fragment（CI 固定走 merge_config 三步法）")
-    return problems
 
 
 def check_fs(manifest, kernel_dir):
