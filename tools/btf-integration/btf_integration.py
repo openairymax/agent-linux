@@ -142,6 +142,15 @@ def load_arches(manifest: Manifest, repo_root: Path) -> list[ArchEntry]:
     Raises:
         ManifestError: 矩阵路径非法、文件缺失、结构非法或无受检条目。
     """
+    rel, data = matrix_data(manifest, repo_root)
+    entries = arch_entries(data, rel)
+    if not entries:
+        raise ManifestError(f"{rel}: 无 build=true 的架构条目")
+    return entries
+
+
+def matrix_data(manifest: Manifest, repo_root: Path) -> tuple[str, Manifest]:
+    """载入矩阵清单：路径字段合法、文件在册、architectures 是列表。"""
     rel = manifest.get("defconfig_matrix_manifest")
     if not isinstance(rel, str) or not rel:
         raise ManifestError("defconfig_matrix_manifest 必须是相对路径字符串")
@@ -149,24 +158,30 @@ def load_arches(manifest: Manifest, repo_root: Path) -> list[ArchEntry]:
     if not path.is_file():
         raise ManifestError(f"defconfig 矩阵清单不存在：{rel}")
     data = load_manifest(path)
-    arches = data.get("architectures")
-    if not isinstance(arches, list):
+    if not isinstance(data.get("architectures"), list):
         raise ManifestError(f"{rel}: architectures 必须是列表")
+    return rel, data
 
-    entries: list[ArchEntry] = []
-    for idx, entry in enumerate(arches):
+
+def arch_entries(data: Manifest, rel: str) -> list[ArchEntry]:
+    """矩阵里 build=true 的条目；未参与构建的条目不作校验。"""
+    out: list[ArchEntry] = []
+    for idx, entry in enumerate(data["architectures"]):
         if not isinstance(entry, dict) or entry.get("build") is not True:
             continue
-        arch = entry.get("arch")
-        configs = entry.get("configs")
-        if not isinstance(arch, str) or not arch:
-            raise ManifestError(f"{rel}: architectures[{idx}].arch 非法")
-        if not isinstance(configs, str) or not configs:
-            raise ManifestError(f"{rel}: architectures[{idx}].configs 非法")
-        entries.append((arch, configs))
-    if not entries:
-        raise ManifestError(f"{rel}: 无 build=true 的架构条目")
-    return entries
+        out.append(arch_entry(entry, idx, rel))
+    return out
+
+
+def arch_entry(entry: Manifest, idx: int, rel: str) -> ArchEntry:
+    """单个受检条目的 arch 与 configs；任一项非法即报错，不静默跳过。"""
+    arch = entry.get("arch")
+    configs = entry.get("configs")
+    if not isinstance(arch, str) or not arch:
+        raise ManifestError(f"{rel}: architectures[{idx}].arch 非法")
+    if not isinstance(configs, str) or not configs:
+        raise ManifestError(f"{rel}: architectures[{idx}].configs 非法")
+    return (arch, configs)
 
 
 def check_schema(manifest: Manifest) -> CheckResult:
