@@ -282,22 +282,53 @@ def _schema_helpers(value: Any) -> list[str]:
     return problems
 
 
-def _schema_budget(value: Any, helpers: Any) -> list[str]:
-    if not isinstance(value, dict):
-        return ["budget 必须是映射"]
-    problems = _need(value, BUDGET_KEYS, "budget.")
+def _budget_size(value: Mapping[str, Any],
+                 problems: list[str]) -> int | None:
+    """max_minutes 必须是正整数；整数原样返回供 argv 关联校验。"""
     size = value.get("max_minutes")
-    if not _is_int(size) or size <= 0:
+    if not (_is_int(size) and size > 0):
         problems.append("budget.max_minutes 必须是正整数")
-    if "argv" in value and not _is_str_list(value["argv"]):
-        problems.append("budget.argv 必须是字符串列表")
+    return size if _is_int(size) else None
+
+
+def _budget_argv(value: Mapping[str, Any],
+                 problems: list[str]) -> list[str] | None:
+    """argv 可省略；出现时必须是字符串列表，合法值供关联校验复用。"""
+    if "argv" not in value:
+        return None
+    argv = value["argv"]
+    if _is_str_list(argv):
+        return argv
+    problems.append("budget.argv 必须是字符串列表")
+    return None
+
+
+def _budget_helper(value: Mapping[str, Any], problems: list[str],
+                   helpers: Any) -> None:
+    """helper 引用必须登记在 helpers 段；未提供 helpers 时按空集处理。"""
     ref = value.get("helper")
     known = helpers if isinstance(helpers, dict) else {}
     if isinstance(ref, str) and ref not in known:
         problems.append(f"budget.helper 未登记: {ref}")
-    if _is_int(size) and _is_str_list(value.get("argv")):
-        if str(size) not in value["argv"]:
-            problems.append("budget.argv 必须包含 max_minutes 的取值")
+
+
+def _budget_link(size: int | None, argv: list[str] | None,
+                 problems: list[str]) -> None:
+    """max_minutes 的取值必须出现在 argv 中，避免两处数字各自漂移。"""
+    if size is None or argv is None:
+        return
+    if str(size) not in argv:
+        problems.append("budget.argv 必须包含 max_minutes 的取值")
+
+
+def _schema_budget(value: Any, helpers: Any) -> list[str]:
+    if not isinstance(value, dict):
+        return ["budget 必须是映射"]
+    problems = _need(value, BUDGET_KEYS, "budget.")
+    size = _budget_size(value, problems)
+    argv = _budget_argv(value, problems)
+    _budget_helper(value, problems, helpers)
+    _budget_link(size, argv, problems)
     return problems
 
 
