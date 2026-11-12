@@ -360,26 +360,36 @@ def _entry_problems(idx: int, entry: Any, seen: set[str]) -> list[str]:
 
 def _delivery_errs(where: str, entry: Manifest, delivery: Any) -> list[str]:
     """按 delivery 状态校验 evidence / produce / defer_* 的组合合法性。"""
-    problems = []
+    checks = {DELIVERY_ACTIVE: _active_errs,
+              DELIVERY_DEFERRED: _deferred_errs}
+    check = checks.get(delivery)
+    return [] if check is None else check(where, entry)
+
+
+def _active_errs(where: str, entry: Manifest) -> list[str]:
+    """active 物料：evidence 与 produce 都必须可复跑，且不得登记延期字段。"""
     evidence = entry.get("evidence")
-    produce = entry.get("produce")
-    if delivery == DELIVERY_ACTIVE:
-        if not isinstance(evidence, list) or not evidence:
-            problems.append(f"{where}: active 物料要求非空 evidence 列表")
-        elif any(not isinstance(g, str) or not g for g in evidence):
-            problems.append(f"{where}.evidence 含非法项")
-        problems.extend(_produce_errs(where, produce))
-        if entry.get("defer_reason") or entry.get("defer_target"):
-            problems.append(
-                f"{where}: active 物料不得登记 defer_reason/defer_target")
-    elif delivery == DELIVERY_DEFERRED:
-        for key in ("defer_reason", "defer_target"):
-            if not entry.get(key):
-                problems.append(f"{where}: deferred 物料要求 {key}")
-        if evidence:
-            problems.append(f"{where}: deferred 物料不得登记 evidence")
-        if produce:
-            problems.append(f"{where}: deferred 物料不得登记 produce")
+    problems = []
+    if not isinstance(evidence, list) or not evidence:
+        problems.append(f"{where}: active 物料要求非空 evidence 列表")
+    elif any(not isinstance(g, str) or not g for g in evidence):
+        problems.append(f"{where}.evidence 含非法项")
+    problems.extend(_produce_errs(where, entry.get("produce")))
+    if entry.get("defer_reason") or entry.get("defer_target"):
+        problems.append(
+            f"{where}: active 物料不得登记 defer_reason/defer_target")
+    return problems
+
+
+def _deferred_errs(where: str, entry: Manifest) -> list[str]:
+    """deferred 物料：延期理由与目标必须齐备，且不得留生成痕迹。"""
+    problems = [f"{where}: deferred 物料要求 {key}"
+                for key in ("defer_reason", "defer_target")
+                if not entry.get(key)]
+    if entry.get("evidence"):
+        problems.append(f"{where}: deferred 物料不得登记 evidence")
+    if entry.get("produce"):
+        problems.append(f"{where}: deferred 物料不得登记 produce")
     return problems
 
 
