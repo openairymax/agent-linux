@@ -54,19 +54,18 @@ from pathlib import Path, PurePosixPath
 
 # tools/lib 是契约检查工具的共享层：结果类型与报告格式只能有一份。
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
-from check_report import CheckResult, ManifestError, print_report, yaml
+from check_report import CheckResult, ManifestError, yaml
+from manifest_io import load_manifest, run_gate
 
 # ─── Constants ─────────────────────────────────────────────────────────────
 
 DEFAULT_MANIFEST_REL = "tools/defconfig-matrix/manifest.yaml"
-DEFAULT_KERNEL_DIR = "kernel"
 CI_AIRY_REL = ".github/workflows/airy-verify.yml"
 CI_KERNEL_REL = ".github/workflows/kernel-verify.yml"
-# 必备 CONFIG 断言落在门禁脚本里而非 workflow 内联块：workflow 只留一行
-# 调用。airy 腿由 kernel-airy.sh --kind assert 承担，kernel 腿由
-# kernel-refbuild.sh 承担，两者的清单都必须与 manifest 逐项相等。
-CI_AIRY_GATE_REL = "ci/gates/kernel-airy.sh"
-CI_KERNEL_GATE_REL = "ci/gates/kernel-refbuild.sh"
+# 必备 CONFIG 断言落在门禁里而非 workflow 内联块：workflow 只留一行调用。
+# 契约数组由 ci/lib/kernel.sh 持有，kernel-airy --kind assert 与
+# kernel-refbuild 两条腿都引用同一份，因此这里只需与那一个载体对账。
+CI_CONF_LIB_REL = "ci/lib/kernel.sh"
 
 EXIT_PASS = 0
 EXIT_FAIL = 1
@@ -102,30 +101,6 @@ REQUIRED_ITEM_RE = re.compile(r"'([^']+)'")
 # ─── Helpers ───────────────────────────────────────────────────────────────
 
 
-def find_repo_root():
-    """从脚本位置自动探测 agent-linux 仓库根。
-
-    脚本位于 <repo_root>/tools/defconfig-matrix/defconfig_matrix.py。
-    """
-    return Path(__file__).resolve().parent.parent.parent
-
-
-def load_manifest(path):
-    """读取并解析矩阵清单；缺失或 YAML 非法时抛 ManifestError。"""
-    if yaml is None:
-        raise ManifestError("PyYAML 不可用：请安装 pyyaml（见 requirements-dev.txt）")
-    try:
-        with open(path, "r", encoding="utf-8") as fh:
-            data = yaml.safe_load(fh)
-    except FileNotFoundError:
-        raise ManifestError(f"清单文件不存在：{path}")
-    except yaml.YAMLError as exc:
-        raise ManifestError(f"清单 YAML 解析失败：{exc}")
-    if not isinstance(data, dict):
-        raise ManifestError("清单顶层必须是映射（mapping）")
-    return data
-
-
 def arch_kdir(entry):
     """从 configs 路径推导内核源码架构目录名（arch/<kdir>/configs/...）。"""
     parts = PurePosixPath(str(entry.get("configs", ""))).parts
@@ -145,6 +120,15 @@ def cfg_lines(path):
 def config_key(line):
     """取配置行的键名（带 CONFIG_ 前缀）。"""
     return (CONFIG_VAL_RE.match(line) or CONFIG_SET_RE.match(line)).group(1)
+
+
+def arch_cfgs(manifest, kernel_dir):
+    """逐项产出已登记的 airy_defconfig；磁盘上缺失的条目跳过。"""
+    for entry in manifest.get("architectures", []):
+        configs = entry.get("configs")
+        path = kernel_dir / str(configs)
+        if path.is_file():
+            yield configs, path
 
 
 def raw_lines(path):
@@ -272,11 +256,7 @@ def check_fs(manifest, kernel_dir):
 def check_fmt(manifest, kernel_dir):
     """首行 SPDX、CONFIG 语法合法、无重复配置键。"""
     problems = []
-    for entry in manifest.get("architectures", []):
-        configs = entry.get("configs")
-        path = kernel_dir / str(configs)
-        if not path.is_file():
-            continue
+    for configs, path in arch_cfgs(manifest, kernel_dir):
         lines = path.read_text(encoding="utf-8").splitlines()
         if not lines or not lines[0].startswith("# SPDX-License-Identifier:"):
             problems.append(f"{configs}: 第 1 行缺少 SPDX 许可证标识")
@@ -306,11 +286,7 @@ def check_req_cfg(manifest, kernel_dir):
     """每个 airy_defconfig 均含全部必备 CONFIG（OS-BUILD-026）。"""
     required = manifest.get("required_configs", [])
     problems = []
-    for entry in manifest.get("architectures", []):
-        configs = entry.get("configs")
-        path = kernel_dir / str(configs)
-        if not path.is_file():
-            continue
+    for configs, path in arch_cfgs(manifest, kernel_dir):
         present = set(cfg_lines(path))
         for want in required:
             if want not in present:
@@ -324,11 +300,7 @@ def check_lsm_entry(manifest, kernel_dir):
     """每个 airy_defconfig 的 CONFIG_LSM 含清单登记的 LSM 名。"""
     entry_name = manifest.get("lsm_entry", "")
     problems = []
-    for entry in manifest.get("architectures", []):
-        configs = entry.get("configs")
-        path = kernel_dir / str(configs)
-        if not path.is_file():
-            continue
+    for configs, path in arch_cfgs(manifest, kernel_dir):
         value = None
         for line in cfg_lines(path):
             match = CONFIG_VAL_RE.match(line)
@@ -390,33 +362,29 @@ def check_ci_mtx(manifest, repo_root):
 def check_ci_req(manifest, repo_root):
     """CI 的必备 CONFIG 清单与清单逐项相等（OS-BUILD-026）。"""
     name = "CI 必备 CONFIG 清单与清单一致 (OS-BUILD-026)"
+    path = repo_root / CI_CONF_LIB_REL
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return CheckResult(name, False, f"{CI_CONF_LIB_REL}: 无法读取: {exc}")
+    blocks = REQUIRED_ARRAY_RE.findall(text)
+    if not blocks:
+        return CheckResult(
+            name, False,
+            f"{CI_CONF_LIB_REL}: 未找到 REQUIRED_CONF=(...) 必备 CONFIG 清单块")
     want = set(manifest.get("required_configs", []))
+    found = set()
+    for block in blocks:
+        found.update(REQUIRED_ITEM_RE.findall(block))
     problems = []
-    carriers = (
-        (CI_AIRY_GATE_REL, REQUIRED_ARRAY_RE, "REQUIRED_CONF=(...)"),
-        (CI_KERNEL_GATE_REL, REQUIRED_ARRAY_RE, "REQUIRED_CONF=(...)"),
-    )
-    for rel, pattern, label in carriers:
-        path = repo_root / rel
-        try:
-            text = path.read_text(encoding="utf-8")
-        except OSError as exc:
-            problems.append(f"{rel}: 无法读取: {exc}")
-            continue
-        blocks = pattern.findall(text)
-        if not blocks:
-            problems.append(f"{rel}: 未找到 {label} 必备 CONFIG 清单块")
-            continue
-        found = set()
-        for block in blocks:
-            found.update(REQUIRED_ITEM_RE.findall(block))
-        missing = sorted(want - found)
-        extra = sorted(found - want)
-        if missing:
-            problems.append(f"{rel}: required 列表缺少清单项: {', '.join(missing)}")
-        if extra:
-            problems.append(f"{rel}: required 列表含清单外项: {', '.join(extra)}")
-
+    missing = sorted(want - found)
+    extra = sorted(found - want)
+    if missing:
+        problems.append(
+            f"{CI_CONF_LIB_REL}: required 列表缺少清单项: {', '.join(missing)}")
+    if extra:
+        problems.append(
+            f"{CI_CONF_LIB_REL}: required 列表含清单外项: {', '.join(extra)}")
     return CheckResult(name, not problems, "\n".join(problems))
 
 
@@ -497,39 +465,14 @@ def main(argv=None):
                         help="矩阵清单（默认：tools/defconfig-matrix/manifest.yaml）")
     parser.add_argument("--check", action="store_true",
                         help="CI 模式：精简输出，仅退出码")
-    args = parser.parse_args(argv)
-
-    if yaml is None:
-        print("ERROR: PyYAML 不可用，请安装 pyyaml", file=sys.stderr)
-        sys.exit(EXIT_USAGE)
-
-    repo_root = Path(args.repo_root) if args.repo_root else find_repo_root()
-    if not repo_root.is_dir():
-        print(f"ERROR: 仓库根不存在: {repo_root}", file=sys.stderr)
-        sys.exit(EXIT_USAGE)
-
-    kernel_dir = repo_root / DEFAULT_KERNEL_DIR
-    if not kernel_dir.is_dir():
-        print(f"ERROR: 内核源码目录不存在: {kernel_dir}", file=sys.stderr)
-        sys.exit(EXIT_USAGE)
-
-    manifest_path = (Path(args.manifest) if args.manifest
-                     else repo_root / DEFAULT_MANIFEST_REL)
-    try:
-        manifest = load_manifest(manifest_path)
-    except ManifestError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        sys.exit(EXIT_USAGE)
-
-    results = build_checks(manifest, repo_root, kernel_dir)
-    print_report(
-        results, "DEFCONFIG-MATRIX", args.check,
+    run_gate(
+        parser, argv, DEFAULT_MANIFEST_REL,
+        lambda gate: build_checks(gate.manifest, gate.root, gate.kernel_dir),
+        "DEFCONFIG-MATRIX",
         "agent-linux AirymaxOS defconfig 矩阵一致性报告",
-        str(manifest.get("version", "?")),
-        f"架构数: {len(manifest.get('architectures', []))}")
-
-    failed = sum(1 for result in results if not result.passed)
-    sys.exit(EXIT_FAIL if failed else EXIT_PASS)
+        kernel=True,
+        tail=lambda gate:
+            f"架构数: {len(gate.manifest.get('architectures', []))}")
 
 
 if __name__ == "__main__":

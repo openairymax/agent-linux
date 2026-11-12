@@ -54,6 +54,7 @@ from typing import Any, Iterator, Mapping
 # tools/lib 是契约检查工具的共享层：结果类型与报告格式只能有一份。
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
 from check_report import CheckResult, lead, print_report, yaml
+from manifest_io import open_gate
 
 __all__ = ["NightlyError", "main"]
 
@@ -107,11 +108,6 @@ class NightlyError(Exception):
 
 
 # ─── Loading ───────────────────────────────────────────────────────────────
-
-
-def find_root() -> Path:
-    """从脚本位置自动探测 agent-linux 仓库根。"""
-    return Path(__file__).resolve().parents[2]
 
 
 def load_yaml(path: Path) -> dict[str, Any]:
@@ -657,41 +653,28 @@ def main(argv: list[str] | None = None) -> int:
                         help="nightly 清单（默认：tools/nightly/manifest.yaml）")
     parser.add_argument("--check", action="store_true",
                         help="CI 模式：精简输出")
-    args = parser.parse_args(argv)
-
-    if yaml is None:
-        print("ERROR: PyYAML 不可用，请安装 pyyaml", file=sys.stderr)
+    gate = open_gate(parser, argv, DEFAULT_MANIFEST_REL, load_yaml,
+                     NightlyError)
+    if gate is None:
         return EXIT_USAGE
 
-    root = Path(args.repo_root) if args.repo_root else find_root()
-    if not root.is_dir():
-        print(f"ERROR: 仓库根不存在: {root}", file=sys.stderr)
-        return EXIT_USAGE
-
-    manifest_path = (Path(args.manifest) if args.manifest
-                     else root / DEFAULT_MANIFEST_REL)
-    try:
-        man = load_yaml(manifest_path)
-    except NightlyError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        return EXIT_USAGE
-
+    man = gate.manifest
     schema = check_schema(man)
     if not schema.passed:
-        print_report([schema], "NIGHTLY", args.check, TITLE,
+        print_report([schema], "NIGHTLY", gate.args.check, TITLE,
                      str(man.get("version", "?")))
         return EXIT_FAIL
 
     try:
-        wf = load_yaml(root / man["workflow"])
+        wf = load_yaml(gate.root / man["workflow"])
     except NightlyError as exc:
         print_report([CheckResult("workflow 可解析", False, str(exc))],
-                     "NIGHTLY", args.check, TITLE,
+                     "NIGHTLY", gate.args.check, TITLE,
                      str(man.get("version", "?")))
         return EXIT_FAIL
 
-    results = build_checks(man, wf, root)
-    print_report(results, "NIGHTLY", args.check, TITLE,
+    results = build_checks(man, wf, gate.root)
+    print_report(results, "NIGHTLY", gate.args.check, TITLE,
                  str(man.get("version", "?")))
     return EXIT_FAIL if any(not item.passed for item in results) else EXIT_PASS
 

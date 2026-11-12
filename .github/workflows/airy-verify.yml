@@ -26,7 +26,7 @@ on:
       - 'kernel'
       - 'ci/gates/kernel-*.sh'
       - 'ci/lib/**'
-      # 矩阵表与 kernel-airy 的 REQUIRED_CONF 互为比对对象（见下）：
+      # 矩阵表与 ci/lib/kernel.sh 的 REQUIRED_CONF 互为比对对象（见下）：
       # 矩阵源改了就重编，否则 defconfig 漂移要等下一次内核升级才暴露。
       - 'tools/defconfig-matrix/**'
       - '.github/workflows/airy-verify.yml'
@@ -36,7 +36,7 @@ on:
       - 'kernel'
       - 'ci/gates/kernel-*.sh'
       - 'ci/lib/**'
-      # 矩阵表与 kernel-airy 的 REQUIRED_CONF 互为比对对象（见下）：
+      # 矩阵表与 ci/lib/kernel.sh 的 REQUIRED_CONF 互为比对对象（见下）：
       # 矩阵源改了就重编，否则 defconfig 漂移要等下一次内核升级才暴露。
       - 'tools/defconfig-matrix/**'
       - '.github/workflows/airy-verify.yml'

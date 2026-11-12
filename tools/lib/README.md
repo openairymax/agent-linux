@@ -7,6 +7,7 @@ does not dispatch anything here.
 | File | Purpose |
 |---|---|
 | `check_report.py` | `CheckResult` / `ManifestError` / `lead` / `print_report`: the result type and the report contract used by `btf-integration`, `kbuild-version`, `ci-matrix`, `defconfig-matrix`, `nightly`, and `repo-scaffold`. |
+| `manifest_io.py` | `find_repo_root` / `load_manifest` / `Gate` / `open_gate` / `run_gate`: the shared CLI preamble (repo-root probe, PyYAML/kernel-tree checks, manifest path resolution and load errors) and the exit-code policy used by the same six tools. |
 
 ## Why it exists
 
