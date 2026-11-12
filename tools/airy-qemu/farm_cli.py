@@ -297,10 +297,24 @@ def _suites(manifest: FarmManifest, spec: str | None) -> tuple[Suite, ...]:
     """
     if spec is None:
         return manifest.suites
+    names = _suite_names(spec)
+    _suite_check(names, {suite.name for suite in manifest.suites})
+    selected = set(names)
+    return tuple(
+        suite for suite in manifest.suites if suite.name in selected
+    )
+
+
+def _suite_names(spec: str) -> list[str]:
+    """拆分 --suites；空白片段不算名称，全空即视为没选任何套件。"""
     names = [part.strip() for part in spec.split(",") if part.strip()]
     if not names:
         raise FarmConfigError("--suites must name at least one suite")
-    known = {suite.name for suite in manifest.suites}
+    return names
+
+
+def _suite_check(names: list[str], known: set[str]) -> None:
+    """先报未知名再报重复名：前者多为拼错，后者多为复制粘贴所致。"""
     unknown = [name for name in names if name not in known]
     if unknown:
         raise FarmConfigError(
@@ -308,10 +322,6 @@ def _suites(manifest: FarmManifest, spec: str | None) -> tuple[Suite, ...]:
         )
     if len(names) != len(set(names)):
         raise FarmConfigError(f"duplicate suites: {names}")
-    selected = set(names)
-    return tuple(
-        suite for suite in manifest.suites if suite.name in selected
-    )
 
 
 def _out_dir(value: Path) -> Path:
