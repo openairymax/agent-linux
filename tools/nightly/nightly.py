@@ -332,24 +332,34 @@ def _schema_budget(value: Any, helpers: Any) -> list[str]:
     return problems
 
 
+STR_KEYS = ("version", "workflow", "helper_surface", "helper_gate")
+
+SCHEMAS = (
+    ("triggers", _schema_trigger),
+    ("concurrency", _schema_flight),
+    ("permissions", _schema_perms),
+    ("runner", _schema_runner),
+    ("jobs", _schema_jobs),
+    ("helpers", _schema_helpers),
+)
+
+
+def _schema_strings(man: Mapping[str, Any]) -> list[str]:
+    """标量身份字段：一旦出现就必须是非空字符串。"""
+    problems: list[str] = []
+    for key in STR_KEYS:
+        if key not in man:
+            continue
+        if not isinstance(man[key], str) or not man[key]:
+            problems.append(f"{key} 必须是非空字符串")
+    return problems
+
+
 def check_schema(man: Mapping[str, Any]) -> CheckResult:
     """校验清单 schema；失败时其余检查短路。"""
     problems = _need(man, MANIFEST_KEYS, "清单")
-    for key in ("version", "workflow", "helper_surface"):
-        if key in man and (not isinstance(man[key], str) or not man[key]):
-            problems.append(f"{key} 必须是非空字符串")
-    if "helper_gate" in man and (not isinstance(man["helper_gate"], str)
-                                 or not man["helper_gate"]):
-        problems.append("helper_gate 必须是非空字符串")
-    sections = (
-        ("triggers", _schema_trigger),
-        ("concurrency", _schema_flight),
-        ("permissions", _schema_perms),
-        ("runner", _schema_runner),
-        ("jobs", _schema_jobs),
-        ("helpers", _schema_helpers),
-    )
-    for key, validator in sections:
+    problems.extend(_schema_strings(man))
+    for key, validator in SCHEMAS:
         if key in man:
             problems.extend(validator(man[key]))
     if "budget" in man:
