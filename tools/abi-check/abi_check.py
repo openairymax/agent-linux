@@ -1020,22 +1020,32 @@ def print_report(results, ssot, unistd, tbl, sw_tbl, baseline, sources,
     failed = total - passed
 
     if check_mode:
-        # CI mode: minimal output
-        if ssot_note:
-            print(ssot_note)
-        if failed == 0:
-            print(f"ABI CHECK: PASS ({passed}/{total} checks)")
-        else:
-            print(f"ABI CHECK: FAIL ({passed}/{total} checks, "
-                  f"{failed} failed)")
-            for r in results:
-                if not r.passed:
-                    print(f"  FAIL: {r.name}")
-                    for line in r.details.splitlines():
-                        print(f"    {line}")
+        _report_ci(results, passed, total, failed, ssot_note)
         return
 
-    # Verbose mode: full report
+    _report_head(ssot, unistd, tbl, sw_tbl, baseline, sources, ssot_note)
+    _report_rows(results, passed, total, failed)
+    _report_tail(failed)
+
+
+def _report_ci(results, passed, total, failed, note):
+    """CI mode: one verdict line, plus the details of what failed."""
+    if note:
+        print(note)
+    if not failed:
+        print(f"ABI CHECK: PASS ({passed}/{total} checks)")
+        return
+    print(f"ABI CHECK: FAIL ({passed}/{total} checks, "
+          f"{failed} failed)")
+    for r in results:
+        if not r.passed:
+            print(f"  FAIL: {r.name}")
+            for line in r.details.splitlines():
+                print(f"    {line}")
+
+
+def _report_head(ssot, unistd, tbl, sw_tbl, baseline, sources, note):
+    """Verbose mode header: where the four sources came from and how big."""
     print("=" * 72)
     print("agent-linux ABI Stability Check Report")
     print("OS-IRON-001: 用户空间 ABI 永不破坏")
@@ -1045,8 +1055,8 @@ def print_report(results, ssot, unistd, tbl, sw_tbl, baseline, sources,
     for label, path in sources:
         print(f"  {label:16s}: {path}")
     print()
-    if ssot_note:
-        print(ssot_note)
+    if note:
+        print(note)
         print()
     print(f"SSoT version:     {ssot.get('version', '?')}")
     bl_ver = baseline.get("version", "N/A") if baseline else "N/A (无基线)"
@@ -1063,6 +1073,10 @@ def print_report(results, ssot, unistd, tbl, sw_tbl, baseline, sources,
     print(f"  syscall_64.tbl: {len(tbl.get('reserved', []))}")
     print(f"  sw_64 tbl:      {len(sw_tbl.get('reserved', []))}")
     print()
+
+
+def _report_rows(results, passed, total, failed):
+    """Verbose mode body: one block per check, in declaration order."""
     print("-" * 72)
     print(f"Checks: {passed}/{total} passed, {failed} failed")
     print("-" * 72)
@@ -1077,6 +1091,9 @@ def print_report(results, ssot, unistd, tbl, sw_tbl, baseline, sources,
                 print(f"      {line}")
         print()
 
+
+def _report_tail(failed):
+    """Verbose mode verdict: the one line an operator greps for."""
     print("-" * 72)
     if failed == 0:
         print("RESULT: PASS — all ABI checks passed (OS-IRON-001)")
