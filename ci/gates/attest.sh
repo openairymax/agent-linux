@@ -294,77 +294,11 @@ PY
 }
 
 # 校验器同时服务三处：生成后自检、发布前复核、装机侧反查。任何一处走不同
-# 实现都会让「证明有效」出现两种口径，所以只有这一个 python 块。
+# 实现都会让「证明有效」出现两种口径，所以判据只有一份：ci/lib/attest_check.py。
+# 放在独立文件里，三段判据才能被单测直接覆盖，而不必先造一个完整的门禁环境。
 att_check()
 {
-    python3 - "$1" "${2:-}" "${3:-}" "${KIND}" <<'PY'
-import json
-import re
-import sys
-
-path, subj_file, bid, kind = sys.argv[1:5]
-errs = []
-try:
-    with open(path, encoding="utf-8") as fh:
-        st = json.load(fh)
-except Exception as exc:  # 文件缺失或不是 JSON 都属于「证明无效」
-    print("证明不可读: %s (%s)" % (path, exc), file=sys.stderr)
-    sys.exit(1)
-
-if st.get("_type") != "https://in-toto.io/Statement/v1":
-    errs.append("_type 不是 in-toto Statement v1")
-if st.get("predicateType") != "https://slsa.dev/provenance/v1":
-    errs.append("predicateType 不是 SLSA v1")
-pred = st.get("predicate") or {}
-params = (pred.get("buildDefinition") or {}).get("externalParameters") or {}
-kind = params.get("kind") or kind
-label = "ISO" if kind == "iso" else "资产"
-have = {}
-for item in st.get("subject") or []:
-    name = item.get("name") or ""
-    digest = ((item.get("digest") or {}).get("sha256") or "")
-    if not name:
-        errs.append("subject 缺文件名字")
-    elif not re.fullmatch(r"[0-9a-f]{64}", digest):
-        errs.append("%s 缺合法 sha256: %s" % (label, name))
-    elif name in have:
-        errs.append("%s 重复出现: %s" % (label, name))
-    else:
-        have[name] = digest
-want = {}
-if subj_file:
-    with open(subj_file, encoding="utf-8") as fh:
-        for line in fh:
-            name, digest = line.rstrip("\n").split("\t")
-            want[name] = digest
-    if set(have) != set(want):
-        missing = sorted(set(want) - set(have))[:3]
-        extra = sorted(set(have) - set(want))[:3]
-        errs.append("%s 集合与证明不符（缺 %s，多 %s）"
-                    % (label, missing or "-", extra or "-"))
-    for name in sorted(set(have) & set(want)):
-        if have[name] != want[name]:
-            errs.append("%s 摘要与证明不符: %s" % (label, name))
-if not have:
-    errs.append("%s 集合为空" % label)
-ib = (pred.get("buildDefinition") or {}).get("internalParameters") or {}
-got = ib.get("buildId") or ""
-if not re.fullmatch(r"[A-Za-z0-9._+-]{1,64}", got) or got == "unset":
-    errs.append("buildId 非法: %r" % got)
-if bid and got != bid:
-    errs.append("buildId 不符: 期望 %s，证明为 %s" % (bid, got))
-if not ib.get("commit"):
-    errs.append("缺少源码提交")
-
-if errs:
-    for e in errs:
-        print("证明无效: " + e, file=sys.stderr)
-    sys.exit(1)
-names = ",".join(sorted(have)[:3])
-print("AIRYMAX-ATTEST-PASS buildId=%s subject=%s name=%s"
-      % (got, ",".join(have.values())[:64] if len(have) == 1
-         else "%d 项" % len(have), names))
-PY
+    python3 "${LIB}/attest_check.py" "$1" "${2:-}" "${3:-}" "${KIND}"
 }
 
 att_login()
