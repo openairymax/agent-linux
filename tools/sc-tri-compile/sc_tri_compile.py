@@ -372,79 +372,97 @@ def parse_c_defines(text):
     return defines
 
 
-def parse_sc_xml(text):
-    """Parse syscall.xml text into a SyscallXml.
-
-    Raises ValueError when the document is not well-formed XML or is missing
-    any structural element the consistency checks rely on.
-    """
+def _xml_root(text):
+    """整篇文档只解析一次；根元素不对，后面所有判据都不成立。"""
     try:
         root = ElementTree.fromstring(text)
     except ElementTree.ParseError as exc:
         raise ValueError(f"syscall.xml XML 解析失败: {exc}") from exc
     if root.tag != "syscalls":
         raise ValueError(f"syscall.xml 根元素应为 <syscalls>，实际 <{root.tag}>")
+    return root
 
-    def root_int(attr):
-        raw = root.get(attr)
-        if raw is None:
+
+def _attr_int(node, attr):
+    """取整数属性；措辞随所在元素而定，根元素说「属性 x」，<reserved> 用 @。"""
+    raw = node.get(attr)
+    if raw is None:
+        if node.tag == "syscalls":
             raise ValueError(f"syscall.xml 缺少属性 {attr}")
-        try:
-            return int(raw, 0)
-        except ValueError as exc:
-            raise ValueError(f"syscall.xml 属性 {attr} 非整数: {raw}") from exc
+        raise ValueError(f"syscall.xml <{node.tag}> 缺少属性 {attr}")
+    try:
+        return int(raw, 0)
+    except ValueError as exc:
+        where = (f"属性 {attr}" if node.tag == "syscalls"
+                 else f"<{node.tag}>@{attr}")
+        raise ValueError(f"syscall.xml {where} 非整数: {raw}") from exc
 
+
+def _xml_meta(root):
+    """<meta> 的两个前缀：名称不带前缀，后缀去重就会串味。"""
     meta = root.find("meta")
     if meta is None:
         raise ValueError("syscall.xml 缺少 <meta>")
-    symbol_prefix = (meta.findtext("prefix_symbol") or "").strip()
-    function_prefix = (meta.findtext("prefix_function") or "").strip()
-    if not symbol_prefix or not function_prefix:
+    symbol = (meta.findtext("prefix_symbol") or "").strip()
+    func = (meta.findtext("prefix_function") or "").strip()
+    if not symbol or not func:
         raise ValueError("syscall.xml <meta> 缺少 prefix_symbol/prefix_function")
+    return symbol, func
 
-    core_names = {}
-    core_numbers = {}
+
+def _xml_core(root, prefix):
+    """逐条 <syscall>：名字带前缀且去重，编号可解析为整数。"""
+    names = {}
+    numbers = {}
     for entry in root.findall("syscall"):
         name = (entry.findtext("name") or "").strip()
         raw_number = (entry.findtext("number") or "").strip()
         if not name or not raw_number:
             raise ValueError("syscall.xml <syscall> 缺少 <name>/<number>")
-        if not name.startswith(function_prefix):
-            raise ValueError(f"syscall.xml 名称 {name} 未带前缀 {function_prefix}")
-        suffix = name[len(function_prefix):].upper()
-        if suffix in core_names:
+        if not name.startswith(prefix):
+            raise ValueError(f"syscall.xml 名称 {name} 未带前缀 {prefix}")
+        suffix = name[len(prefix):].upper()
+        if suffix in names:
             raise ValueError(f"syscall.xml 重复的 syscall 名称: {name}")
         try:
-            core_numbers[suffix] = int(raw_number, 0)
+            numbers[suffix] = int(raw_number, 0)
         except ValueError as exc:
-            raise ValueError(f"syscall.xml {name} 的 <number> 非整数: {raw_number}") from exc
-        core_names[suffix] = name
+            raise ValueError(
+                f"syscall.xml {name} 的 <number> 非整数: {raw_number}") from exc
+        names[suffix] = name
+    return names, numbers
 
+
+def _xml_res(root):
+    """保留槽位块：缺了它，插号与空洞的一致性检查就无对象可查。"""
     reserved = root.find("reserved")
     if reserved is None:
         raise ValueError("syscall.xml 缺少 <reserved>")
+    return reserved
 
-    def reserved_int(attr):
-        raw = reserved.get(attr)
-        if raw is None:
-            raise ValueError(f"syscall.xml <reserved> 缺少属性 {attr}")
-        try:
-            return int(raw, 0)
-        except ValueError as exc:
-            raise ValueError(f"syscall.xml <reserved>@{attr} 非整数: {raw}") from exc
 
+def parse_sc_xml(text):
+    """Parse syscall.xml text into a SyscallXml.
+
+    Raises ValueError when the document is not well-formed XML or is missing
+    any structural element the consistency checks rely on.
+    """
+    root = _xml_root(text)
+    symbol_prefix, function_prefix = _xml_meta(root)
+    core_names, core_numbers = _xml_core(root, function_prefix)
+    reserved = _xml_res(root)
     return SyscallXml(
-        version=root_int("version"),
-        core_count=root_int("core_count"),
-        reserved_count=root_int("reserved_count"),
-        total_slots=root_int("total_slots"),
-        linux_base=root_int("linux_base"),
+        version=_attr_int(root, "version"),
+        core_count=_attr_int(root, "core_count"),
+        reserved_count=_attr_int(root, "reserved_count"),
+        total_slots=_attr_int(root, "total_slots"),
+        linux_base=_attr_int(root, "linux_base"),
         symbol_prefix=symbol_prefix,
         function_prefix=function_prefix,
         core_names=core_names,
         core_numbers=core_numbers,
-        reserved_from=reserved_int("from"),
-        reserved_to=reserved_int("to"),
+        reserved_from=_attr_int(reserved, "from"),
+        reserved_to=_attr_int(reserved, "to"),
     )
 
 
