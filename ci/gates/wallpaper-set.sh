@@ -199,26 +199,23 @@ src_old()
     fi
 }
 
-chk_root()
+# root_top R —— 上层目录只允许 airymaxos/：上游包若进闭包，整目录会落在
+# 这里。
+root_top()
 {
-    local r="$1" top
-    local bg="${r}${PAPERS}"
-    local reg="${r}/usr/share/ukui-background-properties"
-    local sch="${r}/usr/share/glib-2.0/schemas"
-    local have want f n s i
+    local r="$1" have
 
-    say "已安装树 ${r}"
-    top=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
-    load_lock "${top}/distro/lockfile/ukui-wallpapers.yaml"
-    [ "${#NAMES[@]}" -eq "${COUNT}" ] || return 0
-
-    # 1) 上层目录只允许 airymaxos/：上游包若进闭包，整目录会落在这里。
     have=$(find "${r}/usr/share/backgrounds" -mindepth 1 -maxdepth 1 \
         -printf '%f\n' 2>/dev/null | sort)
     [ "${have}" = "airymaxos" ] ||
         bad "root/backgrounds: 仅允许 airymaxos/（实为 ${have//$'\n'/ }）"
+}
 
-    # 2) 集合与 digest：镜像里的壁纸必须与台账同集合、同内容。
+# root_set BG —— 集合与 digest：镜像里的壁纸必须与台账同集合、同内容。
+root_set()
+{
+    local bg="$1" have want n f s i
+
     have=$(find "${bg}" -maxdepth 1 -type f -name '*.jpg' \
         -printf '%f\n' 2>/dev/null | sort)
     want=$(printf '%s\n' "${NAMES[@]}" | sort)
@@ -232,9 +229,14 @@ chk_root()
         [ "${s}" = "${SHAS[$i]}" ] ||
             bad "root/sha256: ${n} 与台账摘要不符"
     done
+}
 
-    # 3) 注册表：每条 filename 都要落在台账内，且文件确实在树里。指向
-    #    不存在的文件时装机前无人报错，桌面会话里只表现为空背景。
+# root_reg R REG —— 注册表：每条 filename 都要落在台账内，且文件确实在树
+# 里。指向不存在的文件时装机前无人报错，桌面会话里只表现为空背景。
+root_reg()
+{
+    local r="$1" reg="$2" have f
+
     have=$(grep -rhoE '<filename>[^<]+</filename>' "${reg}" 2>/dev/null |
         wc -l)
     [ "${have:-0}" -eq "${COUNT}" ] ||
@@ -244,13 +246,33 @@ chk_root()
         [ -f "${r}${f}" ] || bad "root/registry-file: 缺少 ${f}"
     done < <(sed -n 's:.*<filename>\([^<]*\)</filename>.*:\1:p' \
         "${reg}"/*.xml 2>/dev/null)
+}
 
-    # 4) schema 默认值：装好的 override 必须仍指向台账内的一张。
+# root_schema SCH —— schema 默认值：装好的 override 必须仍指向台账内的一张。
+root_schema()
+{
+    local sch="$1" f
+
     f=$(sed -n "s/^picture-filename='\([^']*\)'$/\1/p" \
         "${sch}"/*.override 2>/dev/null | head -n 1)
     [ -n "${f}" ] || bad "root/schema: 无 picture-filename 覆盖"
     [ -z "${f}" ] || has_name "${f##*/}" ||
         bad "root/schema: 默认值 ${f##*/} 不在台账内"
+}
+
+chk_root()
+{
+    local r="$1" top
+
+    say "已安装树 ${r}"
+    top=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
+    load_lock "${top}/distro/lockfile/ukui-wallpapers.yaml"
+    [ "${#NAMES[@]}" -eq "${COUNT}" ] || return 0
+
+    root_top "${r}"
+    root_set "${r}${PAPERS}"
+    root_reg "${r}" "${r}/usr/share/ukui-background-properties"
+    root_schema "${r}/usr/share/glib-2.0/schemas"
 }
 
 [ -n "${SOURCE}" ] && chk_src "${SOURCE}"
