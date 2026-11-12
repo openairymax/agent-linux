@@ -11,7 +11,7 @@
 # 断言在两个地方各写一遍后悄悄漂移：
 #
 #   assert  —— 构建产物必须真的由 Airymax 代码构成。配置三步法与编译由
-#              kernel-build.sh 完成，本门禁只断言其结果：10 个必备 CONFIG
+#              kernel-build.sh 完成，本门禁只断言其结果：11 个必备 CONFIG
 #              精确匹配、CONFIG_LSM 含 airy、vmlinux 带 .BTF 段、六个
 #              built-in.a 存在，x86_64 上再断言 security/airy 与
 #              kernel/superv 的全局符号互不冲突。
@@ -19,8 +19,9 @@
 #              矩阵、BTF 基线与 Kbuild 版本注入已分别由 kernel-verify.yml
 #              与 os-chk-verify.yml（tools/os-chk/gates.yaml）承接。
 #
-# REQUIRED_CONF 同时是 tools/defconfig-matrix 的校验载具：清单与这里逐项
-# 相等才算通过（OS-BUILD-026），因此不要在此增删项而不改 manifest.yaml。
+# REQUIRED_CONF 定义在 ci/lib/kernel.sh（与 kernel-refbuild 共用一份），它
+# 同时是 tools/defconfig-matrix 的校验载具：清单与这里逐项相等才算通过
+# （OS-BUILD-026），因此增删项必须同时改 manifest.yaml。
 #
 # 退出码: 0 通过；1 断言失败；5 参数不满足。
 # ===========================================================================
@@ -35,20 +36,8 @@ SRC="${REPO_ROOT}/kernel"
 KIND=""
 ARCH=""
 
-# 写成完整 KV 而不是 K 前缀，是为了同时锁住开关的值（y 被改成 m 也算红）。
-readonly REQUIRED_CONF=(
-    'CONFIG_SECURITY=y'
-    'CONFIG_SECURITY_AIRY=y'
-    'CONFIG_AIRY_SYSCALL=y'
-    'CONFIG_AIRY_COREKERN=y'
-    'CONFIG_AIRY_LOG=y'
-    'CONFIG_AIRY_IPC=y'
-    'CONFIG_AIRY_AGENT_TRACING=y'
-    'CONFIG_AIRY_CAP_TABLE_SIZE=1024'
-    'CONFIG_IO_URING=y'
-    'CONFIG_USER_NS=y'
-    'CONFIG_BPF_UNPRIV_DEFAULT_OFF=y'
-)
+# shellcheck source=../lib/kernel.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/kernel.sh"
 
 readonly AIRY_DIRS=(
     security/airy

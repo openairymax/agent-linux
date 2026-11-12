@@ -43,11 +43,8 @@ usage()
 EOF
 }
 
-cleanup()
-{
-    [ -n "${TMP}" ] && rm -rf "${TMP}"
-    return 0
-}
+# shellcheck source=../lib/check.sh
+. "${ROOT}/ci/lib/check.sh"
 
 trap cleanup EXIT
 
@@ -55,9 +52,7 @@ trap cleanup EXIT
 
 check_entry()
 {
-    [ -x "${AIRY}" ] || die "入口不可执行: ${AIRY#"${ROOT}/"}"
-    [ "$(sed -n '1p' "${AIRY}")" = '#!/usr/bin/env python3' ] ||
-        die "入口首行不是 python3 shebang"
+    chk_entry "${AIRY}"
     say "入口可执行且带 shebang"
 }
 
@@ -104,37 +99,8 @@ no_weights()
 
 # 实物面 -------------------------------------------------------------------
 
-make_bundle()
-{
-    local engine="${TMP}/engine/llama-server"
-    local asset="${TMP}/bundle/models/w.gguf"
-    local size sha
-
-    mkdir -p "${TMP}/engine" "${TMP}/bundle/models"
-    printf '#!/bin/sh\nexit 0\n' >"${engine}"
-    chmod 0755 "${engine}"
-    printf 'b4000\n' >"${TMP}/engine/ENGINE_VERSION"
-    printf 'fake-weights\n' >"${asset}"
-    size="$(wc -c <"${asset}")"
-    sha="$(sha256sum "${asset}" | cut -d' ' -f1)"
-    cat >"${TMP}/bundle/manifest.json" <<EOF
-{
-  "schema": 1,
-  "name": "airy-gate",
-  "version": "0.0.1",
-  "quant": "q4_k_m",
-  "runtime": {
-    "engine": "llama.cpp",
-    "version": "b4000",
-    "path": "${engine}",
-    "backends": ["cpu"]
-  },
-  "assets": [
-    {"path": "models/w.gguf", "size": ${size}, "sha256": "${sha}"}
-  ]
-}
-EOF
-}
+# shellcheck source=../lib/model-assets.sh
+. "${ROOT}/ci/lib/model-assets.sh"
 
 # 期望的退出码与原因；rc 0 表示就绪，10 表示降级，1 表示失败。
 expect()
