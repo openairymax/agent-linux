@@ -93,7 +93,7 @@ check_package()
     say "配方交付入口、单元与运行包"
 }
 
-check_no_weights()
+no_weights()
 {
     local found
     found="$(find "${ROOT}" -name '*.gguf' -not -path '*/.git/*' \
@@ -242,7 +242,7 @@ main()
     check_entry
     check_unit
     check_package
-    check_no_weights
+    no_weights
     endgroup
 
     group "模型资产通道: 实物面"

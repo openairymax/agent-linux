@@ -21,7 +21,7 @@
 #   iso  subject 是装配目录里那唯一一盘 ISO，出证前与发行账本 <iso>.sha256
 #        对账；账本与现算摘要不符说明 ISO 在写账本之后被改过，拒绝出证。
 #   rel  subject 是发布页上的整套资产。集合不另立：直接取
-#        ci/lib/release-assets.sh 的 airy_assets_want，与剪枝、对账同一份
+#        ci/lib/release-assets.sh 的 airy_asset_want，与剪枝、对账同一份
 #        事实源——三处各算一遍集会得到三种「本次发布了什么」。
 #
 # 证明的取值口径：
@@ -202,7 +202,7 @@ att_set_rel()
 {
     local dir="$1" out="$2" f p
     [ -d "${dir}" ] || die "发布目录不存在: ${dir}"
-    airy_assets_want "${dir}" "${WORK}/assets" || die "无法从摘要清单推导发布资产集"
+    airy_asset_want "${dir}" "${WORK}/assets" || die "无法从摘要清单推导发布资产集"
     : >"${out}"
     while IFS= read -r f; do
         p="$(att_rel_file "${dir}" "${f}")" || die "发布资产缺失或重名: ${f}"

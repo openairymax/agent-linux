@@ -55,9 +55,9 @@ fi
 work="$(mktemp -d)"
 trap 'rm -rf "${work}"' EXIT
 
-airy_assets_want "${DIR}" "${work}/want" || exit "${EINVAL}"
+airy_asset_want "${DIR}" "${work}/want" || exit "${EINVAL}"
 
-airy_assets_have "${REPO}" "${TAG}" "${work}/have" "${work}/rel.json"
+airy_asset_have "${REPO}" "${TAG}" "${work}/have" "${work}/rel.json"
 rc=$?
 case "${rc}" in
     0) ;;

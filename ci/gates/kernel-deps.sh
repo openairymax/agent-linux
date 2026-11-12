@@ -165,7 +165,7 @@ install_debian()
 
 # noble 只提供带版本号的 loongarch64 交叉 gcc，而 CROSS_COMPILE 期望无版本
 # 号的驱动名。这个别名只能在装完之后补，所以放在安装路径之后统一处理。
-link_loongarch_alias()
+loong_alias()
 {
     [ "${KIND}" = build ] || return 0
     [ "${COMPILER}" = gcc ] || return 0
@@ -180,7 +180,7 @@ link_loongarch_alias()
 
 if command -v apt-get >/dev/null 2>&1; then
     install_debian
-    link_loongarch_alias
+    loong_alias
     miss="$(missing_cmds)"
     if [ -n "${miss}" ]; then
         note "安装后仍缺命令: ${miss}"
