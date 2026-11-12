@@ -82,12 +82,21 @@ class RawRun:
     preflight: Preflight
 
     def __post_init__(self) -> None:
+        self._chk_argv()
+        self._chk_proc()
+        self._chk_io()
+
+    def _chk_argv(self) -> None:
+        """命令与标识：作业名非空，argv 为非空字符串元组。"""
         if not isinstance(self.job_id, str) or not self.job_id:
             raise ValueError("job_id must be a non-empty string")
         if not isinstance(self.argv, tuple) or not self.argv:
             raise ValueError("argv must be a non-empty tuple")
         if any(not isinstance(arg, str) for arg in self.argv):
             raise ValueError("argv must contain only strings")
+
+    def _chk_proc(self) -> None:
+        """进程结局：退出码与时长不能是 bool 伪装，超时标记必须是真布尔。"""
         if isinstance(self.exit_code, bool) or not isinstance(self.exit_code, int):
             raise ValueError(f"exit_code must be int, got {self.exit_code!r}")
         if isinstance(self.duration_s, bool) or self.duration_s < 0:
@@ -96,6 +105,9 @@ class RawRun:
             )
         if not isinstance(self.timed_out, bool):
             raise ValueError("timed_out must be bool")
+
+    def _chk_io(self) -> None:
+        """证据落点：TAP/日志路径必须可命名，预检证据必须携带。"""
         for name in ("tap_path", "log_path"):
             value = getattr(self, name)
             if not isinstance(value, Path) or not value.name:
