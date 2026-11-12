@@ -5,22 +5,24 @@
 #
 # 用法: ci/lint.sh [--no-distro]
 #
-# 检查八件事：
+# 检查九件事：
 #   1. workflow 薄化与命名约束（ci/check-workflows.py）；
 #   2. ci/ 与 tools/ 下每个 shell 脚本可被 bash -n 解析；
 #   3. 函数名不超过 15 字节（ci/name_lint.py，N001，覆盖 shell 与 python）；
-#   4. 验收剖面归一化的行为（ci/lib/profile.sh）；
-#   5. 门禁脚本里「声明后从未使用」的 readonly 常量（无外部依赖）；
-#   6. ci/tests 下的门禁分支回归；
-#   7. 有 shellcheck 就用上，没有只告警——本地开发者不该被工具缺失拦住；
-#   8. distro 子仓静态门禁（ci/gates/distro-lint.sh，含其工具单测）。
+#   4. 代码度量棘轮（ci/quality_metrics.py，QG-01/QG-02：新增超标函数与
+#      新增重复片段判红，存量按基线只减不增）；
+#   5. 验收剖面归一化的行为（ci/lib/profile.sh）；
+#   6. 门禁脚本里「声明后从未使用」的 readonly 常量（无外部依赖）；
+#   7. ci/tests 下的门禁分支回归；
+#   8. 有 shellcheck 就用上，没有只告警——本地开发者不该被工具缺失拦住；
+#   9. distro 子仓静态门禁（ci/gates/distro-lint.sh，含其工具单测）。
 #
-# 第 8 项此前只在流水线里跑，本地「两个入口都绿」靠人记：run 40938020614
+# 第 9 项此前只在流水线里跑，本地「两个入口都绿」靠人记：run 40938020614
 # 的 os-chk-verify 就红在 distro 的一条旧语义断言上，而提交前只跑过本文件。
 # 现在一条命令覆盖两侧口径。CI 里 os-chk-verify 不再单列 distro-lint 步骤
 # ——同一份工作跑两遍只会加长每轮耗时。`--no-distro` 留给快速迭代。
 #
-# 第 5 项是第 7 项的兜底：本地没有 shellcheck 时 SC2034 不会报，CI 的
+# 第 6 项是第 8 项的兜底：本地没有 shellcheck 时 SC2034 不会报，CI 的
 # 24.04 自带 shellcheck 会报，于是出现「本地全绿、CI 红」（0.0.3
 # 的 release-deps.sh 就是这样挂掉的）。只查 ci/gates 下的叶子脚本：这些
 # 文件不被 source，常量必须自用，判定无歧义；ci/lib 的常量供他人引用，
@@ -85,6 +87,23 @@ if python3 "${ROOT}/ci/name_lint.py" "${roots[@]}"; then
     say "通过"
 else
     err "ci/name_lint.py 未通过（函数名超过 15 字节）"
+    rc=1
+fi
+endgroup
+
+group "代码度量棘轮"
+# QG-01/QG-02 的「重复率 <3%、圈复杂度 <2.5」此前只有文字没有判据，存量
+# 因此停在均值 3.70、重复率 6.17% 也没人看见。基线按现状登记、只减不增：
+# 新增超标函数与新增重复片段当场判红，差额每轮打印。distro 随上面的口径
+# 一并跳过或纳入，不另设开关。
+dirs=()
+for d in "${roots[@]}"; do
+    dirs+=(--dir "${ROOT}/${d}")
+done
+if python3 "${ROOT}/ci/quality_metrics.py" --check "${dirs[@]}"; then
+    say "通过"
+else
+    err "ci/quality_metrics.py 未通过（新增超标函数或新增重复片段）"
     rc=1
 fi
 endgroup
