@@ -279,18 +279,32 @@ def _schema_repo(entry: Any, names: set[str],
     return problems
 
 
+def _head_scalars(man: Mapping[str, Any]) -> list[str]:
+    """version 与 gitmodules 出现即须为非空字符串，后者还须是合法路径。"""
+    problems = [
+        f"{key} 必须是非空字符串"
+        for key in ("version", "gitmodules")
+        if key in man and (not isinstance(man[key], str) or not man[key])
+    ]
+    if "gitmodules" in man and not _rel_ok(man["gitmodules"]):
+        problems.append("gitmodules 路径非法")
+    return problems
+
+
+def _head_extras(man: Mapping[str, Any]) -> list[str]:
+    """excluded 是可选的排除清单，出现即须为非空字符串列表。"""
+    if "excluded" in man and not _is_str_list(man["excluded"]):
+        return ["excluded 必须是字符串列表"]
+    return []
+
+
 def _schema_head(man: Mapping[str, Any]) -> list[str]:
     """顶层字段：必填项、未登记项、标量类型与路径形态。"""
     problems = _need(man, MANIFEST_KEYS, "清单")
     unknown = set(man) - MANIFEST_KEYS
     problems += [f"清单未登记字段: {key}" for key in sorted(unknown)]
-    for key in ("version", "gitmodules"):
-        if key in man and (not isinstance(man[key], str) or not man[key]):
-            problems.append(f"{key} 必须是非空字符串")
-    if "gitmodules" in man and not _rel_ok(man["gitmodules"]):
-        problems.append("gitmodules 路径非法")
-    if "excluded" in man and not _is_str_list(man["excluded"]):
-        problems.append("excluded 必须是字符串列表")
+    problems += _head_scalars(man)
+    problems += _head_extras(man)
     return problems
 
 
