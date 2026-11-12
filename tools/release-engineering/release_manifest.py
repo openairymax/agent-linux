@@ -645,18 +645,29 @@ def print_report(
     failed = total - passed
 
     if check_mode:
-        if failed == 0:
-            print(f"RELEASE-MANIFEST: PASS ({passed}/{total} checks)")
-            return
-        print(f"RELEASE-MANIFEST: FAIL ({passed}/{total} checks, "
-              f"{failed} failed)")
-        for result in results:
-            if not result.passed:
-                print(f"  FAIL: {result.name}")
-                for line in result.details.splitlines():
-                    print(f"    {line}")
+        _report_ci(results, passed, total, failed)
         return
+    _report_full(results, manifest, total, failed)
 
+
+def _report_ci(results: Sequence[CheckResult], passed: int, total: int,
+               failed: int) -> None:
+    """CI 精简形态：一行判定，失败项逐条附明细。"""
+    if failed == 0:
+        print(f"RELEASE-MANIFEST: PASS ({passed}/{total} checks)")
+        return
+    print(f"RELEASE-MANIFEST: FAIL ({passed}/{total} checks, "
+          f"{failed} failed)")
+    for result in results:
+        if not result.passed:
+            print(f"  FAIL: {result.name}")
+            for line in result.details.splitlines():
+                print(f"    {line}")
+
+
+def _report_full(results: Sequence[CheckResult], manifest: Manifest,
+                 total: int, failed: int) -> None:
+    """详细形态：抬头、逐项判定与结论横幅。"""
     print("=" * 72)
     print("agent-linux AirymaxOS 发布物料清单报告")
     print(f"清单版本: {manifest.get('version', '?')}    "
