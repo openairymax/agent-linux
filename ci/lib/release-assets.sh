@@ -37,7 +37,7 @@ AIRY_ASSETS_API="${GITHUB_API_URL:-https://api.github.com}"
 #      否则会推出 `x.rpm.asc.asc` 这种不存在的名字，发布页永远判缺件；
 #   ② `oci-image-<tag>.tar` 是 ghcr 的载荷，Release 页面因单资产 2 GiB 上限
 #      不收它，清单却按「本次交付物」收录，两者口径不同，扣除规则属于本库。
-airy_assets_want()
+airy_asset_want()
 {
     local dir="$1" out="$2" sums n ver
     sums="$(find "${dir}" -maxdepth 1 -type f -name 'agent-linux-*.sha256sum' | sort)"
@@ -91,7 +91,7 @@ airy_assets_api()
 
 # 实测集：`<asset id> <name>` 每行一条。Release 不存在返回 ENOREL，
 # 其余接口失败返回 1（调用方据此区分「没有页面」与「页面读不到」）。
-airy_assets_have()
+airy_asset_have()
 {
     local repo="$1" tag="$2" out="$3" rel="$4" code
     code="$(airy_assets_api GET \

@@ -145,7 +145,7 @@ check_clean()
     say "三面干净判 0"
 }
 
-check_unit_failed()
+unit_failed()
 {
     local out rc
 
@@ -174,7 +174,7 @@ check_log_error()
     say "err 日志判 1"
 }
 
-check_pack_drift()
+pack_drift()
 {
     local out rc
 
@@ -214,9 +214,9 @@ main()
 
     group "系统完整性: 行为面"
     check_clean
-    check_unit_failed
+    unit_failed
     check_log_error
-    check_pack_drift
+    pack_drift
     check_unknown
     endgroup
 

@@ -119,7 +119,7 @@ for l in m.get("layers") or []:
 }
 
 # 从远端清单还原 parts.txt，供「已发布」路径直接写引用记录。
-parts_from_remote()
+parts_remote()
 {
     remote_parts |
         awk -v n="${name}" '
@@ -129,7 +129,7 @@ parts_from_remote()
 }
 
 # 账本制品的单层 digest（去掉算法前缀）；层数不为 1 时输出空串。
-ledger_remote_sum()
+ledger_remote()
 {
     python3 -c '
 import json, sys
@@ -143,7 +143,7 @@ print(layers[0].get("digest", "").split(":", 1)[-1] if len(layers) == 1 else "")
 }
 
 # 从本地分块生成 parts.txt，并就块数与总字节对账。
-parts_from_files()
+parts_files()
 {
     local p i=0 pd ps total=0
 
@@ -261,7 +261,7 @@ if [ "${publish}" -eq 1 ]; then
     # split 的 -d -a 4 给出 part0000..partNNNN，位数固定，词序即块序。
     split -b "${CHUNK}" -d -a 4 "${iso}" "${WORK}/${name}.part" ||
         die "分块失败: ${iso}"
-    parts_from_files
+    parts_files
     endgroup
 
     # layer 参数只写文件名，并在 ${WORK} 里执行：oras 1.3 起默认拒绝绝对路径
@@ -288,7 +288,7 @@ if [ "${publish}" -eq 1 ]; then
     verify_remote
     say "远端校验通过: ${count} 块逐块 digest 一致"
 else
-    parts_from_remote
+    parts_remote
     [ -s "${WORK}/parts.txt" ] || die "远端清单缺少 layer: ${target}"
 fi
 
@@ -317,11 +317,11 @@ ledger_target="${REF}:${TAG}-ledger"
 push_ledger=1
 
 if oras manifest fetch "${ledger_target}" >"${WORK}/ledger.json" 2>/dev/null; then
-    if [ "$(ledger_remote_sum)" = "${ledger_sum}" ]; then
+    if [ "$(ledger_remote)" = "${ledger_sum}" ]; then
         note "${ledger_target} 已是同一份账本，跳过上传"
         push_ledger=0
     elif [ "${FORCE}" -eq 0 ]; then
-        die "${ledger_target} 已存在但内容不同（sha256=$(ledger_remote_sum)）；确认要替换才加 --force"
+        die "${ledger_target} 已存在但内容不同（sha256=$(ledger_remote)）；确认要替换才加 --force"
     fi
 fi
 
@@ -337,7 +337,7 @@ if [ "${push_ledger}" -eq 1 ]; then
 
     oras manifest fetch "${ledger_target}" >"${WORK}/ledger.json" ||
         die "推送后无法读取账本清单: ${ledger_target}"
-    [ "$(ledger_remote_sum)" = "${ledger_sum}" ] ||
+    [ "$(ledger_remote)" = "${ledger_sum}" ] ||
         die "远端账本 digest 与本地 iso-oci.txt 不一致: ${ledger_target}"
 fi
 

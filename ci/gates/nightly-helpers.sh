@@ -87,7 +87,7 @@ auto_bisect()
     fi
 }
 
-create_revert_pr()
+revert_pr()
 {
     local commit="${1:-}"
     if [ -z "${commit}" ]; then
@@ -119,7 +119,7 @@ main()
         soak-runner)       soak_runner ;;
         chaos-runner)      chaos_runner ;;
         auto-bisect)       auto_bisect ;;
-        create-revert-pr)  create_revert_pr "$@" ;;
+        create-revert-pr)  revert_pr "$@" ;;
         ci-budget-check)   budget_check ;;
         ''|-h|--help)      usage; return 0 ;;
         *)                 err "未知 helper: ${key}"; usage >&2; return "${EINVAL}" ;;

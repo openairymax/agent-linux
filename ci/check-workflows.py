@@ -431,7 +431,7 @@ def runner_label() -> str | None:
     return None
 
 
-def check_runner_label(name: str, text: str, label: str) -> list[str]:
+def wf_label_rule(name: str, text: str, label: str) -> list[str]:
     """runs-on 必须与清单的 runner.label 逐字相等：同一事实只能有一个取值。"""
     errors: list[str] = []
     for no, s in enumerate(text.splitlines(), 1):
@@ -560,7 +560,7 @@ def main() -> int:
         errors.extend(check_family(name, text))
         errors.extend(check_runner(name, text))
         if label is not None:
-            errors.extend(check_runner_label(name, text, label))
+            errors.extend(wf_label_rule(name, text, label))
         errors.extend(check_policy(name, text))
         errors.extend(check_triggers(name, text))
         errors.extend(check_gate_refs(name, text))
