@@ -5,21 +5,22 @@
 #
 # 用法: ci/lint.sh [--no-distro]
 #
-# 检查七件事：
+# 检查八件事：
 #   1. workflow 薄化与命名约束（ci/check-workflows.py）；
 #   2. ci/ 与 tools/ 下每个 shell 脚本可被 bash -n 解析；
-#   3. 验收剖面归一化的行为（ci/lib/profile.sh）；
-#   4. 门禁脚本里「声明后从未使用」的 readonly 常量（无外部依赖）；
-#   5. ci/tests 下的门禁分支回归；
-#   6. 有 shellcheck 就用上，没有只告警——本地开发者不该被工具缺失拦住；
-#   7. distro 子仓静态门禁（ci/gates/distro-lint.sh，含其工具单测）。
+#   3. 函数名不超过 15 字节（ci/name_lint.py，N001）；
+#   4. 验收剖面归一化的行为（ci/lib/profile.sh）；
+#   5. 门禁脚本里「声明后从未使用」的 readonly 常量（无外部依赖）；
+#   6. ci/tests 下的门禁分支回归；
+#   7. 有 shellcheck 就用上，没有只告警——本地开发者不该被工具缺失拦住；
+#   8. distro 子仓静态门禁（ci/gates/distro-lint.sh，含其工具单测）。
 #
-# 第 7 项此前只在流水线里跑，本地「两个入口都绿」靠人记：run 40938020614
+# 第 8 项此前只在流水线里跑，本地「两个入口都绿」靠人记：run 40938020614
 # 的 os-chk-verify 就红在 distro 的一条旧语义断言上，而提交前只跑过本文件。
 # 现在一条命令覆盖两侧口径。CI 里 os-chk-verify 不再单列 distro-lint 步骤
 # ——同一份工作跑两遍只会加长每轮耗时。`--no-distro` 留给快速迭代。
 #
-# 第 4 项是第 6 项的兜底：本地没有 shellcheck 时 SC2034 不会报，CI 的
+# 第 5 项是第 7 项的兜底：本地没有 shellcheck 时 SC2034 不会报，CI 的
 # 24.04 自带 shellcheck 会报，于是出现「本地全绿、CI 红」（0.0.3
 # 的 release-deps.sh 就是这样挂掉的）。只查 ci/gates 下的叶子脚本：这些
 # 文件不被 source，常量必须自用，判定无歧义；ci/lib 的常量供他人引用，
@@ -68,6 +69,23 @@ while IFS= read -r f; do
 done < <( { find "${ROOT}/ci" -type f -name '*.sh'
             find "${ROOT}/tools" -maxdepth 1 -type f -name '*.sh'; } | sort)
 say "已解析 ${n} 个脚本"
+endgroup
+
+group "函数名长度"
+# 0.0.4 收尾把 21 个超长函数名压到 15 字节以内。压完不留判据，下一个
+# helper 只要叫 airy_assets_wanted 就能把规范重新拉开，而这道门禁是唯一
+# 能当场拦住它的地方。distro 子仓一并覆盖：同一个判据写两份实现，改阈值
+# 时必然漏改一处；`--no-distro` 时只扫本层，与下面跳过 distro 门禁同口径。
+roots=(ci tools system)
+if [ "${no_distro}" -eq 0 ]; then
+    roots=(ci tools distro system)
+fi
+if python3 "${ROOT}/ci/name_lint.py" "${roots[@]}"; then
+    say "通过"
+else
+    err "ci/name_lint.py 未通过（函数名超过 15 字节）"
+    rc=1
+fi
 endgroup
 
 group "验收剖面归一化"
