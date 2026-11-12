@@ -79,7 +79,7 @@ __all__ = [
     "VERDICT_BY_NAME",
     "ValueType",
     "Verdict",
-    "format_diagnostic",
+    "fmt_diagnostic",
     "header_guard",
 ]
 
@@ -391,7 +391,7 @@ class DslRenderError(DslError):
 
 
 # 11. 诊断工具
-def format_diagnostic(source_name: str, span: SourceSpan, message: str) -> str:
+def fmt_diagnostic(source_name: str, span: SourceSpan, message: str) -> str:
     """构造 GCC 风格诊断串：<source>:<line>:<column>: <message>。"""
     return f"{source_name}:{span.line}:{span.column}: {message}"
 

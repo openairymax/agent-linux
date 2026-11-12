@@ -25,7 +25,7 @@ from dsl_types import (
     SourceSpan,
     Token,
     TokenKind,
-    format_diagnostic,
+    fmt_diagnostic,
 )
 
 # 2. 公开导出
@@ -86,7 +86,7 @@ class Lexer:
         return self._source[start:self._index]
 
     def _error(self, span: SourceSpan, message: str) -> DslSyntaxError:
-        return DslSyntaxError(format_diagnostic(self._source_name, span, message))
+        return DslSyntaxError(fmt_diagnostic(self._source_name, span, message))
 
     # ── 空白与注释 ──
     def _skip_ignorable(self) -> None:
@@ -112,28 +112,28 @@ class Lexer:
         self._advance()
         return Token(TokenKind.STRING, "".join(chunks), span)
 
-    def _read_hex_number(self, span: SourceSpan) -> Token:
+    def _read_hex(self, span: SourceSpan) -> Token:
         self._advance()
         self._advance()
         digits = self._consume_while(lambda c: c in _HEX_DIGITS)
         if not digits:
             raise self._error(span, "malformed hexadecimal literal")
-        self._reject_trailing_ident_char(span)
+        self._reject_tail(span)
         return Token(TokenKind.INT, f"0x{digits}", span, int(digits, 16))
 
-    def _reject_trailing_ident_char(self, span: SourceSpan) -> None:
+    def _reject_tail(self, span: SourceSpan) -> None:
         if _is_ident_start(self._peek()):
             raise self._error(span, "malformed numeric literal")
 
-    def _read_decimal_number(self, span: SourceSpan) -> Token:
+    def _read_dec(self, span: SourceSpan) -> Token:
         digits = self._consume_while(str.isdigit)
-        self._reject_trailing_ident_char(span)
+        self._reject_tail(span)
         return Token(TokenKind.INT, digits, span, int(digits, 10))
 
     def _read_number(self, span: SourceSpan) -> Token:
         if self._peek() == "0" and self._peek(1) in ("x", "X"):
-            return self._read_hex_number(span)
-        return self._read_decimal_number(span)
+            return self._read_hex(span)
+        return self._read_dec(span)
 
     def _read_ident(self, span: SourceSpan) -> Token:
         text = self._consume_while(_is_ident_char)

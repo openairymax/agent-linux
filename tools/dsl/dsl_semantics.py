@@ -42,7 +42,7 @@ from dsl_types import (
     Table,
     TableIR,
     Verdict,
-    format_diagnostic,
+    fmt_diagnostic,
 )
 
 # 2. 公开导出
@@ -50,7 +50,7 @@ __all__ = ["to_ir"]
 
 
 def _fail(source_name: str, span: SourceSpan, message: str) -> None:
-    raise DslSemanticError(format_diagnostic(source_name, span, message))
+    raise DslSemanticError(fmt_diagnostic(source_name, span, message))
 
 
 def _check_version(version: str, source_name: str) -> None:
@@ -91,7 +91,7 @@ def _build_inputs(
     return tuple(inputs), {item.name: item for item in inputs}
 
 
-def _build_condition(
+def _build_cond(
     condition: Condition, index: dict[str, InputIR], source_name: str
 ) -> ConditionIR:
     field = index.get(condition.field)
@@ -131,7 +131,7 @@ def _check_fault(rule: Rule, source_name: str) -> None:
 
 def _build_rule(rule: Rule, index: dict[str, InputIR], source_name: str) -> RowIR:
     _check_fault(rule, source_name)
-    conditions = tuple(_build_condition(cond, index, source_name) for cond in rule.conditions)
+    conditions = tuple(_build_cond(cond, index, source_name) for cond in rule.conditions)
     return RowIR(
         number=rule.number,
         conditions=conditions,
