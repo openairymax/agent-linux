@@ -76,76 +76,24 @@ check_layout()
 
 # 输出面 -------------------------------------------------------------------
 
+# 三份输出契约的实现只在 ci/lib/accel_contract.py 一处（与 llm_contract.py
+# 同形）。此处只把参数递过去：判据写在 Python 里才能单独喂用例，也不必让
+# 读门禁的人在 shell 与 Python 之间来回切换上下文。
 line_contract()
 {
-    python3 - "$1" <<'PY'
-import sys
-
-WANT = ["cuda", "rocm", "vulkan", "cpu"]
-raw = sys.argv[1]
-got = raw.split()
-if len(got) != len(WANT):
-    sys.exit(f"段数 {len(got)}，应为 {len(WANT)}: {raw!r}")
-if [item.split("=", 1)[0] for item in got] != WANT:
-    sys.exit(f"后端顺序偏离契约: {raw!r}")
-for item in got:
-    flag = item.split("=", 1)[1]
-    if flag not in ("present", "absent"):
-        sys.exit(f"状态 {flag!r} 不是 present/absent")
-if got[-1] != "cpu=present":
-    sys.exit("CPU 后端必须恒为 present")
-PY
+    python3 "${ROOT}/ci/lib/accel_contract.py" line "$1"
 }
 
 json_contract()
 {
-    python3 - "$1" <<'PY'
-import json
-import sys
-
-WANT = ["cuda", "rocm", "vulkan", "cpu"]
-PREFIX = {"ok", "missing", "denied", "empty", "stale", "unverified",
-          "builtin"}
-obj = json.loads(sys.argv[1])
-if sorted(obj) != ["backends"]:
-    sys.exit(f"顶层字段 {sorted(obj)!r}，应为 ['backends']")
-rows = obj["backends"]
-if [row.get("backend") for row in rows] != WANT:
-    sys.exit("后端顺序偏离契约")
-for row in rows:
-    if sorted(row) != ["backend", "evidence", "present"]:
-        sys.exit(f"{row.get('backend')}: 元素字段 {sorted(row)!r} 偏离契约")
-    if not isinstance(row["present"], bool):
-        sys.exit(f"{row['backend']}: present 必须是布尔值")
-    if not isinstance(row["evidence"], list) or not row["evidence"]:
-        sys.exit(f"{row['backend']}: 证据不得为空")
-    for item in row["evidence"]:
-        if not isinstance(item, str):
-            sys.exit(f"{row['backend']}: 证据必须是字符串")
-        prefix = item.split(":", 1)[0]
-        if prefix not in PREFIX:
-            sys.exit(f"{row['backend']}: 证据前缀未知: {item!r}")
-        if prefix != "builtin" and ":" not in item:
-            sys.exit(f"{row['backend']}: 证据缺少前缀: {item!r}")
-PY
+    python3 "${ROOT}/ci/lib/accel_contract.py" json "$1"
 }
 
 # 两种渲染必须同源：行式的每一段都是 JSON 里同一行的投影。分开维护就会
 # 出现「监控看到 vulkan=present、脚本读到 present=false」这类自相矛盾。
 agree()
 {
-    python3 - "$1" "$2" <<'PY'
-import json
-import sys
-
-line, raw = sys.argv[1], sys.argv[2]
-rows = json.loads(raw)["backends"]
-want = " ".join(f"{row['backend']}="
-                f"{'present' if row['present'] else 'absent'}"
-                for row in rows)
-if line != want:
-    sys.exit(f"两种输出不一致: {line!r} != {want!r}")
-PY
+    python3 "${ROOT}/ci/lib/accel_contract.py" agree "$1" "$2"
 }
 
 check_output()
