@@ -113,51 +113,84 @@ pick()
     printf '%s\n' "${hit}"
 }
 
-material()
+# 公钥块与分离署名同用 .asc 后缀，只能按内容分：公钥没有也不该有「被签
+# 文件」，按署名判会把它误判成缺件。
+scan_asc()
 {
-    local sum notes count=0 signs=0 keys=0 digest name hit actual f sections lines
+    local name="$1" hit="$2"
 
-    [ -d "${DIR}" ] || { err "目录不存在: ${DIR}"; exit "${EINVAL}"; }
+    [ -s "${hit}" ] || die "空署名或空公钥: ${name}"
+    if head -n 1 "${hit}" | grep -q 'BEGIN PGP PUBLIC KEY BLOCK'; then
+        SUM_KEYS=$((SUM_KEYS + 1))
+        return 0
+    fi
+    [ -n "$(walk -name "${name%.asc}" | head -n 1)" ] ||
+        die "署名缺少被签文件: ${name}"
+    SUM_SIGNS=$((SUM_SIGNS + 1))
+}
 
-    sum="$(pick 'agent-linux-*.sha256sum' '摘要清单')" || exit 1
-    notes="$(pick 'agent-linux-*-release-notes.md' 'release notes')" || exit 1
+# 摘要清单逐行核对：每项文件必须在场且摘要相符，计数供调用方判空。
+# 计数走 SUM_* 全局——sh 没有引用传参，返回三元组再拆比这更难读。
+scan_sums()
+{
+    local digest name hit actual
 
+    SUM_COUNT=0
+    SUM_SIGNS=0
+    SUM_KEYS=0
     while read -r digest name; do
         [ -n "${name:-}" ] || continue
         hit="$(walk -name "${name}" | head -n 1)"
         [ -n "${hit}" ] || die "清单内文件缺失: ${name}"
         actual="$(sha256sum "${hit}" | cut -d' ' -f1)"
         [ "${actual}" = "${digest}" ] || die "摘要不符: ${name}"
-        count=$((count + 1))
+        SUM_COUNT=$((SUM_COUNT + 1))
         case "${name}" in
-            *.asc)
-                [ -s "${hit}" ] || die "空署名或空公钥: ${name}"
-                # 公钥块与分离署名同用 .asc 后缀，只能按内容分：
-                # 公钥没有也不该有「被签文件」，按署名判会把它误判成缺件。
-                if head -n 1 "${hit}" | grep -q 'BEGIN PGP PUBLIC KEY BLOCK'; then
-                    keys=$((keys + 1))
-                else
-                    [ -n "$(walk -name "${name%.asc}" | head -n 1)" ] ||
-                        die "署名缺少被签文件: ${name}"
-                    signs=$((signs + 1))
-                fi
-                ;;
+            *.asc) scan_asc "${name}" "${hit}" ;;
         esac
-    done < "${sum}"
-    [ "${count}" -gt 0 ] || die "摘要清单为空: ${sum}"
-    [ "${signs}" -gt 0 ] || die "清单内没有任何署名"
+    done < "$1"
+}
 
-    for f in "${sum}.asc" "${notes}.asc"; do
+need_sig()
+{
+    local f
+
+    for f in "$@"; do
         [ -s "${f}" ] || die "缺少署名: ${f##*/}"
     done
+}
+
+# release notes 的三段式是发行说明的排版契约：小节数决定它能否直接贴进
+# Releases，正文行数决定它是否仍然是摘要而不是变更清单。
+# 行数走 NOTES_LINES 全局：die 必须在当前 shell 退整轮门禁，不能只退子壳。
+note_stat()
+{
+    local notes="$1" sections lines
 
     sections="$(grep -c '^## ' "${notes}" || true)"
     [ "${sections}" -eq 3 ] || die "${notes##*/} 小节数 ${sections}，应为 3"
     lines="$(grep -cv '^$' "${notes}" || true)"
     [ "${lines}" -le "${NOTES_MAX}" ] ||
         die "${notes##*/} 正文 ${lines} 行，上限 ${NOTES_MAX}"
+    NOTES_LINES="${lines}"
+}
 
-    say "物料自证通过: ${count} 项摘要, ${signs} 份署名, ${keys} 份公钥, notes ${lines} 行"
+material()
+{
+    local sum notes
+
+    [ -d "${DIR}" ] || { err "目录不存在: ${DIR}"; exit "${EINVAL}"; }
+
+    sum="$(pick 'agent-linux-*.sha256sum' '摘要清单')" || exit 1
+    notes="$(pick 'agent-linux-*-release-notes.md' 'release notes')" || exit 1
+
+    scan_sums "${sum}"
+    [ "${SUM_COUNT}" -gt 0 ] || die "摘要清单为空: ${sum}"
+    [ "${SUM_SIGNS}" -gt 0 ] || die "清单内没有任何署名"
+    need_sig "${sum}.asc" "${notes}.asc"
+    note_stat "${notes}"
+
+    say "物料自证通过: ${SUM_COUNT} 项摘要, ${SUM_SIGNS} 份署名, ${SUM_KEYS} 份公钥, notes ${NOTES_LINES} 行"
 }
 
 iso_pick()
