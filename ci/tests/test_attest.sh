@@ -300,6 +300,21 @@ grep -q "\"buildId\": \"r4242-g${sha}\"" "${rfile}" &&
     ok "重放与构建轮产出同一份字节" ||
     bad "重放证明字节漂移"
 
+# 同一批资产换个取件轮：字节里 buildId 变了，所证事实没变。发布不得因此
+# 判成「另一份证明」——0.0.4 的 tag 轮与重放轮正是这种关系。
+out="$(FAKE_STORE="${tmp}/store" PATH="${tmp}/bin:${PATH}" \
+    AIRYMAX_BUILD_ID='' GITHUB_RUN_ID=8888 \
+    bash "${GATE}" build --kind rel --out "${rel}" --tag v0.0.4 \
+    --build-run 5555 2>&1)"
+grep -q "\"buildId\": \"r5555-g${sha}\"" "${rfile}" &&
+    ok "取件轮写进指纹" ||
+    bad "取件轮未写进指纹"
+out="$(run publish --kind rel --out "${rel}" --tag v0.0.4 --ref ghcr.io/x/rel)"
+case "${out}" in
+*"所证事实与本地一致"*) ok "同一批资产换轮重放保留原证明" ;;
+*) bad "换轮重放被判成异份"; printf '%s\n' "${out}" >&2 ;;
+esac
+
 out="$(run build --kind rel --out "${rel}" --tag v0.0.4 --build-run abc 2>&1)"
 [ "$?" -eq 5 ] &&
     ok "--build-run 非数字时按参数错误退出" ||

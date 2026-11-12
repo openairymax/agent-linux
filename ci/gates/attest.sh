@@ -40,9 +40,12 @@
 # 因此 oras manifest fetch <repo>:attest-<tag> 就能看到它，不需要先知道
 # 产物摘要。推后回读比对注解、摘要与字节，任一处不符即失败，不留半份证明。
 #
-# 已发布证明与本地字节不同时，先比所证事实（buildId、commit、ref、kind、
-# tag、subject 集合）：事实相同即同一份证明的另一种写法，保留原证明并跳过，
+# 已发布证明与本地字节不同时，先比所证事实（commit、ref、kind、tag、
+# subject 集合）：事实相同即同一份证明的另一种写法，保留原证明并跳过，
 # 重放轮不必为空白差异重写历史；事实不同才拒绝，需 --force 才替换。
+# buildId 不进等价判断：它只说明这一轮从哪取件、由哪一轮组装，两轮可以
+# 组装出同一批字节（0.0.4 的 tag 轮与重放轮即如此），而「这批字节是什么」
+# 由 tag、提交与 subject 摘要承担。
 #
 # 退出码: 0 成功；1 生成、校验、推送或回读失败；5 参数不满足。
 # ===========================================================================
@@ -408,9 +411,8 @@ def facts(path):
     ext = bd.get("externalParameters") or {}
     subj = sorted((s.get("name"), (s.get("digest") or {}).get("sha256"))
                   for s in st.get("subject") or [])
-    return {"buildId": ib.get("buildId"), "commit": ib.get("commit"),
-            "ref": ib.get("ref"), "kind": ext.get("kind"),
-            "tag": ext.get("tag"), "subjects": subj}
+    return {"commit": ib.get("commit"), "ref": ib.get("ref"),
+            "kind": ext.get("kind"), "tag": ext.get("tag"), "subjects": subj}
 
 
 try:
