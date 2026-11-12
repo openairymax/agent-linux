@@ -883,6 +883,45 @@ def sample_ranges(size: int, window: int = SAMPLE_WINDOW) -> list[tuple[int, int
     return [(0, window), (middle, middle + window), (size - window, size)]
 
 
+def _rb_diff(left: bytes, right: bytes, cursor: int) -> str:
+    """同长两块比对；不一致时给出首个差异偏移，一致时返回空串。"""
+    if len(left) != len(right):
+        return f"偏移 {cursor} 读取长度不一致"
+    if left == right:
+        return ""
+    index = next((i for i, (a, b) in enumerate(zip(left, right)) if a != b), 0)
+    return f"偏移 {cursor + index} 内容不一致"
+
+
+def _rb_span(src: io.BufferedReader, dst: io.FileIO, span: tuple[int, int],
+             chunk: int, progress: Callable[[int, int], None] | None,
+             total: int, done: int) -> tuple[str, int]:
+    """比对单个区间；返回 (差异说明, 累计字节)，说明为空表示一致。"""
+    start, end = span
+    src.seek(start)
+    dst.seek(start)
+    while start < end:
+        want = min(chunk, end - start)
+        left = src.read(want)
+        right = dst.read(want)
+        note = _rb_diff(left, right, start)
+        if note:
+            return note, done
+        start += len(left)
+        done += len(left)
+        if progress is not None:
+            progress(done, total)
+    return "", done
+
+
+def _rb_ranges(image: Path, mode: str,
+               window: int) -> tuple[list[tuple[int, int]], int]:
+    """比对区间与对应字节数：full 整段，其余按头/中/尾抽检。"""
+    size = image.stat().st_size
+    ranges = [(0, size)] if mode == "full" else sample_ranges(size, window)
+    return ranges, sum(end - start for start, end in ranges)
+
+
 def readback(
     image: Path,
     device: Path,
@@ -893,38 +932,15 @@ def readback(
     progress: Callable[[int, int], None] | None = None,
 ) -> tuple[bool, str, list[tuple[int, int]]]:
     """回读比对。返回 (一致, 说明, 比对区间)。"""
-    size = image.stat().st_size
-    ranges = [(0, size)] if mode == "full" else sample_ranges(size, window)
-    total = sum(end - start for start, end in ranges)
+    ranges, total = _rb_ranges(image, mode, window)
     done = 0
     try:
         with open(image, "rb") as src, open(device, "rb", buffering=0) as dst:
-            for start, end in ranges:
-                src.seek(start)
-                dst.seek(start)
-                remaining = end - start
-                cursor = start
-                while remaining > 0:
-                    want = min(chunk, remaining)
-                    left = src.read(want)
-                    right = dst.read(want)
-                    if len(left) != len(right):
-                        return False, f"偏移 {cursor} 读取长度不一致", ranges
-                    if left != right:
-                        index = next(
-                            (i for i, (a, b) in enumerate(zip(left, right)) if a != b),
-                            0,
-                        )
-                        return (
-                            False,
-                            f"偏移 {cursor + index} 内容不一致",
-                            ranges,
-                        )
-                    cursor += len(left)
-                    remaining -= len(left)
-                    done += len(left)
-                    if progress is not None:
-                        progress(done, total)
+            for span in ranges:
+                note, done = _rb_span(
+                    src, dst, span, chunk, progress, total, done)
+                if note:
+                    return False, note, ranges
     except OSError as exc:
         raise FlashError(EXIT_IO, f"回读失败: {exc.strerror or exc}") from exc
     return True, f"比对 {len(ranges)} 段 / {human_bytes(total)}", ranges
