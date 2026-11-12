@@ -78,33 +78,56 @@ esac
 
 cd "${SRC}" || die "无法进入 ${SRC}"
 
-run_checkpatch()
+# checkpatch 的检查对象：ALK 新文件目录连同两处 UAPI/内核头目录，
+# 缺目录直接跳过（子模块未初始化时由调用点统一判负）。
+cp_files()
 {
-    local log="${LOG:-checkpatch.log}"
-    local files=()
     local d
     for d in "${AIRY_DIRS[@]}" include/uapi/linux/airymax include/airymax; do
         [ -d "${d}" ] || continue
-        while IFS= read -r f; do
-            files+=("${f}")
-        done < <(find "${d}" -type f \( -name '*.c' -o -name '*.h' \) |
-            LC_ALL=C sort)
-    done
+        find "${d}" -type f \( -name '*.c' -o -name '*.h' \)
+    done | LC_ALL=C sort
+}
+
+# 从 "total: N errors, M warnings, K checks" 行取一项计数；行缺失或
+# 格式变化时给空串，由调用点按 0 处理，避免把空串带进算术展开。
+cp_count()
+{
+    local kind="${1}" out="${2}" line
+    line="$(printf '%s\n' "${out}" | grep -m1 '^total:' || true)"
+    case "${kind}" in
+    errors)
+        printf '%s\n' "${line}" |
+            sed -n 's/^total: \([0-9]\{1,\}\) errors.*/\1/p'
+        ;;
+    warnings)
+        printf '%s\n' "${line}" |
+            sed -n 's/.*, \([0-9]\{1,\}\) warnings.*/\1/p'
+        ;;
+    checks)
+        printf '%s\n' "${line}" |
+            sed -n 's/.*, \([0-9]\{1,\}\) checks.*/\1/p'
+        ;;
+    esac
+}
+
+run_checkpatch()
+{
+    local log="${LOG:-checkpatch.log}"
+    local -a files
+    local f out errs warns chks
+    local err_total=0 warn_total=0 chk_total=0
+
+    mapfile -t files < <(cp_files)
     [ "${#files[@]}" -gt 0 ] || die "checkpatch 没有可检查的源文件"
 
     say "checkpatch 目标: ${#files[@]} 个文件"
-    local err_total=0 warn_total=0 chk_total=0
     : >"${log}"
-    local f out total errs warns chks
     for f in "${files[@]}"; do
         out="$(LC_ALL=C scripts/checkpatch.pl --strict --no-tree -f "${f}" 2>&1 || true)"
-        total="$(printf '%s\n' "${out}" | grep -m1 '^total:' || true)"
-        errs="$(printf '%s\n' "${total}" |
-            sed -n 's/^total: \([0-9]\{1,\}\) errors.*/\1/p')"
-        warns="$(printf '%s\n' "${total}" |
-            sed -n 's/.*, \([0-9]\{1,\}\) warnings.*/\1/p')"
-        chks="$(printf '%s\n' "${total}" |
-            sed -n 's/.*, \([0-9]\{1,\}\) checks.*/\1/p')"
+        errs="$(cp_count errors "${out}")"
+        warns="$(cp_count warnings "${out}")"
+        chks="$(cp_count checks "${out}")"
         err_total=$((err_total + ${errs:-0}))
         warn_total=$((warn_total + ${warns:-0}))
         chk_total=$((chk_total + ${chks:-0}))
