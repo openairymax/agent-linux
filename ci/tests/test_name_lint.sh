@@ -5,10 +5,11 @@
 #
 # 门禁判的是「函数名不超过 15 字节」，真实树常年为绿，判定逻辑只能靠负例
 # 驱动：逐条造出刚好 16 字节的定义、`function` 前缀写法、注释里的假定义、
-# 测试目录里的长名，断言只看退出码与 N001 判据名。
+# 测试目录里的长名、python 的类方法/嵌套函数与语法错误，断言只看退出码与
+# N001/E001 判据名。
 #
 # 真实树是否合规不在这里判：ci/lint.sh 负责那一条，本文件只保证门禁没有
-# 漏判（长名被放过）与误判（注释、tests/ 目录被当成产品代码）。
+# 漏判（长名被放过）与误判（注释、字符串、tests/ 目录被当成产品代码）。
 #
 # 用法: bash ci/tests/test_name_lint.sh
 # 退出码: 0 全部通过；1 有断言失败。
@@ -125,15 +126,42 @@ out="$(run nope)"
 check "根不存在跳过不假绿" 0 "$?" "${out}" "0 issue(s)"
 
 tree
-printf 'abcdefghijklmnop() { :; }\n' >"${FX}/tools/pkg/bad.py"
+printf 'def abcdefghijklmnop():\n    return 0\n' >"${FX}/tools/pkg/bad.py"
 out="$(run tools)"
-check "非 shell 后缀不纳入" 0 "$?" "${out}" "0 issue(s)"
-rm -f "${FX}/tools/pkg/bad.py"
+check "python 超长定名判拒绝" 1 "$?" "${out}" "bad.py:1: N001 abcdefghijklmnop"
+
+tree
+cat >"${FX}/tools/pkg/bad.py" <<'EOF'
+"""文档里写 def abcdefghijklmnop(): 不算定义。"""
+# 注释里的 def abcdefghijklmnop(): 也不算。
+
+
+class Box:
+    def abcdefghijklmno(self):
+        def abcdefghijklmnop():
+            return 1
+        return abcdefghijklmno
+EOF
+out="$(run tools)"
+check "python 类方法与嵌套函数计入" 1 "$?" "${out}" "N001 abcdefghijklmnop"
+
+tree
+cat >"${FX}/tools/pkg/bad.py" <<'EOF'
+"""本文件只有字符串与注释里的假定义。"""
+TEXT = "def abcdefghijklmnop(): pass"
+EOF
+out="$(run tools)"
+check "python 字符串与文档不计" 0 "$?" "${out}" "0 issue(s)"
+
+tree
+printf 'def broken(\n' >"${FX}/tools/pkg/bad.py"
+out="$(run tools)"
+check "python 语法错误按缺陷计" 1 "$?" "${out}" "E001"
 
 tree
 printf 'ok_name() { :; }\n' >"${FX}/ci/a.sh"
 out="$(run)"
-check "缺省根扫描 ci 与 tools" 0 "$?" "${out}" "name: 2 file(s)"
+check "缺省根扫描 ci 与 tools" 0 "$?" "${out}" "name: 3 file(s)"
 
 if [ "${fails}" -ne 0 ]; then
     printf 'test_name_lint: %d 项失败\n' "${fails}"
