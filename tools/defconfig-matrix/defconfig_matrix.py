@@ -158,35 +158,43 @@ def load_workflow(path):
 def mf_schema(manifest):
     """校验清单 schema：必填字段、arch 唯一、取值与路径形态。"""
     problems = []
+    _mf_head(manifest, problems)
+    _mf_archs(manifest, problems)
+    _mf_required(manifest, problems)
+    return CheckResult("清单 schema 合法", not problems, "\n".join(problems))
 
+
+def _mf_head(manifest, problems):
+    """顶层字段集合与必填标量：未知字段或空值都说明清单与校验器版本不符。"""
     unknown = set(manifest) - MANIFEST_KEYS
     if unknown:
         problems.append(f"顶层未知字段: {', '.join(sorted(unknown))}")
-
-    architectures = manifest.get("architectures")
-    required = manifest.get("required_configs")
-    lsm_entry = manifest.get("lsm_entry")
-    for key, value in (("version", manifest.get("version")),
-                       ("required_configs", required),
-                       ("lsm_entry", lsm_entry)):
-        if not value:
+    for key in ("version", "required_configs", "lsm_entry"):
+        if not manifest.get(key):
             problems.append(f"缺少或为空值的必填字段: {key}")
+
+
+def _mf_archs(manifest, problems):
+    """逐条校验 architectures；arch 唯一性靠 seen 跨条目累积。"""
+    architectures = manifest.get("architectures")
     if not isinstance(architectures, list) or not architectures:
         problems.append("architectures 必须是非空列表")
-    else:
-        seen = set()
-        for idx, entry in enumerate(architectures):
-            problems.extend(_arch_schema(idx, entry, seen))
+        return
+    seen = set()
+    for idx, entry in enumerate(architectures):
+        problems.extend(_arch_schema(idx, entry, seen))
 
-    if isinstance(required, list):
-        if not required:
-            problems.append("required_configs 不能为空")
-        for item in required:
-            if not isinstance(item, str) or not item.startswith("CONFIG_"):
-                problems.append(
-                    f"required_configs 含非 CONFIG_ 项: {item!r}")
 
-    return CheckResult("清单 schema 合法", not problems, "\n".join(problems))
+def _mf_required(manifest, problems):
+    """required_configs 仅在形态为列表时逐项核对 CONFIG_ 前缀。"""
+    required = manifest.get("required_configs")
+    if not isinstance(required, list):
+        return
+    if not required:
+        problems.append("required_configs 不能为空")
+    for item in required:
+        if not isinstance(item, str) or not item.startswith("CONFIG_"):
+            problems.append(f"required_configs 含非 CONFIG_ 项: {item!r}")
 
 
 def _arch_schema(idx, entry, seen):
