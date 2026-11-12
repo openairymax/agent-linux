@@ -239,6 +239,14 @@ def _oci_int(value: str, label: str, path: Path) -> int:
     return number
 
 
+def _oci_digest(raw: str, label: str, path: Path) -> str:
+    """摘要只有一种合法形状：64 位小写十六进制；两处清单共用这一判据。"""
+    digest = raw.strip().lower()
+    if not _is_hex64(digest):
+        raise FlashError(EXIT_CHECK, f"{path.name} {label}")
+    return digest
+
+
 def _oci_part(index: int, rest: str, path: Path) -> OciPart:
     """解析一行 `part=0000 sha256=… size=… name=…`，序号须与出现位置一致。
 
@@ -260,23 +268,13 @@ def _oci_part(index: int, rest: str, path: Path) -> OciPart:
         raise FlashError(
             EXIT_CHECK, f"{path.name} 第 {index} 块缺少 {', '.join(missing)}"
         )
-    digest = tokens["sha256"].strip().lower()
-    if len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
-        raise FlashError(EXIT_CHECK, f"{path.name} 第 {index} 块 sha256 格式不对")
+    digest = _oci_digest(tokens["sha256"], f"第 {index} 块 sha256 格式不对", path)
     size = _oci_int(tokens["size"], f"part[{index}].size", path)
     return OciPart(index, digest, size, tokens["name"])
 
 
-def parse_oci(path: Path) -> OciLedger:
-    """把 iso-oci.txt 读成账本；分块不自洽当场拦下，不做半懂不懂的猜测。"""
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError as exc:
-        raise FlashError(
-            EXIT_USAGE,
-            f"读不到发布清单 {path}: {exc.strerror or exc}",
-            hint="从发布页取回与镜像同名的 .iso-oci.txt",
-        ) from exc
+def _oci_lines(text: str, path: Path) -> tuple[dict[str, str], list[OciPart]]:
+    """逐行归类：`part=` 按出现顺序编号，其余已知键进字段表，注释与噪声跳过。"""
     fields: dict[str, str] = {}
     parts: list[OciPart] = []
     for raw in text.splitlines():
@@ -291,18 +289,22 @@ def parse_oci(path: Path) -> OciLedger:
             parts.append(_oci_part(len(parts), rest, path))
         elif key in OCI_KEYS:
             fields[key] = rest.strip()
+    return fields, parts
 
+
+def _oci_need(fields: dict[str, str], path: Path) -> None:
+    """五个必填字段缺一即拒：缺字段的清单无法判断制品是否完整。"""
     missing = [
         key for key in ("ref", "name", "sha256", "size", "chunk_size")
         if not fields.get(key)
     ]
     if missing:
         raise FlashError(EXIT_CHECK, f"{path.name} 缺少字段 {', '.join(missing)}")
-    if not parts:
-        raise FlashError(EXIT_CHECK, f"{path.name} 没有 part= 行")
-    digest = fields["sha256"].lower()
-    if len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
-        raise FlashError(EXIT_CHECK, f"{path.name} 的 sha256 格式不对")
+
+
+def _oci_span(path: Path, fields: dict[str, str],
+              parts: list[OciPart]) -> int:
+    """块数与字节合计必须同时对上声明：对不上就是制品与清单不一致。"""
     size = _oci_int(fields["size"], "size", path)
     declared = _oci_int(fields.get("chunks") or str(len(parts)), "chunks", path)
     if declared != len(parts):
@@ -315,6 +317,25 @@ def parse_oci(path: Path) -> OciLedger:
             EXIT_CHECK,
             f"{path.name} 分块合计 {human_bytes(joined)} ≠ 声明 {human_bytes(size)}",
         )
+    return size
+
+
+def parse_oci(path: Path) -> OciLedger:
+    """把 iso-oci.txt 读成账本；分块不自洽当场拦下，不做半懂不懂的猜测。"""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise FlashError(
+            EXIT_USAGE,
+            f"读不到发布清单 {path}: {exc.strerror or exc}",
+            hint="从发布页取回与镜像同名的 .iso-oci.txt",
+        ) from exc
+    fields, parts = _oci_lines(text, path)
+    _oci_need(fields, path)
+    if not parts:
+        raise FlashError(EXIT_CHECK, f"{path.name} 没有 part= 行")
+    digest = _oci_digest(fields["sha256"], "的 sha256 格式不对", path)
+    size = _oci_span(path, fields, parts)
     return OciLedger(
         ref=fields["ref"],
         tag=fields.get("tag", ""),
