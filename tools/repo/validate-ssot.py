@@ -159,18 +159,26 @@ def md_files(docs_root):
     文件），使本地（子模块已检出）与 CI（子模块为空目录）行为一致；
     非 git 仓库时回退到递归遍历。
     """
+    tracked = _git_md(docs_root)
+    if tracked is not None:
+        return tracked
+    return [str(p) for p in Path(docs_root).rglob("*.md")]
+
+
+def _git_md(docs_root):
+    """``git ls-files`` 命中的 .md；非 git 仓库或命令失败时返回 None。"""
     try:
         proc = subprocess.run(
             ["git", "-C", docs_root, "ls-files", "-z", "--", "*.md"],
             capture_output=True,
             timeout=30,
         )
-        if proc.returncode == 0:
-            raw = proc.stdout.decode("utf-8", errors="replace")
-            return [os.path.join(docs_root, p) for p in raw.split("\0") if p]
     except (FileNotFoundError, subprocess.TimeoutExpired):
-        pass
-    return [str(p) for p in Path(docs_root).rglob("*.md")]
+        return None
+    if proc.returncode != 0:
+        return None
+    raw = proc.stdout.decode("utf-8", errors="replace")
+    return [os.path.join(docs_root, p) for p in raw.split("\0") if p]
 
 
 def parse_range(token):
@@ -208,11 +216,25 @@ def _text_of(md_path):
 
 def _scan_text(text, rel_path, used):
     """单份文档的三类规则引用：OS-*、OS-STD-NNN、agentrt。"""
+    _scan_os(text, rel_path, used)
+    _scan_std(text, rel_path, used)
+    _scan_rt(text, rel_path, used)
+
+
+def _scan_os(text, rel_path, used):
+    """OS-* 规则引用，去掉句末标点后登记。"""
     for match in OS_PATTERN.finditer(text):
         _mark(used, match.group().rstrip('.,;:)]}'), rel_path)
+
+
+def _scan_std(text, rel_path, used):
+    """OS-STD-NNN 规则引用，原样登记。"""
     for match in OS_STD_PLAIN_PATTERN.finditer(text):
         _mark(used, match.group(), rel_path)
-    # 跳过 OS-STD-PROD-031 之类的后缀误匹配：其前一个字符为 '-'
+
+
+def _scan_rt(text, rel_path, used):
+    """agentrt 规则引用；跳过前一个字符为 '-' 的后缀误匹配。"""
     for match in AGENTRT_PATTERN.finditer(text):
         if match.start() >= 1 and text[match.start() - 1] == '-':
             continue
