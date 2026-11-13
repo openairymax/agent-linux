@@ -626,13 +626,22 @@ def _partitions(entry: Path, name: str) -> tuple[tuple[str, ...], int]:
     names: list[str] = []
     total = 0
     for child in sorted(entry.iterdir()):
-        if child.name == name or not (child / "partition").exists():
+        if _skip_child(child, name):
             continue
-        sectors = _read_attr(child / "size")
         names.append(child.name)
-        if sectors.isdigit():
-            total += int(sectors) * BLOCK_SECTOR
+        total += _part_bytes(child)
     return tuple(names), total
+
+
+def _skip_child(child: Path, name: str) -> bool:
+    """盘符自身或没有 partition 属性的目录项不是分区。"""
+    return child.name == name or not (child / "partition").exists()
+
+
+def _part_bytes(child: Path) -> int:
+    """分区 size 属性（512B 扇区）折算字节；不可解析记 0。"""
+    sectors = _read_attr(child / "size")
+    return int(sectors) * BLOCK_SECTOR if sectors.isdigit() else 0
 
 
 def system_disks(

@@ -297,9 +297,18 @@ def _print_rows(title, items, limit=None):
     if not items:
         return
     print(f"\n{title}:")
-    shown = items[:limit] if limit else items
-    for item in shown:
+    for item in _shown(items, limit):
         print(f"  {item}")
+    _print_more(items, limit)
+
+
+def _shown(items, limit):
+    """limit 存在时只取前 limit 条，否则原样返回。"""
+    return items[:limit] if limit else items
+
+
+def _print_more(items, limit):
+    """把被截断的条数一并报出，避免误以为问题就这么多。"""
     if limit and len(items) > limit:
         print(f"  ... and {len(items) - limit} more warnings")
 
