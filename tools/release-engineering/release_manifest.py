@@ -490,13 +490,18 @@ def _notes_unknown(notes: dict) -> list[str]:
 
 def _note_errs(key: str, value: Any) -> list[str]:
     """单键校验：须为条目非空的字符串列表，且条数不超过上限。"""
-    if not isinstance(value, list) or any(
-            not isinstance(item, str) or not item.strip() for item in value):
+    if not _note_list(value):
         return [f"notes.{key} 必须是字符串列表且条目非空"
                 "（确无此类条目时用空列表）"]
     if len(value) > NOTES_MAX_LINES:
         return [f"notes.{key} 至多 {NOTES_MAX_LINES} 条（当前 {len(value)} 条）"]
     return []
+
+
+def _note_list(value: Any) -> bool:
+    """值必须是逐条去空白后非空的字符串列表。"""
+    return isinstance(value, list) and not any(
+        not isinstance(item, str) or not item.strip() for item in value)
 
 
 def _notes_errs(notes: Any) -> list[str]:
@@ -534,23 +539,32 @@ def check_schema(manifest: Manifest) -> CheckResult:
     Returns:
         检查结果。
     """
+    problems = _top_probs(manifest)
+    problems.extend(_notes_errs(manifest.get("notes")))
+    problems.extend(_mat_probs(manifest.get("materials")))
+    return CheckResult("清单 schema 合法", not problems, "\n".join(problems))
+
+
+def _top_probs(manifest: Manifest) -> list[str]:
+    """顶层未知字段与 version 必填性。"""
     problems = []
     unknown = set(manifest) - TOP_KEYS
     if unknown:
         problems.append(f"顶层未知字段: {', '.join(sorted(unknown))}")
     if not manifest.get("version"):
         problems.append("缺少或为空值的必填字段: version")
-    problems.extend(_notes_errs(manifest.get("notes")))
+    return problems
 
-    materials = manifest.get("materials")
+
+def _mat_probs(materials: Any) -> list[str]:
+    """materials 非空性，以及逐条物料记录的问题。"""
     if not isinstance(materials, list) or not materials:
-        problems.append("materials 必须是非空列表")
-    else:
-        seen: set[str] = set()
-        for idx, entry in enumerate(materials):
-            problems.extend(_entry_problems(idx, entry, seen))
-
-    return CheckResult("清单 schema 合法", not problems, "\n".join(problems))
+        return ["materials 必须是非空列表"]
+    seen: set[str] = set()
+    problems = []
+    for idx, entry in enumerate(materials):
+        problems.extend(_entry_problems(idx, entry, seen))
+    return problems
 
 
 # ─── Recipe (produce) check ────────────────────────────────────────────────
@@ -786,18 +800,33 @@ def _report_ci(results: Sequence[CheckResult], passed: int, total: int,
 def _report_full(results: Sequence[CheckResult], manifest: Manifest,
                  total: int, failed: int) -> None:
     """详细形态：抬头、逐项判定与结论横幅。"""
+    _full_head(manifest)
+    for result in results:
+        _full_item(result)
+    _full_tail(total, failed)
+
+
+def _full_head(manifest: Manifest) -> None:
+    """详细形态抬头：清单版本与物料数。"""
     print("=" * 72)
     print("agent-linux AirymaxOS 发布物料清单报告")
     print(f"清单版本: {manifest.get('version', '?')}    "
           f"物料数: {len(manifest.get('materials', []))}")
     print("=" * 72)
     print()
-    for result in results:
-        marker = "[+]" if result.passed else "[-]"
-        status = "PASS" if result.passed else "FAIL"
-        print(f"{marker} {status}: {result.name}")
-        for line in result.details.splitlines():
-            print(f"      {line}")
+
+
+def _full_item(result: CheckResult) -> None:
+    """单条检查的判定行与明细。"""
+    marker = "[+]" if result.passed else "[-]"
+    status = "PASS" if result.passed else "FAIL"
+    print(f"{marker} {status}: {result.name}")
+    for line in result.details.splitlines():
+        print(f"      {line}")
+
+
+def _full_tail(total: int, failed: int) -> None:
+    """详细形态结论横幅。"""
     print()
     print("-" * 72)
     if failed == 0:
@@ -1126,11 +1155,26 @@ def _ledger_fields(lines: Sequence[str]) -> dict[str, str]:
 
 def _ledger_check(ledger: dict[str, str], path: Path) -> None:
     """字段齐备性与取值合法性；任一项不成立即抛 ToolError。"""
+    _ledger_missing(ledger, path)
+    _ledger_sha(ledger)
+    _ledger_size(ledger)
+
+
+def _ledger_missing(ledger: dict[str, str], path: Path) -> None:
+    """账本必须携带全部身份字段。"""
     missing = [key for key in LEDGER_KEYS if key not in ledger]
     if missing:
         raise ToolError(f"ISO 账本缺少字段 {'/'.join(missing)}：{path}")
+
+
+def _ledger_sha(ledger: dict[str, str]) -> None:
+    """sha256 必须是完整的十六进制摘要。"""
     if not DIGEST_RE.match(ledger["sha256"]):
         raise ToolError(f"ISO 账本 sha256 非法：{ledger['sha256']}")
+
+
+def _ledger_size(ledger: dict[str, str]) -> None:
+    """size 必须是十进制字节数。"""
     if not ledger["size"].isdigit():
         raise ToolError(f"ISO 账本 size 非法：{ledger['size']}")
 
@@ -1406,18 +1450,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
-        if args.checksums:
-            return cmd_checksums(args)
-        if args.notes:
-            return cmd_notes(args)
-        if args.channel:
-            return cmd_channel(args)
-        if args.replay:
-            return cmd_replay(args)
-        return cmd_check(args)
+        return _dispatch(args)
     except ToolError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return EXIT_USAGE
+
+
+def _dispatch(args: Any) -> int:
+    """按互斥模式分派子命令，未指定模式时执行默认检查。"""
+    for flag, handler in (
+        ("checksums", cmd_checksums),
+        ("notes", cmd_notes),
+        ("channel", cmd_channel),
+        ("replay", cmd_replay),
+    ):
+        if getattr(args, flag):
+            return handler(args)
+    return cmd_check(args)
 
 
 if __name__ == "__main__":
