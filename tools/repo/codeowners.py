@@ -95,20 +95,30 @@ def flush_block(blocks, state):
     blocks.append((state["name"], [(p, list(owners)) for p in paths]))
 
 
+def _add_path(state, value):
+    """F: 必须是单个合法路径。"""
+    if not value or not PATH.match(value):
+        raise FeedError(
+            f"块「{state['name']}」的 F: 不是单一路径: {value!r}")
+    state["paths"].append(value)
+
+
+def _add_owners(state, value):
+    """O: 收去重的 GitHub 句柄。"""
+    for handle in value.split():
+        if not HANDLE.match(handle):
+            raise FeedError(
+                f"块「{state['name']}」的 O: 不是 GitHub 句柄: {handle!r}")
+        if handle not in state["owners"]:
+            state["owners"].append(handle)
+
+
 def field_add(state, key, value):
     """块内字段：F: 收单一路径，O: 收去重的 GitHub 句柄。"""
     if key == "F":
-        if not value or not PATH.match(value):
-            raise FeedError(
-                f"块「{state['name']}」的 F: 不是单一路径: {value!r}")
-        state["paths"].append(value)
+        _add_path(state, value)
     elif key == "O":
-        for handle in value.split():
-            if not HANDLE.match(handle):
-                raise FeedError(
-                    f"块「{state['name']}」的 O: 不是 GitHub 句柄: {handle!r}")
-            if handle not in state["owners"]:
-                state["owners"].append(handle)
+        _add_owners(state, value)
 
 
 def render(blocks):

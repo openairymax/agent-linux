@@ -376,6 +376,22 @@ def check_trace(entries: list[ArchEntry], kernel_dir: Path,
         manifest.get("tracing_chain", []))
 
 
+def _frag_probs(arch: str, configs: str, present: set[str],
+                expected: list[str]) -> list[str]:
+    """单个片段缺失的 BTF 配置项。"""
+    return [f"{arch} ({configs}): 缺少 {want}"
+            for want in expected if want not in present]
+
+
+def _choice_probs(arch: str, configs: str, present: set[str],
+                  choice: list[str]) -> list[str]:
+    """DEBUG_INFO 形态未命中任一 choice 项时的缺失项。"""
+    if not choice or any(item in present for item in choice):
+        return []
+    return [f"{arch} ({configs}): DEBUG_INFO 形态缺失"
+            f"（需命中 {', '.join(choice)} 之一）"]
+
+
 def check_btf(entries: list[ArchEntry], kernel_dir: Path,
               manifest: Manifest) -> CheckResult:
     """校验每个受检片段均满足 BTF 基线与 Kconfig 前置条件。
@@ -399,14 +415,8 @@ def check_btf(entries: list[ArchEntry], kernel_dir: Path,
 
     problems: list[str] = []
     for arch, configs, present in _fragment_cfgs(entries, kernel_dir):
-        problems.extend(
-            f"{arch} ({configs}): 缺少 {want}"
-            for want in expected
-            if want not in present)
-        if choice and not any(item in present for item in choice):
-            problems.append(
-                f"{arch} ({configs}): DEBUG_INFO 形态缺失"
-                f"（需命中 {', '.join(choice)} 之一）")
+        problems += _frag_probs(arch, configs, present, expected)
+        problems += _choice_probs(arch, configs, present, choice)
     return CheckResult("BTF 基线齐备 (OS-OBS-012)", not problems,
                        "\n".join(problems))
 

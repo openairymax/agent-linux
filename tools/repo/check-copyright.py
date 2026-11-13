@@ -60,6 +60,38 @@ def has_copyright(path):
     return "copyright" in line or "spdx-license-identifier" in line
 
 
+def _scan(root, tracked):
+    """统计受检文件数与缺失版权头的文件。"""
+    missing = []
+    total = 0
+    for rel in tracked:
+        if is_hidden_path(rel):
+            continue
+        total += 1
+        if not has_copyright(root / rel):
+            missing.append(rel)
+    return total, missing
+
+
+def _report(total, missing):
+    """输出扫描结论；存在缺失时返回 1。"""
+    print(f"扫描 {total} 个被跟踪的 .md 文件，{len(missing)} 个缺失版权头")
+    if not missing:
+        print("OK: 所有受检 .md 文件的第 1 行均含版权头")
+        return 0
+
+    print("缺失版权头的文件：")
+    for rel in missing:
+        print(f"  {rel}")
+    print(
+        "提示：在第 1 行添加形如 "
+        "'Copyright (c) 2025-2026 SPHARX Ltd.' "
+        "或 'SPDX-License-Identifier: ...'",
+        file=sys.stderr,
+    )
+    return 1
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="检查管理仓自有 .md 文件的版权头（第 1 行）"
@@ -80,30 +112,7 @@ def main():
         print(f"ERROR: 无法枚举被跟踪的 .md 文件：{err}", file=sys.stderr)
         return 2
 
-    missing = []
-    total = 0
-    for rel in tracked:
-        if is_hidden_path(rel):
-            continue
-        total += 1
-        if not has_copyright(root / rel):
-            missing.append(rel)
-
-    print(f"扫描 {total} 个被跟踪的 .md 文件，{len(missing)} 个缺失版权头")
-    if missing:
-        print("缺失版权头的文件：")
-        for rel in missing:
-            print(f"  {rel}")
-        print(
-            "提示：在第 1 行添加形如 "
-            "'Copyright (c) 2025-2026 SPHARX Ltd.' "
-            "或 'SPDX-License-Identifier: ...'",
-            file=sys.stderr,
-        )
-        return 1
-
-    print("OK: 所有受检 .md 文件的第 1 行均含版权头")
-    return 0
+    return _report(*_scan(root, tracked))
 
 
 if __name__ == "__main__":
