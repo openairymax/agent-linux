@@ -25,11 +25,8 @@ import sys
 from pathlib import Path
 
 
-def git_md_files(root):
-    """返回 root 所在 git 仓库中被跟踪的 .md 相对路径列表。
-
-    非 git 仓库或 git 不可用时返回 (None, 错误信息)。
-    """
+def _ls_tracked(root):
+    """执行 ``git ls-files`` 枚举 .md；失败时返回 (None, 错误信息)。"""
     try:
         proc = subprocess.run(
             ["git", "-C", str(root), "ls-files", "-z", "--", "*.md"],
@@ -40,7 +37,17 @@ def git_md_files(root):
         return None, f"git 不可用或超时：{exc}"
     if proc.returncode != 0:
         return None, proc.stderr.decode("utf-8", errors="replace").strip()
-    raw = proc.stdout.decode("utf-8", errors="replace")
+    return proc.stdout.decode("utf-8", errors="replace"), None
+
+
+def git_md_files(root):
+    """返回 root 所在 git 仓库中被跟踪的 .md 相对路径列表。
+
+    非 git 仓库或 git 不可用时返回 (None, 错误信息)。
+    """
+    raw, err = _ls_tracked(root)
+    if raw is None:
+        return None, err
     return [p for p in raw.split("\0") if p], None
 
 

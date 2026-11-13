@@ -57,6 +57,19 @@ def _path_of(line):
     return None
 
 
+def _path_lines(stdout):
+    """逐行取声明的子模块路径，非路径行丢弃。"""
+    return [path for path in map(_path_of, stdout.splitlines()) if path]
+
+
+def _gm_paths(gitmodules):
+    """从 .gitmodules 提取声明的子模块路径。"""
+    stdout, err = _gm_read(gitmodules)
+    if err is not None:
+        return [], err
+    return _path_lines(stdout), None
+
+
 def sub_paths(root):
     """从 root/.gitmodules 派生声明的子模块路径清单。
 
@@ -66,15 +79,7 @@ def sub_paths(root):
     gitmodules = os.path.join(root, ".gitmodules")
     if not os.path.isfile(gitmodules):
         return [], ".gitmodules 不存在"
-    stdout, err = _gm_read(gitmodules)
-    if err is not None:
-        return [], err
-    paths = []
-    for line in stdout.splitlines():
-        path = _path_of(line)
-        if path:
-            paths.append(path)
-    return paths, None
+    return _gm_paths(gitmodules)
 
 
 def _headers(token, body):
@@ -99,20 +104,37 @@ def _parse(raw):
         return None
 
 
+def _body_bytes(body):
+    """请求体序列化为字节；无 body 时为 None。"""
+    return None if body is None else json.dumps(body).encode("utf-8")
+
+
+def _http_ok(req):
+    """正常响应：返回 (状态码, 解析结果)。"""
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        raw = resp.read().decode("utf-8", errors="replace")
+        return resp.status, _parse(raw)
+
+
+def _http_error(exc):
+    """HTTPError：能解析为 JSON 就用 JSON，否则回落到 message 文本。"""
+    raw = exc.read().decode("utf-8", errors="replace")
+    parsed = _parse(raw)
+    if parsed is None:
+        return exc.code, {"message": raw}
+    return exc.code, parsed
+
+
 def http_request(method, url, token, body=None):
     """发起 GitHub API 请求，返回 (status, json_or_text)。"""
-    data = None if body is None else json.dumps(body).encode("utf-8")
     req = urllib.request.Request(
-        url, data=data, headers=_headers(token, body), method=method
+        url, data=_body_bytes(body), headers=_headers(token, body),
+        method=method
     )
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            raw = resp.read().decode("utf-8", errors="replace")
-            return resp.status, _parse(raw)
+        return _http_ok(req)
     except urllib.error.HTTPError as exc:
-        raw = exc.read().decode("utf-8", errors="replace")
-        parsed = _parse(raw)
-        return exc.code, parsed if parsed is not None else {"message": raw}
+        return _http_error(exc)
     except (urllib.error.URLError, TimeoutError) as exc:
         return 0, {"message": f"网络错误：{exc}"}
 

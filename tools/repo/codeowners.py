@@ -90,14 +90,25 @@ def _skip(line):
             or line[0] in " \t")
 
 
+def _block_name(state):
+    """块名；未命名时用占位串。"""
+    return state["name"] or "未命名"
+
+
+def _owners_missing(state):
+    """有 F: 却没有 O: 时报错。"""
+    if state["owners"]:
+        return
+    raise FeedError(f"块「{_block_name(state)}」有 F: 却没有 O:，"
+                    "无法投影出合法 owner")
+
+
 def flush_block(blocks, state):
     """块尾落库：只有 F: 的块必须带 O:，否则投影不出合法 owner。"""
     paths, owners = state["paths"], state["owners"]
     if not paths:
         return
-    if not owners:
-        raise FeedError(f"块「{state['name'] or '未命名'}」有 F: 却没有 O:，"
-                        "无法投影出合法 owner")
+    _owners_missing(state)
     blocks.append((state["name"], [(p, list(owners)) for p in paths]))
 
 
@@ -143,6 +154,47 @@ def _rows(blocks):
     return [(path, owners) for _, group in blocks for path, owners in group]
 
 
+def _render_want(args):
+    """由 MAINTAINERS 渲染期望的 CODEOWNERS 文本；失败时为 None。"""
+    try:
+        return render(parse_blocks(after_preamble(
+            read_lines(Path(args.maintainers)))))
+    except FeedError as exc:
+        print(f"codeowners: {exc}", file=sys.stderr)
+        return None
+
+
+def _read_have(target):
+    """读取现有 CODEOWNERS；不可读时打印原因并返回 None。"""
+    try:
+        return target.read_text(encoding="utf-8")
+    except OSError as exc:
+        print(f"codeowners: 无法读取 {target}: {exc}", file=sys.stderr)
+        return None
+
+
+def _print_diff(have, want, target):
+    """把 CODEOWNERS 漂移写到 stderr。"""
+    diff = difflib.unified_diff(
+        have.splitlines(keepends=True), want.splitlines(keepends=True),
+        fromfile=str(target), tofile="MAINTAINERS projection")
+    sys.stderr.writelines(diff)
+    print("codeowners: CODEOWNERS 与 MAINTAINERS 不一致，"
+          "请执行 make codeowners-sync", file=sys.stderr)
+
+
+def _check_mode(args, want):
+    """--check 模式：比对现有 CODEOWNERS 并给出退出码。"""
+    target = Path(args.codeowners)
+    have = _read_have(target)
+    if have is None:
+        return 2
+    if have == want:
+        return 0
+    _print_diff(have, want, target)
+    return 1
+
+
 def main(argv):
     """入口：打印投影或校验漂移。"""
     parser = argparse.ArgumentParser(
@@ -153,33 +205,15 @@ def main(argv):
                         help="与 CODEOWNERS 比对，漂移时退出 1")
     args = parser.parse_args(argv)
 
-    try:
-        want = render(parse_blocks(after_preamble(
-            read_lines(Path(args.maintainers)))))
-    except FeedError as exc:
-        print(f"codeowners: {exc}", file=sys.stderr)
+    want = _render_want(args)
+    if want is None:
         return 2
 
     if not args.check:
         sys.stdout.write(want)
         return 0
 
-    target = Path(args.codeowners)
-    try:
-        have = target.read_text(encoding="utf-8")
-    except OSError as exc:
-        print(f"codeowners: 无法读取 {target}: {exc}", file=sys.stderr)
-        return 2
-    if have == want:
-        return 0
-
-    diff = difflib.unified_diff(
-        have.splitlines(keepends=True), want.splitlines(keepends=True),
-        fromfile=str(target), tofile="MAINTAINERS projection")
-    sys.stderr.writelines(diff)
-    print("codeowners: CODEOWNERS 与 MAINTAINERS 不一致，"
-          "请执行 make codeowners-sync", file=sys.stderr)
-    return 1
+    return _check_mode(args, want)
 
 
 if __name__ == "__main__":
