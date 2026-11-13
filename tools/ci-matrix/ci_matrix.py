@@ -305,24 +305,27 @@ def _norm_excl(entries):
     return sorted(normalized)
 
 
+def _excl_entry(index, entry, combos):
+    """单条 exclude 项：非空、维度已知、命中真实组合；合法时返回 None。"""
+    if not isinstance(entry, dict) or not entry:
+        return f"exclude[{index}] 必须是非空映射"
+    unknown = sorted(set(entry) - set(DIMS))
+    if unknown:
+        return f"exclude[{index}] 含未知维度: {unknown}"
+    if not any(_match(combo, entry) for combo in combos):
+        return f"exclude[{index}] 未命中任何组合: {entry}"
+    return None
+
+
 def _excl_problems(entries, manifest, arches):
     """校验清单 exclude 项：非空、维度已知、命中真实组合。"""
     spec = manifest["matrix"]
     combos = [dict(zip(DIMS, combo))
               for combo in itertools.product(
                   spec["configs"], arches, spec["compilers"])]
-    problems = []
-    for index, entry in enumerate(entries):
-        if not isinstance(entry, dict) or not entry:
-            problems.append(f"exclude[{index}] 必须是非空映射")
-            continue
-        unknown = sorted(set(entry) - set(DIMS))
-        if unknown:
-            problems.append(f"exclude[{index}] 含未知维度: {unknown}")
-            continue
-        if not any(_match(combo, entry) for combo in combos):
-            problems.append(f"exclude[{index}] 未命中任何组合: {entry}")
-    return problems
+    problems = [_excl_entry(index, entry, combos)
+                for index, entry in enumerate(entries)]
+    return [msg for msg in problems if msg is not None]
 
 
 def check_exclude(job, manifest, arches):

@@ -394,19 +394,27 @@ def _delivery_errs(where: str, entry: Manifest, delivery: Any) -> list[str]:
     return [] if check is None else check(where, entry)
 
 
+def _evidence_errs(where: str, evidence: Any) -> list[str]:
+    """active 物料的 evidence 必须是非空列表，且每项为非空字符串。"""
+    if not isinstance(evidence, list) or not evidence:
+        return [f"{where}: active 物料要求非空 evidence 列表"]
+    if any(not isinstance(g, str) or not g for g in evidence):
+        return [f"{where}.evidence 含非法项"]
+    return []
+
+
+def _defer_errs(where: str, entry: Manifest) -> list[str]:
+    """active 物料不得登记 defer_reason / defer_target。"""
+    if entry.get("defer_reason") or entry.get("defer_target"):
+        return [f"{where}: active 物料不得登记 defer_reason/defer_target"]
+    return []
+
+
 def _active_errs(where: str, entry: Manifest) -> list[str]:
     """active 物料：evidence 与 produce 都必须可复跑，且不得登记延期字段。"""
-    evidence = entry.get("evidence")
-    problems = []
-    if not isinstance(evidence, list) or not evidence:
-        problems.append(f"{where}: active 物料要求非空 evidence 列表")
-    elif any(not isinstance(g, str) or not g for g in evidence):
-        problems.append(f"{where}.evidence 含非法项")
-    problems.extend(_produce_errs(where, entry.get("produce")))
-    if entry.get("defer_reason") or entry.get("defer_target"):
-        problems.append(
-            f"{where}: active 物料不得登记 defer_reason/defer_target")
-    return problems
+    return (_evidence_errs(where, entry.get("evidence"))
+            + _produce_errs(where, entry.get("produce"))
+            + _defer_errs(where, entry))
 
 
 def _deferred_errs(where: str, entry: Manifest) -> list[str]:
