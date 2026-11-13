@@ -1886,18 +1886,11 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _check(args: argparse.Namespace) -> tuple[Report, int]:
-    """环境自检：与烧录共用同一个 Report 与渲染器，失败也落报告。"""
+def _env_checks() -> list[Check]:
+    """环境自检四项：解释器、两个内核接口、root 权限。"""
     mounts, sysfs = Path("/proc/mounts"), Path("/sys/class/block")
     root = os.geteuid() == 0
-    report = Report(
-        command="check",
-        result="pass",
-        started=now_iso(),
-        argv=list(sys.argv) if args.argv is None else list(args.argv),
-        host=socket.gethostname(),
-    )
-    report.checks = [
+    return [
         Check("python", True, sys.version.split()[0]),
         Check("/proc/mounts", mounts.exists(), "可读" if mounts.exists() else "缺失"),
         Check("/sys/class/block", sysfs.is_dir(), "存在" if sysfs.is_dir() else "缺失"),
@@ -1908,6 +1901,18 @@ def _check(args: argparse.Namespace) -> tuple[Report, int]:
             skipped=not root,
         ),
     ]
+
+
+def _check(args: argparse.Namespace) -> tuple[Report, int]:
+    """环境自检：与烧录共用同一个 Report 与渲染器，失败也落报告。"""
+    report = Report(
+        command="check",
+        result="pass",
+        started=now_iso(),
+        argv=list(sys.argv) if args.argv is None else list(args.argv),
+        host=socket.gethostname(),
+    )
+    report.checks = _env_checks()
     renderer = Renderer(
         stream=io.StringIO() if args.json else None,
         tty=False if (args.no_progress or args.json) else None,
