@@ -238,7 +238,11 @@ def _positive(
     """读取可选正整数字段（显式拒绝 bool）。"""
     if key not in mapping:
         return default
-    value = mapping[key]
+    return _pos_value(mapping[key], where, key)
+
+
+def _pos_value(value: object, where: str, key: str) -> int:
+    """正整数字段（显式拒绝 bool）。"""
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         raise _cfg(f"{where}.{key} must be a positive integer")
     return value

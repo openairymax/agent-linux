@@ -520,8 +520,18 @@ def _need_job_parts(machine, kernel) -> None:
 
 def _need_suite_mem(value) -> None:
     """套件成员判据：元素类型与名称唯一。作业与清单共用同一口径。"""
+    _suite_types(value)
+    _suite_unique(value)
+
+
+def _suite_types(value) -> None:
+    """元素必须全是 Suite。"""
     if any(not isinstance(suite, Suite) for suite in value):
         raise ValueError("suites must contain only Suite instances")
+
+
+def _suite_unique(value) -> None:
+    """套件名不得重复。"""
     names = [suite.name for suite in value]
     if len(names) != len(set(names)):
         raise ValueError(f"duplicate suite names: {names}")

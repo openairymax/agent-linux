@@ -105,8 +105,7 @@ class RawRun:
             value = getattr(self, name)
             if not isinstance(value, Path) or not value.name:
                 raise ValueError(f"{name} must be a non-empty Path")
-        if not isinstance(self.preflight, Preflight):
-            raise ValueError("preflight must be Preflight")
+        _chk_pf(self.preflight)
 
     @property
     def signal_no(self) -> int | None:
@@ -221,6 +220,12 @@ def _need_path(value: object, name: str) -> Path:
     if not isinstance(path, Path) or not path.name:
         raise _cfg(f"{name} must be a non-empty path, got {value!r}")
     return path
+
+
+def _chk_pf(preflight: object) -> None:
+    """预检证据必须携带。"""
+    if not isinstance(preflight, Preflight):
+        raise ValueError("preflight must be Preflight")
 
 
 def _mkdir(path: Path, name: str) -> Path:
