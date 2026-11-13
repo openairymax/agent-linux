@@ -240,6 +240,30 @@ class SyscallSpec:
         return f"__NR_{self.name}"
 
 
+def _need_core(count: int, syscalls: tuple[SyscallSpec, ...]) -> None:
+    """core_count 必须等于 syscall 条目数。"""
+    if count != len(syscalls):
+        raise ContractValidationError("core_count does not match syscall entry count")
+
+
+def _need_reserved(count: int, reserved: tuple[ReservedRange, ...]) -> None:
+    """reserved_count 必须等于各保留区间条目数之和。"""
+    if count != sum(item.count for item in reserved):
+        raise ContractValidationError("reserved_count does not match reserved ranges")
+
+
+def _need_total(total: int, core: int, reserved: int) -> None:
+    """总槽位必须等于核心数与预留数之和。"""
+    if total != core + reserved:
+        raise ContractValidationError("total_slots != core_count + reserved_count")
+
+
+def _need_dense(core: int, syscalls: tuple[SyscallSpec, ...]) -> None:
+    """内部编号必须从 0 起连续，跳号意味着预留位被误用。"""
+    if sorted(item.number for item in syscalls) != list(range(core)):
+        raise ContractValidationError("syscall numbers must be contiguous from 0")
+
+
 @dataclass(frozen=True)
 class SyscallContract:
     """syscall.xml 契约源整体模型（R-01 SSoT）。"""
@@ -256,14 +280,10 @@ class SyscallContract:
     schema_version: str = SCHEMA_VERSION
 
     def __post_init__(self) -> None:
-        if self.core_count != len(self.syscalls):
-            raise ContractValidationError("core_count does not match syscall entry count")
-        if self.reserved_count != sum(r.count for r in self.reserved):
-            raise ContractValidationError("reserved_count does not match reserved ranges")
-        if self.total_slots != self.core_count + self.reserved_count:
-            raise ContractValidationError("total_slots != core_count + reserved_count")
-        if sorted(sc.number for sc in self.syscalls) != list(range(self.core_count)):
-            raise ContractValidationError("syscall numbers must be contiguous from 0")
+        _need_core(self.core_count, self.syscalls)
+        _need_reserved(self.reserved_count, self.reserved)
+        _need_total(self.total_slots, self.core_count, self.reserved_count)
+        _need_dense(self.core_count, self.syscalls)
 
     @property
     def syscall_by_nr(self) -> dict[int, SyscallSpec]:
