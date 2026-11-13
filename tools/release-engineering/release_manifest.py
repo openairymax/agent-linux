@@ -431,12 +431,17 @@ def _produce_errs(where: str, produce: Any) -> list[str]:
         return [f"{where}: active 物料要求非空 produce 列表（生成命令 argv）"]
     problems = []
     for idx, argv in enumerate(produce):
-        if not isinstance(argv, list) or not argv:
-            problems.append(f"{where}.produce[{idx}] 必须是非空 argv 列表")
-            continue
-        if any(not isinstance(tok, str) or not tok.strip() for tok in argv):
-            problems.append(f"{where}.produce[{idx}] 含非字符串或空 token")
+        problems.extend(_argv_errs(f"{where}.produce[{idx}]", argv))
     return problems
+
+
+def _argv_errs(where: str, argv: Any) -> list[str]:
+    """单条 argv 校验：须为非空列表，且每个 token 均为非空字符串。"""
+    if not isinstance(argv, list) or not argv:
+        return [f"{where} 必须是非空 argv 列表"]
+    if any(not isinstance(tok, str) or not tok.strip() for tok in argv):
+        return [f"{where} 含非字符串或空 token"]
+    return []
 
 
 def _notes_unknown(notes: dict) -> list[str]:
@@ -520,18 +525,23 @@ def gate_names(repo_root: Path) -> set[str]:
 
 def _recipe_errs(entry: Manifest, gates: set[str]) -> list[str]:
     """校验单条 active 物料的 produce 是否指向真实门禁且占位符可解析。"""
-    problems = []
     mid = entry.get("id")
+    problems = []
     for idx, argv in enumerate(entry.get("produce") or []):
-        where = f"物料 {mid} 的 produce[{idx}]"
-        if len(argv) < 2 or argv[0] != DISPATCH_REL:
-            problems.append(f"{where} 必须以 {DISPATCH_REL} <门禁> 开头")
-            continue
-        if argv[1] not in gates:
-            problems.append(f"{where} 引用的门禁不存在: {argv[1]}")
-        unknown = {m for tok in argv for m in PH_RE.findall(tok)} - PRODUCE_PH
-        if unknown:
-            problems.append(f"{where} 含未知占位符: {', '.join(sorted(unknown))}")
+        problems.extend(_recipe_one(f"物料 {mid} 的 produce[{idx}]", argv, gates))
+    return problems
+
+
+def _recipe_one(where: str, argv: Sequence[str], gates: set[str]) -> list[str]:
+    """单条 produce argv 校验；命令头不对时不再解读其余 token。"""
+    if len(argv) < 2 or argv[0] != DISPATCH_REL:
+        return [f"{where} 必须以 {DISPATCH_REL} <门禁> 开头"]
+    problems = []
+    if argv[1] not in gates:
+        problems.append(f"{where} 引用的门禁不存在: {argv[1]}")
+    unknown = {m for tok in argv for m in PH_RE.findall(tok)} - PRODUCE_PH
+    if unknown:
+        problems.append(f"{where} 含未知占位符: {', '.join(sorted(unknown))}")
     return problems
 
 
@@ -906,6 +916,45 @@ def _run_argv(cmd: list[str], repo_root: Path) -> int:
         raise ToolError(f"生成命令无法执行: {' '.join(cmd)}（{exc}）") from exc
 
 
+def _replay_head(entry: Manifest, mid: str) -> int | None:
+    """重放前置：物料须为 active 且登记了生成命令，否则返回用法错误码。"""
+    if entry.get("delivery") != DELIVERY_ACTIVE:
+        print(f"ERROR: 物料 {mid} 未启用（deferred），无生成命令可重放",
+              file=sys.stderr)
+        return EXIT_USAGE
+    if not entry.get("produce"):
+        print(f"ERROR: 物料 {mid} 未登记生成命令（produce）", file=sys.stderr)
+        return EXIT_USAGE
+    return None
+
+
+def _replay_cmds(entry: Manifest, repo_root: Path, values: dict[str, str],
+                 dry_run: bool) -> int:
+    """按序重放生成命令；任一命令非零退出即中止并返回失败码。"""
+    for argv in entry.get("produce") or []:
+        cmd = expand_argv(argv, values)
+        print("+ " + " ".join(cmd))
+        if dry_run:
+            continue
+        code = _run_argv(cmd, repo_root)
+        if code:
+            print(f"ERROR: 生成命令失败（退出码 {code}）: {' '.join(cmd)}",
+                  file=sys.stderr)
+            return EXIT_FAIL
+    return EXIT_PASS
+
+
+def _replay_ev(entry: Manifest, repo_root: Path, mid: str) -> int:
+    """重放后逐条验证 evidence 有产物落地。"""
+    missing = _ev_missing(entry, repo_root)
+    if missing:
+        print(f"ERROR: 物料 {mid} 重放后无产物: {', '.join(missing)}",
+              file=sys.stderr)
+        return EXIT_FAIL
+    print(f"REPLAY: PASS {mid}")
+    return EXIT_PASS
+
+
 def replay(manifest: Manifest, repo_root: Path, mid: str,
            values: dict[str, str], dry_run: bool) -> int:
     """按 produce 记录重放某条物料的生成过程。
@@ -922,33 +971,13 @@ def replay(manifest: Manifest, repo_root: Path, mid: str,
         2 用法错误。
     """
     entry = find_material(manifest, mid)
-    if entry.get("delivery") != DELIVERY_ACTIVE:
-        print(f"ERROR: 物料 {mid} 未启用（deferred），无生成命令可重放",
-              file=sys.stderr)
-        return EXIT_USAGE
-    argvs = entry.get("produce") or []
-    if not argvs:
-        print(f"ERROR: 物料 {mid} 未登记生成命令（produce）", file=sys.stderr)
-        return EXIT_USAGE
-    for argv in argvs:
-        cmd = expand_argv(argv, values)
-        print("+ " + " ".join(cmd))
-        if dry_run:
-            continue
-        code = _run_argv(cmd, repo_root)
-        if code:
-            print(f"ERROR: 生成命令失败（退出码 {code}）: {' '.join(cmd)}",
-                  file=sys.stderr)
-            return EXIT_FAIL
-    if dry_run:
-        return EXIT_PASS
-    missing = _ev_missing(entry, repo_root)
-    if missing:
-        print(f"ERROR: 物料 {mid} 重放后无产物: {', '.join(missing)}",
-              file=sys.stderr)
-        return EXIT_FAIL
-    print(f"REPLAY: PASS {mid}")
-    return EXIT_PASS
+    head = _replay_head(entry, mid)
+    if head is not None:
+        return head
+    code = _replay_cmds(entry, repo_root, values, dry_run)
+    if code or dry_run:
+        return code
+    return _replay_ev(entry, repo_root, mid)
 
 
 def cmd_replay(args: argparse.Namespace) -> int:

@@ -410,26 +410,32 @@ def _xml_meta(root):
     return symbol, func
 
 
+def _xml_sys(entry, prefix):
+    """单条 <syscall>：返回 (大写后缀, 原名, 编号)，不合规即 ValueError。"""
+    name = (entry.findtext("name") or "").strip()
+    raw_number = (entry.findtext("number") or "").strip()
+    if not name or not raw_number:
+        raise ValueError("syscall.xml <syscall> 缺少 <name>/<number>")
+    if not name.startswith(prefix):
+        raise ValueError(f"syscall.xml 名称 {name} 未带前缀 {prefix}")
+    try:
+        number = int(raw_number, 0)
+    except ValueError as exc:
+        raise ValueError(
+            f"syscall.xml {name} 的 <number> 非整数: {raw_number}") from exc
+    return name[len(prefix):].upper(), name, number
+
+
 def _xml_core(root, prefix):
     """逐条 <syscall>：名字带前缀且去重，编号可解析为整数。"""
     names = {}
     numbers = {}
     for entry in root.findall("syscall"):
-        name = (entry.findtext("name") or "").strip()
-        raw_number = (entry.findtext("number") or "").strip()
-        if not name or not raw_number:
-            raise ValueError("syscall.xml <syscall> 缺少 <name>/<number>")
-        if not name.startswith(prefix):
-            raise ValueError(f"syscall.xml 名称 {name} 未带前缀 {prefix}")
-        suffix = name[len(prefix):].upper()
+        suffix, name, number = _xml_sys(entry, prefix)
         if suffix in names:
             raise ValueError(f"syscall.xml 重复的 syscall 名称: {name}")
-        try:
-            numbers[suffix] = int(raw_number, 0)
-        except ValueError as exc:
-            raise ValueError(
-                f"syscall.xml {name} 的 <number> 非整数: {raw_number}") from exc
         names[suffix] = name
+        numbers[suffix] = number
     return names, numbers
 
 
@@ -751,6 +757,26 @@ def _dsl_labels():
     ]
 
 
+def _dsl_on_fail(per_path):
+    """全部 dsl-* 路径的降级契约问题汇总。"""
+    return [
+        item
+        for label, flags in COMPILE_PATHS
+        if label.startswith(DSL_PREFIX)
+        for item in _dsl_fail(label, flags, per_path.get(label, {}))
+    ]
+
+
+def _dsl_off_fail(per_path):
+    """全部常规路径的「降级层未激活」问题汇总。"""
+    return [
+        item
+        for label, _flags in COMPILE_PATHS
+        if not label.startswith(DSL_PREFIX)
+        for item in _off_fail(label, per_path.get(label, {}))
+    ]
+
+
 def fallback_check(per_path):
     """Verify the [DSL] degraded contract on the dsl-* compile paths.
 
@@ -763,18 +789,7 @@ def fallback_check(per_path):
     if not dsl_labels:
         return CheckResult(name, False, "  COMPILE_PATHS 未包含 [DSL] 降级路径")
 
-    failures = [
-        item
-        for label, flags in COMPILE_PATHS
-        if label.startswith(DSL_PREFIX)
-        for item in _dsl_fail(label, flags, per_path.get(label, {}))
-    ]
-    failures += [
-        item
-        for label, _flags in COMPILE_PATHS
-        if not label.startswith(DSL_PREFIX)
-        for item in _off_fail(label, per_path.get(label, {}))
-    ]
+    failures = _dsl_on_fail(per_path) + _dsl_off_fail(per_path)
     if failures:
         return CheckResult(name, False, "\n".join(failures))
     return CheckResult(
