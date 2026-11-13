@@ -283,29 +283,36 @@ def check_fs(manifest, kernel_dir):
         "\n".join(problems))
 
 
+def _fmt_line(configs, num, stripped, keys, problems):
+    """单行：注释跳过、非法行报错、CONFIG 赋值查重复键。"""
+    if not (CONFIG_VAL_RE.match(stripped) or CONFIG_SET_RE.match(stripped)):
+        if not stripped.startswith("#"):
+            problems.append(
+                f"{configs}:{num}: 非法行（既非注释亦非 CONFIG 赋值）: {stripped}")
+        return
+    key = config_key(stripped)
+    if key in keys:
+        problems.append(
+            f"{configs}:{num}: 重复配置键 {key}（首次见于第 {keys[key]} 行）")
+        return
+    keys[key] = num
+
+
+def _fmt_file(configs, path, problems):
+    """单份 defconfig：首行 SPDX 与逐行语法/重复键。"""
+    lines = path.read_text(encoding="utf-8").splitlines()
+    if not lines or not lines[0].startswith("# SPDX-License-Identifier:"):
+        problems.append(f"{configs}: 第 1 行缺少 SPDX 许可证标识")
+    keys: dict[str, int] = {}
+    for num, stripped in raw_lines(path):
+        _fmt_line(configs, num, stripped, keys, problems)
+
+
 def check_fmt(manifest, kernel_dir):
     """首行 SPDX、CONFIG 语法合法、无重复配置键。"""
     problems = []
     for configs, path in arch_cfgs(manifest, kernel_dir):
-        lines = path.read_text(encoding="utf-8").splitlines()
-        if not lines or not lines[0].startswith("# SPDX-License-Identifier:"):
-            problems.append(f"{configs}: 第 1 行缺少 SPDX 许可证标识")
-        keys = {}
-        for num, stripped in raw_lines(path):
-            is_config = bool(CONFIG_VAL_RE.match(stripped)
-                             or CONFIG_SET_RE.match(stripped))
-            if not is_config:
-                if stripped.startswith("#"):
-                    continue
-                problems.append(
-                    f"{configs}:{num}: 非法行（既非注释亦非 CONFIG 赋值）: {stripped}")
-                continue
-            key = config_key(stripped)
-            if key in keys:
-                problems.append(
-                    f"{configs}:{num}: 重复配置键 {key}（首次见于第 {keys[key]} 行）")
-            else:
-                keys[key] = num
+        _fmt_file(configs, path, problems)
 
     return CheckResult(
         "defconfig 格式（SPDX / 语法 / 无重复键）", not problems,
@@ -326,21 +333,31 @@ def check_req_cfg(manifest, kernel_dir):
                        "\n".join(problems))
 
 
+def _lsm_value(path):
+    """取 CONFIG_LSM 的最后一次取值（去引号）；未设置返回 None。"""
+    value = None
+    for line in cfg_lines(path):
+        match = CONFIG_VAL_RE.match(line)
+        if match and match.group(1) == "CONFIG_LSM":
+            value = match.group(2).strip().strip('"')
+    return value
+
+
+def _lsm_names(value):
+    """逗号分隔的 LSM 名表，丢弃空项。"""
+    return [name.strip() for name in value.split(",") if name.strip()]
+
+
 def check_lsm_entry(manifest, kernel_dir):
     """每个 airy_defconfig 的 CONFIG_LSM 含清单登记的 LSM 名。"""
     entry_name = manifest.get("lsm_entry", "")
     problems = []
     for configs, path in arch_cfgs(manifest, kernel_dir):
-        value = None
-        for line in cfg_lines(path):
-            match = CONFIG_VAL_RE.match(line)
-            if match and match.group(1) == "CONFIG_LSM":
-                value = match.group(2).strip().strip('"')
+        value = _lsm_value(path)
         if value is None:
             problems.append(f"{configs}: 未设置 CONFIG_LSM")
             continue
-        names = [name.strip() for name in value.split(",") if name.strip()]
-        if entry_name not in names:
+        if entry_name not in _lsm_names(value):
             problems.append(f"{configs}: CONFIG_LSM 不含 {entry_name}: {value}")
 
     return CheckResult(f"CONFIG_LSM 含 {entry_name}", not problems,
