@@ -111,24 +111,38 @@ def _matrix_types(matrix):
     return problems
 
 
+def _strlist_bad(matrix, key):
+    """字段出现时必须是字符串列表。"""
+    return key in matrix and not _is_str_list(matrix[key])
+
+
 def _str_list_probs(matrix):
     """字符串列表字段：出现在段里就必须是字符串列表。"""
     return [f"matrix.{key} 必须是字符串列表"
-            for key in MATRIX_STRS
-            if key in matrix and not _is_str_list(matrix[key])]
+            for key in MATRIX_STRS if _strlist_bad(matrix, key)]
+
+
+def _plain_bad(matrix, key, kind):
+    """字段出现时必须是指定类型。"""
+    return key in matrix and not isinstance(matrix[key], kind)
 
 
 def _plain_probs(matrix):
     """标量字段：出现在段里就必须是声明的那种类型。"""
     return [f"matrix.{key} 必须是{desc}"
             for key, kind, desc in MATRIX_PLAIN
-            if key in matrix and not isinstance(matrix[key], kind)]
+            if _plain_bad(matrix, key, kind)]
+
+
+def _budget_bad(budget, key):
+    """预算字段出现时必须是整数。"""
+    return key in budget and not isinstance(budget[key], int)
 
 
 def _budget_types(budget):
     problems = []
     for key in BUDGET_KEYS:
-        if key in budget and not isinstance(budget[key], int):
+        if _budget_bad(budget, key):
             problems.append(f"budget.{key} 必须是整数")
     return problems
 
@@ -153,6 +167,13 @@ def _label_type(failures, problems):
         problems.append("failures.label 必须是字符串")
 
 
+def _reason_miss(reasons):
+    """固定键缺失清单。"""
+    missing = sorted(REASON_KEYS - set(reasons))
+    return [f"failures.reasons 缺少固定键: {key}"
+            for key in missing]
+
+
 def _reason_fails(failures):
     """reasons 缺省视为未登记；登记了就必须是含固定键的映射。"""
     reasons = failures.get("reasons")
@@ -160,9 +181,7 @@ def _reason_fails(failures):
         return []
     if not isinstance(reasons, dict):
         return ["failures.reasons 必须是映射"]
-    missing = sorted(REASON_KEYS - set(reasons))
-    return [f"failures.reasons 缺少固定键: {key}"
-            for key in missing]
+    return _reason_miss(reasons)
 
 
 def _section_types(manifest):
@@ -180,16 +199,21 @@ def _section_types(manifest):
     return problems
 
 
+def _schema_heads(manifest, problems):
+    """顶层 version 与 arch_manifest 出现时必须是字符串。"""
+    if not isinstance(manifest.get("version", ""), str):
+        problems.append("version 必须是字符串")
+    if not isinstance(manifest.get("arch_manifest", ""), str):
+        problems.append("arch_manifest 必须是字符串")
+
+
 def check_schema(manifest):
     """清单 schema 合法。"""
     if not isinstance(manifest, dict):
         return CheckResult("清单 schema 合法", False,
                            "清单顶层必须是映射（mapping）")
     problems = _missing(manifest, MANIFEST_KEYS, "顶层")
-    if not isinstance(manifest.get("version", ""), str):
-        problems.append("version 必须是字符串")
-    if not isinstance(manifest.get("arch_manifest", ""), str):
-        problems.append("arch_manifest 必须是字符串")
+    _schema_heads(manifest, problems)
     problems.extend(_section_types(manifest))
     return CheckResult("清单 schema 合法", not problems, "\n".join(problems))
 
@@ -224,12 +248,8 @@ def _built(data):
             if entry.get("build") is True]
 
 
-def load_workflow(manifest, repo_root):
-    """读取矩阵 workflow；缺失或 YAML 非法时抛 ManifestError。"""
-    rel = manifest["matrix"]["workflow"]
-    path = repo_root / rel
-    if not path.is_file():
-        raise ManifestError(f"workflow 不存在：{path}")
+def _load_yaml(path, rel):
+    """读取 workflow YAML；语法错误或顶层非映射转成 ManifestError。"""
     try:
         with open(path, "r", encoding="utf-8") as fh:
             data = yaml.safe_load(fh)
@@ -238,6 +258,15 @@ def load_workflow(manifest, repo_root):
     if not isinstance(data, dict):
         raise ManifestError(f"workflow 顶层必须是映射：{rel}")
     return data
+
+
+def load_workflow(manifest, repo_root):
+    """读取矩阵 workflow；缺失或 YAML 非法时抛 ManifestError。"""
+    rel = manifest["matrix"]["workflow"]
+    path = repo_root / rel
+    if not path.is_file():
+        raise ManifestError(f"workflow 不存在：{path}")
+    return _load_yaml(path, rel)
 
 
 def _jobs(workflow):
@@ -354,10 +383,18 @@ def _excl_entry(index, entry, combos):
     return None
 
 
-def _excl_shape(index, entry):
-    """非空映射且只含已知维度；不合法时返回报错文案。"""
+def _excl_map(index, entry):
+    """非空映射；不合法时返回报错文案。"""
     if not isinstance(entry, dict) or not entry:
         return f"exclude[{index}] 必须是非空映射"
+    return None
+
+
+def _excl_shape(index, entry):
+    """非空映射且只含已知维度；不合法时返回报错文案。"""
+    bad = _excl_map(index, entry)
+    if bad is not None:
+        return bad
     unknown = sorted(set(entry) - set(DIMS))
     if unknown:
         return f"exclude[{index}] 含未知维度: {unknown}"
