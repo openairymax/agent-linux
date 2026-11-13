@@ -522,6 +522,28 @@ def check_base_nr(ssot, unistd, tbl):
         f"所有 airy syscall >= {EXPECTED_BASE}")
 
 
+def _range_dups(source_name, syscalls, failures):
+    """同一编号被多个 syscall 复用时记一条失败。"""
+    num_to_names = {}
+    for item in syscalls:
+        num_to_names.setdefault(item["linux_number"], []).append(item["name"])
+    for num, names in sorted(num_to_names.items()):
+        if len(names) > 1:
+            failures.append(
+                f"  {source_name}: 编号 {num} 被重复使用: "
+                f"{', '.join(names)}")
+
+
+def _range_oob(source_name, syscalls, failures):
+    """编号必须落在 airy 预留区间内。"""
+    for item in syscalls:
+        num = item["linux_number"]
+        if not (AIRY_RANGE_START <= num <= AIRY_RANGE_END):
+            failures.append(
+                f"  {source_name}: {item['name']} = {num} "
+                f"超出范围 [{AIRY_RANGE_START}, {AIRY_RANGE_END}]")
+
+
 def check_range(ssot, unistd, tbl):
     """Check no duplicate numbers and all within 548-571."""
     failures = []
@@ -531,22 +553,8 @@ def check_range(ssot, unistd, tbl):
         ("unistd.h", unistd["syscalls"]),
         ("syscall_64.tbl", tbl["syscalls"]),
     ]:
-        # Duplicate number check
-        num_to_names = {}
-        for s in syscalls:
-            num_to_names.setdefault(s["linux_number"], []).append(s["name"])
-        for num, names in sorted(num_to_names.items()):
-            if len(names) > 1:
-                failures.append(
-                    f"  {source_name}: 编号 {num} 被重复使用: "
-                    f"{', '.join(names)}")
-
-        # Range check
-        for s in syscalls:
-            if not (AIRY_RANGE_START <= s["linux_number"] <= AIRY_RANGE_END):
-                failures.append(
-                    f"  {source_name}: {s['name']} = {s['linux_number']} "
-                    f"超出范围 [{AIRY_RANGE_START}, {AIRY_RANGE_END}]")
+        _range_dups(source_name, syscalls, failures)
+        _range_oob(source_name, syscalls, failures)
 
     if failures:
         return CheckResult("编号范围 548-571 内无冲突", False,
@@ -678,6 +686,13 @@ def hdr_span(sc_header, ssot):
     return []
 
 
+def _xref_one(macro, num, name, src, src_map, out):
+    """单个来源与 [SC] 的编号比对。"""
+    other = src_map.get(name)
+    if other is not None and other != num:
+        out.append(f"  {macro}: [SC]={num}, {src}={other} (不一致)")
+
+
 def hdr_xref(sc_header, unistd, tbl):
     """核心编号与 unistd.h / syscall_64.tbl 交叉校验。"""
     out = []
@@ -689,10 +704,7 @@ def hdr_xref(sc_header, unistd, tbl):
             continue
         for src, src_map in (("unistd.h", unistd_map),
                              ("syscall_64.tbl", tbl_map)):
-            other = src_map.get(name)
-            if other is not None and other != num:
-                out.append(
-                    f"  {macro}: [SC]={num}, {src}={other} (不一致)")
+            _xref_one(macro, num, name, src, src_map, out)
     return out
 
 
@@ -800,6 +812,19 @@ def check_tbl_abi(tbl):
         f"预留入口 sys_ni_syscall")
 
 
+def _sw_core(name, expected, sw_map, ssot_map, failures):
+    """单个核心 syscall 在 sw_64 表中的落位。"""
+    num = sw_map.get(name)
+    if num is None:
+        failures.append(f"  {name}: 在 sw_64 syscall.tbl 中缺失")
+    elif num != expected:
+        failures.append(f"  {name}: sw_64={num} (期望 {expected})")
+    elif ssot_map.get(name) != num:
+        failures.append(
+            f"  {name}: sw_64={num}, SSoT={ssot_map.get(name)} "
+            f"(不一致)")
+
+
 def check_sw64_tbl(ssot, sw_tbl):
     """Check sw_64's positional table carries the same 548-571 block.
 
@@ -812,20 +837,11 @@ def check_sw64_tbl(ssot, sw_tbl):
     ssot_map = {s["name"]: s["linux_number"] for s in ssot["syscalls"]}
 
     for name, _macro, expected in CORE_SYSCALLS:
-        num = sw_map.get(name)
-        if num is None:
-            failures.append(f"  {name}: 在 sw_64 syscall.tbl 中缺失")
-        elif num != expected:
-            failures.append(f"  {name}: sw_64={num} (期望 {expected})")
-        elif ssot_map.get(name) != num:
-            failures.append(
-                f"  {name}: sw_64={num}, SSoT={ssot_map.get(name)} "
-                f"(不一致)")
+        _sw_core(name, expected, sw_map, ssot_map, failures)
 
-    failures += rsvd_issues(sw_tbl["reserved"],
-                                     "sw_64 syscall.tbl")
+    failures += rsvd_issues(sw_tbl["reserved"], "sw_64 syscall.tbl")
     failures += entry_issues(sw_tbl["syscalls"], sw_tbl["reserved"],
-                                 "sw_64 syscall.tbl")
+                             "sw_64 syscall.tbl")
 
     if failures:
         return CheckResult("sw_64 号段 548-571 落位一致", False,
