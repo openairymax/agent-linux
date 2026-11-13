@@ -460,6 +460,27 @@ def _object_src(label: str, base: Path, obj: str,
     return [f"{label}: 源文件不存在 {stem}.c"]
 
 
+def _cmake_skip(name: str) -> bool:
+    """生成产物、带变量引用或越界路径的 token 不参与校验。"""
+    if not name.endswith(_SRC_SUFFIXES) or name in _CMAKE_SKIP:
+        return True
+    return "$" in name or not _rel_ok(name)
+
+
+def _cmake_token(label: str, base: Path,
+                 token: str) -> tuple[list[str], Path | None]:
+    """单个 CMake 源文件 token：须真实存在且非空。"""
+    name = token.strip("\"'")
+    if _cmake_skip(name):
+        return [], None
+    source = base / name
+    if not source.is_file():
+        return [f"{label}: 源文件不存在 {name}"], None
+    if source.stat().st_size == 0:
+        return [f"{label}: 空源文件 {name}"], None
+    return [], source
+
+
 def _cmake_file(label: str, base: Path,
                 path: Path) -> tuple[list[str], list[Path]]:
     """解析单个 CMakeLists.txt 的目标源文件。"""
@@ -468,17 +489,9 @@ def _cmake_file(label: str, base: Path,
     sources: list[Path] = []
     for _, body in _TARGET_RE.findall(text):
         for token in body.split():
-            name = token.strip("\"'")
-            if not name.endswith(_SRC_SUFFIXES) or name in _CMAKE_SKIP:
-                continue
-            if "$" in name or not _rel_ok(name):
-                continue
-            source = base / name
-            if not source.is_file():
-                problems.append(f"{label}: 源文件不存在 {name}")
-            elif source.stat().st_size == 0:
-                problems.append(f"{label}: 空源文件 {name}")
-            else:
+            found, source = _cmake_token(label, base, token)
+            problems += found
+            if source is not None:
                 sources.append(source)
     return problems, sources
 

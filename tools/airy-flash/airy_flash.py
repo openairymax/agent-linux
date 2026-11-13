@@ -850,6 +850,38 @@ def _digest_check(expected: str, source: str, allow_unverified: bool) -> Check:
 # ─── 写入与回读 ─────────────────────────────────────────────────────────────
 
 
+def _write_all(dst: io.FileIO, block: bytes) -> None:
+    """短写循环：单次 write 可能只落一部分。"""
+    offset = 0
+    while offset < len(block):
+        offset += dst.write(block[offset:])
+
+
+def _copy_stream(
+    src: io.BufferedReader,
+    dst: io.FileIO,
+    chunk: int,
+    progress: Callable[[int, int], None] | None,
+    total: int,
+) -> int:
+    """顺序拷贝整个镜像，返回写入字节数；失败时按已写字节数报偏移。"""
+    written = 0
+    try:
+        while True:
+            block = src.read(chunk)
+            if not block:
+                return written
+            _write_all(dst, block)
+            written += len(block)
+            if progress is not None:
+                progress(written, total)
+    except OSError as exc:
+        raise FlashError(
+            EXIT_IO,
+            f"写入失败于偏移 {human_bytes(written)}: {exc.strerror or exc}",
+        ) from exc
+
+
 def write_image(
     image: Path,
     device: Path,
@@ -860,25 +892,15 @@ def write_image(
 ) -> int:
     """顺序写镜像到设备，返回字节数。调用方负责 fsync 阶段。"""
     total = image.stat().st_size
-    written = 0
     with open(image, "rb") as src, open(device, "r+b", buffering=0) as dst:
+        written = _copy_stream(src, dst, chunk, progress, total)
         try:
-            while True:
-                block = src.read(chunk)
-                if not block:
-                    break
-                offset = 0
-                while offset < len(block):
-                    offset += dst.write(block[offset:])
-                written += len(block)
-                if progress is not None:
-                    progress(written, total)
             if file_target and total:
                 os.ftruncate(dst.fileno(), total)
         except OSError as exc:
             raise FlashError(
                 EXIT_IO,
-                f"写入失败于偏移 {human_bytes(written)}: {exc.strerror or exc}",
+                f"截断失败于偏移 {human_bytes(written)}: {exc.strerror or exc}",
             ) from exc
     return written
 
