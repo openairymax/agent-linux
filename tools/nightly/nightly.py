@@ -184,17 +184,28 @@ def _result(name: str, problems: list[str]) -> CheckResult:
     return CheckResult(name, not problems, "; ".join(problems))
 
 
+def _opt_type(value: Mapping[str, Any], key: str, kind: type,
+              scope: str, label: str) -> list[str]:
+    """可选字段存在时校验类型。"""
+    if key not in value or isinstance(value[key], kind):
+        return []
+    return [f"{scope}.{key} 必须是{label}"]
+
+
+def _opt_list(value: Mapping[str, Any], key: str, scope: str) -> list[str]:
+    """可选字段存在时校验字符串列表。"""
+    if key not in value or _is_str_list(value[key]):
+        return []
+    return [f"{scope}.{key} 必须是字符串列表"]
+
+
 def _schema_trigger(value: Any) -> list[str]:
     if not isinstance(value, dict):
         return ["triggers 必须是映射"]
     problems = _need(value, TRIGGER_KEYS, "triggers.")
-    if "cron" in value and not isinstance(value["cron"], str):
-        problems.append("triggers.cron 必须是字符串")
-    if ("workflow_dispatch" in value
-            and not isinstance(value["workflow_dispatch"], bool)):
-        problems.append("triggers.workflow_dispatch 必须是布尔值")
-    if "forbidden" in value and not _is_str_list(value["forbidden"]):
-        problems.append("triggers.forbidden 必须是字符串列表")
+    problems += _opt_type(value, "cron", str, "triggers", "字符串")
+    problems += _opt_type(value, "workflow_dispatch", bool, "triggers", "布尔值")
+    problems += _opt_list(value, "forbidden", "triggers")
     return problems
 
 
@@ -202,11 +213,9 @@ def _schema_flight(value: Any) -> list[str]:
     if not isinstance(value, dict):
         return ["concurrency 必须是映射"]
     problems = _need(value, FLIGHT_KEYS, "concurrency.")
-    if "group" in value and not isinstance(value["group"], str):
-        problems.append("concurrency.group 必须是字符串")
-    if ("cancel_in_progress" in value
-            and not isinstance(value["cancel_in_progress"], bool)):
-        problems.append("concurrency.cancel_in_progress 必须是布尔值")
+    problems += _opt_type(value, "group", str, "concurrency", "字符串")
+    problems += _opt_type(value, "cancel_in_progress", bool, "concurrency",
+                          "布尔值")
     return problems
 
 
@@ -456,18 +465,24 @@ def check_perms(man: Mapping[str, Any],
     return _result(NAME_PERMS, problems)
 
 
+def _job_name_probs(expected: list[str],
+                    jobs: Mapping[str, Any]) -> list[str]:
+    """job 集合与清单的双向差异：缺失与未登记。"""
+    missing = [f"缺少 job: {name}" for name in expected if name not in jobs]
+    extra = [f"未登记 job: {name}" for name in jobs if name not in expected]
+    return missing + extra
+
+
 def check_jobs(man: Mapping[str, Any],
                wf: Mapping[str, Any]) -> CheckResult:
     """校验 job 集合、依赖关系与 always() 语义。"""
     jobs = _jobs(wf)
     expected = [item["name"] for item in man["jobs"]]
-    problems = [f"缺少 job: {name}" for name in expected if name not in jobs]
-    problems += [f"未登记 job: {name}" for name in jobs if name not in expected]
+    problems = _job_name_probs(expected, jobs)
     for spec in man["jobs"]:
         job = jobs.get(spec["name"])
-        if not isinstance(job, dict):
-            continue
-        problems.extend(_job_probs(spec, job))
+        if isinstance(job, dict):
+            problems.extend(_job_probs(spec, job))
     return _result(NAME_JOBS, problems)
 
 

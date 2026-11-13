@@ -902,6 +902,54 @@ def check_sc_sym(sources):
     return failures
 
 
+def _span_probs(xml):
+    """SSoT 槽位算术、条目数与预留区间三项自洽。"""
+    expected_span = (xml.core_count, xml.total_slots - 1)
+    problems = []
+    if xml.core_count + xml.reserved_count != xml.total_slots:
+        problems.append(
+            f"  syscall.xml: core_count({xml.core_count}) + "
+            f"reserved_count({xml.reserved_count}) != total_slots({xml.total_slots})"
+        )
+    if len(xml.core_numbers) != xml.core_count:
+        problems.append(
+            f"  syscall.xml: 声明 core_count({xml.core_count}) 与 "
+            f"<syscall> 条目数({len(xml.core_numbers)}) 不符"
+        )
+    if (xml.reserved_from, xml.reserved_to) != expected_span:
+        problems.append(
+            f"  syscall.xml: <reserved> 区间 ({xml.reserved_from}-{xml.reserved_to}) "
+            f"!= 期望 ({expected_span[0]}-{expected_span[1]})"
+        )
+    return problems
+
+
+def _contract_want(xml, base):
+    """[SC] 契约头应声明的宏 → 编号。"""
+    expect = {
+        f"{xml.symbol_prefix}RESERVED_BASE": base + xml.core_count,
+        f"{xml.symbol_prefix}RESERVED_END": base + xml.total_slots - 1,
+        f"{xml.symbol_prefix}SLOTS_MAX": xml.total_slots,
+    }
+    for suffix, number in xml.core_numbers.items():
+        expect[f"{xml.symbol_prefix}{suffix}"] = base + number
+    return expect
+
+
+def _generated_want(xml, base):
+    """生成头应声明的宏 → 编号。"""
+    expect = {
+        "AIRY_SYS_BASE": base,
+        "AIRY_SYS_NR_CORE": xml.core_count,
+        "AIRY_SYS_NR_RESERVED": xml.reserved_count,
+        "AIRY_SYS_NR_TOTAL": xml.total_slots,
+    }
+    for suffix, number in xml.core_numbers.items():
+        expect[GENERATED_NR_PREFIX + xml.core_names[suffix]] = base + number
+        expect[GENERATED_IDX_PREFIX + suffix] = number
+    return expect
+
+
 def check_sc_nr(sources):
     """Check syscall numbering consistency across the three sources.
 
@@ -910,50 +958,12 @@ def check_sc_nr(sources):
     header's base/count macros, registration numbers and internal indices.
     Returns failure lines.
     """
-    xml = sources.xml
-    contract = sources.contract
-    generated = sources.generated
-    failures = []
-    base = xml.linux_base
-
-    if xml.core_count + xml.reserved_count != xml.total_slots:
-        failures.append(
-            f"  syscall.xml: core_count({xml.core_count}) + "
-            f"reserved_count({xml.reserved_count}) != total_slots({xml.total_slots})"
-        )
-    if len(xml.core_numbers) != xml.core_count:
-        failures.append(
-            f"  syscall.xml: 声明 core_count({xml.core_count}) 与 "
-            f"<syscall> 条目数({len(xml.core_numbers)}) 不符"
-        )
-    expected_span = (xml.core_count, xml.total_slots - 1)
-    if (xml.reserved_from, xml.reserved_to) != expected_span:
-        failures.append(
-            f"  syscall.xml: <reserved> 区间 ({xml.reserved_from}-{xml.reserved_to}) "
-            f"!= 期望 ({expected_span[0]}-{expected_span[1]})"
-        )
-
-    expected_contract = {
-        f"{xml.symbol_prefix}RESERVED_BASE": base + xml.core_count,
-        f"{xml.symbol_prefix}RESERVED_END": base + xml.total_slots - 1,
-        f"{xml.symbol_prefix}SLOTS_MAX": xml.total_slots,
-    }
-    for suffix, number in xml.core_numbers.items():
-        expected_contract[f"{xml.symbol_prefix}{suffix}"] = base + number
-    for name, want in expected_contract.items():
-        _check_macro(failures, "syscalls.h", name, want, contract)
-
-    expected_generated = {
-        "AIRY_SYS_BASE": base,
-        "AIRY_SYS_NR_CORE": xml.core_count,
-        "AIRY_SYS_NR_RESERVED": xml.reserved_count,
-        "AIRY_SYS_NR_TOTAL": xml.total_slots,
-    }
-    for suffix, number in xml.core_numbers.items():
-        expected_generated[GENERATED_NR_PREFIX + xml.core_names[suffix]] = base + number
-        expected_generated[GENERATED_IDX_PREFIX + suffix] = number
-    for name, want in expected_generated.items():
-        _check_macro(failures, "syscall_gen.h", name, want, generated)
+    base = sources.xml.linux_base
+    failures = _span_probs(sources.xml)
+    for name, want in _contract_want(sources.xml, base).items():
+        _check_macro(failures, "syscalls.h", name, want, sources.contract)
+    for name, want in _generated_want(sources.xml, base).items():
+        _check_macro(failures, "syscall_gen.h", name, want, sources.generated)
 
     return failures
 
