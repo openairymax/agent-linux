@@ -87,24 +87,22 @@ def parse_ktap(text):
     }
 
 
+def _leaf_msg(current, baseline):
+    """叶子用例数变化 → (是否回退, 消息)。"""
+    now = current["leaf_total"]
+    base = baseline["leaf_total"]
+    if now < base:
+        return True, f"FAIL 叶子用例数回退：基线 {base} -> 当前 {now}"
+    if now > base:
+        return False, f"OK   叶子用例数增长：基线 {base} -> 当前 {now}"
+    return False, f"OK   叶子用例数持平：{now}"
+
+
 def compare(current, baseline):
     """比对 current 与 baseline，返回 (passed, messages)。"""
     messages = []
-    failed = False
-
-    if current["leaf_total"] < baseline["leaf_total"]:
-        failed = True
-        messages.append(
-            f"FAIL 叶子用例数回退：基线 {baseline['leaf_total']}"
-            f" -> 当前 {current['leaf_total']}"
-        )
-    elif current["leaf_total"] > baseline["leaf_total"]:
-        messages.append(
-            f"OK   叶子用例数增长：基线 {baseline['leaf_total']}"
-            f" -> 当前 {current['leaf_total']}"
-        )
-    else:
-        messages.append(f"OK   叶子用例数持平：{current['leaf_total']}")
+    failed, leaf = _leaf_msg(current, baseline)
+    messages.append(leaf)
 
     present = set(current["suites"])
     for name in baseline["suites"]:
