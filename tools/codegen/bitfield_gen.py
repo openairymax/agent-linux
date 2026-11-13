@@ -147,39 +147,59 @@ def _apply_bind(asm: _BlockAssembler, line: str) -> bool:
     return False
 
 
+def _field_line(
+    asm: _BlockAssembler, line: str, path: Path, lineno: int
+) -> bool:
+    match = _FIELD_RE.match(line)
+    if not match:
+        return False
+    kind = _KIND_BY_KEYWORD[match.group(1)]
+    asm.add_field(
+        _make_field(
+            match.group(2),
+            match.group(3),
+            match.group(4),
+            kind,
+            path,
+            lineno,
+        )
+    )
+    return True
+
+
+def _pad_line(
+    asm: _BlockAssembler, line: str, path: Path, lineno: int
+) -> bool:
+    match = _PADDING_RE.match(line)
+    if not match:
+        return False
+    asm.add_field(
+        _make_field(
+            match.group(1) or "",
+            match.group(2),
+            match.group(3),
+            BitfieldFieldKind.PADDING,
+            path,
+            lineno,
+        )
+    )
+    return True
+
+
+def _pivot_line(asm: _BlockAssembler, line: str) -> bool:
+    match = _PIVOT_RE.match(line)
+    if not match:
+        return False
+    asm.set_pivot(match.group(1))
+    return True
+
+
 def _apply_field(asm: _BlockAssembler, line: str, path: Path, lineno: int) -> bool:
-    field_match = _FIELD_RE.match(line)
-    if field_match:
-        kind = _KIND_BY_KEYWORD[field_match.group(1)]
-        asm.add_field(
-            _make_field(
-                field_match.group(2),
-                field_match.group(3),
-                field_match.group(4),
-                kind,
-                path,
-                lineno,
-            )
-        )
-        return True
-    pad_match = _PADDING_RE.match(line)
-    if pad_match:
-        asm.add_field(
-            _make_field(
-                pad_match.group(1) or "",
-                pad_match.group(2),
-                pad_match.group(3),
-                BitfieldFieldKind.PADDING,
-                path,
-                lineno,
-            )
-        )
-        return True
-    pivot_match = _PIVOT_RE.match(line)
-    if pivot_match:
-        asm.set_pivot(pivot_match.group(1))
-        return True
-    return False
+    return (
+        _field_line(asm, line, path, lineno)
+        or _pad_line(asm, line, path, lineno)
+        or _pivot_line(asm, line)
+    )
 
 
 def _apply_dir(asm: _BlockAssembler, line: str, path: Path, lineno: int) -> None:

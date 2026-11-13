@@ -2256,16 +2256,22 @@ def _check(args: argparse.Namespace) -> tuple[Report, int]:
     return _close(args, report, renderer, EXIT_OK, clock)
 
 
-def _route(parser: argparse.ArgumentParser,
-           args: argparse.Namespace) -> tuple[Report, int]:
-    """按子命令分派：check 走自检，其余交给烧录执行器。"""
-    if args.command == "check":
-        return _check(args)
+def _need_target(parser: argparse.ArgumentParser,
+                 args: argparse.Namespace) -> None:
+    """烧录必须同时给出镜像与目标设备，fetch 另行取件。"""
     # fetch 的两个取件入口（--oci / --ref）由 _ledger_arg 统一判定，
     # 这里再拦一次只会让 --ref 永远走不到实现：清单本身就是账本，
     # 发布制品过期后仍能按 tag 取回，这条路径不能只在源码里存在。
     if args.command != "fetch" and not (args.image and args.device):
         parser.error("需要 --image 与 --device（check/fetch 子命令除外）")
+
+
+def _route(parser: argparse.ArgumentParser,
+           args: argparse.Namespace) -> tuple[Report, int]:
+    """按子命令分派：check 走自检，其余交给烧录执行器。"""
+    if args.command == "check":
+        return _check(args)
+    _need_target(parser, args)
     return execute(args)
 
 
