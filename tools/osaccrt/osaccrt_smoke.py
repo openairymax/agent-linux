@@ -107,7 +107,9 @@ class Smoke:
     samples: tuple[Sample, ...]
 
     def __post_init__(self) -> None:
-        _need_samples(self.samples)
+        if not isinstance(self.samples, tuple) or not self.samples:
+            raise ValueError("samples must be a non-empty tuple")
+        _smp_rows(self.samples)
 
     @property
     def verdict(self) -> Verdict:
@@ -120,10 +122,8 @@ class Smoke:
         return blocked_fws(self.samples)
 
 
-def _need_samples(samples: object) -> None:
-    """至少一条样本，且逐条都是 Sample。"""
-    if not isinstance(samples, tuple) or not samples:
-        raise ValueError("samples must be a non-empty tuple")
+def _smp_rows(samples: tuple[Sample, ...]) -> None:
+    """逐条确认样本都是 Sample。"""
     if not all(isinstance(item, Sample) for item in samples):
         raise ValueError("samples must contain Sample items")
 
