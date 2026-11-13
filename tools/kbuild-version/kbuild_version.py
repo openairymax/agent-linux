@@ -135,6 +135,15 @@ Assigns: TypeAlias = List[Tuple[str, str]]
 # ─── Helpers ───────────────────────────────────────────────────────────────
 
 
+def _assign_of(raw: str) -> Optional[Tuple[str, str]]:
+    """单行判据：注释与空行跳过，非赋值行返回 None。"""
+    line = raw.strip()
+    if not line or line.startswith("#"):
+        return None
+    match = ASSIGN_RE.match(line)
+    return None if match is None else (match.group(1), match.group(2).strip())
+
+
 def parse_vars(text: str) -> Assigns:
     """解析 Makefile 顶层赋值行。
 
@@ -146,12 +155,9 @@ def parse_vars(text: str) -> Assigns:
     """
     assigns: Assigns = []
     for raw in text.splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        match = ASSIGN_RE.match(line)
-        if match:
-            assigns.append((match.group(1), match.group(2).strip()))
+        pair = _assign_of(raw)
+        if pair is not None:
+            assigns.append(pair)
     return assigns
 
 
@@ -250,11 +256,16 @@ def _read_text(path: Path) -> Optional[str]:
 # ─── Checks ────────────────────────────────────────────────────────────────
 
 
+def _missing_keys(tuple_map: TupleMap) -> List[str]:
+    """返回四元组中缺失的必填字段，保持 TUPLE_KEYS 顺序。"""
+    return [key for key in TUPLE_KEYS if key not in tuple_map]
+
+
 def _tuple_shape(tuple_map: Any) -> Optional[List[str]]:
     """结构判据：映射形态与四个必填字段；合格返回 None，否则返回问题。"""
     if not isinstance(tuple_map, dict):
         return ["version_tuple 必须是映射（mapping）"]
-    missing = [key for key in TUPLE_KEYS if key not in tuple_map]
+    missing = _missing_keys(tuple_map)
     return [f"version_tuple 缺少字段: {', '.join(missing)}"] if missing else None
 
 

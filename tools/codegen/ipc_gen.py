@@ -161,12 +161,17 @@ def _badge_field(name: str, field, shift: int, width: int) -> None:
         )
 
 
-def _val_badge(badge_block) -> None:
-    by_name = {f.name: f for f in badge_block.fields}
+def _badge_exact(badge_block, by_name) -> None:
+    """块宽与字段集合均须与 contracts.md §2 的徽章布局一致。"""
     if badge_block.width != 64:
         raise ContractValidationError(f"{BF64_REL}: {BADGE_BLOCK_NAME} width != 64")
     if set(by_name) != set(_EXPECTED_BADGE_LAYOUT):
         raise ContractValidationError(f"{BF64_REL}: {BADGE_BLOCK_NAME} field set mismatch")
+
+
+def _val_badge(badge_block) -> None:
+    by_name = {f.name: f for f in badge_block.fields}
+    _badge_exact(badge_block, by_name)
     for name, (shift, width) in _EXPECTED_BADGE_LAYOUT.items():
         _badge_field(name, by_name[name], shift, width)
 
