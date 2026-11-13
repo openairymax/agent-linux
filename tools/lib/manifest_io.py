@@ -116,6 +116,15 @@ def load_manifest(path: str | Path) -> dict[str, Any]:
     return data
 
 
+def _env_bad(root: Path, kernel: bool) -> str | None:
+    """运行环境校验：仓库根与（可选）内核源码目录都必须存在。"""
+    if not root.is_dir():
+        return f"仓库根不存在: {root}"
+    if kernel and not (root / _KERNEL_DIR).is_dir():
+        return f"内核源码目录不存在: {root / _KERNEL_DIR}"
+    return None
+
+
 def open_gate(
     parser: argparse.ArgumentParser,
     argv: Sequence[str] | None,
@@ -146,13 +155,11 @@ def open_gate(
         print("ERROR: PyYAML 不可用，请安装 pyyaml", file=sys.stderr)
         return None
     root = Path(args.repo_root) if args.repo_root else find_repo_root()
-    if not root.is_dir():
-        print(f"ERROR: 仓库根不存在: {root}", file=sys.stderr)
+    bad = _env_bad(root, kernel)
+    if bad is not None:
+        print(f"ERROR: {bad}", file=sys.stderr)
         return None
     kernel_dir = root / _KERNEL_DIR
-    if kernel and not kernel_dir.is_dir():
-        print(f"ERROR: 内核源码目录不存在: {kernel_dir}", file=sys.stderr)
-        return None
     path = Path(args.manifest) if args.manifest else root / default_manifest
     try:
         manifest = loader(path)
