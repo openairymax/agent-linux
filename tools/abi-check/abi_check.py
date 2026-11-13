@@ -834,17 +834,21 @@ def rsvd_rows(seen, label):
     """逐个在册槽核对命名与入口点。"""
     issues = []
     for num in sorted(seen):
-        s = seen[num]
-        name = f"{RESERVED_NAME_PREFIX}{num - EXPECTED_BASE}"
-        if s["name"] != name:
-            issues.append(
-                f"  {label}: {num} 命名 {s['name']} (期望 {name})")
-        entry = s.get("entry")
-        if entry is not None and entry != RESERVED_TBL_ENTRY:
-            issues.append(
-                f"  {label}: {num} 入口点 {entry} "
-                f"(期望 {RESERVED_TBL_ENTRY})")
+        _rsvd_row(seen[num], num, label, issues)
     return issues
+
+
+def _rsvd_row(s, num, label, issues):
+    """单个在册槽：命名与入口点两重判定。"""
+    name = f"{RESERVED_NAME_PREFIX}{num - EXPECTED_BASE}"
+    if s["name"] != name:
+        issues.append(
+            f"  {label}: {num} 命名 {s['name']} (期望 {name})")
+    entry = s.get("entry")
+    if entry is not None and entry != RESERVED_TBL_ENTRY:
+        issues.append(
+            f"  {label}: {num} 入口点 {entry} "
+            f"(期望 {RESERVED_TBL_ENTRY})")
 
 
 def check_rsvd(unistd, tbl):
@@ -932,17 +936,7 @@ def check_sw64_tbl(ssot, sw_tbl):
     misnumbered entry shifts every following slot; static checking is the
     only automated guard on hosts without a sw_64 cross toolchain.
     """
-    failures = []
-    sw_map = {s["name"]: s["linux_number"] for s in sw_tbl["syscalls"]}
-    ssot_map = {s["name"]: s["linux_number"] for s in ssot["syscalls"]}
-
-    for name, _macro, expected in CORE_SYSCALLS:
-        _sw_core(name, expected, sw_map, ssot_map, failures)
-
-    failures += rsvd_issues(sw_tbl["reserved"], "sw_64 syscall.tbl")
-    failures += entry_issues(sw_tbl["syscalls"], sw_tbl["reserved"],
-                             "sw_64 syscall.tbl")
-
+    failures = _sw_fails(ssot, sw_tbl)
     if failures:
         return CheckResult("sw_64 号段 548-571 落位一致", False,
                            "\n".join(failures))
@@ -951,6 +945,20 @@ def check_sw64_tbl(ssot, sw_tbl):
         "sw_64 号段 548-571 落位一致", True,
         f"{total} 个条目与 SSoT 同号，核心入口 sys_airy_sys_*，"
         f"预留入口 sys_ni_syscall，abi 均为 common")
+
+
+def _sw_fails(ssot, sw_tbl):
+    """核心宏、预留槽与入口点的全部差异。"""
+    failures = []
+    sw_map = {s["name"]: s["linux_number"] for s in sw_tbl["syscalls"]}
+    ssot_map = {s["name"]: s["linux_number"] for s in ssot["syscalls"]}
+
+    for name, _macro, expected in CORE_SYSCALLS:
+        _sw_core(name, expected, sw_map, ssot_map, failures)
+
+    failures += rsvd_issues(sw_tbl["reserved"], "sw_64 syscall.tbl")
+    return failures + entry_issues(sw_tbl["syscalls"], sw_tbl["reserved"],
+                                   "sw_64 syscall.tbl")
 
 
 def _wire_srcs(repo_root):
@@ -1117,7 +1125,12 @@ def _bl_calls(baseline, ssot):
             for name, num in sorted(bl_map.items())]
     added = [_bl_new(name, num, bl_map)
              for name, num in sorted(cur_map.items())]
-    return [msg for msg in lost + added if msg is not None]
+    return _bl_keep(lost + added)
+
+
+def _bl_keep(msgs):
+    """丢弃「一致」项留下的 None。"""
+    return [msg for msg in msgs if msg is not None]
 
 
 # 快照与文档逐项对齐的三类标量：(键, 报错前缀)。版本一项在两张表里同名
@@ -1145,16 +1158,20 @@ def drift_calls(doc, snap):
     """宏与编号逐项对比；取两侧并集，缺失与改动都要报出来。"""
     fails = []
     for entry in sorted(set(doc) | set(snap)):
-        if entry not in snap:
-            fails.append(f"  syscall '{entry}' 在快照中缺失 "
-                         f"(文档={doc[entry]})")
-        elif entry not in doc:
-            fails.append(f"  syscall '{entry}' 在文档中缺失 "
-                         f"(快照={snap[entry]})")
-        elif doc[entry] != snap[entry]:
-            fails.append(f"  syscall '{entry}': 文档={doc[entry]}, "
-                         f"快照={snap[entry]}")
+        fails += _drift_one(entry, doc, snap)
     return fails
+
+
+def _drift_one(entry, doc, snap):
+    """单个 syscall 的差异行；完全一致时返回空列表。"""
+    if entry not in snap:
+        return [f"  syscall '{entry}' 在快照中缺失 (文档={doc[entry]})"]
+    if entry not in doc:
+        return [f"  syscall '{entry}' 在文档中缺失 (快照={snap[entry]})"]
+    if doc[entry] != snap[entry]:
+        return [f"  syscall '{entry}': 文档={doc[entry]}, "
+                f"快照={snap[entry]}"]
+    return []
 
 
 def check_drift(ssot, snapshot, authoritative):
@@ -1290,10 +1307,16 @@ def _rows_one(r):
     marker = "[+]" if r.passed else "[-]"
     status = "PASS" if r.passed else "FAIL"
     print(f"{marker} {status}: {r.name}")
-    if r.details:
-        for line in r.details.splitlines():
-            print(f"      {line}")
+    _rows_body(r)
     print()
+
+
+def _rows_body(r):
+    """明细多行缩进输出；无明细则不打印。"""
+    if not r.details:
+        return
+    for line in r.details.splitlines():
+        print(f"      {line}")
 
 
 def _report_tail(failed):
