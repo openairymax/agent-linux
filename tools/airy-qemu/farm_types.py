@@ -536,13 +536,23 @@ def _need_suites(value) -> None:
     _need_suite_mem(value)
 
 
+def _machines_ok(value) -> bool:
+    """元组里每个元素都是 Machine。"""
+    return all(isinstance(machine, Machine) for machine in value)
+
+
+def _arch_dup(arches: list) -> bool:
+    """架构序列里存在重复。"""
+    return len(arches) != len(set(arches))
+
+
 def _need_machines(value) -> None:
     """清单级机型元组：非空、元素类型、架构唯一。"""
     _need_tup(value, "machines")
-    if any(not isinstance(machine, Machine) for machine in value):
+    if not _machines_ok(value):
         raise ValueError("machines must contain only Machine instances")
     arches = [machine.arch for machine in value]
-    if len(arches) != len(set(arches)):
+    if _arch_dup(arches):
         raise ValueError(f"duplicate machine arches: {[a.value for a in arches]}")
 
 
