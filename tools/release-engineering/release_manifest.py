@@ -998,9 +998,14 @@ def ph_values(args: argparse.Namespace) -> dict[str, str]:
     ver = args.version or ""
     return {
         "version": ver,
-        "tag": args.tag or (DEFAULT_TAG_FMT.format(ver=ver) if ver else ""),
+        "tag": args.tag or _tag_of(ver),
         "repo": args.repo or DEFAULT_REPO,
     }
+
+
+def _tag_of(ver: str) -> str:
+    """缺省标签按版本号推导；版本为空则留空待报错。"""
+    return DEFAULT_TAG_FMT.format(ver=ver) if ver else ""
 
 
 def expand_argv(argv: Sequence[str], values: dict[str, str]) -> list[str]:
@@ -1018,14 +1023,19 @@ def expand_argv(argv: Sequence[str], values: dict[str, str]) -> list[str]:
     """
     expanded = []
     for tok in argv:
-        for name in PH_RE.findall(tok):
-            if name not in values:
-                raise ToolError(f"未知占位符: ${{{name}}}")
-            if not values[name]:
-                raise ToolError(
-                    f"占位符 ${{{name}}} 无取值（用 --version/--tag/--repo 指定）")
+        _ph_check(tok, values)
         expanded.append(PH_RE.sub(lambda m: values[m.group(1)], tok))
     return expanded
+
+
+def _ph_check(tok: str, values: dict[str, str]) -> None:
+    """token 内占位符必须已知且有取值。"""
+    for name in PH_RE.findall(tok):
+        if name not in values:
+            raise ToolError(f"未知占位符: ${{{name}}}")
+        if not values[name]:
+            raise ToolError(
+                f"占位符 ${{{name}}} 无取值（用 --version/--tag/--repo 指定）")
 
 
 def _ev_missing(entry: Manifest, repo_root: Path) -> list[str]:
@@ -1058,16 +1068,24 @@ def _replay_cmds(entry: Manifest, repo_root: Path, values: dict[str, str],
                  dry_run: bool) -> int:
     """按序重放生成命令；任一命令非零退出即中止并返回失败码。"""
     for argv in entry.get("produce") or []:
-        cmd = expand_argv(argv, values)
-        print("+ " + " ".join(cmd))
-        if dry_run:
-            continue
-        code = _run_argv(cmd, repo_root)
-        if code:
-            print(f"ERROR: 生成命令失败（退出码 {code}）: {' '.join(cmd)}",
-                  file=sys.stderr)
+        if _replay_one(argv, repo_root, values, dry_run):
             return EXIT_FAIL
     return EXIT_PASS
+
+
+def _replay_one(argv: Sequence[str], repo_root: Path,
+                values: dict[str, str], dry_run: bool) -> bool:
+    """展开并执行一条生成命令，返回是否失败。"""
+    cmd = expand_argv(argv, values)
+    print("+ " + " ".join(cmd))
+    if dry_run:
+        return False
+    code = _run_argv(cmd, repo_root)
+    if not code:
+        return False
+    print(f"ERROR: 生成命令失败（退出码 {code}）: {' '.join(cmd)}",
+          file=sys.stderr)
+    return True
 
 
 def _replay_ev(entry: Manifest, repo_root: Path, mid: str) -> int:
@@ -1281,18 +1299,33 @@ def iso_asset(iso: Path, ledger: dict[str, str]) -> dict[str, object]:
     """
     if not iso.is_file():
         raise ToolError(f"ISO 不存在：{iso}")
+    _need_names(iso, ledger)
+    size = iso.stat().st_size
+    _need_size(size, ledger)
+    digest = sha256_of(iso)
+    _need_digest(digest, ledger)
+    return {"name": iso.name, "size": size, "sha256": digest}
+
+
+def _need_names(iso: Path, ledger: dict[str, str]) -> None:
+    """文件名必须与账本一致。"""
     if iso.name != ledger["name"]:
         raise ChannelMismatch(
             f"ISO 文件名与账本不一致：{iso.name} != {ledger['name']}")
-    size = iso.stat().st_size
+
+
+def _need_size(size: int, ledger: dict[str, str]) -> None:
+    """大小必须与账本一致。"""
     if size != int(ledger["size"]):
         raise ChannelMismatch(
             f"ISO 大小与账本不一致：{size} != {ledger['size']}")
-    digest = sha256_of(iso)
+
+
+def _need_digest(digest: str, ledger: dict[str, str]) -> None:
+    """摘要必须与账本一致。"""
     if digest != ledger["sha256"]:
         raise ChannelMismatch(
             f"ISO 摘要与账本不一致：{digest} != {ledger['sha256']}")
-    return {"name": iso.name, "size": size, "sha256": digest}
 
 
 def stamp_of(raw: str | None) -> str:
@@ -1308,17 +1341,27 @@ def stamp_of(raw: str | None) -> str:
         ToolError: 显式取值或 SOURCE_DATE_EPOCH 非法。
     """
     if raw:
-        if not STAMP_RE.match(raw):
-            raise ToolError(f"--released-at 须为 {STAMP_FMT} 形态：{raw}")
-        return raw
+        return _need_stamp(raw)
+    return _epoch_stamp()
+
+
+def _need_stamp(raw: str) -> str:
+    """显式时间戳必须符合约定形态。"""
+    if not STAMP_RE.match(raw):
+        raise ToolError(f"--released-at 须为 {STAMP_FMT} 形态：{raw}")
+    return raw
+
+
+def _epoch_stamp() -> str:
+    """SOURCE_DATE_EPOCH 优先，否则取当前 UTC 时间。"""
     epoch = os.environ.get("SOURCE_DATE_EPOCH")
-    if epoch:
-        try:
-            moment = datetime.fromtimestamp(int(epoch), timezone.utc)
-        except ValueError as exc:
-            raise ToolError(f"SOURCE_DATE_EPOCH 非法：{epoch}") from exc
-        return moment.strftime(STAMP_FMT)
-    return datetime.now(timezone.utc).strftime(STAMP_FMT)
+    if not epoch:
+        return datetime.now(timezone.utc).strftime(STAMP_FMT)
+    try:
+        moment = datetime.fromtimestamp(int(epoch), timezone.utc)
+    except ValueError as exc:
+        raise ToolError(f"SOURCE_DATE_EPOCH 非法：{epoch}") from exc
+    return moment.strftime(STAMP_FMT)
 
 
 def _ledger_of(args: argparse.Namespace,
