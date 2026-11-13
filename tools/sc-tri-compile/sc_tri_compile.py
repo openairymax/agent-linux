@@ -513,6 +513,23 @@ def parse_sc_xml(text):
     )
 
 
+def _read_src(headers_dir, name, failures):
+    """读取一份 ABI 源文件；读失败记入 failures 并返回 None。"""
+    try:
+        return (Path(headers_dir) / name).read_text(encoding="utf-8")
+    except OSError as exc:
+        failures.append(f"  无法读取 {name}: {exc}")
+        return None
+
+
+def _src_texts(headers_dir, failures):
+    """读取三份 ABI 源文件，返回 {文件名: 文本}。"""
+    texts = {}
+    for name in (SYSCALL_CONTRACT_FILE, SYSCALL_XML_FILE, SYSCALL_GENERATED_FILE):
+        texts[name] = _read_src(headers_dir, name, failures)
+    return texts
+
+
 def load_sc_src(headers_dir):
     """Load the three syscall ABI sources.
 
@@ -521,12 +538,7 @@ def load_sc_src(headers_dir):
     failed check instead of crashing.
     """
     failures = []
-    texts = {}
-    for name in (SYSCALL_CONTRACT_FILE, SYSCALL_XML_FILE, SYSCALL_GENERATED_FILE):
-        try:
-            texts[name] = (Path(headers_dir) / name).read_text(encoding="utf-8")
-        except OSError as exc:
-            failures.append(f"  无法读取 {name}: {exc}")
+    texts = _src_texts(headers_dir, failures)
     if failures:
         return None, failures
 
@@ -605,23 +617,21 @@ class CheckResult:
 # ─── Checks ────────────────────────────────────────────────────────────────
 
 
+def _compile_one(cc, include_flags, label, flags, header, failures):
+    """单条路径下编译一个头文件；失败时记一条带首条错误的摘要。"""
+    rc, _out, err = run_capture(
+        [cc, *flags, *include_flags, "-fsyntax-only", "-Werror", str(header)]
+    )
+    if rc != 0:
+        failures.append(f"  [{label}] {header.name}: {first_error(err)}")
+
+
 def tri_check(cc, include_flags, header_files):
     """Compile every header under every path; collect the first error each."""
     failures = []
     for label, flags in COMPILE_PATHS:
         for header in header_files:
-            rc, _out, err = run_capture(
-                [
-                    cc,
-                    *flags,
-                    *include_flags,
-                    "-fsyntax-only",
-                    "-Werror",
-                    str(header),
-                ]
-            )
-            if rc != 0:
-                failures.append(f"  [{label}] {header.name}: {first_error(err)}")
+            _compile_one(cc, include_flags, label, flags, header, failures)
 
     total = len(header_files) * len(COMPILE_PATHS)
     name = "五路编译通过 (常规三路 + [DSL] 降级两路)"
@@ -719,14 +729,25 @@ def _probe_row(parts):
     return _row_of(parts)
 
 
+def _three_col(parts):
+    """三列形态 T/S/D/E → (键, 数值)；其余返回 None。"""
+    if parts[0] in ("T", "S", "D", "E") and len(parts) == 3:
+        return (parts[0], parts[1], ""), int(parts[2])
+    return None
+
+
+def _four_col(parts):
+    """四列形态 O → (键, 数值)；其余返回 None。"""
+    if parts[0] == "O" and len(parts) == 4:
+        return (parts[0], parts[1], parts[2]), int(parts[3])
+    return None
+
+
 def _row_of(parts):
     """按字段数区分三列与四列形态，其余返回 None。"""
-    kind = parts[0]
-    if kind in ("T", "S", "D", "E") and len(parts) == 3:
-        return (kind, parts[1], ""), int(parts[2])
-    if kind == "O" and len(parts) == 4:
-        return (kind, parts[1], parts[2]), int(parts[3])
-    return None
+    if parts[0] in ("T", "S", "D", "E"):
+        return _three_col(parts)
+    return _four_col(parts)
 
 
 def collect_probe(cc, include_flags, workdir):
@@ -756,10 +777,15 @@ def collect_probe(cc, include_flags, workdir):
     return per_path, failures
 
 
+def _missing_paths(values):
+    """探针未返回任何取值的路径标签。"""
+    return [label for label, value in values.items() if value is None]
+
+
 def check_consist(item, expected, per_path, key, failures):
     """Record a failure unless every path reports `expected` for `key`."""
     values = {label: vals.get(key) for label, vals in per_path.items()}
-    missing = [label for label, value in values.items() if value is None]
+    missing = _missing_paths(values)
     if missing:
         failures.append(f"  {item}: 探针未返回 ({', '.join(missing)})")
         return
@@ -787,6 +813,20 @@ def type_size_check(per_path, probe_failures):
     return CheckResult(name, True, f"{len(TYPE_SIZES)} 个定宽类型各路径大小一致")
 
 
+def _layout_rows(struct, size, fields, per_path, failures):
+    """核对一个结构体的 sizeof 与各字段偏移，返回字段数。"""
+    check_consist(f"{struct} sizeof", size, per_path, ("S", struct, ""), failures)
+    for field, off in fields:
+        check_consist(
+            f"{struct}.{field}",
+            off,
+            per_path,
+            ("O", struct, field),
+            failures,
+        )
+    return len(fields)
+
+
 def layout_check(per_path, probe_failures):
     """Check struct sizes and field offsets are identical across paths."""
     name = "结构体字段偏移五路一致"
@@ -795,16 +835,7 @@ def layout_check(per_path, probe_failures):
     failures = []
     field_count = 0
     for struct, size, fields in LAYOUT:
-        check_consist(f"{struct} sizeof", size, per_path, ("S", struct, ""), failures)
-        for field, off in fields:
-            field_count += 1
-            check_consist(
-                f"{struct}.{field}",
-                off,
-                per_path,
-                ("O", struct, field),
-                failures,
-            )
+        field_count += _layout_rows(struct, size, fields, per_path, failures)
     if failures:
         return CheckResult(name, False, "\n".join(failures))
     return CheckResult(
