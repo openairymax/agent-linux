@@ -166,11 +166,7 @@ class ExpResult:
         if not EXP_ID_RE.fullmatch(self.exp_id):
             raise ValueError(f"invalid exp_id: {self.exp_id!r}")
         _need_ths(self.thresholds)
-        if not isinstance(self.evidences, list):
-            raise ValueError("evidences must be a list")
-        for item in self.evidences:
-            if not isinstance(item, Evidence):
-                raise ValueError("evidences must contain Evidence items")
+        _need_evs(self.evidences)
         _need_verdict(self.verdict)
         _need_waiver(self)
         _need_blocked(self)
@@ -256,6 +252,15 @@ def _need_clean(path: str) -> None:
     parts = path.split("/")
     if ".." in parts or "" in parts or "." in parts:
         raise ValueError(f"path must be normalized: {path!r}")
+
+
+def _need_evs(evidences: object) -> None:
+    """证据列表必须逐条是 Evidence。"""
+    if not isinstance(evidences, list):
+        raise ValueError("evidences must be a list")
+    for item in evidences:
+        if not isinstance(item, Evidence):
+            raise ValueError("evidences must contain Evidence items")
 
 
 def _need_ths(items: tuple[Threshold, ...]) -> None:

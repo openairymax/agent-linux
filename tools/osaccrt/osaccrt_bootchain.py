@@ -173,15 +173,18 @@ def payload(chain: Chain) -> bytes:
     return (text + "\n").encode("utf-8")
 
 
+def _unit_of(head: str) -> str:
+    """取 @ 前的单元名并去掉图形前缀；无词时为空串。"""
+    words = head.split()
+    return words[-1].lstrip(_GLYPH) if words else ""
+
+
 def _link(line: str) -> Link | None:
     """解析单行 ``unit @time [+duration]``，非单元行返回 None。"""
     head, sep, tail = line.partition("@")
     if not sep:
         return None
-    words = head.split()
-    if not words:
-        return None
-    unit = words[-1].lstrip(_GLYPH)
+    unit = _unit_of(head)
     at_s, dur_s = _times(tail)
     if not unit or at_s is None:
         return None

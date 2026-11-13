@@ -107,10 +107,7 @@ class Smoke:
     samples: tuple[Sample, ...]
 
     def __post_init__(self) -> None:
-        if not isinstance(self.samples, tuple) or not self.samples:
-            raise ValueError("samples must be a non-empty tuple")
-        if not all(isinstance(item, Sample) for item in self.samples):
-            raise ValueError("samples must contain Sample items")
+        _need_samples(self.samples)
 
     @property
     def verdict(self) -> Verdict:
@@ -121,6 +118,14 @@ class Smoke:
     def gaps(self) -> tuple[str, ...]:
         """结论为阻塞的固件名，供失败分类直接引用。"""
         return blocked_fws(self.samples)
+
+
+def _need_samples(samples: object) -> None:
+    """至少一条样本，且逐条都是 Sample。"""
+    if not isinstance(samples, tuple) or not samples:
+        raise ValueError("samples must be a non-empty tuple")
+    if not all(isinstance(item, Sample) for item in samples):
+        raise ValueError("samples must contain Sample items")
 
 
 def judge(image: Image, logs: Mapping[str, BootLog],
@@ -164,12 +169,17 @@ def _sample(fw: str, image: Image, logs: Mapping[str, BootLog],
     return _fold(fw, image.boots_of(fw), logs.get(fw), limit, pattern)
 
 
+def _booted(rows: tuple[Boot, ...]) -> bool:
+    """清单有行且全部通过才算启动成功。"""
+    return bool(rows) and all(item.passed for item in rows)
+
+
 def _fold(fw: str, rows: tuple[Boot, ...], log: BootLog | None,
           limit: str, pattern: str) -> Sample:
     """折叠清单行与串口会话；会话缺失时事实留空而不臆测。"""
     return Sample(
         fw=fw,
-        booted=bool(rows) and all(item.passed for item in rows),
+        booted=_booted(rows),
         boot_s=_boot_s(rows),
         ready_s=None if log is None else log.secs(TAG_READY),
         smoke=None if log is None else log.smoke(),

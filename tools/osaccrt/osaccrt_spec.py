@@ -80,10 +80,15 @@ def _need_schema(schema: object) -> None:
         raise ValueError(f"unsupported schema: {schema!r}")
 
 
-def _need_items(items: object) -> None:
-    """条目必须是至少一条 Threshold 的元组，混入别的类型整表拒绝。"""
+def _tup_ths(items: object) -> None:
+    """条目必须是至少一条的元组。"""
     if not isinstance(items, tuple) or not items:
         raise ValueError("thresholds must be a non-empty tuple")
+
+
+def _need_items(items: object) -> None:
+    """条目必须是至少一条 Threshold 的元组，混入别的类型整表拒绝。"""
+    _tup_ths(items)
     if not all(isinstance(item, Threshold) for item in items):
         raise ValueError("thresholds must contain Threshold items")
 
