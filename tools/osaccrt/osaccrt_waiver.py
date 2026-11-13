@@ -136,6 +136,11 @@ def verify(manifest: Manifest, waiver: Waiver) -> bool:
         return False
     if result.waiver_sig != waiver.signers:
         return False
+    return _waiver_ok(result, waiver)
+
+
+def _waiver_ok(result: ExpResult, waiver: Waiver) -> bool:
+    """评审记录必须在包内；等价依据还需其证据同在包内。"""
     paths = {item.path for item in result.evidences}
     if _REVIEW not in paths:
         return False

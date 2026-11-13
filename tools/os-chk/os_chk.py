@@ -133,6 +133,17 @@ def _gate_sev(item: dict, where: str, gid: str) -> str:
 
 
 def _gate_argv(item: dict, where: str, gid: str) -> Tuple[str, ...]:
+    executor = _gate_exec(item, where, gid)
+    argv = executor.get("argv")
+    if (not isinstance(argv, list) or not argv
+            or not all(isinstance(a, str) and a for a in argv)):
+        raise RegistryError(
+            f"{where} ({gid}): executor.argv 必须是非空字符串列表")
+    return tuple(argv)
+
+
+def _gate_exec(item: dict, where: str, gid: str) -> dict:
+    """executor 必须是映射，且只含注册表已知字段。"""
     executor = item.get("executor")
     if not isinstance(executor, dict):
         raise RegistryError(f"{where} ({gid}): 缺少 executor 映射")
@@ -140,12 +151,7 @@ def _gate_argv(item: dict, where: str, gid: str) -> Tuple[str, ...]:
     if unknown:
         raise RegistryError(
             f"{where} ({gid}): executor 未知字段：{', '.join(unknown)}")
-    argv = executor.get("argv")
-    if (not isinstance(argv, list) or not argv
-            or not all(isinstance(a, str) and a for a in argv)):
-        raise RegistryError(
-            f"{where} ({gid}): executor.argv 必须是非空字符串列表")
-    return tuple(argv)
+    return executor
 
 
 def _gate_timeout(item: dict, where: str, gid: str) -> Optional[int]:
