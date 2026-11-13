@@ -182,18 +182,8 @@ class Store:
         """实验编号全局唯一；supersedes 指向更早日期的已封口包。"""
         if any(item.manifest.exp_id == man.exp_id for item in packs):
             raise ValueError(f"duplicate experiment id: {man.exp_id}")
-        if not man.supersedes:
-            return
-        target = [item for item in packs
-                  if item.manifest.exp_id == man.supersedes]
-        if not target:
-            raise ValueError(
-                f"supersedes unknown experiment: {man.supersedes}"
-            )
-        if target[0].pack.parent.name >= man.date:
-            raise ValueError("supersedes must start a new date directory")
-        if any(item.manifest.supersedes == man.supersedes for item in packs):
-            raise ValueError(f"{man.supersedes} is already superseded")
+        if man.supersedes:
+            _check_target(man, packs)
 
     def _check_files(self, pack: Path, evidences: list[Evidence]) -> None:
         """证据必须真实落盘且摘要一致，符号链接一律拒绝。"""
@@ -255,6 +245,18 @@ def _check_id(exp_id: str) -> None:
     """实验编号必须路径安全，避免目录逃逸。"""
     if not EXP_ID_RE.fullmatch(exp_id):
         raise ValueError(f"invalid exp_id: {exp_id!r}")
+
+
+def _check_target(man: Manifest, packs: list[_Sealed]) -> None:
+    """supersedes 必须指向已封口、更早日期且尚未被取代的包。"""
+    target = [item for item in packs
+              if item.manifest.exp_id == man.supersedes]
+    if not target:
+        raise ValueError(f"supersedes unknown experiment: {man.supersedes}")
+    if target[0].pack.parent.name >= man.date:
+        raise ValueError("supersedes must start a new date directory")
+    if any(item.manifest.supersedes == man.supersedes for item in packs):
+        raise ValueError(f"{man.supersedes} is already superseded")
 
 
 def _check_tree(pack: Path) -> None:
