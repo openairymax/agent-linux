@@ -311,11 +311,16 @@ def _rel_key(path: Path, rel: Any) -> tuple:
         raise MergeError(f"{path}: relationships 的元素必须是对象")
     key = (rel.get("spdxElementId"), rel.get("relationshipType"),
            rel.get("relatedSpdxElement"))
-    if not all(isinstance(part, str) and part for part in key):
+    if not _key_ok(key):
         raise MergeError(
             f"{path}: relationship 缺少 spdxElementId/"
             f"relationshipType/relatedSpdxElement")
     return key
+
+
+def _key_ok(key: tuple) -> bool:
+    """三元组的每一项都必须是非空字符串。"""
+    return all(isinstance(part, str) and part for part in key)
 
 
 def _collect_rels(path: Path, doc: JsonDoc, acc: _Accumulator) -> None:
@@ -336,8 +341,13 @@ def _collect_rels(path: Path, doc: JsonDoc, acc: _Accumulator) -> None:
 def _add_creators(creators: set[str], info: JsonDoc) -> None:
     """并入 creationInfo.creators 中的非空字符串。"""
     for creator in info.get("creators") or []:
-        if isinstance(creator, str) and creator:
-            creators.add(creator)
+        _add_creator(creators, creator)
+
+
+def _add_creator(creators: set[str], creator: object) -> None:
+    """只认非空字符串。"""
+    if isinstance(creator, str) and creator:
+        creators.add(creator)
 
 
 def _collect_info(

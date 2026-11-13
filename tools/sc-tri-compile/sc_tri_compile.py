@@ -387,15 +387,31 @@ def _attr_int(node, attr):
     """取整数属性；措辞随所在元素而定，根元素说「属性 x」，<reserved> 用 @。"""
     raw = node.get(attr)
     if raw is None:
-        if node.tag == "syscalls":
-            raise ValueError(f"syscall.xml 缺少属性 {attr}")
-        raise ValueError(f"syscall.xml <{node.tag}> 缺少属性 {attr}")
+        raise ValueError(f"syscall.xml {_attr_miss(node, attr)}")
+    return _attr_parse(node, attr, raw)
+
+
+def _attr_miss(node, attr):
+    """缺属性时的报错主体。"""
+    if node.tag == "syscalls":
+        return f"缺少属性 {attr}"
+    return f"<{node.tag}> 缺少属性 {attr}"
+
+
+def _attr_parse(node, attr, raw):
+    """按 C 字面量解析；失败时按元素形态给出报错主体。"""
     try:
         return int(raw, 0)
     except ValueError as exc:
-        where = (f"属性 {attr}" if node.tag == "syscalls"
-                 else f"<{node.tag}>@{attr}")
-        raise ValueError(f"syscall.xml {where} 非整数: {raw}") from exc
+        raise ValueError(
+            f"syscall.xml {_attr_at(node, attr)} 非整数: {raw}") from exc
+
+
+def _attr_at(node, attr):
+    """非整数报错主体。"""
+    if node.tag == "syscalls":
+        return f"属性 {attr}"
+    return f"<{node.tag}>@{attr}"
 
 
 def _xml_meta(root):
@@ -408,11 +424,16 @@ def _xml_meta(root):
 
 def _meta_prefix(meta):
     """读取非空的 prefix_symbol 与 prefix_function。"""
-    symbol = (meta.findtext("prefix_symbol") or "").strip()
-    func = (meta.findtext("prefix_function") or "").strip()
+    symbol = _xml_text(meta, "prefix_symbol")
+    func = _xml_text(meta, "prefix_function")
     if not symbol or not func:
         raise ValueError("syscall.xml <meta> 缺少 prefix_symbol/prefix_function")
     return symbol, func
+
+
+def _xml_text(node, name):
+    """去除首尾空白的文本，缺失按空串。"""
+    return (node.findtext(name) or "").strip()
 
 
 def _xml_sys(entry, prefix):
@@ -424,8 +445,8 @@ def _xml_sys(entry, prefix):
 
 def _xml_pair(entry):
     """<name>/<number> 都必须非空；两者一起报，免得逐个文件来回修。"""
-    name = (entry.findtext("name") or "").strip()
-    raw_number = (entry.findtext("number") or "").strip()
+    name = _xml_text(entry, "name")
+    raw_number = _xml_text(entry, "number")
     if not name or not raw_number:
         raise ValueError("syscall.xml <syscall> 缺少 <name>/<number>")
     return name, raw_number
