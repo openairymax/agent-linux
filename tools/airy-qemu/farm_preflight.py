@@ -283,6 +283,21 @@ def check_suite(
         )
 
 
+def _timeout_of(settings: Path, lineno: int, raw: str) -> int | None:
+    """单行解析：注释与无关键返回 None，timeout 取非负整数。"""
+    line = raw.strip()
+    if not line or line.startswith("#"):
+        return None
+    if "=" not in line:
+        raise _cfg(f"{settings}:{lineno}: expected key=value, got {raw!r}")
+    key, value = (part.strip() for part in line.split("=", 1))
+    if key != "timeout":
+        return None
+    if not _NUM_RE.fullmatch(value):
+        raise _cfg(f"{settings}:{lineno}: invalid timeout {value!r}")
+    return int(value)
+
+
 def suite_timeout(path: Path) -> int:
     """读取套件 settings 中生效的单项超时。
 
@@ -304,17 +319,9 @@ def suite_timeout(path: Path) -> int:
     if not settings.is_file():
         raise _cfg(f"settings is not a file: {settings}")
     for lineno, raw in enumerate(_lines(settings), 1):
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        if "=" not in line:
-            raise _cfg(f"{settings}:{lineno}: expected key=value, got {raw!r}")
-        key, value = (part.strip() for part in line.split("=", 1))
-        if key != "timeout":
-            continue
-        if not _NUM_RE.fullmatch(value):
-            raise _cfg(f"{settings}:{lineno}: invalid timeout {value!r}")
-        return int(value)
+        value = _timeout_of(settings, lineno, raw)
+        if value is not None:
+            return value
     return DEFAULT_GUEST_TIMEOUT_S
 
 
@@ -328,18 +335,23 @@ def _need_scalar(job: object, fmt: object, size: object) -> None:
         raise _cfg(f"kernel_size must be positive, got {size!r}")
 
 
+def _need_pair(item: object) -> None:
+    """单项 `<套件名, 用例数>`：名字非空，数量为正整数。"""
+    if not isinstance(item, tuple) or len(item) != 2:
+        raise _cfg(f"invalid suite_tests entry: {item!r}")
+    name, count = item
+    if not isinstance(name, str) or not name:
+        raise _cfg(f"invalid suite_tests entry: {item!r}")
+    if isinstance(count, bool) or not isinstance(count, int) or count <= 0:
+        raise _cfg(f"invalid suite_tests entry: {item!r}")
+
+
 def _need_pairs(pairs: object) -> None:
     """suite_tests 每项都要能定位到「哪个套件、多少用例」。"""
     if not isinstance(pairs, tuple):
         raise _cfg("suite_tests must be a tuple")
     for item in pairs:
-        if not isinstance(item, tuple) or len(item) != 2:
-            raise _cfg(f"invalid suite_tests entry: {item!r}")
-        name, count = item
-        if not isinstance(name, str) or not name:
-            raise _cfg(f"invalid suite_tests entry: {item!r}")
-        if isinstance(count, bool) or not isinstance(count, int) or count <= 0:
-            raise _cfg(f"invalid suite_tests entry: {item!r}")
+        _need_pair(item)
 
 
 def _need_mach(fmt: KernelFormat, source: object, mach: object) -> None:
@@ -382,6 +394,17 @@ def _elf_mach(head: bytes) -> int:
     return int.from_bytes(head[ELF_MACH_OFF:ELF_MACH_MIN], "little")
 
 
+def _test_suite(path: Path, lineno: int, raw: str) -> str:
+    """单行 `<suite>:<test>` 形态校验，返回套件名。"""
+    line = raw.strip()
+    if line.count(":") != 1:
+        raise _cfg(f"{path}:{lineno}: expected <suite>:<test>, got {raw!r}")
+    suite, test = line.split(":")
+    if not suite or not test or any(ch.isspace() for ch in line):
+        raise _cfg(f"{path}:{lineno}: invalid entry {raw!r}")
+    return suite
+
+
 def _list_tests(path: Path) -> dict[str, int]:
     """解析 kselftest-list.txt 并统计每个套件的用例数。"""
     counts: dict[str, int] = {}
@@ -389,13 +412,7 @@ def _list_tests(path: Path) -> dict[str, int]:
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
-        if line.count(":") != 1:
-            raise _cfg(
-                f"{path}:{lineno}: expected <suite>:<test>, got {raw!r}"
-            )
-        suite, test = line.split(":")
-        if not suite or not test or any(ch.isspace() for ch in line):
-            raise _cfg(f"{path}:{lineno}: invalid entry {raw!r}")
+        suite = _test_suite(path, lineno, raw)
         counts[suite] = counts.get(suite, 0) + 1
     if not counts:
         raise _cfg(f"{path}: no tests listed")
