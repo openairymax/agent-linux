@@ -172,10 +172,7 @@ class Runner:
             raise TypeError("review records must be a mapping")
         result = ruling.result
         for path, data in ruling.records.items():
-            if path != _REVIEW:
-                raise ValueError(f"review record must be {_REVIEW}: {path!r}")
-            if not isinstance(data, bytes):
-                raise TypeError("review record data must be bytes")
+            _review_row(path, data)
             digest = _same(self.store, self.day, plan.exp_id, pack, path, data)
             result.evidences.append(Evidence(path, digest, Step.REVIEW))
         return result
@@ -210,6 +207,11 @@ class Runner:
         if step is Step.CAPTURE:
             return self._capture(plan, pack)
         path = STEP_LAYOUT[step]
+        return self._one_ev(plan, step, pack, path)
+
+    def _one_ev(self, plan: ExpPlan, step: Step, pack: Path,
+                path: str) -> list[Evidence]:
+        """单个证据文件必须存在且是普通文件。"""
         target = pack / path
         if not target.exists():
             return []
@@ -226,13 +228,7 @@ class Runner:
         files = _files(root)
         if not files:
             return []
-        evidences = [
-            Evidence(item.relative_to(pack).as_posix(),
-                     self.store.digest(self.day, plan.exp_id,
-                                       item.relative_to(pack).as_posix()),
-                     Step.CAPTURE)
-            for item in files
-        ]
+        evidences = self._cap_evs(plan, pack, files)
         gaps = missing_keys(
             ExpResult(plan.exp_id, plan.thresholds, list(evidences))
         )
@@ -241,6 +237,17 @@ class Runner:
                 f"partial capture is not resumable, missing: {', '.join(gaps)}"
             )
         return evidences
+
+    def _cap_evs(self, plan: ExpPlan, pack: Path,
+                 files: list[Path]) -> list[Evidence]:
+        """把采集到的文件转成证据记录。"""
+        return [
+            Evidence(item.relative_to(pack).as_posix(),
+                     self.store.digest(self.day, plan.exp_id,
+                                       item.relative_to(pack).as_posix()),
+                     Step.CAPTURE)
+            for item in files
+        ]
 
     def _paths(self, step: Step,
                data: Mapping[str, bytes]) -> tuple[str, ...]:
@@ -277,11 +284,9 @@ class Runner:
     def _recorded(self, exp_id: str,
                   pack: Path) -> tuple[Evidence, Verdict] | None:
         """读取上次中断前落盘的判定文件，严格校验其归属与字段。"""
-        path = pack / _VERDICT
-        if not path.exists():
+        path = self._verdict_file(pack)
+        if path is None:
             return None
-        if path.is_symlink() or not path.is_file():
-            raise ValueError("verdict evidence is not a regular file")
         raw = _load_verdict(path.read_text(encoding="utf-8"))
         if raw["exp_id"] != exp_id:
             raise ValueError("verdict does not belong to this experiment")
@@ -290,20 +295,43 @@ class Runner:
             raw["verdict"]
         )
 
+    def _verdict_file(self, pack: Path) -> Path | None:
+        """判定文件必须存在且是普通文件；不存在返回 None。"""
+        path = pack / _VERDICT
+        if not path.exists():
+            return None
+        if path.is_symlink() or not path.is_file():
+            raise ValueError("verdict evidence is not a regular file")
+        return path
+
     def _reuse(self, plan: ExpPlan, man: Manifest) -> Outcome:
         """复用已封口结论；阈值或环境不一致时拒绝，避免张冠李戴。"""
-        if man.result.thresholds != plan.thresholds:
-            raise ValueError(
-                f"sealed pack has a different threshold table: {plan.exp_id}"
-            )
-        if man.host != self.host or man.image_sha256 != self.image_sha256:
-            raise ValueError(
-                f"sealed pack was produced elsewhere: {plan.exp_id}"
-            )
+        _need_same_pack(plan, man, self.host, self.image_sha256)
         verdict = man.result.verdict
         if verdict is None:
             raise ValueError(f"sealed pack has no verdict: {plan.exp_id}")
         return Outcome(plan.exp_id, verdict, man.chain_head, True)
+
+
+def _review_row(path: str, data: bytes) -> None:
+    """复核记录只能写在复核步位置，且内容必须是字节。"""
+    if path != _REVIEW:
+        raise ValueError(f"review record must be {_REVIEW}: {path!r}")
+    if not isinstance(data, bytes):
+        raise TypeError("review record data must be bytes")
+
+
+def _need_same_pack(plan: ExpPlan, man: Manifest, host: str,
+                    image: str) -> None:
+    """阈值、主机与镜像一致才允许复用已封口结论。"""
+    if man.result.thresholds != plan.thresholds:
+        raise ValueError(
+            f"sealed pack has a different threshold table: {plan.exp_id}"
+        )
+    if man.host != host or man.image_sha256 != image:
+        raise ValueError(
+            f"sealed pack was produced elsewhere: {plan.exp_id}"
+        )
 
 
 def _same(store: Store, day: str, exp_id: str, pack: Path,
