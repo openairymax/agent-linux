@@ -231,22 +231,35 @@ def _sum_files(image: Path, sums: str) -> list[Path]:
                     image.parent / "SHA256SUMS"]
 
 
+def _sum_text(candidate: Path) -> str | None:
+    """读取校验和文件正文；不可读时返回 None。"""
+    try:
+        return candidate.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+
+
+def _sum_only(table: dict[str, str], image: Path,
+              candidate: Path) -> tuple[str, str]:
+    """显式 --sums 下唯一一条摘要可代为匹配；否则当场报错。"""
+    if len(table) == 1:
+        return next(iter(table.values())), str(candidate)
+    raise FlashError(EXIT_CHECK,
+                     f"{candidate} 中没有 {image.name} 的摘要")
+
+
 def _sum_pick(candidate: Path, image: Path,
               explicit: bool) -> tuple[str, str] | None:
     """从单个校验和文件取摘要；显式给出却查无此项当场报错。"""
-    try:
-        text = candidate.read_text(encoding="utf-8", errors="replace")
-    except OSError:
+    text = _sum_text(candidate)
+    if text is None:
         return None
     table = parse_sums(text)
     if image.name in table:
         return table[image.name], str(candidate)
     if not explicit:
         return None
-    if len(table) == 1:
-        return next(iter(table.values())), str(candidate)
-    raise FlashError(EXIT_CHECK,
-                     f"{candidate} 中没有 {image.name} 的摘要")
+    return _sum_only(table, image, candidate)
 
 
 def resolve_exp(
@@ -357,21 +370,33 @@ def _oci_need(fields: dict[str, str], path: Path) -> None:
         raise FlashError(EXIT_CHECK, f"{path.name} 缺少字段 {', '.join(missing)}")
 
 
-def _oci_span(path: Path, fields: dict[str, str],
-              parts: list[OciPart]) -> int:
-    """块数与字节合计必须同时对上声明：对不上就是制品与清单不一致。"""
-    size = _oci_int(fields["size"], "size", path)
-    declared = _oci_int(fields.get("chunks") or str(len(parts)), "chunks", path)
-    if declared != len(parts):
-        raise FlashError(
-            EXIT_CHECK, f"{path.name} 声明 {declared} 块却列出 {len(parts)} 块"
-        )
+def _oci_declared(fields: dict[str, str], parts: list[OciPart],
+                  path: Path) -> int:
+    """声明块数；缺省时取实际块数。"""
+    raw = fields.get("chunks") or str(len(parts))
+    return _oci_int(raw, "chunks", path)
+
+
+def _span_bytes(path: Path, parts: list[OciPart], size: int) -> None:
+    """分块字节合计必须等于声明大小；不等即报错。"""
     joined = sum(part.size for part in parts)
     if joined != size:
         raise FlashError(
             EXIT_CHECK,
             f"{path.name} 分块合计 {human_bytes(joined)} ≠ 声明 {human_bytes(size)}",
         )
+
+
+def _oci_span(path: Path, fields: dict[str, str],
+              parts: list[OciPart]) -> int:
+    """块数与字节合计必须同时对上声明：对不上就是制品与清单不一致。"""
+    size = _oci_int(fields["size"], "size", path)
+    declared = _oci_declared(fields, parts, path)
+    if declared != len(parts):
+        raise FlashError(
+            EXIT_CHECK, f"{path.name} 声明 {declared} 块却列出 {len(parts)} 块"
+        )
+    _span_bytes(path, parts, size)
     return size
 
 
@@ -513,16 +538,26 @@ def _ledger_order(ref: str, parts: list[OciPart]) -> None:
         )
 
 
-def _ledger_sums(ref: str, parts: list[OciPart], size: int, chunk: int) -> None:
-    """分块账本的算术自洽：合计等于声明大小，除末块外每块等于块大小。"""
+def _ledger_bytes(ref: str, parts: list[OciPart], size: int) -> None:
+    """分块字节合计必须等于声明大小。"""
     joined = sum(part.size for part in parts)
     if joined != size:
         raise FlashError(
             EXIT_CHECK,
             f"{ref} 分块合计 {human_bytes(joined)} ≠ 声明 {human_bytes(size)}",
         )
+
+
+def _ledger_chunks(ref: str, parts: list[OciPart], chunk: int) -> None:
+    """除末块外，每块大小必须等于声明块大小。"""
     if any(part.size != chunk for part in parts[:-1]):
         raise FlashError(EXIT_CHECK, f"{ref} 的块大小与 {ANN}.chunk-size 不一致")
+
+
+def _ledger_sums(ref: str, parts: list[OciPart], size: int, chunk: int) -> None:
+    """分块账本的算术自洽：合计等于声明大小，除末块外每块等于块大小。"""
+    _ledger_bytes(ref, parts, size)
+    _ledger_chunks(ref, parts, chunk)
 
 
 def ledger_of(ref: str, text: str) -> OciLedger:
@@ -755,6 +790,21 @@ def _file_facts(target: Path, info: os.stat_result,
     )
 
 
+def _block_or_file(target: Path, info: os.stat_result,
+                   table: Sequence[Mount], sys_block: Path,
+                   allow_file: bool) -> DeviceFacts:
+    """按文件类型取证；块设备与普通文件之外一律拒绝。"""
+    if stat.S_ISBLK(info.st_mode):
+        return _block_facts(target, table, sys_block)
+    if stat.S_ISREG(info.st_mode):
+        return _file_facts(target, info, allow_file)
+    raise FlashError(
+        EXIT_CHECK,
+        f"目标既不是块设备也不是普通文件: {target}",
+        hint="传整盘节点（/dev/sdb），不是分区（/dev/sdb1）",
+    )
+
+
 def probe_device(
     path: Path,
     *,
@@ -771,17 +821,7 @@ def probe_device(
 
     info = _stat_target(target)
     table = list(mounts) if mounts is not None else read_mounts()
-
-    if stat.S_ISBLK(info.st_mode):
-        return _block_facts(target, table, sys_block)
-    if stat.S_ISREG(info.st_mode):
-        return _file_facts(target, info, allow_file)
-
-    raise FlashError(
-        EXIT_CHECK,
-        f"目标既不是块设备也不是普通文件: {target}",
-        hint="传整盘节点（/dev/sdb），不是分区（/dev/sdb1）",
-    )
+    return _block_or_file(target, info, table, sys_block, allow_file)
 
 
 # ─── 预检 ───────────────────────────────────────────────────────────────────
@@ -957,6 +997,24 @@ def _write_fail(written: int, exc: OSError) -> FlashError:
     )
 
 
+def _truncate(dst, total: int, written: int) -> None:
+    """截断到镜像大小；失败转成 FlashError。"""
+    try:
+        os.ftruncate(dst.fileno(), total)
+    except OSError as exc:
+        raise FlashError(
+            EXIT_IO,
+            f"截断失败于偏移 {human_bytes(written)}: {exc.strerror or exc}",
+            hint=_io_hint(exc),
+        ) from exc
+
+
+def _trim_file(dst, total: int, written: int, file_target: bool) -> None:
+    """普通文件靶子按镜像大小截断；设备靶子跳过。"""
+    if file_target and total:
+        _truncate(dst, total, written)
+
+
 def write_image(
     image: Path,
     device: Path,
@@ -969,15 +1027,7 @@ def write_image(
     total = image.stat().st_size
     with open(image, "rb") as src, open(device, "r+b", buffering=0) as dst:
         written = _copy_stream(src, dst, chunk, progress, total)
-        try:
-            if file_target and total:
-                os.ftruncate(dst.fileno(), total)
-        except OSError as exc:
-            raise FlashError(
-                EXIT_IO,
-                f"截断失败于偏移 {human_bytes(written)}: {exc.strerror or exc}",
-                hint=_io_hint(exc),
-            ) from exc
+        _trim_file(dst, total, written, file_target)
     return written
 
 
