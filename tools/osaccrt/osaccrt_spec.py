@@ -74,6 +74,26 @@ _OPS: Final[Mapping[str, Callable[[float, float], bool]]] = {
 }
 
 
+def _need_schema(schema: object) -> None:
+    """schema 必须是本模块认识的整数版本；bool 是 int 的子类，先排除。"""
+    if isinstance(schema, bool) or schema != SPEC_SCHEMA:
+        raise ValueError(f"unsupported schema: {schema!r}")
+
+
+def _need_items(items: object) -> None:
+    """条目必须是至少一条 Threshold 的元组，混入别的类型整表拒绝。"""
+    if not isinstance(items, tuple) or not items:
+        raise ValueError("thresholds must be a non-empty tuple")
+    if not all(isinstance(item, Threshold) for item in items):
+        raise ValueError("thresholds must contain Threshold items")
+
+
+def _need_unique(keys: tuple[str, ...]) -> None:
+    """键是实验域对账的锚点，重复即无法唯一取回，构造期就拦下。"""
+    if len(keys) != len(set(keys)):
+        raise ValueError(f"duplicate threshold keys: {keys}")
+
+
 @dataclass(frozen=True)
 class SpecTable:
     """阈值表快照，构造即校验版本、条目类型与键唯一性。"""
@@ -82,15 +102,9 @@ class SpecTable:
     thresholds: tuple[Threshold, ...]
 
     def __post_init__(self) -> None:
-        if isinstance(self.schema, bool) or self.schema != SPEC_SCHEMA:
-            raise ValueError(f"unsupported schema: {self.schema!r}")
-        if not isinstance(self.thresholds, tuple) or not self.thresholds:
-            raise ValueError("thresholds must be a non-empty tuple")
-        if not all(isinstance(item, Threshold) for item in self.thresholds):
-            raise ValueError("thresholds must contain Threshold items")
-        keys = self.keys
-        if len(keys) != len(set(keys)):
-            raise ValueError(f"duplicate threshold keys: {keys}")
+        _need_schema(self.schema)
+        _need_items(self.thresholds)
+        _need_unique(self.keys)
 
     @property
     def keys(self) -> tuple[str, ...]:
