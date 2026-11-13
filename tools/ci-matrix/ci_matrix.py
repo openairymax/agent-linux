@@ -184,6 +184,16 @@ def _reason_fails(failures):
     return _reason_miss(reasons)
 
 
+def _section_probs(manifest, key, checker):
+    """单个子段的问题清单；缺省不算问题。"""
+    section = manifest.get(key)
+    if isinstance(section, dict):
+        return checker(section)
+    if key in manifest:
+        return [f"{key} 必须是映射（mapping）"]
+    return []
+
+
 def _section_types(manifest):
     """校验各子段类型并返回问题列表。"""
     problems = []
@@ -191,11 +201,7 @@ def _section_types(manifest):
                          ("budget", _budget_types),
                          ("gates", _gate_types),
                          ("failures", _fail_types)):
-        section = manifest.get(key)
-        if isinstance(section, dict):
-            problems.extend(checker(section))
-        elif key in manifest:
-            problems.append(f"{key} 必须是映射（mapping）")
+        problems.extend(_section_probs(manifest, key, checker))
     return problems
 
 
@@ -373,12 +379,17 @@ def _norm_excl(entries):
     return sorted(normalized)
 
 
+def _excl_hit(entry, combos):
+    """该 exclude 项是否命中任一组合。"""
+    return any(_match(combo, entry) for combo in combos)
+
+
 def _excl_entry(index, entry, combos):
     """单条 exclude 项：非空、维度已知、命中真实组合；合法时返回 None。"""
     bad = _excl_shape(index, entry)
     if bad is not None:
         return bad
-    if not any(_match(combo, entry) for combo in combos):
+    if not _excl_hit(entry, combos):
         return f"exclude[{index}] 未命中任何组合: {entry}"
     return None
 
@@ -598,15 +609,26 @@ def _index_summary(entries):
     return seen
 
 
+def _cell_bad(entry):
+    """结果格不是映射或缺少任一维度。"""
+    return not isinstance(entry, dict) or any(
+        k not in entry for k in DIMS)
+
+
 def _need_cell(entry, index):
     """结果格必须是四维齐全的映射。"""
-    if not isinstance(entry, dict) or any(k not in entry for k in DIMS):
+    if _cell_bad(entry):
         raise ManifestError(f"cells[{index}] 缺少维度: {DIMS}")
+
+
+def _cell_dims(cell):
+    """结果格的 (config, arch, compiler) 三元组。"""
+    return tuple(cell[key] for key in DIMS)
 
 
 def classify_cell(cell, passed, reasons):
     """按 §3.4 失败语义为单格归因。"""
-    config, arch, compiler = (cell[key] for key in DIMS)
+    config, arch, compiler = _cell_dims(cell)
     if _compiler_miss(compiler, config, arch, passed):
         return reasons["compiler"]
     if _arch_miss(arch, config, compiler, passed):

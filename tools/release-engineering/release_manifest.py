@@ -287,11 +287,14 @@ def normalize_glob(raw: Any) -> str:
     return TEMPLATE_RE.sub("*", str(raw)).strip()
 
 
+def _glob_lines(value: Any) -> list[str]:
+    """块标量按行拆分；非字符串视为无 glob。"""
+    return [] if not isinstance(value, str) else value.splitlines()
+
+
 def _split_globs(value: Any) -> Globs:
     """把 upload-artifact/download 的块标量拆成规范化 glob 集合。"""
-    if not isinstance(value, str):
-        return set()
-    return {normalize_glob(line) for line in value.splitlines()
+    return {normalize_glob(line) for line in _glob_lines(value)
             if normalize_glob(line)}
 
 
@@ -318,12 +321,17 @@ def _uses_globs(uses: str, params: dict) -> Globs:
     return set()
 
 
+def _job_steps(job: dict) -> list:
+    """job 的 step 序列；未声明时为空。"""
+    return job.get("steps") or []
+
+
 def _job_globs(job: Any) -> Globs:
     """单个 job 内全部产出 step 的 glob 并集。"""
     if not isinstance(job, dict):
         return set()
     globs: Globs = set()
-    for step in job.get("steps") or []:
+    for step in _job_steps(job):
         globs |= _step_globs(step)
     return globs
 
@@ -360,21 +368,32 @@ def pipeline_globs(path: Path) -> Globs:
 # ─── Schema check ──────────────────────────────────────────────────────────
 
 
+def _entry_missing(where: str, entry: Manifest) -> list[str]:
+    """缺少或为空值的必填字段，按名逐个报出。"""
+    return [f"{where} 缺少或为空值的必填字段: {key}"
+            for key in REQUIRED_MATERIAL_KEYS if not entry.get(key)]
+
+
 def _entry_fields(where: str, entry: Manifest) -> list[str]:
     """字段集合：未登记键与缺值必填键，两者都按名逐个报出。"""
     problems = []
     unknown = set(entry) - MATERIAL_KEYS
     if unknown:
         problems.append(f"{where} 未知字段: {', '.join(sorted(unknown))}")
-    problems.extend(f"{where} 缺少或为空值的必填字段: {key}"
-                    for key in REQUIRED_MATERIAL_KEYS if not entry.get(key))
+    problems.extend(_entry_missing(where, entry))
     return problems
+
+
+def _entry_mid(entry: Manifest) -> str:
+    """物料 id；缺失或非字符串时视为空串。"""
+    mid = entry.get("id")
+    return mid if isinstance(mid, str) else ""
 
 
 def _entry_id(where: str, entry: Manifest, seen: set[str]) -> list[str]:
     """物料 id 必须存在且唯一；首次出现即登记，重复出现报错。"""
-    mid = entry.get("id")
-    if not isinstance(mid, str) or not mid:
+    mid = _entry_mid(entry)
+    if not mid:
         return []
     if mid in seen:
         return [f"{where}.id 重复: {mid}"]
@@ -471,13 +490,18 @@ def _defer_left(where: str, entry: Manifest) -> list[str]:
     return problems
 
 
+def _produce_bad(produce: Any) -> bool:
+    """生成命令记录不是非空列表。"""
+    return not isinstance(produce, list) or not produce
+
+
 def _produce_errs(where: str, produce: Any) -> list[str]:
     """校验 active 物料的生成命令记录形状。
 
     produce 是「每条物料记录生成命令 argv」的落点：外层按执行顺序排列，
     每项为一条 argv（token 列表），缺失或空列表即视为不可复跑。
     """
-    if not isinstance(produce, list) or not produce:
+    if _produce_bad(produce):
         return [f"{where}: active 物料要求非空 produce 列表（生成命令 argv）"]
     problems = []
     for idx, argv in enumerate(produce):
@@ -515,10 +539,15 @@ def _note_errs(key: str, value: Any) -> list[str]:
     return []
 
 
+def _note_bad(item: Any) -> bool:
+    """单条说明不是字符串或去空白后为空。"""
+    return not isinstance(item, str) or not item.strip()
+
+
 def _note_list(value: Any) -> bool:
     """值必须是逐条去空白后非空的字符串列表。"""
     return isinstance(value, list) and not any(
-        not isinstance(item, str) or not item.strip() for item in value)
+        _note_bad(item) for item in value)
 
 
 def _notes_errs(notes: Any) -> list[str]:
@@ -573,9 +602,14 @@ def _top_probs(manifest: Manifest) -> list[str]:
     return problems
 
 
+def _mat_bad(materials: Any) -> bool:
+    """materials 不是非空列表。"""
+    return not isinstance(materials, list) or not materials
+
+
 def _mat_probs(materials: Any) -> list[str]:
     """materials 非空性，以及逐条物料记录的问题。"""
-    if not isinstance(materials, list) or not materials:
+    if _mat_bad(materials):
         return ["materials 必须是非空列表"]
     seen: set[str] = set()
     problems = []
@@ -617,9 +651,14 @@ def _need_gate(where: str, gate: str, gates: set[str]) -> list[str]:
     return [f"{where} 引用的门禁不存在: {gate}"]
 
 
+def _ph_set(argv: Sequence[str]) -> set[str]:
+    """argv 中出现的占位符集合。"""
+    return {m for tok in argv for m in PH_RE.findall(tok)}
+
+
 def _ph_probs(where: str, argv: Sequence[str]) -> list[str]:
     """占位符限于可解析白名单，未知的排序后一次列出。"""
-    unknown = {m for tok in argv for m in PH_RE.findall(tok)} - PRODUCE_PH
+    unknown = _ph_set(argv) - PRODUCE_PH
     if not unknown:
         return []
     return [f"{where} 含未知占位符: {', '.join(sorted(unknown))}"]
