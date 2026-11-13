@@ -104,17 +104,27 @@ def read_list(path: Path) -> list[Any]:
     Raises:
         ToolError: 文件不可读、JSON 非法或结构不符。
     """
+    doc = _load_doc(path)
+    if isinstance(doc, dict):
+        doc = doc.get("artifacts", [])
+    _need_list(doc)
+    return doc
+
+
+def _load_doc(path):
+    """读取并解析 JSON，把两类异常统一为 ToolError。"""
     try:
-        doc = json.loads(path.read_text(encoding="utf-8"))
+        return json.loads(path.read_text(encoding="utf-8"))
     except OSError as exc:
         raise ToolError(f"无法读取制品列表 {path}: {exc}") from exc
     except json.JSONDecodeError as exc:
         raise ToolError(f"制品列表不是合法 JSON: {exc}") from exc
-    if isinstance(doc, dict):
-        doc = doc.get("artifacts", [])
+
+
+def _need_list(doc):
+    """制品列表必须是数组。"""
     if not isinstance(doc, list):
         raise ToolError("制品列表结构不符：期望数组或含 artifacts 数组的对象")
-    return doc
 
 
 def is_cand(item: Any, name: str, sha: str) -> bool:

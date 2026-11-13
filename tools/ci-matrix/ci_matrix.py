@@ -294,11 +294,20 @@ def check_dims(job, manifest, arches):
 def expand_cells(manifest, arches):
     """按清单展开矩阵单元，剔除 exclude 命中的组合。"""
     spec = manifest["matrix"]
-    combos = [dict(zip(DIMS, combo))
-              for combo in itertools.product(
-                  spec["configs"], arches, spec["compilers"])]
-    return [cell for cell in combos
-            if not any(_match(cell, entry) for entry in spec["exclude"])]
+    combos = _combos(spec, arches)
+    return [cell for cell in combos if not _excluded(cell, spec["exclude"])]
+
+
+def _combos(spec, arches):
+    """DIMS 维度笛卡尔积，逐项转为字典。"""
+    return [dict(zip(DIMS, combo))
+            for combo in itertools.product(
+                spec["configs"], arches, spec["compilers"])]
+
+
+def _excluded(cell, entries):
+    """任一 exclude 命中即剔除该组合。"""
+    return any(_match(cell, entry) for entry in entries)
 
 
 def _match(cell, pattern):
@@ -358,12 +367,15 @@ def _excl_shape(index, entry):
 def _excl_problems(entries, manifest, arches):
     """校验清单 exclude 项：非空、维度已知、命中真实组合。"""
     spec = manifest["matrix"]
-    combos = [dict(zip(DIMS, combo))
-              for combo in itertools.product(
-                  spec["configs"], arches, spec["compilers"])]
+    combos = _combos(spec, arches)
     problems = [_excl_entry(index, entry, combos)
                 for index, entry in enumerate(entries)]
-    return [msg for msg in problems if msg is not None]
+    return _keep_msgs(problems)
+
+
+def _keep_msgs(msgs):
+    """丢弃合法项留下的 None。"""
+    return [msg for msg in msgs if msg is not None]
 
 
 def check_exclude(job, manifest, arches):
@@ -410,11 +422,16 @@ def check_jobcount(workflow, manifest):
     if len(jobs) > limit:
         problems.append(f"job 数 {len(jobs)} 超过上限 {limit}")
     for name, job in sorted(jobs.items()):
-        if not isinstance(job, dict) or not isinstance(
-                job.get("timeout-minutes"), int):
-            problems.append(f"job {name} 未声明整数 timeout-minutes")
+        _job_timeout(name, job, problems)
     return CheckResult("job 数量与超时声明合规", not problems,
                        "\n".join(problems))
+
+
+def _job_timeout(name, job, problems):
+    """单个 job 必须声明整数 timeout-minutes。"""
+    if not isinstance(job, dict) or not isinstance(
+            job.get("timeout-minutes"), int):
+        problems.append(f"job {name} 未声明整数 timeout-minutes")
 
 
 def _job_text(job):
@@ -656,13 +673,23 @@ def _context(args):
     """加载矩阵载体；缺依赖、根不存在、清单非法一律抛 ManifestError。"""
     if yaml is None:
         raise ManifestError("PyYAML 不可用，请安装 pyyaml")
-    repo_root = Path(args.repo_root) if args.repo_root else find_repo_root()
-    if not repo_root.is_dir():
-        raise ManifestError(f"仓库根不存在: {repo_root}")
-    manifest_path = (Path(args.manifest) if args.manifest
-                     else repo_root / DEFAULT_MANIFEST_REL)
+    repo_root = _root_of(args.repo_root)
+    manifest_path = _manifest_of(args.manifest, repo_root)
     manifest = load_manifest(manifest_path)
     return repo_root, manifest, resolve_arches(manifest, repo_root)
+
+
+def _root_of(value):
+    """仓库根：显式路径优先，否则自动探测；目录不存在即拒绝。"""
+    repo_root = Path(value) if value else find_repo_root()
+    if not repo_root.is_dir():
+        raise ManifestError(f"仓库根不存在: {repo_root}")
+    return repo_root
+
+
+def _manifest_of(value, repo_root):
+    """清单路径：显式路径优先，否则按仓库布局推导。"""
+    return Path(value) if value else repo_root / DEFAULT_MANIFEST_REL
 
 
 def _check(args, repo_root, manifest):
