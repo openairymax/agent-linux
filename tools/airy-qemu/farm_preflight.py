@@ -168,17 +168,42 @@ def detect_fmt(head: bytes) -> KernelFormat:
     """
     if not isinstance(head, bytes):
         raise _cfg(f"head must be bytes, got {type(head).__name__}")
-    if head[:4] == ELF_MAGIC:
+    return _fmt_of(head)
+
+
+def _fmt_of(head: bytes) -> KernelFormat:
+    """按 ELF → arm64 → riscv → x86 的顺序比对头部 magic。"""
+    if _is_elf(head):
         return KernelFormat.ELF
-    if head[ARM64_OFF : ARM64_OFF + 4] == ARM64_MAGIC:
+    if _is_arm64(head):
         return KernelFormat.ARM64
-    magics = head[RISCV_OFF : RISCV_OFF + 8] == RISCV_MAGIC
-    if magics and head[RISCV2_OFF : RISCV2_OFF + 4] == RISCV_MAGIC2:
+    if _is_riscv(head):
         return KernelFormat.RISCV
-    boot = head[BZ_FLAG_OFF : BZ_FLAG_OFF + 2] == BZ_FLAG
-    if boot and head[BZ_SIG_OFF : BZ_SIG_OFF + 4] == BZ_SIG:
+    if _is_bzimage(head):
         return KernelFormat.BZIMAGE
     return KernelFormat.UNKNOWN
+
+
+def _is_elf(head: bytes) -> bool:
+    """头部前四字节是否为 ELF magic。"""
+    return head[:4] == ELF_MAGIC
+
+
+def _is_arm64(head: bytes) -> bool:
+    """偏移 56 处是否为 arm64 Image magic。"""
+    return head[ARM64_OFF : ARM64_OFF + 4] == ARM64_MAGIC
+
+
+def _is_riscv(head: bytes) -> bool:
+    """偏移 48 与 56 处是否同时为 riscv Image 双 magic。"""
+    magics = head[RISCV_OFF : RISCV_OFF + 8] == RISCV_MAGIC
+    return magics and head[RISCV2_OFF : RISCV2_OFF + 4] == RISCV_MAGIC2
+
+
+def _is_bzimage(head: bytes) -> bool:
+    """0x1fe 处是否为引导标志且 0x202 处为 HdrS。"""
+    boot = head[BZ_FLAG_OFF : BZ_FLAG_OFF + 2] == BZ_FLAG
+    return boot and head[BZ_SIG_OFF : BZ_SIG_OFF + 4] == BZ_SIG
 
 
 def check_job(job: FarmJob, env: PreflightEnv) -> Preflight:
@@ -339,9 +364,18 @@ def _need_pair(item: object) -> None:
     """单项 `<套件名, 用例数>`：名字非空，数量为正整数。"""
     if not isinstance(item, tuple) or len(item) != 2:
         raise _cfg(f"invalid suite_tests entry: {item!r}")
-    name, count = item
+    _need_pair_name(item[0], item)
+    _need_count(item[1], item)
+
+
+def _need_pair_name(name: object, item: object) -> None:
+    """套件名必须是非空字符串。"""
     if not isinstance(name, str) or not name:
         raise _cfg(f"invalid suite_tests entry: {item!r}")
+
+
+def _need_count(count: object, item: object) -> None:
+    """用例数必须是正整数（bool 不算整数）。"""
     if isinstance(count, bool) or not isinstance(count, int) or count <= 0:
         raise _cfg(f"invalid suite_tests entry: {item!r}")
 
