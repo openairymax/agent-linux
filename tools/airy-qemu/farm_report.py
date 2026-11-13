@@ -105,12 +105,23 @@ def summary_lines(report: GateReport) -> tuple[str, ...]:
         FarmConfigError: report 不是 GateReport。
     """
     _check(report)
-    ok = sum(1 for result in report.results if result.ok)
+    ok = _ok_count(report)
     lines = [f"farm: {report.count} jobs, {ok} ok, {report.count - ok} blocking"]
     lines.extend(_job_line(result) for result in report.results)
-    blocked = ", ".join(report.failed)
-    lines.append("gate: " + ("PASS" if report.ok else f"FAIL blocked: {blocked}"))
+    lines.append(_gate_line(report))
     return tuple(lines)
+
+
+def _ok_count(report: GateReport) -> int:
+    """放行作业数。"""
+    return sum(1 for result in report.results if result.ok)
+
+
+def _gate_line(report: GateReport) -> str:
+    """末行门禁结论；阻断时列出被阻作业。"""
+    if report.ok:
+        return "gate: PASS"
+    return "gate: FAIL blocked: " + ", ".join(report.failed)
 
 
 def _counts(report: GateReport) -> dict[str, int]:
@@ -191,6 +202,11 @@ def _need_path(path: Path | str) -> Path:
         raise FarmConfigError(
             f"report path must be Path or str, got {type(target).__name__}"
         )
+    _need_file_name(target)
+    return target
+
+
+def _need_file_name(target: Path) -> None:
+    """路径必须指向一个文件而非目录。"""
     if not target.name or target.is_dir():
         raise FarmConfigError(f"report path must name a file: {target}")
-    return target
