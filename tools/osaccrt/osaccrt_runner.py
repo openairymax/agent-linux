@@ -369,22 +369,38 @@ def _verdict_json(result: ExpResult) -> bytes:
     return (text + "\n").encode("utf-8")
 
 
-def _load_verdict(text: str) -> dict[str, object]:
-    """解析判定文件，拒绝语法错误、未知字段与类型不符。"""
+def _load_json(text: str) -> dict:
+    """解析 JSON 对象；语法错误与非对象一律拒收。"""
     try:
         raw = json.loads(text)
     except json.JSONDecodeError as exc:
         raise ValueError(f"verdict is not valid JSON: {exc}") from exc
     if not isinstance(raw, dict):
         raise ValueError("verdict must be a JSON object")
+    return raw
+
+
+def _need_vkeys(raw: dict) -> None:
+    """字段集合必须恰好是四键。"""
     if set(raw) != _V_KEYS:
         raise ValueError("verdict must have exp_id/keys/missing/verdict")
+
+
+def _need_vals(raw: dict) -> None:
+    """exp_id 与 verdict 必须是字符串，keys/missing 必须是字符串列表。"""
     if not isinstance(raw["exp_id"], str):
         raise ValueError("verdict exp_id must be a string")
     _need_strs(raw["keys"], "keys")
     _need_strs(raw["missing"], "missing")
     if not isinstance(raw["verdict"], str):
         raise ValueError("verdict value must be a string")
+
+
+def _load_verdict(text: str) -> dict[str, object]:
+    """解析判定文件，拒绝语法错误、未知字段与类型不符。"""
+    raw = _load_json(text)
+    _need_vkeys(raw)
+    _need_vals(raw)
     return raw
 
 

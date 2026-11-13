@@ -210,18 +210,30 @@ def _blocked_ok(result: ExpResult) -> bool:
     return paths == {_PREP} and set(result.steps) == {Step.PREPARE}
 
 
+def _need_exp(result: object) -> None:
+    """台账入参只收 ExpResult。"""
+    if not isinstance(result, ExpResult):
+        raise TypeError("results must contain ExpResult")
+
+
+def _blocked_row(result: ExpResult) -> tuple[str, str] | None:
+    """单条结果的台账行；非 BLOCKED 返回 None，未登记即拒绝。"""
+    if result.verdict is not Verdict.BLOCKED:
+        return None
+    entry = _match(result.blocked_reason)
+    if entry is None or result.exp_id not in entry.exps:
+        raise ValueError(f"unregistered blocked: {result.exp_id}")
+    return result.exp_id, entry.key
+
+
 def ledger(results: Sequence[ExpResult]) -> tuple[tuple[str, str], ...]:
     """汇总 BLOCKED 台账行（实验编号, 登记键），未登记即拒绝。"""
     rows: list[tuple[str, str]] = []
     for result in results:
-        if not isinstance(result, ExpResult):
-            raise TypeError("results must contain ExpResult")
-        if result.verdict is not Verdict.BLOCKED:
-            continue
-        entry = _match(result.blocked_reason)
-        if entry is None or result.exp_id not in entry.exps:
-            raise ValueError(f"unregistered blocked: {result.exp_id}")
-        rows.append((result.exp_id, entry.key))
+        _need_exp(result)
+        row = _blocked_row(result)
+        if row is not None:
+            rows.append(row)
     return tuple(sorted(rows))
 
 
