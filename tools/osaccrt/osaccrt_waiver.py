@@ -125,12 +125,17 @@ def load(raw: str | bytes) -> Waiver:
     )
 
 
-def verify(manifest: Manifest, waiver: Waiver) -> bool:
-    """核对已封口清单与复核结论是否互证。"""
+def _need_objs(manifest: object, waiver: object) -> None:
+    """清单与豁免都必须是已建模对象。"""
     if not isinstance(manifest, Manifest):
         raise TypeError("manifest must be Manifest")
     if not isinstance(waiver, Waiver):
         raise TypeError("waiver must be Waiver")
+
+
+def verify(manifest: Manifest, waiver: Waiver) -> bool:
+    """核对已封口清单与复核结论是否互证。"""
+    _need_objs(manifest, waiver)
     result = manifest.result
     if result.verdict is not Verdict.WAIVED:
         return False

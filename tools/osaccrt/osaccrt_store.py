@@ -208,10 +208,15 @@ def _root_lock(root: Path) -> Iterator[None]:
         os.close(fd)
 
 
+def _subdirs(base: Path) -> list[Path]:
+    """目录下按名字排序的子目录。"""
+    return sorted(item for item in base.iterdir() if item.is_dir())
+
+
 def _day_packs(day: Path) -> list[_Sealed]:
     """单日目录下所有已封口包；在途目录跳过。"""
     packs: list[_Sealed] = []
-    for pack in sorted(item for item in day.iterdir() if item.is_dir()):
+    for pack in _subdirs(day):
         _check_id(pack.name)
         if (pack / CHAIN).is_file():
             packs.append(_sealed(pack))
@@ -223,7 +228,7 @@ def _collect(root: Path) -> list[_Sealed]:
     if not root.is_dir():
         return []
     packs: list[_Sealed] = []
-    for day in sorted(item for item in root.iterdir() if item.is_dir()):
+    for day in _subdirs(root):
         check_date(day.name)
         packs.extend(_day_packs(day))
     return packs

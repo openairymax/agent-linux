@@ -380,6 +380,20 @@ def _rep_ci(results, failed, blocking, passed, total, elapsed_s):
     _dump_rows(blocking)
 
 
+def _dump_out(result) -> None:
+    """附上未通过门禁的 stdout/stderr 全文。"""
+    for line in (result.stdout + result.stderr).splitlines():
+        print(f"    | {line}")
+
+
+def _dump_full(results, verbose, ts) -> None:
+    """逐条打印判定；verbose 时附未通过项的输出。"""
+    for r in results:
+        print(format_line(r, ts))
+        if verbose and r.status != STATUS_PASS:
+            _dump_out(r)
+
+
 def _rep_full(results, registry_version, failed, verbose, passed, total,
               elapsed_s, ts):
     """详细形态：抬头、逐条判定（可按需附输出）与结论。"""
@@ -388,11 +402,7 @@ def _rep_full(results, registry_version, failed, verbose, passed, total,
     print(f"注册表版本: {registry_version}")
     print("=" * 72)
     print()
-    for r in results:
-        print(format_line(r, ts))
-        if verbose and r.status != STATUS_PASS:
-            for line in (r.stdout + r.stderr).splitlines():
-                print(f"    | {line}")
+    _dump_full(results, verbose, ts)
     print()
     _rep_tail(failed, total, elapsed_s)
 
