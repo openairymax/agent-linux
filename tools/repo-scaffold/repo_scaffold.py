@@ -510,17 +510,29 @@ def check_build(man: Mapping[str, Any], root: Path) -> CheckResult:
     return _result(NAME_BUILD, problems)
 
 
+def _obj_stem(obj: str) -> str:
+    """去掉 .o 后缀得到源文件主干名。"""
+    return obj[:-2] if obj.endswith(".o") else obj
+
+
+def _src_ok(label: str, base: Path, path: Path) -> list[str]:
+    """命中候选源文件时的空文件判据。"""
+    if path.stat().st_size == 0:
+        return [f"{label}: 空源文件 {path.relative_to(base)}"]
+    return []
+
+
 def _object_src(label: str, base: Path, obj: str,
                 sources: list[Path]) -> list[str]:
     """把 Kbuild 目标文件解析为源文件并校验。"""
-    stem = obj[:-2] if obj.endswith(".o") else obj
+    stem = _obj_stem(obj)
     for suffix in _SRC_CANDIDATES:
         path = base / f"{stem}{suffix}"
         if path.is_file():
-            if path.stat().st_size == 0:
-                return [f"{label}: 空源文件 {path.relative_to(base)}"]
-            sources.append(path)
-            return []
+            problems = _src_ok(label, base, path)
+            if not problems:
+                sources.append(path)
+            return problems
     return [f"{label}: 源文件不存在 {stem}.c"]
 
 
@@ -560,21 +572,25 @@ def _cmake_file(label: str, base: Path,
     return problems, sources
 
 
+def _cmake_sub(label: str, base: Path,
+               name: str) -> tuple[list[str], list[Path]]:
+    """单个 add_subdirectory：目录与入口须存在，然后递归解析。"""
+    sub = base / name
+    sub_entry = sub / "CMakeLists.txt"
+    if not sub.is_dir():
+        return [f"{label}: add_subdirectory 目录不存在 {name}"], []
+    if not sub_entry.is_file():
+        return [f"{label}: 子目录缺少 CMakeLists.txt {name}"], []
+    return _cmake_file(label, sub, sub_entry)
+
+
 def _cmake_srcs(spec: RepoSpec, base: Path,
                 entry: Path) -> list[str]:
     """校验 CMake 入口及其子目录引用的源文件。"""
     problems, sources = _cmake_file(spec.path, base, entry)
     text = _strip_comments(_read_text(entry))
     for name in _SUBDIR_RE.findall(text):
-        sub = base / name
-        sub_entry = sub / "CMakeLists.txt"
-        if not sub.is_dir():
-            problems.append(f"{spec.path}: add_subdirectory 目录不存在 {name}")
-            continue
-        if not sub_entry.is_file():
-            problems.append(f"{spec.path}: 子目录缺少 CMakeLists.txt {name}")
-            continue
-        sub_problems, sub_sources = _cmake_file(spec.path, sub, sub_entry)
+        sub_problems, sub_sources = _cmake_sub(spec.path, base, name)
         problems += sub_problems
         sources += sub_sources
     if not sources:
@@ -592,15 +608,19 @@ def _add_objs(label: str, base: Path, text: str,
     return problems
 
 
+def _obj_skip(obj: str, composed: set[str]) -> bool:
+    """聚合名与目录引用不当独立模块校验。"""
+    return not obj.endswith(".o") or obj[:-2] in composed
+
+
 def _plain_objs(label: str, base: Path, text: str, composed: set[str],
                 sources: list[Path]) -> list[str]:
     """普通 `obj-y += x.o`：聚合名不当独立模块，其余逐个校验。"""
     problems: list[str] = []
     for value in _OBJ_RE.findall(text):
         for obj in value.split():
-            if not obj.endswith(".o") or obj[:-2] in composed:
-                continue
-            problems += _object_src(label, base, obj, sources)
+            if not _obj_skip(obj, composed):
+                problems += _object_src(label, base, obj, sources)
     return problems
 
 
@@ -634,17 +654,28 @@ def _sub_srcs(spec: RepoSpec, base: Path,
     return _kbuild_file(spec.path, sub, sub_entry)
 
 
-def _kbuild_srcs(spec: RepoSpec, base: Path,
-                 entry: Path) -> list[str]:
-    """校验 Kbuild 入口及其子目录引用的源文件。"""
-    problems, sources = _kbuild_file(spec.path, base, entry)
-    text = _strip_comments(_read_text(entry))
+def _kbuild_subs(spec: RepoSpec, base: Path,
+                 text: str) -> tuple[list[str], list[Path]]:
+    """目录引用逐个递归收集源文件。"""
+    problems: list[str] = []
+    sources: list[Path] = []
     for value in _OBJ_RE.findall(text):
         for obj in value.split():
             if obj.endswith("/"):
                 sub_probs, sub_sources = _sub_srcs(spec, base, obj)
                 problems += sub_probs
                 sources += sub_sources
+    return problems, sources
+
+
+def _kbuild_srcs(spec: RepoSpec, base: Path,
+                 entry: Path) -> list[str]:
+    """校验 Kbuild 入口及其子目录引用的源文件。"""
+    problems, sources = _kbuild_file(spec.path, base, entry)
+    text = _strip_comments(_read_text(entry))
+    sub_problems, sub_sources = _kbuild_subs(spec, base, text)
+    problems += sub_problems
+    sources += sub_sources
     if not sources:
         problems.append(f"{spec.path}: 构建入口未引用任何源文件")
     return problems
@@ -660,21 +691,24 @@ def _native_entry(spec: RepoSpec, base: Path) -> list[str]:
     return []
 
 
+def _kind_probs(spec: RepoSpec, base: Path, entry: Path) -> list[str]:
+    """按入口类型分派：native 走探针，cmake 与 kbuild 各自解析。"""
+    kind = KINDS_BY_ENTRY[spec.build_entry]
+    if kind == "native":
+        return _native_entry(spec, base)
+    if kind == "cmake":
+        return _cmake_srcs(spec, base, entry)
+    return _kbuild_srcs(spec, base, entry)
+
+
 def check_entry(man: Mapping[str, Any], root: Path) -> CheckResult:
     """校验构建入口真实引用存在且非空的源文件。"""
     problems: list[str] = []
     for spec in _repo_specs(man):
         base = root / spec.path
         entry = base / spec.build_entry
-        if not entry.is_file():
-            continue
-        kind = KINDS_BY_ENTRY[spec.build_entry]
-        if kind == "native":
-            problems += _native_entry(spec, base)
-        elif kind == "cmake":
-            problems += _cmake_srcs(spec, base, entry)
-        else:
-            problems += _kbuild_srcs(spec, base, entry)
+        if entry.is_file():
+            problems += _kind_probs(spec, base, entry)
     return _result(NAME_ENTRY, problems)
 
 
