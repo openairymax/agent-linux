@@ -156,12 +156,17 @@ def _raw_steps(job: Any) -> Any:
     return job.get("steps")
 
 
+def _step_list(steps: list[Any]) -> list[dict[str, Any]]:
+    """过滤非映射条目，只留可用的 step。"""
+    return [step for step in steps if _step_map(step)]
+
+
 def _steps(job: Any) -> list[dict[str, Any]]:
     """取 job 的 step 列表，过滤非映射条目。"""
     value = _raw_steps(job)
     if not isinstance(value, list):
         return []
-    return [step for step in value if _step_map(step)]
+    return _step_list(value)
 
 
 def _scripts(job: Any) -> list[str]:
@@ -673,11 +678,15 @@ def _var_defs(script: str) -> set[str]:
     return set(_ASSIGN_RE.findall(script))
 
 
+def _var_denied(name: str) -> bool:
+    """不在放行名单、也不带放行前缀的变量名。"""
+    return name not in _VAR_ALLOWED and not name.startswith(_VAR_PREFIXES)
+
+
 def _undef_names(script: str, defined: set[str]) -> set[str]:
     """脚本引用但既未定义、也不在放行名单里的变量。"""
     used = _var_refs(script) - defined - _var_defs(script)
-    return {name for name in used
-            if name not in _VAR_ALLOWED and not name.startswith(_VAR_PREFIXES)}
+    return {name for name in used if _var_denied(name)}
 
 
 def _script_probs(job_name: str, job: Mapping[str, Any],

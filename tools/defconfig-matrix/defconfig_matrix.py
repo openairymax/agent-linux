@@ -401,6 +401,12 @@ def check_lsm_entry(manifest, kernel_dir):
                        "\n".join(problems))
 
 
+def build_entries(manifest):
+    """清单里真会被 CI 编译的架构条目。"""
+    return [entry for entry in manifest.get("architectures", [])
+            if entry.get("build")]
+
+
 def check_ci_mtx(manifest, repo_root):
     """CI 构建矩阵与清单一致（airy-verify 精确匹配 / kernel-verify 为登记子集）。"""
     name = "CI 构建矩阵与清单一致 (OS-BUILD-028)"
@@ -410,7 +416,7 @@ def check_ci_mtx(manifest, repo_root):
         return CheckResult(name, False, f"读取 CI 工作流失败: {exc}")
 
     entries = manifest.get("architectures", [])
-    build = [e for e in entries if e.get("build")]
+    build = build_entries(manifest)
     problems = (mtx_drift(build, include) + mtx_extra(include, build)
                 + mtx_unk(karch, entries))
     return CheckResult(name, not problems, "\n".join(problems))
