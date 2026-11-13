@@ -99,6 +99,23 @@ class Image:
         return self.result == "pass" and all(row.passed for row in self.boots)
 
 
+def _parse_line(
+    line: str,
+    iso: tuple[str, str] | None,
+    meta: dict[str, str],
+    rows: dict[tuple[str, int], dict[str, str]],
+) -> tuple[str, str] | None:
+    """单行归类，返回更新后的 iso 行（未涉及则为原值）。"""
+    head, _, tail = line.partition(" ")
+    if head == "iso":
+        return _iso(tail)
+    if head == "run":
+        _row(tail, rows)
+    else:
+        _meta(line, meta)
+    return iso
+
+
 def parse_text(text: str) -> Image:
     """把清单文本解析为镜像身份与逐固件结论。"""
     iso: tuple[str, str] | None = None
@@ -108,13 +125,7 @@ def parse_text(text: str) -> Image:
         line = line.strip()
         if not line or line.startswith("#"):
             continue
-        head, _, tail = line.partition(" ")
-        if head == "iso":
-            iso = _iso(tail)
-        elif head == "run":
-            _row(tail, rows)
-        else:
-            _meta(line, meta)
+        iso = _parse_line(line, iso, meta, rows)
     return _image(iso, meta, rows)
 
 
@@ -170,6 +181,11 @@ def _need_runs(runs: str) -> int:
     return int(runs)
 
 
+def _absent_fields(meta: dict[str, str]) -> list[str]:
+    """缺失的必填字段，按声明顺序。"""
+    return [key for key in _REQUIRED if key not in meta]
+
+
 def _need_img(
     iso: tuple[str, str] | None,
     meta: dict[str, str],
@@ -178,7 +194,7 @@ def _need_img(
     """缺项与非法取值校验，返回轮次数。"""
     if iso is None:
         raise ValueError("manifest lacks the iso line")
-    absent = [key for key in _REQUIRED if key not in meta]
+    absent = _absent_fields(meta)
     if absent:
         raise ValueError(f"manifest lacks fields: {absent}")
     if not rows:

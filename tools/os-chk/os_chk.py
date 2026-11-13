@@ -491,17 +491,27 @@ def _load_registry(root: Path, args) -> Optional[Tuple[str, List[Gate]]]:
         return None
 
 
+def _unknown_ids(gates: List[Gate], chosen: set) -> List[str]:
+    """请求里未登记的门禁 id，按字典序。"""
+    return sorted(chosen - {g.id for g in gates})
+
+
+def _chosen(gates: List[Gate], chosen: set) -> List[Gate]:
+    """按注册顺序保留被选中的门禁。"""
+    return [g for g in gates if g.id in chosen]
+
+
 def _pick(gates: List[Gate],
           wanted: Optional[List[str]]) -> Optional[List[Gate]]:
     """--gate 只做减法：未登记的 id 是用法错误，不静默跳过后当作已跑。"""
     if not wanted:
         return gates
     chosen = set(wanted)
-    unknown = sorted(chosen - {g.id for g in gates})
+    unknown = _unknown_ids(gates, chosen)
     if unknown:
         print(f"ERROR: 未知门禁 id：{', '.join(unknown)}", file=sys.stderr)
         return None
-    return [g for g in gates if g.id in chosen]
+    return _chosen(gates, chosen)
 
 
 def _list_gates(gates: List[Gate]) -> int:
