@@ -71,17 +71,28 @@ def _need_key(key: str) -> None:
 
 def _need_exps(items: Sequence[str]) -> tuple[str, ...]:
     """校验受影响实验为非空、去重且合法的编号元组。"""
+    exps = _exp_tuple(items)
+    _need_exp_ids(exps)
+    if len(exps) != len(set(exps)):
+        raise ValueError(f"duplicate exp ids: {list(exps)}")
+    return exps
+
+
+def _exp_tuple(items: Sequence[str]) -> tuple[str, ...]:
+    """必须是序列而非字符串，且至少含一项。"""
     if isinstance(items, str) or not isinstance(items, Sequence):
         raise ValueError("exps must be a non-empty sequence")
     exps = tuple(items)
     if not exps:
         raise ValueError("exps must not be empty")
+    return exps
+
+
+def _need_exp_ids(exps: tuple[str, ...]) -> None:
+    """每项都必须是合法的实验编号。"""
     for item in exps:
         if not isinstance(item, str) or not EXP_ID_RE.fullmatch(item):
             raise ValueError(f"invalid exp id: {item!r}")
-    if len(exps) != len(set(exps)):
-        raise ValueError(f"duplicate exp ids: {list(exps)}")
-    return exps
 
 
 @dataclass(frozen=True)
@@ -187,6 +198,11 @@ def verify(manifest: Manifest) -> bool:
     result = manifest.result
     if result.verdict is not Verdict.BLOCKED:
         return False
+    return _blocked_ok(result)
+
+
+def _blocked_ok(result: ExpResult) -> bool:
+    """登记项命中，且证据只覆盖准备阶段。"""
     entry = _match(result.blocked_reason)
     if entry is None or result.exp_id not in entry.exps:
         return False

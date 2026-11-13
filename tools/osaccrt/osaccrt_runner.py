@@ -132,18 +132,23 @@ class Runner:
         sealed = self.store.find(plan.exp_id)
         if sealed is not None:
             return self._reuse(plan, sealed)
-        result = ExpResult(plan.exp_id, plan.thresholds)
-        pack, resumed = self._pack_dir(plan.exp_id)
-        for step, fn in plan.steps:
-            self._step(plan, step, fn, result, pack)
-        if _complete(plan):
-            self._decide(result, pack)
+        result, pack, resumed = self._fresh(plan)
         if review is not None:
             result = self._review(plan, result, review, pack)
         man = Manifest(self.day, self.host, self.image_sha256, result,
                        prev_chain_head=self.store.head())
         chain = self.store.seal(man).read_text(encoding="ascii").strip()
         return Outcome(plan.exp_id, _ruled(result), chain, resumed)
+
+    def _fresh(self, plan: ExpPlan) -> tuple[ExpResult, Path, bool]:
+        """从头跑完计划步骤，返回结果、证据包与是否续跑。"""
+        result = ExpResult(plan.exp_id, plan.thresholds)
+        pack, resumed = self._pack_dir(plan.exp_id)
+        for step, fn in plan.steps:
+            self._step(plan, step, fn, result, pack)
+        if _complete(plan):
+            self._decide(result, pack)
+        return result, pack, resumed
 
     def run_all(self, plans: Sequence[ExpPlan],
                 review: Review | None = None) -> tuple[Outcome, ...]:

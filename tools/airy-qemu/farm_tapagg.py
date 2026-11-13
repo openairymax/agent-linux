@@ -271,11 +271,16 @@ def _suite_entry(item: tuple[str, int]) -> tuple[str, int]:
     if not isinstance(item, tuple) or len(item) != 2:
         raise _cfg(f"invalid suite entry: {item!r}")
     name, count = item
-    if not isinstance(name, str) or not name:
-        raise _cfg(f"invalid suite entry: {item!r}")
-    if isinstance(count, bool) or not isinstance(count, int) or count <= 0:
-        raise _cfg(f"invalid suite entry: {item!r}")
+    _suite_ok(name, count, item)
     return name, count
+
+
+def _suite_ok(name: object, count: object, item: object) -> None:
+    """名字必须非空、数量必须为正整数；任一不成立则整条拒收。"""
+    bad_name = not isinstance(name, str) or not name
+    bad_count = isinstance(count, bool) or not isinstance(count, int) or count <= 0
+    if bad_name or bad_count:
+        raise _cfg(f"invalid suite entry: {item!r}")
 
 
 def _record(
