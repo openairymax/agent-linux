@@ -125,10 +125,7 @@ class Runner:
     def run(self, plan: ExpPlan,
             review: Review | None = None) -> Outcome:
         """执行单个实验；已封口则复用结论，未封口则续跑缺口步骤。"""
-        if not isinstance(plan, ExpPlan):
-            raise TypeError("plan must be ExpPlan")
-        if not _complete(plan) and review is None:
-            raise ValueError("partial plan requires a review")
+        _need_run(plan, review)
         sealed = self.store.find(plan.exp_id)
         if sealed is not None:
             return self._reuse(plan, sealed)
@@ -254,10 +251,7 @@ class Runner:
         if not paths:
             raise ValueError(f"{step.value} step produced no evidence")
         for path in paths:
-            if not isinstance(path, str):
-                raise TypeError("evidence path must be a string")
-            if not isinstance(data[path], bytes):
-                raise TypeError("evidence data must be bytes")
+            _need_item(data, path)
             _slot(step, path)
         return paths
 
@@ -422,11 +416,38 @@ def _to_verdict(value: object) -> Verdict:
 
 def _need_steps(items: tuple[tuple[Step, StepFn], ...]) -> None:
     """执行步骤必须是准备、执行、取证的有序前缀，且至少含准备步。"""
-    if not isinstance(items, tuple) or not 0 < len(items) <= len(_ORDER):
+    if not _steps_ok(items):
         raise ValueError("steps must run PREPARE, RUN, CAPTURE in order")
-    for (step, fn), want in zip(items, _ORDER):
-        if step is not want or not callable(fn):
+    for item, want in zip(items, _ORDER):
+        if not _step_ok(item, want):
             raise ValueError("steps must run PREPARE, RUN, CAPTURE in order")
+
+
+def _steps_ok(items: object) -> bool:
+    """步骤表必须是非空元组且不超过三步。"""
+    return isinstance(items, tuple) and 0 < len(items) <= len(_ORDER)
+
+
+def _step_ok(item: tuple[Step, StepFn], want: Step) -> bool:
+    """单步必须按序排列且步骤函数可调用。"""
+    step, fn = item
+    return step is want and callable(fn)
+
+
+def _need_run(plan: object, review: Review | None) -> None:
+    """执行入参：计划类型正确，且不完整计划必须带复核。"""
+    if not isinstance(plan, ExpPlan):
+        raise TypeError("plan must be ExpPlan")
+    if not _complete(plan) and review is None:
+        raise ValueError("partial plan requires a review")
+
+
+def _need_item(data: Mapping[str, bytes], path: object) -> None:
+    """单条产物：路径为字符串、内容为字节。"""
+    if not isinstance(path, str):
+        raise TypeError("evidence path must be a string")
+    if not isinstance(data[path], bytes):
+        raise TypeError("evidence data must be bytes")
 
 
 def _complete(plan: ExpPlan) -> bool:
@@ -437,14 +458,29 @@ def _complete(plan: ExpPlan) -> bool:
 def _need_ruling(plan: ExpPlan, before: ExpResult,
                  after: ExpResult) -> None:
     """复核只能追加证据，不得改编号、改阈值或丢弃已取证条目。"""
+    _need_ruled(plan, after)
+    _need_kept(before, after)
+
+
+def _need_ruled(plan: ExpPlan, after: object) -> None:
+    """复核结论必须是已裁决且同编号同阈值的结果。"""
     if not isinstance(after, ExpResult):
         raise TypeError("ruling result must be ExpResult")
+    _need_meta(plan, after)
+    if after.verdict is None:
+        raise ValueError("ruling must decide a verdict")
+
+
+def _need_meta(plan: ExpPlan, after: ExpResult) -> None:
+    """复核不得改实验编号或阈值表。"""
     if after.exp_id != plan.exp_id:
         raise ValueError(f"ruling changed exp_id: {after.exp_id}")
     if after.thresholds != plan.thresholds:
         raise ValueError("ruling changed the threshold table")
-    if after.verdict is None:
-        raise ValueError("ruling must decide a verdict")
+
+
+def _need_kept(before: ExpResult, after: ExpResult) -> None:
+    """复核只能追加证据，不得丢弃已取证条目。"""
     kept = tuple(after.evidences[:len(before.evidences)])
     if kept != tuple(before.evidences):
         raise ValueError("ruling must keep collected evidence")
