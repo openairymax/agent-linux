@@ -512,10 +512,22 @@ def pick_layer(
     units: Sequence[str],
 ) -> tuple[Layer, str]:
     """选择最浅的充分回滚层次。"""
-    if requested is Layer.L1 and snap.dnf_tx is None:
-        raise RollbackError(EXIT_TARGET, "快照缺少 dnf 事务，无法执行 L1")
+    _need_l1(requested, snap)
     if requested is not Layer.AUTO:
         return requested, "操作者指定层次"
+    return _auto_layer(snap, kernel, units)
+
+
+def _need_l1(requested: Layer, snap: Snapshot) -> None:
+    """显式 L1 必须确有 dnf 事务可回滚。"""
+    if requested is Layer.L1 and snap.dnf_tx is None:
+        raise RollbackError(EXIT_TARGET, "快照缺少 dnf 事务，无法执行 L1")
+
+
+def _auto_layer(
+    snap: Snapshot, kernel: str, units: Sequence[str]
+) -> tuple[Layer, str]:
+    """按快照与当前系统的差异，选最浅的充分层次。"""
     if snap.kernel != kernel:
         return Layer.L3, "内核不同，需根分区快照"
     if set(snap.daemons) != set(units):

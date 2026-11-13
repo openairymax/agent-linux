@@ -265,21 +265,31 @@ def _kernels(specs: Sequence[str]) -> tuple[tuple[Arch, Path], ...]:
     parsed: list[tuple[Arch, Path]] = []
     seen: set[Arch] = set()
     for spec in specs:
-        name, sep, raw = spec.partition("=")
-        if not sep or not raw.strip():
-            raise FarmConfigError(f"--kernel expects ARCH=PATH, got {spec!r}")
-        try:
-            arch = Arch(name.strip())
-        except ValueError as exc:
-            names = [item.value for item in Arch]
-            raise FarmConfigError(
-                f"unknown arch {name!r}; expected one of {names}"
-            ) from exc
+        arch, path = _kern_pair(spec)
         if arch in seen:
             raise FarmConfigError(f"duplicate --kernel for {arch.value}")
         seen.add(arch)
-        parsed.append((arch, Path(raw.strip())))
+        parsed.append((arch, path))
     return tuple(parsed)
+
+
+def _kern_pair(spec: str) -> tuple[Arch, Path]:
+    """把 ``ARCH=PATH`` 拆成架构与镜像路径。"""
+    name, sep, raw = spec.partition("=")
+    if not sep or not raw.strip():
+        raise FarmConfigError(f"--kernel expects ARCH=PATH, got {spec!r}")
+    return _kern_arch(name), Path(raw.strip())
+
+
+def _kern_arch(name: str) -> Arch:
+    """解析架构名；未知架构列出全部合法取值。"""
+    try:
+        return Arch(name.strip())
+    except ValueError as exc:
+        names = [item.value for item in Arch]
+        raise FarmConfigError(
+            f"unknown arch {name!r}; expected one of {names}"
+        ) from exc
 
 
 def _suites(manifest: FarmManifest, spec: str | None) -> tuple[Suite, ...]:

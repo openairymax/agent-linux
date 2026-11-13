@@ -103,11 +103,21 @@ def kvm_reason(
     """
     if not isinstance(arch, Arch):
         raise ValueError(f"arch must be Arch, got {type(arch).__name__}")
+    return _kvm_dev(dev) or _kvm_host(arch, host)
+
+
+def _kvm_dev(dev: Path) -> str | None:
+    """KVM 字符设备是否存在且可读写。"""
     device = Path(dev)
     if not device.exists():
         return f"{device} does not exist"
     if not os.access(device, os.R_OK | os.W_OK):
         return f"{device} is not readable and writable"
+    return None
+
+
+def _kvm_host(arch: Arch, host: Arch | None) -> str | None:
+    """宿主架构是否是目标架构的可用加速器。"""
     host_value = host_arch() if host is None else host
     if host_value is None:
         return "host architecture is not supported"
