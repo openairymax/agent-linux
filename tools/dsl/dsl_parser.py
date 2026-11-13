@@ -192,19 +192,29 @@ class Parser:
         while not self._check_punct("}"):
             if self._at_end():
                 raise self._error(self._current(), "unexpected end of input inside rule body")
-            if self._check_keyword("when"):
-                conditions.append(self._parse_when())
-            elif self._check_keyword("verdict"):
-                verdict = self._rule_verdict(verdict)
-            elif self._check_keyword("fault"):
-                fault = self._rule_fault(fault)
-            else:
-                raise self._error(
-                    self._current(),
-                    f"unexpected token in rule body: {self._current().text!r}",
-                )
+            verdict, fault = self._rule_item(conditions, verdict, fault)
         self._expect_punct("}")
         return self._make_rule(number, conditions, verdict, fault, span)
+
+    def _rule_item(
+        self,
+        conditions: list[Condition],
+        verdict: Verdict | None,
+        fault: int | None,
+    ) -> tuple[Verdict | None, int | None]:
+        """规则体内一条子句，返回更新后的 (verdict, fault)。"""
+        if self._check_keyword("when"):
+            conditions.append(self._parse_when())
+        elif self._check_keyword("verdict"):
+            verdict = self._rule_verdict(verdict)
+        elif self._check_keyword("fault"):
+            fault = self._rule_fault(fault)
+        else:
+            raise self._error(
+                self._current(),
+                f"unexpected token in rule body: {self._current().text!r}",
+            )
+        return verdict, fault
 
     def _rule_verdict(self, existing: Verdict | None) -> Verdict:
         if existing is not None:
