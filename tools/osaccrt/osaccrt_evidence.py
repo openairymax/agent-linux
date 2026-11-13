@@ -253,14 +253,18 @@ def _check_slot(item: Evidence) -> None:
     base = STEP_LAYOUT[item.step]
     if item.step is Step.ARCHIVE:
         raise ValueError("ARCHIVE is sealed by chain.sha256, not an evidence")
-    if item.step is Step.CAPTURE:
-        if item.path.startswith(base + "/") and item.path != base:
-            return
-    elif item.path == base:
+    if _slot_ok(item, base):
         return
     raise ValueError(
         f"{item.step.value} evidence must live at {base}: {item.path!r}"
     )
+
+
+def _slot_ok(item: Evidence, base: str) -> bool:
+    """采集步允许目录产物，其余步只允许约定文件。"""
+    if item.step is Step.CAPTURE:
+        return item.path.startswith(base + "/") and item.path != base
+    return item.path == base
 
 
 def _th_dict(item: Threshold) -> dict[str, str]:
