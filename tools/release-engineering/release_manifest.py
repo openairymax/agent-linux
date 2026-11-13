@@ -439,6 +439,23 @@ def _produce_errs(where: str, produce: Any) -> list[str]:
     return problems
 
 
+def _notes_unknown(notes: dict) -> list[str]:
+    """notes 段只登记 NOTES_KEYS，多出的键即为拼写或扩张漂移。"""
+    unknown = set(notes) - NOTES_KEYS
+    return [f"notes 未知字段: {', '.join(sorted(unknown))}"] if unknown else []
+
+
+def _note_errs(key: str, value: Any) -> list[str]:
+    """单键校验：须为条目非空的字符串列表，且条数不超过上限。"""
+    if not isinstance(value, list) or any(
+            not isinstance(item, str) or not item.strip() for item in value):
+        return [f"notes.{key} 必须是字符串列表且条目非空"
+                "（确无此类条目时用空列表）"]
+    if len(value) > NOTES_MAX_LINES:
+        return [f"notes.{key} 至多 {NOTES_MAX_LINES} 条（当前 {len(value)} 条）"]
+    return []
+
+
 def _notes_errs(notes: Any) -> list[str]:
     """校验清单 notes 披露段。
 
@@ -457,21 +474,9 @@ def _notes_errs(notes: Any) -> list[str]:
     if not isinstance(notes, dict):
         return ["notes 必须是映射"]
 
-    problems = []
-    unknown = set(notes) - NOTES_KEYS
-    if unknown:
-        problems.append(f"notes 未知字段: {', '.join(sorted(unknown))}")
+    problems = _notes_unknown(notes)
     for key in sorted(NOTES_KEYS):
-        value = notes.get(key)
-        if not isinstance(value, list) or any(
-                not isinstance(item, str) or not item.strip()
-                for item in value):
-            problems.append(
-                f"notes.{key} 必须是字符串列表且条目非空"
-                "（确无此类条目时用空列表）")
-        elif len(value) > NOTES_MAX_LINES:
-            problems.append(
-                f"notes.{key} 至多 {NOTES_MAX_LINES} 条（当前 {len(value)} 条）")
+        problems.extend(_note_errs(key, notes.get(key)))
     return problems
 
 
@@ -1146,6 +1151,63 @@ def stamp_of(raw: str | None) -> str:
     return datetime.now(timezone.utc).strftime(STAMP_FMT)
 
 
+def _ledger_of(args: argparse.Namespace,
+               repo_root: Path) -> tuple[Path, dict[str, Any]]:
+    """账本路径与内容：显式 --iso-oci 优先，缺省按仓库约定推导。"""
+    path = Path(args.iso_oci) if args.iso_oci else repo_root / ISO_LEDGER_REL
+    return path, read_ledger(path)
+
+
+def _rpms_of(args: argparse.Namespace, repo_root: Path) -> tuple[Path, Path]:
+    """内核与发行包路径：显式参数优先，缺省各自按 glob 唯一匹配。"""
+    kernel = (Path(args.kernel_rpm) if args.kernel_rpm
+              else pick_rpm(repo_root, KERNEL_RPM_GLOB, "内核 RPM"))
+    release = (Path(args.release_rpm) if args.release_rpm
+               else pick_rpm(repo_root, RELEASE_RPM_GLOB,
+                             "airymaxos-release RPM"))
+    return kernel, release
+
+
+def _check_identity(args: argparse.Namespace, kernel: Nevra,
+                     release: Nevra) -> None:
+    """版本号须与两枚 NEVRA 相符；给出 --build 时须与发行包 Release 相等。"""
+    if args.version not in (kernel.version, release.version):
+        raise ChannelMismatch(
+            f"版本号与制品不一致：--version {args.version}，"
+            f"内核 {kernel.version}，发行包 {release.version}")
+    if args.build is not None and args.build != release.build:
+        raise ChannelMismatch(
+            f"构建号与发行包 NEVRA 不一致：--build {args.build} "
+            f"!= {release.build}")
+
+
+def _notes_url(args: argparse.Namespace) -> str:
+    """发行说明地址须落在发行域，否则通道清单会把取件方引到第三方。"""
+    url = args.notes_url or CHANNEL_URL.format(ver=args.version)
+    if not url.startswith(CHANNEL_DOMAIN):
+        raise ToolError(f"notes_url 须落在发行域 {CHANNEL_DOMAIN}：{url}")
+    return url
+
+
+def _chan_payload(args: argparse.Namespace, ledger: dict[str, Any],
+                     iso: Path, kernel_path: Path,
+                     kernel: Nevra, release: Nevra) -> dict[str, Any]:
+    """按 04-update-mechanism.md §2.3 组装通道清单字段。"""
+    return {
+        "schema_version": CHANNEL_SCHEMA,
+        "channel": CHANNEL_NAME,
+        "version": args.version,
+        "build": release.build,
+        "released_at": stamp_of(args.released_at),
+        "iso": iso_asset(iso, ledger),
+        "kernel": {
+            "nevra": kernel.text(),
+            "sha256": digest_of(kernel_path, "内核 RPM"),
+        },
+        "notes_url": _notes_url(args),
+    }
+
+
 def build_channel(args: argparse.Namespace, repo_root: Path) -> str:
     """组装 channel.json，并在产出前完成两条身份链交叉断言。
 
@@ -1160,45 +1222,13 @@ def build_channel(args: argparse.Namespace, repo_root: Path) -> str:
         ToolError: 输入文件缺失或参数非法。
         ChannelMismatch: 版本、构建号、ISO 摘要与账本/NEVRA 任一不等。
     """
-    ledger_path = (Path(args.iso_oci) if args.iso_oci
-                   else repo_root / ISO_LEDGER_REL)
-    ledger = read_ledger(ledger_path)
+    ledger_path, ledger = _ledger_of(args, repo_root)
     iso = Path(args.iso) if args.iso else ledger_path.parent / ledger["name"]
-
-    kernel_path = (Path(args.kernel_rpm) if args.kernel_rpm
-                   else pick_rpm(repo_root, KERNEL_RPM_GLOB, "内核 RPM"))
-    release_path = (Path(args.release_rpm) if args.release_rpm
-                    else pick_rpm(repo_root, RELEASE_RPM_GLOB,
-                                  "airymaxos-release RPM"))
+    kernel_path, release_path = _rpms_of(args, repo_root)
     kernel = parse_nevra(kernel_path)
     release = parse_nevra(release_path)
-
-    if args.version not in (kernel.version, release.version):
-        raise ChannelMismatch(
-            f"版本号与制品不一致：--version {args.version}，"
-            f"内核 {kernel.version}，发行包 {release.version}")
-    if args.build is not None and args.build != release.build:
-        raise ChannelMismatch(
-            f"构建号与发行包 NEVRA 不一致：--build {args.build} "
-            f"!= {release.build}")
-
-    notes_url = args.notes_url or CHANNEL_URL.format(ver=args.version)
-    if not notes_url.startswith(CHANNEL_DOMAIN):
-        raise ToolError(f"notes_url 须落在发行域 {CHANNEL_DOMAIN}：{notes_url}")
-
-    payload = {
-        "schema_version": CHANNEL_SCHEMA,
-        "channel": CHANNEL_NAME,
-        "version": args.version,
-        "build": release.build,
-        "released_at": stamp_of(args.released_at),
-        "iso": iso_asset(iso, ledger),
-        "kernel": {
-            "nevra": kernel.text(),
-            "sha256": digest_of(kernel_path, "内核 RPM"),
-        },
-        "notes_url": notes_url,
-    }
+    _check_identity(args, kernel, release)
+    payload = _chan_payload(args, ledger, iso, kernel_path, kernel, release)
     return json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
 
 
