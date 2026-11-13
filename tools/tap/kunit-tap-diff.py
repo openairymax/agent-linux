@@ -146,7 +146,8 @@ def _write_baseline(path, text):
     return None
 
 
-def main():
+def _parser():
+    """构造命令行解析器；三个选项的含义与默认值集中在同一处。"""
     parser = argparse.ArgumentParser(
         description="KUnit KTAP 用例数单调性门禁（OS-TEST-012）"
     )
@@ -161,47 +162,54 @@ def main():
         action="store_true",
         help="用当前 KTAP 规范化后覆盖基线快照并退出（显式下调棘轮）",
     )
-    args = parser.parse_args()
+    return parser
 
-    text, err = _read_current(args.current)
+
+def _load_cur(path):
+    """读取并解析当前 KTAP，返回 ((text, current), 退出码)。
+
+    成功时退出码为 None；任一步失败已把原因写到 stderr。
+    """
+    text, err = _read_current(path)
     if err:
         print(f"ERROR: {err}", file=sys.stderr)
-        return 2
+        return None, 2
     if not text.strip():
         print(
             "ERROR: 当前 KTAP 为空（kunit 未运行或构建失败）",
             file=sys.stderr,
         )
-        return 2
-
+        return None, 2
     current = parse_ktap(text)
     if current is None:
         print("ERROR: 当前输入不是可解析的 KTAP", file=sys.stderr)
+        return None, 2
+    return (text, current), None
+
+
+def _do_update(path, text, current):
+    """把当前 KTAP 规范化后写入基线；失败返回 2，成功返回 0。"""
+    err = _write_baseline(path, text)
+    if err:
+        print(f"ERROR: {err}", file=sys.stderr)
         return 2
+    print(
+        f"OK   已更新基线 {path}："
+        f"套件 {len(current['suites'])}，叶子用例 {current['leaf_total']}"
+    )
+    return 0
 
-    if args.update:
-        err = _write_baseline(args.baseline_file, text)
-        if err:
-            print(f"ERROR: {err}", file=sys.stderr)
-            return 2
-        print(
-            f"OK   已更新基线 {args.baseline_file}："
-            f"套件 {len(current['suites'])}，叶子用例 {current['leaf_total']}"
-        )
-        return 0
 
-    base_text, err = _read_file(args.baseline_file, "基线 ")
+def _do_check(path, current):
+    """读基线并与当前比对；返回门禁退出码（0 通过 / 1 失败 / 2 输入错）。"""
+    base_text, err = _read_file(path, "基线 ")
     if err:
         print(f"ERROR: {err}（可用 --update 生成基线）", file=sys.stderr)
         return 2
     baseline = parse_ktap(base_text)
     if baseline is None:
-        print(
-            f"ERROR: 基线 {args.baseline_file} 不是可解析的 KTAP",
-            file=sys.stderr,
-        )
+        print(f"ERROR: 基线 {path} 不是可解析的 KTAP", file=sys.stderr)
         return 2
-
     print(
         f"当前：套件 {len(current['suites'])}，叶子用例 {current['leaf_total']}；"
         f"基线：套件 {len(baseline['suites'])}，叶子用例 {baseline['leaf_total']}"
@@ -214,6 +222,17 @@ def main():
         return 1
     print("OK: KTAP 单调性门禁通过（OS-TEST-012）")
     return 0
+
+
+def main():
+    args = _parser().parse_args()
+    loaded, code = _load_cur(args.current)
+    if code is not None:
+        return code
+    text, current = loaded
+    if args.update:
+        return _do_update(args.baseline_file, text, current)
+    return _do_check(args.baseline_file, current)
 
 
 if __name__ == "__main__":
