@@ -1431,6 +1431,26 @@ def _end(
     report.stages.append(done)
 
 
+def _target_facts(device: DeviceFacts) -> str:
+    """目标盘的一行事实：型号、总线、容量、可移动与备注，空项略过。"""
+    parts = (
+        device.model,
+        device.tran,
+        human_bytes(device.size),
+        "可移动" if device.removable else "",
+        device.note,
+    )
+    return ", ".join(part for part in parts if part)
+
+
+def _parts_line(device: DeviceFacts) -> str:
+    """分区清单的前六项；超过六项时附带总数，避免一行过长。"""
+    listed = ", ".join(device.parts[:6])
+    if len(device.parts) > 6:
+        listed = f"{listed} 等 {len(device.parts)} 个"
+    return listed
+
+
 def _banner(
     image: ImageFacts, device: DeviceFacts, command: str, renderer: Renderer
 ) -> None:
@@ -1439,27 +1459,13 @@ def _banner(
     renderer.field(
         "映像", str(image.path), f"{human_bytes(image.size)}   sha256 {digest}"
     )
-    facts = ", ".join(
-        part
-        for part in (
-            device.model,
-            device.tran,
-            human_bytes(device.size),
-            "可移动" if device.removable else "",
-            device.note,
-        )
-        if part
-    )
-    renderer.field("目标", str(device.path), facts)
+    renderer.field("目标", str(device.path), _target_facts(device))
     # 分区清单是「这块盘上现在有什么」的唯一可见事实：写入连同分区表一起
     # 覆盖，事后无法回溯，事前又只能从盘符反推。
     if device.parts:
-        listed = ", ".join(device.parts[:6])
-        if len(device.parts) > 6:
-            listed = f"{listed} 等 {len(device.parts)} 个"
         renderer.field(
             "分区",
-            f"已有 {len(device.parts)} 个 {listed}",
+            f"已有 {len(device.parts)} 个 {_parts_line(device)}",
             f"合计 {human_bytes(device.parts_bytes)}，写入后不可恢复",
         )
     renderer.field("模式", MODES.get(command, command))
@@ -1519,6 +1525,11 @@ def _advice(failed: list[Check]) -> str:
     return "；".join(f"{c.name}：{c.fix}" if c.fix else c.name for c in failed)
 
 
+def _failed(checks: list[Check]) -> list[Check]:
+    """真正失败的条目：跳过项不算失败，但仍留在逐条渲染里。"""
+    return [c for c in checks if not c.ok and not c.skipped]
+
+
 def _verdict(
     report: Report,
     renderer: Renderer,
@@ -1531,7 +1542,7 @@ def _verdict(
     renderer.checks_header()
     for check in checks:
         renderer.check(check)
-    failed = [c for c in checks if not c.ok and not c.skipped]
+    failed = _failed(checks)
     if failed:
         raise FlashError(EXIT_CHECK, block, hint or _advice(failed))
 
@@ -1839,6 +1850,19 @@ def _run_fetch(
         _stage(renderer, report, index, len(steps), name, body)
 
 
+def _write_report(args: argparse.Namespace, report: Report) -> str:
+    """落报告并返回路径；写入失败只记警告，不改变本次结论。"""
+    if not args.report:
+        return ""
+    path = str(Path(args.report))
+    try:
+        write_report(report, Path(args.report))
+    except OSError as exc:
+        report.warnings.append(f"报告写入失败: {exc.strerror or exc}")
+        return ""
+    return path
+
+
 def _close(
     args: argparse.Namespace,
     report: Report,
@@ -1849,14 +1873,7 @@ def _close(
     """成功与失败的唯一收尾：落报告、摘要、下一步与标记。"""
     report.result = "pass" if code == EXIT_OK else "fail"
     report.finished = now_iso()
-    path = ""
-    if args.report:
-        path = str(Path(args.report))
-        try:
-            write_report(report, Path(args.report))
-        except OSError as exc:
-            path = ""
-            report.warnings.append(f"报告写入失败: {exc.strerror or exc}")
+    path = _write_report(args, report)
     renderer.summary(report, time.monotonic() - clock, path)
     if code == EXIT_OK and args.command in NEXT_STEPS:
         renderer.next_steps(args.command)
@@ -2046,11 +2063,7 @@ def _check(args: argparse.Namespace) -> tuple[Report, int]:
         host=socket.gethostname(),
     )
     report.checks = _env_checks()
-    renderer = Renderer(
-        stream=io.StringIO() if args.json else None,
-        tty=False if (args.no_progress or args.json) else None,
-        pulse=not (args.no_progress or args.json),
-    )
+    renderer = _renderer_of(args)
     clock = time.monotonic()
     renderer.title(f"AirymaxOS 烧录工具 {TOOL_VERSION}  (check)")
     renderer.checks_header()
@@ -2059,19 +2072,24 @@ def _check(args: argparse.Namespace) -> tuple[Report, int]:
     return _close(args, report, renderer, EXIT_OK, clock)
 
 
+def _route(parser: argparse.ArgumentParser,
+           args: argparse.Namespace) -> tuple[Report, int]:
+    """按子命令分派：check 走自检，其余交给烧录执行器。"""
+    if args.command == "check":
+        return _check(args)
+    # fetch 的两个取件入口（--oci / --ref）由 _ledger_arg 统一判定，
+    # 这里再拦一次只会让 --ref 永远走不到实现：清单本身就是账本，
+    # 发布制品过期后仍能按 tag 取回，这条路径不能只在源码里存在。
+    if args.command != "fetch" and not (args.image and args.device):
+        parser.error("需要 --image 与 --device（check/fetch 子命令除外）")
+    return execute(args)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     args.argv = list(argv) if argv is not None else None
-    if args.command == "check":
-        report, code = _check(args)
-    else:
-        # fetch 的两个取件入口（--oci / --ref）由 _ledger_arg 统一判定，
-        # 这里再拦一次只会让 --ref 永远走不到实现：清单本身就是账本，
-        # 发布制品过期后仍能按 tag 取回，这条路径不能只在源码里存在。
-        if args.command != "fetch" and not (args.image and args.device):
-            parser.error("需要 --image 与 --device（check/fetch 子命令除外）")
-        report, code = execute(args)
+    report, code = _route(parser, args)
     if args.json:
         sys.stdout.write(
             json.dumps(report.as_dict(TOOL_VERSION), ensure_ascii=False, indent=2) + "\n"
