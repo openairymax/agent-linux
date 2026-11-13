@@ -208,6 +208,16 @@ def _root_lock(root: Path) -> Iterator[None]:
         os.close(fd)
 
 
+def _day_packs(day: Path) -> list[_Sealed]:
+    """单日目录下所有已封口包；在途目录跳过。"""
+    packs: list[_Sealed] = []
+    for pack in sorted(item for item in day.iterdir() if item.is_dir()):
+        _check_id(pack.name)
+        if (pack / CHAIN).is_file():
+            packs.append(_sealed(pack))
+    return packs
+
+
 def _collect(root: Path) -> list[_Sealed]:
     """扫描根目录下所有已封口证据包，忽略未封口的在途目录。"""
     if not root.is_dir():
@@ -215,10 +225,7 @@ def _collect(root: Path) -> list[_Sealed]:
     packs: list[_Sealed] = []
     for day in sorted(item for item in root.iterdir() if item.is_dir()):
         check_date(day.name)
-        for pack in sorted(item for item in day.iterdir() if item.is_dir()):
-            _check_id(pack.name)
-            if (pack / CHAIN).is_file():
-                packs.append(_sealed(pack))
+        packs.extend(_day_packs(day))
     return packs
 
 
