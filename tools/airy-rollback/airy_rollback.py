@@ -230,12 +230,22 @@ def _float(raw: Mapping[str, Any], key: str) -> float:
     return float(value)
 
 
+def _list_ok(value: Any) -> bool:
+    """必须是非空 list。"""
+    return isinstance(value, list) and bool(value)
+
+
+def _str_item(item: Any) -> bool:
+    """元素必须是非空字符串。"""
+    return isinstance(item, str) and bool(item)
+
+
 def _strs(
     value: Any, key: str, code: int = EXIT_USAGE
 ) -> tuple[str, ...]:
-    if not isinstance(value, list) or not value:
+    if not _list_ok(value):
         raise _fail(key, code)
-    if not all(isinstance(item, str) and item for item in value):
+    if not all(_str_item(item) for item in value):
         raise _fail(key, code)
     return tuple(value)
 
@@ -246,15 +256,25 @@ def _units(
     return _strs(raw.get("daemons"), "daemons", code)
 
 
-def _cmds(raw: Mapping[str, Any]) -> dict[str, tuple[str, ...]]:
+def _cmd_block(raw: Mapping[str, Any]) -> Mapping[str, Any]:
+    """commands 必须是非空映射。"""
     block = raw.get("commands")
     if not isinstance(block, Mapping) or not block:
         raise _fail("commands", EXIT_USAGE)
+    return block
+
+
+def _cmd_row(name: Any, argv: Any) -> tuple[str, ...]:
+    """单个命令模板：名字必须是非空字符串，参数走 _strs 校验。"""
+    if not isinstance(name, str) or not name:
+        raise _fail("commands", EXIT_USAGE)
+    return _strs(argv, name)
+
+
+def _cmds(raw: Mapping[str, Any]) -> dict[str, tuple[str, ...]]:
     out: dict[str, tuple[str, ...]] = {}
-    for name, argv in block.items():
-        if not isinstance(name, str) or not name:
-            raise _fail("commands", EXIT_USAGE)
-        out[name] = _strs(argv, name)
+    for name, argv in _cmd_block(raw).items():
+        out[name] = _cmd_row(name, argv)
     return out
 
 
@@ -292,7 +312,13 @@ def _tokens(argv: Sequence[str]) -> set[str]:
     return {match for item in argv for match in TIME_RE.findall(item)}
 
 
-def _cmd_check(cmds: Mapping[str, tuple[str, ...]]) -> Check:
+def _placeholders(cmds: Mapping[str, tuple[str, ...]]) -> set[str]:
+    """全部模板里出现过的占位符并集。"""
+    return set().union(*(_tokens(argv) for argv in cmds.values()))
+
+
+def _cmd_lack(cmds: Mapping[str, tuple[str, ...]]) -> Check | None:
+    """缺失模板或缺失占位符时的首个失败项；齐全返回 None。"""
     missing = sorted(REQUIRED_CMDS - set(cmds))
     if missing:
         return Check("commands", False, "缺少模板: " + ", ".join(missing))
@@ -301,16 +327,22 @@ def _cmd_check(cmds: Mapping[str, tuple[str, ...]]) -> Check:
         if lack:
             detail = f"{name} 缺少占位符: " + ", ".join(lack)
             return Check("commands", False, detail)
-    unknown = set().union(*(_tokens(argv) for argv in cmds.values()))
-    extra = sorted(unknown - PLACEHOLDERS)
+    return None
+
+
+def _cmd_check(cmds: Mapping[str, tuple[str, ...]]) -> Check:
+    bad = _cmd_lack(cmds)
+    if bad is not None:
+        return bad
+    extra = sorted(_placeholders(cmds) - PLACEHOLDERS)
     if extra:
         return Check("commands", False, "未知占位符: " + ", ".join(extra))
     return Check("commands", True, f"{len(cmds)} 个模板")
 
 
-def check_manifest(manifest: Manifest) -> tuple[Check, ...]:
-    """校验清单语义：路径、daemon 名单与命令模板。"""
-    paths = (
+def _path_list(manifest: Manifest) -> tuple[Path, ...]:
+    """清单里必须为绝对路径的六项。"""
+    return (
         manifest.release_file,
         manifest.snapshot_root,
         manifest.audit_log,
@@ -318,8 +350,24 @@ def check_manifest(manifest: Manifest) -> tuple[Check, ...]:
         manifest.lock_file,
         manifest.memory_path,
     )
+
+
+def _paths_ok(paths: Sequence[Path]) -> bool:
+    """全部为绝对路径。"""
+    return all(item.is_absolute() for item in paths)
+
+
+def _units_ok(units: Sequence[str]) -> bool:
+    """恰好 DAEMON_COUNT 个、互不重复且都以 .service 结尾。"""
+    if len(units) != DAEMON_COUNT or len(set(units)) != DAEMON_COUNT:
+        return False
+    return all(item.endswith(".service") for item in units)
+
+
+def check_manifest(manifest: Manifest) -> tuple[Check, ...]:
+    """校验清单语义：路径、daemon 名单与命令模板。"""
+    absolute = _paths_ok(_path_list(manifest))
     units = manifest.daemons
-    absolute = all(item.is_absolute() for item in paths)
     return (
         Check(
             "version",
@@ -333,9 +381,7 @@ def check_manifest(manifest: Manifest) -> tuple[Check, ...]:
         ),
         Check(
             "daemons",
-            len(units) == DAEMON_COUNT
-            and len(set(units)) == DAEMON_COUNT
-            and all(item.endswith(".service") for item in units),
+            _units_ok(units),
             f"{len(units)} 个 unit",
         ),
         Check(
