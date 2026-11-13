@@ -77,7 +77,7 @@ def parse_tap(text):
 
 def _counts(results):
     """(ok 数, not ok 数)：status 只取 ok / not ok 两种取值。"""
-    ok = sum(1 for _, status, _ in results if status == "ok")
+    ok = sum(status == "ok" for _, status, _ in results)
     return ok, len(results) - ok
 
 

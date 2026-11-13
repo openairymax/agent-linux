@@ -1317,7 +1317,7 @@ def print_report(results, ssot, unistd, tbl, sw_tbl, baseline, sources,
                  check_mode, ssot_note=None):
     """Print the ABI check report."""
     total = len(results)
-    passed = sum(1 for r in results if r.passed)
+    passed = sum(r.passed for r in results)
     failed = total - passed
 
     if check_mode:
@@ -1500,10 +1500,15 @@ def resolve(args, repo_root):
     }
 
 
+def _ssot_missing(args, available):
+    """显式指定了 SSoT 路径却读不到。"""
+    return bool(args.ssot_path) and not available
+
+
 def gate_ssot(args, ssot_path):
     """SSoT 的缺失语义：显式路径是硬契约，缺省路径只在硬要求时报错。"""
     available = ssot_path.is_file()
-    if args.ssot_path and not available:
+    if _ssot_missing(args, available):
         _die(f"file not found: {ssot_path}")
     if not available:
         _need_ssot(args, ssot_path)

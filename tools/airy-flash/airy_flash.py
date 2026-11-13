@@ -591,6 +591,12 @@ def ledger_of(ref: str, text: str) -> OciLedger:
     )
 
 
+def _proc_tail(proc: subprocess.CompletedProcess[str]) -> str:
+    """失败进程的末行输出；stderr 为空时回退 stdout。"""
+    lines = (proc.stderr or proc.stdout).strip().splitlines()
+    return lines[-1] if lines else f"退出 {proc.returncode}"
+
+
 def ledger_from_ref(ref: str, oras: str) -> OciLedger:
     """取远端清单再解析；网络或凭据问题归 IO，清单不自洽归校验。"""
     proc = subprocess.run(
@@ -599,8 +605,7 @@ def ledger_from_ref(ref: str, oras: str) -> OciLedger:
         text=True,
     )
     if proc.returncode != 0:
-        tail = (proc.stderr or proc.stdout).strip().splitlines()
-        detail = tail[-1] if tail else f"退出 {proc.returncode}"
+        detail = _proc_tail(proc)
         raise FlashError(
             EXIT_IO,
             f"oras manifest fetch 失败: {detail}",
@@ -695,13 +700,19 @@ def _part_bytes(child: Path) -> int:
     return int(sectors) * BLOCK_SECTOR if sectors.isdigit() else 0
 
 
+def _critical_dev(mount: Mount) -> bool:
+    """关键挂载点且源就是块设备，才需要反查父磁盘。"""
+    return (mount.point in CRITICAL_MOUNTS
+            and mount.source.startswith("/dev/"))
+
+
 def system_disks(
     mounts: Iterable[Mount], sys_block: Path = Path("/sys/class/block")
 ) -> tuple[str, ...]:
     """承载关键挂载点的父磁盘名集合。"""
     names: set[str] = set()
     for mount in mounts:
-        if mount.point not in CRITICAL_MOUNTS or not mount.source.startswith("/dev/"):
+        if not _critical_dev(mount):
             continue
         # /dev/mapper/vg-root 这类符号链接先落到 /dev/dm-N，再反查 sysfs。
         name = os.path.basename(os.path.realpath(mount.source))
@@ -1793,8 +1804,7 @@ def _pull_run(ledger: OciLedger, out: Path, oras: str) -> None:
     )
     if proc.returncode == 0:
         return
-    tail = (proc.stderr or proc.stdout).strip().splitlines()
-    detail = tail[-1] if tail else f"退出 {proc.returncode}"
+    detail = _proc_tail(proc)
     raise FlashError(
         EXIT_IO,
         f"oras pull 失败: {detail}",
@@ -1958,10 +1968,15 @@ def _pull(oras: str, ref: str, tmp: str):
         return None
 
 
+def _pull_ok(proc: subprocess.CompletedProcess[str] | None) -> bool:
+    """拉取进程存在且正常退出。"""
+    return proc is not None and proc.returncode == 0
+
+
 def _pull_ledger(ref: str, oras: str, tmp: str) -> Path | None:
     """拉取 <tag>-ledger 制品；成功且含账本文件时返回其路径。"""
     proc = _pull(oras, ref, tmp)
-    if proc is None or proc.returncode != 0:
+    if not _pull_ok(proc):
         return None
     path = Path(tmp) / "iso-oci.txt"
     return path if path.is_file() else None
@@ -2263,13 +2278,18 @@ def _check(args: argparse.Namespace) -> tuple[Report, int]:
     return _close(args, report, renderer, EXIT_OK, clock)
 
 
+def _has_target(args: argparse.Namespace) -> bool:
+    """镜像与目标设备是否都已给出。"""
+    return bool(args.image and args.device)
+
+
 def _need_target(parser: argparse.ArgumentParser,
                  args: argparse.Namespace) -> None:
     """烧录必须同时给出镜像与目标设备，fetch 另行取件。"""
     # fetch 的两个取件入口（--oci / --ref）由 _ledger_arg 统一判定，
     # 这里再拦一次只会让 --ref 永远走不到实现：清单本身就是账本，
     # 发布制品过期后仍能按 tag 取回，这条路径不能只在源码里存在。
-    if args.command != "fetch" and not (args.image and args.device):
+    if args.command != "fetch" and not _has_target(args):
         parser.error("需要 --image 与 --device（check/fetch 子命令除外）")
 
 

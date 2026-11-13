@@ -114,7 +114,7 @@ def summary_lines(report: GateReport) -> tuple[str, ...]:
 
 def _ok_count(report: GateReport) -> int:
     """放行作业数。"""
-    return sum(1 for result in report.results if result.ok)
+    return sum(result.ok for result in report.results)
 
 
 def _gate_line(report: GateReport) -> str:
@@ -126,7 +126,7 @@ def _gate_line(report: GateReport) -> str:
 
 def _counts(report: GateReport) -> dict[str, int]:
     """汇总作业总数、放行数与阻断数。"""
-    ok = sum(1 for result in report.results if result.ok)
+    ok = _ok_count(report)
     return {"total": report.count, "ok": ok, "blocking": report.count - ok}
 
 

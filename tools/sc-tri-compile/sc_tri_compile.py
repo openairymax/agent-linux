@@ -1141,7 +1141,7 @@ def check_sc_abi(sources, load_failures):
 def print_report(results, header_files, cc, sources, check_mode):
     """Print the tri-compile check report."""
     total = len(results)
-    passed = sum(1 for r in results if r.passed)
+    passed = sum(r.passed for r in results)
     failed = total - passed
 
     if check_mode:
@@ -1334,7 +1334,7 @@ def main(argv=None):
     ]
     print_report(results, header_files, cc, sources, args.check)
 
-    failed = sum(1 for r in results if not r.passed)
+    failed = sum(not r.passed for r in results)
     sys.exit(1 if failed > 0 else 0)
 
 

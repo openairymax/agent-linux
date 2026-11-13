@@ -834,7 +834,7 @@ def print_report(
         check_mode: True 时输出 CI 精简格式。
     """
     total = len(results)
-    passed = sum(1 for result in results if result.passed)
+    passed = sum(result.passed for result in results)
     failed = total - passed
 
     if check_mode:
@@ -973,7 +973,7 @@ def cmd_check(args: argparse.Namespace) -> int:
     manifest = load_yaml(manifest_path, "物料清单")
     results = build_checks(manifest, repo_root)
     print_report(results, manifest, args.check)
-    failed = sum(1 for result in results if not result.passed)
+    failed = sum(not result.passed for result in results)
     return EXIT_FAIL if failed else EXIT_PASS
 
 
