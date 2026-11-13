@@ -209,6 +209,18 @@ def _do_update(path, text, current):
     return 0
 
 
+def _report_diff(current, baseline) -> bool:
+    """打印规模行与逐条差异，返回比对是否通过。"""
+    print(
+        f"当前：套件 {len(current['suites'])}，叶子用例 {current['leaf_total']}；"
+        f"基线：套件 {len(baseline['suites'])}，叶子用例 {baseline['leaf_total']}"
+    )
+    passed, messages = compare(current, baseline)
+    for message in messages:
+        print(message)
+    return passed
+
+
 def _do_check(path, current):
     """读基线并与当前比对；返回门禁退出码（0 通过 / 1 失败 / 2 输入错）。"""
     base_text, err = _read_file(path, "基线 ")
@@ -219,14 +231,7 @@ def _do_check(path, current):
     if baseline is None:
         print(f"ERROR: 基线 {path} 不是可解析的 KTAP", file=sys.stderr)
         return 2
-    print(
-        f"当前：套件 {len(current['suites'])}，叶子用例 {current['leaf_total']}；"
-        f"基线：套件 {len(baseline['suites'])}，叶子用例 {baseline['leaf_total']}"
-    )
-    passed, messages = compare(current, baseline)
-    for message in messages:
-        print(message)
-    if not passed:
+    if not _report_diff(current, baseline):
         print("FAIL: KTAP 单调性门禁未通过（OS-TEST-012）")
         return 1
     print("OK: KTAP 单调性门禁通过（OS-TEST-012）")

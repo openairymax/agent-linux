@@ -591,12 +591,23 @@ def _auto_layer(
     return Layer.L2, "仅 unit 状态变化，重载并重启"
 
 
+def _seq_of(
+    token: str, key: str, value: str | Sequence[str]
+) -> list[str] | None:
+    """单键判据：token 恰为 {key} 且值非字符串时给出展开。"""
+    if token != "{" + key + "}" or isinstance(value, str):
+        return None
+    return [str(item) for item in value]
+
+
 def _seq_val(
     token: str, values: Mapping[str, str | Sequence[str]]
 ) -> list[str] | None:
+    """{key} 命中序列值时返回其字符串展开，否则 None。"""
     for key, value in values.items():
-        if token == "{" + key + "}" and not isinstance(value, str):
-            return [str(item) for item in value]
+        seq = _seq_of(token, key, value)
+        if seq is not None:
+            return seq
     return None
 
 
@@ -880,6 +891,19 @@ def _resolve(
     return plan, snap
 
 
+def _run_or_l3(
+    manifest: Manifest, args: argparse.Namespace, plan: Plan,
+    checks: tuple[Check, ...], runner: Runner
+) -> Outcome:
+    """执行步骤；失败即按错误码收口，L3 成功后转交收尾。"""
+    code, detail, _ = run_steps(plan.steps, runner, manifest.timeout_s)
+    if code != EXIT_OK:
+        return Outcome(code, detail, plan, checks)
+    if plan.layer is Layer.L3:
+        return _finish_l3(manifest, args, plan, checks, runner)
+    return _verified(manifest, plan, checks, runner)
+
+
 def _apply(
     manifest: Manifest, args: argparse.Namespace, runner: Runner
 ) -> Outcome:
@@ -890,12 +914,7 @@ def _apply(
         return _dry_outcome(bad, plan, checks)
     if bad:
         return Outcome(EXIT_PREFLIGHT, f"前置检查未通过: {bad}", plan, checks)
-    code, detail, _ = run_steps(plan.steps, runner, manifest.timeout_s)
-    if code != EXIT_OK:
-        return Outcome(code, detail, plan, checks)
-    if plan.layer is Layer.L3:
-        return _finish_l3(manifest, args, plan, checks, runner)
-    return _verified(manifest, plan, checks, runner)
+    return _run_or_l3(manifest, args, plan, checks, runner)
 
 
 def _first_bad(checks: tuple[Check, ...]) -> str:
@@ -1040,6 +1059,23 @@ def do_verify(manifest: Manifest, actor: str, runner: Runner) -> int:
     return outcome.code
 
 
+def _prune_dry(check: Check) -> Outcome:
+    """dry-run：只报将删除的快照数量，不执行命令。"""
+    return Outcome(EXIT_OK, "dry-run：未删除任何快照", None, (check,))
+
+
+def _prune_run(
+    manifest: Manifest,
+    runner: Runner,
+    steps: tuple[Step, ...],
+    check: Check,
+) -> tuple[Outcome, tuple[Step, ...]]:
+    """真正删除过期快照，明细缺省时给出清理说明。"""
+    code, detail, _ = run_steps(steps, runner, manifest.timeout_s)
+    text = detail or "过期快照已清理"
+    return Outcome(code, text, None, (check,)), steps
+
+
 def _prune(
     manifest: Manifest, args: argparse.Namespace, runner: Runner
 ) -> tuple[Outcome, tuple[Step, ...]]:
@@ -1050,13 +1086,10 @@ def _prune(
     _show_steps(steps)
     check = Check("expired", True, f"{len(steps)} 个快照")
     if args.dry_run:
-        detail = "dry-run：未删除任何快照"
-        return Outcome(EXIT_OK, detail, None, (check,)), ()
+        return _prune_dry(check), ()
     if not steps:
         return Outcome(EXIT_OK, "无过期快照", None, (check,)), ()
-    code, detail, _ = run_steps(steps, runner, manifest.timeout_s)
-    text = detail or "过期快照已清理"
-    return Outcome(code, text, None, (check,)), steps
+    return _prune_run(manifest, runner, steps, check)
 
 
 def do_prune(
@@ -1200,6 +1233,19 @@ def _dispatch(args: argparse.Namespace) -> int:
     return _route(args, manifest, checks)
 
 
+def _do_named(
+    cmd: str, args: argparse.Namespace, manifest: Manifest, runner: Runner
+) -> int | None:
+    """plan / verify / prune 三个子命令的分派；未知时返回 None。"""
+    if cmd == "plan":
+        return do_plan(manifest, args, runner)
+    if cmd == "verify":
+        return do_verify(manifest, _actor(args.actor), runner)
+    if cmd == "prune":
+        return do_prune(manifest, args, runner)
+    return None
+
+
 def _route(
     args: argparse.Namespace, manifest: Manifest, checks: tuple[Check, ...]
 ) -> int:
@@ -1208,13 +1254,8 @@ def _route(
     if args.cmd == "check":
         show_checks(checks)
         return EXIT_OK
-    if args.cmd == "plan":
-        return do_plan(manifest, args, runner)
-    if args.cmd == "verify":
-        return do_verify(manifest, _actor(args.actor), runner)
-    if args.cmd == "prune":
-        return do_prune(manifest, args, runner)
-    return do_apply(manifest, args, runner)
+    code = _do_named(args.cmd, args, manifest, runner)
+    return do_apply(manifest, args, runner) if code is None else code
 
 
 if __name__ == "__main__":
