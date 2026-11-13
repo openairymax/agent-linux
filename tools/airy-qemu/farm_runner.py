@@ -160,6 +160,20 @@ def _check(
     preflight: Preflight,
 ) -> None:
     """校验执行输入与预检证据的一致性。"""
+    _check_types(target, job, env, preflight)
+    if preflight.job != job:
+        raise _cfg("preflight job does not match job")
+    if preflight.suites != job.suite_names:
+        raise _cfg(
+            f"preflight suites {preflight.suites} do not match "
+            f"job suites {job.suite_names}"
+        )
+
+
+def _check_types(
+    target: object, job: object, env: object, preflight: object
+) -> None:
+    """四类输入必须各就各位，否则报出期望与实际的类型名。"""
     for value, kind in (
         (target, Target),
         (job, FarmJob),
@@ -170,13 +184,6 @@ def _check(
             raise _cfg(
                 f"expected {kind.__name__}, got {type(value).__name__}"
             )
-    if preflight.job != job:
-        raise _cfg("preflight job does not match job")
-    if preflight.suites != job.suite_names:
-        raise _cfg(
-            f"preflight suites {preflight.suites} do not match "
-            f"job suites {job.suite_names}"
-        )
 
 
 def _paths(job: FarmJob, out_dir: object) -> tuple[Path, Path]:
@@ -250,6 +257,11 @@ def _need_argv(argv: object) -> None:
     """argv 必须是非空字符串元组。"""
     if not isinstance(argv, tuple) or not argv:
         raise ValueError("argv must be a non-empty tuple")
+    _argv_strs(argv)
+
+
+def _argv_strs(argv: tuple[object, ...]) -> None:
+    """每个参数都必须是字符串。"""
     if any(not isinstance(arg, str) for arg in argv):
         raise ValueError("argv must contain only strings")
 

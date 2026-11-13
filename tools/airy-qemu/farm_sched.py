@@ -191,6 +191,11 @@ def _need_jobs(jobs: object) -> None:
     """作业集合必须是非空元组，且每项都是 FarmJob。"""
     if not isinstance(jobs, tuple) or not jobs:
         raise FarmConfigError("jobs must be a non-empty tuple")
+    _jobs_typed(jobs)
+
+
+def _jobs_typed(jobs: tuple[object, ...]) -> None:
+    """每项都必须是 FarmJob 条目。"""
     if any(not isinstance(job, FarmJob) for job in jobs):
         raise FarmConfigError("jobs must contain FarmJob entries")
 
