@@ -79,17 +79,39 @@ def run_batch(
     active: dict[Future[JobResult], tuple[int, FarmJob]] = {}
     workers = min(limits.max_jobs, len(jobs))
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        while pending or active:
-            _dispatch(pool, pending, active, limits, execute)
-            if not active:
-                raise FarmConfigError(
-                    f"cannot schedule job {pending[0][1].job_id!r}"
-                )
-            done, _ = wait(active, return_when=FIRST_COMPLETED)
-            for future in done:
-                index, _ = active.pop(future)
-                results[index] = future.result()
+        _drain(pool, pending, active, results, limits, execute)
     return tuple(_need_result(item) for item in results)
+
+
+def _land(done, active, results) -> None:
+    """把已完成作业的结果按原下标落位。"""
+    for future in done:
+        index, _ = active.pop(future)
+        results[index] = future.result()
+
+
+def _reap(active, results) -> None:
+    """等到一个作业完成并落位结果。"""
+    done, _ = wait(active, return_when=FIRST_COMPLETED)
+    _land(done, active, results)
+
+
+def _drain(
+    pool: ThreadPoolExecutor,
+    pending: list[tuple[int, FarmJob]],
+    active: dict[Future[JobResult], tuple[int, FarmJob]],
+    results: list[JobResult | None],
+    limits: FarmLimits,
+    execute: Execute,
+) -> None:
+    """派发并收割，直到没有待跑也没有在跑的作业。"""
+    while pending or active:
+        _dispatch(pool, pending, active, limits, execute)
+        if not active:
+            raise FarmConfigError(
+                f"cannot schedule job {pending[0][1].job_id!r}"
+            )
+        _reap(active, results)
 
 
 def _dispatch(
@@ -106,6 +128,18 @@ def _dispatch(
         active[future] = (index, job)
 
 
+def _running(active) -> tuple[FarmJob, ...]:
+    """当前运行中的作业序列（按提交顺序）。"""
+    return tuple(item for _, item in active.values())
+
+
+def _budget(running: tuple[FarmJob, ...], job: FarmJob) -> tuple[int, int]:
+    """(作业加入后的内存 MiB 合计, CPU 合计)。"""
+    mem_mb = job.mem_mb + sum(item.mem_mb for item in running)
+    cpus = job.smp + sum(item.smp for item in running)
+    return mem_mb, cpus
+
+
 def _fits(
     limits: FarmLimits,
     active: dict[Future[JobResult], tuple[int, FarmJob]],
@@ -114,9 +148,7 @@ def _fits(
     """判断新作业加入当前运行集合后是否仍在预算内。"""
     if len(active) >= limits.max_jobs:
         return False
-    running = tuple(item for _, item in active.values())
-    mem_mb = job.mem_mb + sum(item.mem_mb for item in running)
-    cpus = job.smp + sum(item.smp for item in running)
+    mem_mb, cpus = _budget(_running(active), job)
     return mem_mb <= limits.mem_mb and cpus <= limits.cpus
 
 

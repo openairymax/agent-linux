@@ -397,10 +397,15 @@ def _need_pairs(pairs: object) -> None:
         _need_pair(item)
 
 
-def _need_mach(fmt: KernelFormat, source: object, mach: object) -> None:
-    """ELF 必带 e_machine，非 ELF 不得带：两者是同一事实的两面。"""
+def _need_source(source: object) -> None:
+    """source 只能是 Path 或 None。"""
     if source is not None and not isinstance(source, Path):
         raise _cfg("source must be Path or None")
+
+
+def _need_mach(fmt: KernelFormat, source: object, mach: object) -> None:
+    """ELF 必带 e_machine，非 ELF 不得带：两者是同一事实的两面。"""
+    _need_source(source)
     if fmt is KernelFormat.ELF:
         if mach is None:
             raise _cfg("ELF preflight requires elf_mach")
@@ -437,13 +442,23 @@ def _elf_mach(head: bytes) -> int:
     return int.from_bytes(head[ELF_MACH_OFF:ELF_MACH_MIN], "little")
 
 
+def _entry_ok(suite: str, test: str) -> bool:
+    """套件名与用例名都不得为空。"""
+    return bool(suite) and bool(test)
+
+
+def _no_space(line: str) -> bool:
+    """整行不得含空白字符。"""
+    return not any(ch.isspace() for ch in line)
+
+
 def _test_suite(path: Path, lineno: int, raw: str) -> str:
     """单行 `<suite>:<test>` 形态校验，返回套件名。"""
     line = raw.strip()
     if line.count(":") != 1:
         raise _cfg(f"{path}:{lineno}: expected <suite>:<test>, got {raw!r}")
     suite, test = line.split(":")
-    if not suite or not test or any(ch.isspace() for ch in line):
+    if not _entry_ok(suite, test) or not _no_space(line):
         raise _cfg(f"{path}:{lineno}: invalid entry {raw!r}")
     return suite
 
