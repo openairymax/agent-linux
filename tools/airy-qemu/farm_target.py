@@ -193,23 +193,27 @@ def resolve_targets(
         FarmConfigError: 架构未知、重复或清单缺失。
     """
     _need_manifest(manifest)
-    if isinstance(arches, str):
-        raise FarmConfigError(
-            "arches must be an iterable of arch names, not a string"
-        )
-    if arches is None:
-        requested: tuple[str | Arch, ...] = tuple(
-            machine.arch for machine in manifest.machines
-        )
-    else:
-        requested = tuple(arches)
-        if not requested:
-            requested = tuple(machine.arch for machine in manifest.machines)
+    requested = _arch_values(manifest, arches)
     parsed = _unique(tuple(_as_arch(value) for value in requested))
     return tuple(
         resolve_target(manifest, arch, accel, dev=dev, host=host)
         for arch in parsed
     )
+
+
+def _arch_values(
+    manifest: FarmManifest,
+    arches: Iterable[str | Arch] | None,
+) -> tuple[str | Arch, ...]:
+    """把 arches 参数归一为非空取值元组；缺省与空集都表示清单全部架构。"""
+    if isinstance(arches, str):
+        raise FarmConfigError(
+            "arches must be an iterable of arch names, not a string"
+        )
+    requested = tuple(arches) if arches is not None else ()
+    if requested:
+        return requested
+    return tuple(machine.arch for machine in manifest.machines)
 
 
 def _need_manifest(manifest: FarmManifest) -> None:

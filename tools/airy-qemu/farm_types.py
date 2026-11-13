@@ -577,12 +577,22 @@ def _need_result(res) -> None:
 def _need_evid(res) -> None:
     """终态证据：通过需零退出且 TAP 完整，失败需反证，其余需书面说明。"""
     if res.state is JobState.PASSED:
-        if res.exit_code != 0:
-            raise ValueError("passed result requires exit_code 0")
-        if res.tap is None or not res.tap.passed:
-            raise ValueError("passed result requires a complete passing TAP summary")
+        _need_pass_evid(res)
     elif res.state is JobState.FAILED:
-        if not res._fail_evid:
-            raise ValueError("failed result requires non-zero exit or failing TAP")
+        _need_fail_evid(res)
     elif not res.reason.strip():
         raise ValueError(f"{res.state.value} result requires a reason")
+
+
+def _need_pass_evid(res) -> None:
+    """通过态证据：零退出且 TAP 汇总完整通过。"""
+    if res.exit_code != 0:
+        raise ValueError("passed result requires exit_code 0")
+    if res.tap is None or not res.tap.passed:
+        raise ValueError("passed result requires a complete passing TAP summary")
+
+
+def _need_fail_evid(res) -> None:
+    """失败态证据：非零退出或 TAP 未通过，二者至少其一。"""
+    if not res._fail_evid:
+        raise ValueError("failed result requires non-zero exit or failing TAP")

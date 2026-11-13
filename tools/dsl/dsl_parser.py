@@ -30,6 +30,9 @@ Version:
 # 1. 标准库导入
 from __future__ import annotations
 
+from dataclasses import dataclass, field
+
+# 2. 本工具模块导入
 from dsl_lexer import tokenize
 from dsl_types import (
     COMPARE_OPS,
@@ -50,8 +53,18 @@ from dsl_types import (
     fmt_diagnostic,
 )
 
-# 2. 公开导出
+# 3. 公开导出
 __all__ = ["Parser", "parse"]
+
+
+@dataclass
+class _TableDraft:
+    """表体解析中的累积状态；每类子句按语法只允许出现一次。"""
+
+    hook: str | None = None
+    inputs: list[InputDecl] = field(default_factory=list)
+    rules: list[Rule] = field(default_factory=list)
+    default: Verdict | None = None
 
 
 class Parser:
@@ -236,32 +249,40 @@ class Parser:
         return verdict
 
     def _parse_table(self) -> Table:
+        """解析 table 声明：名字、左花括号、子句序列、右花括号。"""
         span = self._expect_keyword("table").span
         name = self._expect(TokenKind.IDENT, "table name").text
         self._expect_punct("{")
-        hook: str | None = None
-        inputs: list[InputDecl] = []
-        rules: list[Rule] = []
-        default: Verdict | None = None
+        draft = _TableDraft()
         while not self._check_punct("}"):
-            if self._at_end():
-                raise self._error(self._current(), "unexpected end of input inside table body")
-            if self._check_keyword("hook"):
-                if hook is not None:
-                    raise self._error(self._current(), "duplicate hook clause in table")
-                hook = self._parse_hook()
-            elif self._check_keyword("input"):
-                inputs.append(self._parse_input())
-            elif self._check_keyword("rule"):
-                rules.append(self._parse_rule())
-            elif self._check_keyword("default"):
-                default = self._dflt_verdict(default)
-            else:
-                raise self._error(
-                    self._current(), f"unexpected token in table body: {self._current().text!r}"
-                )
+            self._table_clause(draft)
         self._expect_punct("}")
-        return self._make_table(name, hook, inputs, rules, default, span)
+        return self._make_table(
+            name, draft.hook, draft.inputs, draft.rules, draft.default, span
+        )
+
+    def _table_clause(self, draft: _TableDraft) -> None:
+        """解析一个表体子句并累积进 draft。"""
+        if self._at_end():
+            raise self._error(self._current(), "unexpected end of input inside table body")
+        if self._check_keyword("hook"):
+            draft.hook = self._hook_once(draft.hook)
+        elif self._check_keyword("input"):
+            draft.inputs.append(self._parse_input())
+        elif self._check_keyword("rule"):
+            draft.rules.append(self._parse_rule())
+        elif self._check_keyword("default"):
+            draft.default = self._dflt_verdict(draft.default)
+        else:
+            raise self._error(
+                self._current(), f"unexpected token in table body: {self._current().text!r}"
+            )
+
+    def _hook_once(self, hook: str | None) -> str:
+        """hook 子句只允许出现一次；重复时在当前位置报错。"""
+        if hook is not None:
+            raise self._error(self._current(), "duplicate hook clause in table")
+        return self._parse_hook()
 
     def _make_table(
         self,
