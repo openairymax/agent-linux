@@ -124,23 +124,32 @@ def _exp_offsets() -> dict[str, int]:
     return {name: offset for name, offset, _ in _EXPECTED_IPC_LAYOUT}
 
 
-def _val_ftable(ipc_block, offsets: dict[str, int]) -> None:
-    by_name = {f.name: f for f in ipc_block.fields}
-    for name, offset, width in _EXPECTED_IPC_LAYOUT:
-        field = by_name.get(name)
-        if field is None:
-            raise ContractValidationError(f"{BF64_REL}: {IPC_BLOCK_NAME} missing field {name}")
-        if field.low // 8 != offset or field.width != width:
-            raise ContractValidationError(
-                f"{BF64_REL}: {name} offset/width {field.low // 8}/{field.width} "
-                f"!= contracts.md §2 {offset}/{width}"
-            )
+def _ftable_row(name, offset, width, by_name) -> None:
+    field = by_name.get(name)
+    if field is None:
+        raise ContractValidationError(f"{BF64_REL}: {IPC_BLOCK_NAME} missing field {name}")
+    if field.low // 8 != offset or field.width != width:
+        raise ContractValidationError(
+            f"{BF64_REL}: {name} offset/width {field.low // 8}/{field.width} "
+            f"!= contracts.md §2 {offset}/{width}"
+        )
+
+
+def _ftable_sets(by_name, offsets: dict[str, int]) -> None:
+    """两张名字表都要与字段集合逐一相等：少一个就是漂移。"""
     if set(by_name) != set(IPC_FIELD_COMMENTS):
         raise ContractValidationError(
             f"{BF64_REL}: {IPC_BLOCK_NAME} fields do not match IPC_FIELD_COMMENTS"
         )
     if set(by_name) != set(offsets):
         raise ContractValidationError(f"{BF64_REL}: {IPC_BLOCK_NAME} offset table drift")
+
+
+def _val_ftable(ipc_block, offsets: dict[str, int]) -> None:
+    by_name = {f.name: f for f in ipc_block.fields}
+    for name, offset, width in _EXPECTED_IPC_LAYOUT:
+        _ftable_row(name, offset, width, by_name)
+    _ftable_sets(by_name, offsets)
 
 
 def _val_badge(badge_block) -> None:

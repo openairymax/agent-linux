@@ -429,20 +429,28 @@ def pick_snap(
     return _pick_prev(snaps, current)
 
 
+def _named_hits(snaps: Sequence[Snapshot], name: str) -> list[Snapshot]:
+    return [
+        snap
+        for snap in snaps
+        if snap.path.name == name or snap.created.startswith(name)
+    ]
+
+
+def _hurt_snaps(broken: Sequence[str], name: str) -> list[str]:
+    return [item for item in broken if item.startswith(name + ":")]
+
+
 def _pick_named(
     snaps: Sequence[Snapshot],
     broken: Sequence[str],
     name: str,
 ) -> Snapshot:
     """按文件名或创建时间前缀选；同名快照损坏时先报完整性错误。"""
-    hits = [
-        snap
-        for snap in snaps
-        if snap.path.name == name or snap.created.startswith(name)
-    ]
+    hits = _named_hits(snaps, name)
     if hits:
         return max(hits, key=_snap_ts)
-    hurt = [item for item in broken if item.startswith(name + ":")]
+    hurt = _hurt_snaps(broken, name)
     if hurt:
         raise RollbackError(EXIT_INTEGRITY, f"快照损坏: {hurt[0]}")
     raise RollbackError(EXIT_TARGET, f"未找到快照: {name}")

@@ -265,6 +265,30 @@ def _tuple_problems(tuple_map: Any) -> List[str]:
     return problems
 
 
+def _unknown_probs(manifest: TupleMap) -> list[str]:
+    unknown = set(manifest) - MANIFEST_KEYS
+    if not unknown:
+        return []
+    return [f"顶层未知字段: {', '.join(sorted(unknown))}"]
+
+
+def _require_probs(manifest: TupleMap) -> list[str]:
+    return [
+        f"缺少或为空值的必填字段: {key}"
+        for key in ("version", "airymaxos_makefile", "top_makefile", "contract")
+        if not manifest.get(key)
+    ]
+
+
+def _path_probs(manifest: TupleMap) -> list[str]:
+    problems = []
+    for key, suffix in PATH_SUFFIX_KEYS:
+        value = manifest.get(key)
+        if isinstance(value, str) and value and not value.endswith(suffix):
+            problems.append(f"{key} 形态非法（应以 {suffix} 结尾）")
+    return problems
+
+
 def check_schema(manifest: TupleMap) -> CheckResult:
     """校验清单 schema：必填字段、四元组取值域、路径形态。
 
@@ -274,23 +298,10 @@ def check_schema(manifest: TupleMap) -> CheckResult:
     Returns:
         检查结果。
     """
-    problems = []
-
-    unknown = set(manifest) - MANIFEST_KEYS
-    if unknown:
-        problems.append(f"顶层未知字段: {', '.join(sorted(unknown))}")
-
-    for key in ("version", "airymaxos_makefile", "top_makefile", "contract"):
-        if not manifest.get(key):
-            problems.append(f"缺少或为空值的必填字段: {key}")
-
+    problems = _unknown_probs(manifest)
+    problems.extend(_require_probs(manifest))
     problems.extend(_tuple_problems(manifest.get("version_tuple")))
-
-    for key, suffix in PATH_SUFFIX_KEYS:
-        value = manifest.get(key)
-        if isinstance(value, str) and value and not value.endswith(suffix):
-            problems.append(f"{key} 形态非法（应以 {suffix} 结尾）")
-
+    problems.extend(_path_probs(manifest))
     return CheckResult(SCHEMA_NAME, not problems, "\n".join(problems))
 
 
