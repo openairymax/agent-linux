@@ -77,9 +77,8 @@ def sub_paths(root):
     return paths, None
 
 
-def http_request(method, url, token, body=None):
-    """发起 GitHub API 请求，返回 (status, json_or_text)。"""
-    data = None
+def _headers(token, body):
+    """请求头：有 token 才带鉴权，有 body 才声明 JSON。"""
     headers = {
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
@@ -88,24 +87,32 @@ def http_request(method, url, token, body=None):
     if token:
         headers["Authorization"] = f"Bearer {token}"
     if body is not None:
-        data = json.dumps(body).encode("utf-8")
         headers["Content-Type"] = "application/json"
+    return headers
 
-    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+
+def _parse(raw):
+    """响应体按 JSON 解析；不是 JSON 时返回 None，由调用方决定语义。"""
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+
+
+def http_request(method, url, token, body=None):
+    """发起 GitHub API 请求，返回 (status, json_or_text)。"""
+    data = None if body is None else json.dumps(body).encode("utf-8")
+    req = urllib.request.Request(
+        url, data=data, headers=_headers(token, body), method=method
+    )
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
             raw = resp.read().decode("utf-8", errors="replace")
-            try:
-                return resp.status, json.loads(raw)
-            except json.JSONDecodeError:
-                return resp.status, None
+            return resp.status, _parse(raw)
     except urllib.error.HTTPError as exc:
         raw = exc.read().decode("utf-8", errors="replace")
-        try:
-            parsed = json.loads(raw)
-        except json.JSONDecodeError:
-            parsed = {"message": raw}
-        return exc.code, parsed
+        parsed = _parse(raw)
+        return exc.code, parsed if parsed is not None else {"message": raw}
     except (urllib.error.URLError, TimeoutError) as exc:
         return 0, {"message": f"网络错误：{exc}"}
 
@@ -174,18 +181,22 @@ def _ci_runs(api, owner_repo, sha, token):
     return runs, _runs_hit(runs)
 
 
-def _ci_status(api, owner_repo, sha, token, run_count):
-    """combined status 的判定：check runs 无定论时以它收口。"""
+def _combined(api, owner_repo, sha, token):
+    """combined status 的 state；接口不可用时返回 None。"""
     url = f"{api}/repos/{owner_repo}/commits/{sha}/status"
     status, payload = http_request("GET", url, token)
-    combined = None
     if status == 200 and isinstance(payload, dict):
-        combined = payload.get("state")
+        return payload.get("state")
+    return None
+
+
+def _ci_status(api, owner_repo, sha, token, run_count):
+    """combined status 的判定：check runs 无定论时以它收口。"""
+    combined = _combined(api, owner_repo, sha, token)
     if combined in ("failure", "error"):
         return "red", f"combined status={combined}"
     if combined == "pending":
         return "pending", "combined status=pending"
-
     if not run_count and combined in (None, "no status"):
         return "unknown", "无 check runs / status"
     return "green", f"{run_count} check runs，combined={combined}"

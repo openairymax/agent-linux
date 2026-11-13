@@ -100,6 +100,29 @@ def _record(entry):
     }
 
 
+def _add_range(registered, span):
+    """区间条目：展开后的每个 ID 登记为 active，并标注来源区间。"""
+    desc = f"Range entry: {span['start']} ~ {span['end']}"
+    for eid in _expand(span['start'], span['end']):
+        registered[eid] = {
+            'status': 'active',
+            'desc': desc,
+            'section': span.get('section', ''),
+        }
+
+
+def _add_deprecated(registered, dep_id, dep_desc):
+    """废弃 ID：已在表内改状态，未在表内补一条带说明的记录。"""
+    if dep_id in registered:
+        registered[dep_id]['status'] = 'deprecated'
+        return
+    registered[dep_id] = {
+        'status': 'deprecated',
+        'desc': dep_desc,
+        'section': '',
+    }
+
+
 def _collect(group, registered, dep_desc):
     """把一个条目组并入登记表：实体条目、区间、废弃、离散条目。
 
@@ -109,22 +132,9 @@ def _collect(group, registered, dep_desc):
     for entry in group.get('entries', []):
         registered[entry['id']] = _record(entry)
     for span in group.get('ranges', []):
-        desc = f"Range entry: {span['start']} ~ {span['end']}"
-        for eid in _expand(span['start'], span['end']):
-            registered[eid] = {
-                'status': 'active',
-                'desc': desc,
-                'section': span.get('section', ''),
-            }
+        _add_range(registered, span)
     for dep_id in group.get('deprecated', []):
-        if dep_id in registered:
-            registered[dep_id]['status'] = 'deprecated'
-        else:
-            registered[dep_id] = {
-                'status': 'deprecated',
-                'desc': dep_desc,
-                'section': '',
-            }
+        _add_deprecated(registered, dep_id, dep_desc)
     for entry in group.get('individual_entries', []):
         registered[entry['id']] = _record(entry)
 
