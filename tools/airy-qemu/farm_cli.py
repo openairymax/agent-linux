@@ -308,7 +308,19 @@ def _suites(manifest: FarmManifest, spec: str | None) -> tuple[Suite, ...]:
     if spec is None:
         return manifest.suites
     names = _suite_names(spec)
-    _suite_check(names, {suite.name for suite in manifest.suites})
+    _suite_check(names, _known_suites(manifest))
+    return _suite_subset(manifest, names)
+
+
+def _known_suites(manifest: FarmManifest) -> set[str]:
+    """清单中已登记的套件名集合。"""
+    return {suite.name for suite in manifest.suites}
+
+
+def _suite_subset(
+    manifest: FarmManifest, names: list[str]
+) -> tuple[Suite, ...]:
+    """按清单顺序筛选出被点名的套件。"""
     selected = set(names)
     return tuple(
         suite for suite in manifest.suites if suite.name in selected
@@ -325,13 +337,18 @@ def _suite_names(spec: str) -> list[str]:
 
 def _suite_check(names: list[str], known: set[str]) -> None:
     """先报未知名再报重复名：前者多为拼错，后者多为复制粘贴所致。"""
+    _unknown_suites(names, known)
+    if len(names) != len(set(names)):
+        raise FarmConfigError(f"duplicate suites: {names}")
+
+
+def _unknown_suites(names: list[str], known: set[str]) -> None:
+    """出现未登记名称即拒收，并列出清单里真实存在的名字。"""
     unknown = [name for name in names if name not in known]
     if unknown:
         raise FarmConfigError(
             f"unknown suites {unknown}; expected {sorted(known)}"
         )
-    if len(names) != len(set(names)):
-        raise FarmConfigError(f"duplicate suites: {names}")
 
 
 def _out_dir(value: Path) -> Path:
