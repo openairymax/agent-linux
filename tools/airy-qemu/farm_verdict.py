@@ -62,16 +62,9 @@ class GateReport:
     results: tuple[JobResult, ...]
 
     def __post_init__(self) -> None:
-        if not isinstance(self.results, tuple) or not self.results:
-            raise ValueError("results must be a non-empty tuple")
-        ids: set[str] = set()
-        for result in self.results:
-            if not isinstance(result, JobResult):
-                raise ValueError("results must contain JobResult entries")
-            job_id = result.job.job_id
-            if job_id in ids:
-                raise ValueError(f"duplicate job result: {job_id!r}")
-            ids.add(job_id)
+        _res_tuple(self.results)
+        _res_rows(self.results)
+        _res_ids(self.results)
 
     @property
     def count(self) -> int:
@@ -115,20 +108,56 @@ def judge_run(raw: RawRun) -> JobResult:
     return _verdict(raw, report)
 
 
-def _verdict(raw: RawRun, report: TapReport) -> JobResult:
-    """按 TAP 证据与退出码给出终态。"""
+def _res_tuple(results) -> None:
+    """结果必须是非空元组。"""
+    if not isinstance(results, tuple) or not results:
+        raise ValueError("results must be a non-empty tuple")
+
+
+def _res_rows(results) -> None:
+    """结果元组里的每个元素都必须是 JobResult。"""
+    for result in results:
+        if not isinstance(result, JobResult):
+            raise ValueError("results must contain JobResult entries")
+
+
+def _res_ids(results) -> None:
+    """作业 ID 不得重复。"""
+    ids: set[str] = set()
+    for result in results:
+        job_id = result.job.job_id
+        if job_id in ids:
+            raise ValueError(f"duplicate job result: {job_id!r}")
+        ids.add(job_id)
+
+
+def _all_skip(tap) -> bool:
+    """有用例但全部跳过。"""
+    return tap.executed > 0 and tap.ok_count == 0
+
+
+def _tap_state(raw: RawRun, report: TapReport) -> JobResult | None:
+    """TAP 证据给出的前三种终态；证据无异常时返回 None。"""
     tap = report.summary
     if not tap.complete:
         return _make(raw, JobState.FAILED, report, _incomplete(report))
     if tap.not_ok_count:
         return _make(raw, JobState.FAILED, report, _fail_reason(report))
-    if tap.executed > 0 and tap.ok_count == 0:
+    if _all_skip(tap):
         return _make(
             raw,
             JobState.SKIPPED,
             report,
             f"all {tap.executed} cases skipped",
         )
+    return None
+
+
+def _verdict(raw: RawRun, report: TapReport) -> JobResult:
+    """按 TAP 证据与退出码给出终态。"""
+    state = _tap_state(raw, report)
+    if state is not None:
+        return state
     if raw.exit_code != _EXIT_PASS:
         return _make(raw, JobState.FAILED, report, _exit_reason(raw))
     return _make(raw, JobState.PASSED, report)

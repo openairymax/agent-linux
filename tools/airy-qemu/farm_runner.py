@@ -95,10 +95,7 @@ class RawRun:
         """进程结局：退出码与时长不能是 bool 伪装，超时标记必须是真布尔。"""
         if isinstance(self.exit_code, bool) or not isinstance(self.exit_code, int):
             raise ValueError(f"exit_code must be int, got {self.exit_code!r}")
-        if isinstance(self.duration_s, bool) or self.duration_s < 0:
-            raise ValueError(
-                f"duration_s must be non-negative, got {self.duration_s!r}"
-            )
+        _chk_took(self.duration_s)
         if not isinstance(self.timed_out, bool):
             raise ValueError("timed_out must be bool")
 
@@ -271,37 +268,55 @@ def _spawn(
     except FarmError:
         out.close()
         raise
-    proc: subprocess.Popen[bytes] | None = None
-    code: int | None = None
-    expired = False
+    with out, err:
+        code, expired = _spawn_run(argv, out, err, timeout)
+    return code, time.monotonic() - started, expired
+
+
+def _chk_took(seconds: float) -> None:
+    """耗时必须是非负实数，bool 是 int 子类故单独排除。"""
+    if isinstance(seconds, bool) or seconds < 0:
+        raise ValueError(f"duration_s must be non-negative, got {seconds!r}")
+
+
+def _launch(argv: Argv, out: BinaryIO, err: BinaryIO) -> subprocess.Popen:
+    """启动子进程；启动失败归一为 FarmError。"""
     try:
-        with out, err:
-            try:
-                proc = subprocess.Popen(
-                    argv,
-                    stdin=subprocess.DEVNULL,
-                    stdout=out,
-                    stderr=err,
-                    start_new_session=True,
-                    close_fds=True,
-                )
-            except OSError as exc:
-                raise FarmError(
-                    f"cannot start {argv[0]}: {exc}",
-                    AIRY_QEMU_ERROR,
-                ) from exc
-            expired = _wait(proc, timeout)
-            code = proc.returncode
-    finally:
-        if proc is not None and proc.poll() is None:
-            _kill(proc)
-    spent = time.monotonic() - started
-    if code is None:
-        raise FarmError(
-            f"{argv[0]} produced no exit status",
-            AIRY_QEMU_ERROR,
+        return subprocess.Popen(
+            argv,
+            stdin=subprocess.DEVNULL,
+            stdout=out,
+            stderr=err,
+            start_new_session=True,
+            close_fds=True,
         )
-    return code, spent, expired
+    except OSError as exc:
+        raise FarmError(
+            f"cannot start {argv[0]}: {exc}",
+            AIRY_QEMU_ERROR,
+        ) from exc
+
+
+def _spawn_run(
+    argv: Argv,
+    out: BinaryIO,
+    err: BinaryIO,
+    timeout: int,
+) -> tuple[int, bool]:
+    """跑完一次子进程：返回 (退出码, 是否超时)，无退出码即判负。"""
+    proc = _launch(argv, out, err)
+    try:
+        expired = _wait(proc, timeout)
+        code = proc.returncode
+        if code is None:
+            raise FarmError(
+                f"{argv[0]} produced no exit status",
+                AIRY_QEMU_ERROR,
+            )
+        return code, expired
+    finally:
+        if proc.poll() is None:
+            _kill(proc)
 
 
 def _open(path: Path, name: str) -> BinaryIO:
