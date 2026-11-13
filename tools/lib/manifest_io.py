@@ -154,19 +154,44 @@ def open_gate(
     if yaml is None:
         print("ERROR: PyYAML 不可用，请安装 pyyaml", file=sys.stderr)
         return None
-    root = Path(args.repo_root) if args.repo_root else find_repo_root()
-    bad = _env_bad(root, kernel)
+    root, bad = _gate_root(args, kernel)
     if bad is not None:
         print(f"ERROR: {bad}", file=sys.stderr)
         return None
+    path = _manifest_path(args, root, default_manifest)
+    manifest = _load_or_none(loader, path, error)
+    if manifest is None:
+        return None
     kernel_dir = root / _KERNEL_DIR
-    path = Path(args.manifest) if args.manifest else root / default_manifest
+    return Gate(args, root, manifest, kernel_dir if kernel else None)
+
+
+def _gate_root(args: argparse.Namespace, kernel: bool) -> tuple[Path, str | None]:
+    """仓库根与运行环境问题一次算出；环境问题返回给调用方统一打印。"""
+    root = Path(args.repo_root) if args.repo_root else find_repo_root()
+    return root, _env_bad(root, kernel)
+
+
+def _manifest_path(
+    args: argparse.Namespace,
+    root: Path,
+    default_manifest: str,
+) -> Path:
+    """清单路径：显式给出优先，否则落在仓库根下。"""
+    return Path(args.manifest) if args.manifest else root / default_manifest
+
+
+def _load_or_none(
+    loader: Callable[[Path], dict[str, Any]],
+    path: Path,
+    error: type[Exception],
+) -> dict[str, Any] | None:
+    """调用清单读取；失败按工具 ``ERROR:`` 格式回报并返回 ``None``。"""
     try:
-        manifest = loader(path)
+        return loader(path)
     except error as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return None
-    return Gate(args, root, manifest, kernel_dir if kernel else None)
 
 
 def run_gate(

@@ -226,16 +226,27 @@ def _schema_perms(value: Any) -> list[str]:
             for key, item in value.items() if not isinstance(item, str)]
 
 
+def _label_probs(value: Mapping[str, Any]) -> list[str]:
+    """label 可选；出现即须为字符串。"""
+    if "label" in value and not isinstance(value["label"], str):
+        return ["runner.label 必须是字符串"]
+    return []
+
+
+def _ceiling_probs(value: Mapping[str, Any]) -> list[str]:
+    """hosted_ceiling_minutes 出现时须为正整数。"""
+    if "hosted_ceiling_minutes" not in value:
+        return []
+    size = value.get("hosted_ceiling_minutes")
+    return [] if _is_int(size) and size > 0 else [
+        "runner.hosted_ceiling_minutes 必须是正整数"]
+
+
 def _schema_runner(value: Any) -> list[str]:
     if not isinstance(value, dict):
         return ["runner 必须是映射"]
-    problems = _need(value, RUNNER_KEYS, "runner.")
-    if "label" in value and not isinstance(value["label"], str):
-        problems.append("runner.label 必须是字符串")
-    size = value.get("hosted_ceiling_minutes")
-    if "hosted_ceiling_minutes" in value and (not _is_int(size) or size <= 0):
-        problems.append("runner.hosted_ceiling_minutes 必须是正整数")
-    return problems
+    return (_need(value, RUNNER_KEYS, "runner.")
+            + _label_probs(value) + _ceiling_probs(value))
 
 
 def _schema_jobs(value: Any) -> list[str]:
@@ -448,20 +459,28 @@ def check_flight(man: Mapping[str, Any],
     return _result(NAME_FLIGHT, problems)
 
 
+def _perm_expected(value: Mapping[str, Any],
+                   expected: Mapping[str, Any]) -> list[str]:
+    """清单登记的权限逐项对齐；缺项与取值不符一并报出。"""
+    return [f"permissions.{key} 期望 {expected[key]}，"
+            f"实际 {value.get(key)}"
+            for key in expected if value.get(key) != expected[key]]
+
+
+def _perm_writes(value: Mapping[str, Any]) -> list[str]:
+    """workflow 级权限不得含任何写权限。"""
+    return [f"permissions.{key} 不得授予写权限"
+            for key, item in value.items()
+            if isinstance(item, str) and item.endswith("write")]
+
+
 def check_perms(man: Mapping[str, Any],
                 wf: Mapping[str, Any]) -> CheckResult:
     """校验 workflow 级最小权限。"""
     value = wf.get("permissions")
     if not isinstance(value, dict):
         return CheckResult(NAME_PERMS, False, "缺少 workflow 级 permissions")
-    problems: list[str] = []
-    for key, expected in man["permissions"].items():
-        if value.get(key) != expected:
-            problems.append(
-                f"permissions.{key} 期望 {expected}，实际 {value.get(key)}")
-    for key, item in value.items():
-        if isinstance(item, str) and item.endswith("write"):
-            problems.append(f"permissions.{key} 不得授予写权限")
+    problems = _perm_expected(value, man["permissions"]) + _perm_writes(value)
     return _result(NAME_PERMS, problems)
 
 

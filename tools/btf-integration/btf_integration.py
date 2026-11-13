@@ -184,20 +184,33 @@ def arch_entry(entry: Manifest, idx: int, rel: str) -> ArchEntry:
     return (arch, configs)
 
 
-def _schema_top(manifest: Manifest) -> list[str]:
-    """顶层字段：未知项、必填项与本清单要求的 .yaml 形态。"""
-    problems: list[str] = []
+def _top_unknown(manifest: Manifest) -> list[str]:
+    """顶层出现未登记字段即报错，避免拼写错误被静默忽略。"""
     unknown = set(manifest) - MANIFEST_KEYS
-    if unknown:
-        problems.append(f"顶层未知字段: {', '.join(sorted(unknown))}")
-    for key in ("version", "defconfig_matrix_manifest", "pahole_package"):
-        if not manifest.get(key):
-            problems.append(f"缺少或为空值的必填字段: {key}")
+    return [f"顶层未知字段: {', '.join(sorted(unknown))}"] if unknown else []
+
+
+def _top_required(manifest: Manifest) -> list[str]:
+    """必填字段不得缺失或为空值。"""
+    return [f"缺少或为空值的必填字段: {key}"
+            for key in ("version", "defconfig_matrix_manifest",
+                        "pahole_package")
+            if not manifest.get(key)]
+
+
+def _matrix_shape(manifest: Manifest) -> list[str]:
+    """defconfig_matrix_manifest 必须是 .yaml 相对路径。"""
     matrix_rel = manifest.get("defconfig_matrix_manifest")
     if isinstance(matrix_rel, str) and matrix_rel \
             and not matrix_rel.endswith(".yaml"):
-        problems.append("defconfig_matrix_manifest 必须是 .yaml 相对路径")
-    return problems
+        return ["defconfig_matrix_manifest 必须是 .yaml 相对路径"]
+    return []
+
+
+def _schema_top(manifest: Manifest) -> list[str]:
+    """顶层字段：未知项、必填项与本清单要求的 .yaml 形态。"""
+    return (_top_unknown(manifest) + _top_required(manifest)
+            + _matrix_shape(manifest))
 
 
 def _schema_lists(manifest: Manifest) -> list[str]:
