@@ -308,23 +308,29 @@ def _oci_part(index: int, rest: str, path: Path) -> OciPart:
     return OciPart(index, digest, size, tokens["name"])
 
 
-def _oci_lines(text: str, path: Path) -> tuple[dict[str, str], list[OciPart]]:
-    """逐行归类：`part=` 按出现顺序编号，其余已知键进字段表，注释与噪声跳过。"""
+def _oci_fields(text: str) -> dict[str, str]:
+    """非 `part=` 的已知键；空行、注释与噪声行都不产生字段。"""
     fields: dict[str, str] = {}
+    for raw in text.splitlines():
+        key, sep, rest = raw.strip().partition("=")
+        if sep and key.strip() in OCI_KEYS:
+            fields[key.strip()] = rest.strip()
+    return fields
+
+
+def _oci_part_lines(text: str, path: Path) -> list[OciPart]:
+    """`part=` 行按出现顺序编号；其余行不参与分块账本。"""
     parts: list[OciPart] = []
     for raw in text.splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        key, sep, rest = line.partition("=")
-        if not sep:
-            continue
-        key = key.strip()
-        if key == "part":
+        key, sep, rest = raw.strip().partition("=")
+        if sep and key.strip() == "part":
             parts.append(_oci_part(len(parts), rest, path))
-        elif key in OCI_KEYS:
-            fields[key] = rest.strip()
-    return fields, parts
+    return parts
+
+
+def _oci_lines(text: str, path: Path) -> tuple[dict[str, str], list[OciPart]]:
+    """逐行归类：`part=` 按出现顺序编号，其余已知键进字段表，注释与噪声跳过。"""
+    return _oci_fields(text), _oci_part_lines(text, path)
 
 
 def _oci_need(fields: dict[str, str], path: Path) -> None:
@@ -458,22 +464,27 @@ def _ledger_ann(ref: str, ann: dict[str, str]):
             _ann_int(ann, "chunk-size", ref), _ann_int(ann, "chunks", ref))
 
 
+def _layer_title(layer: dict) -> str:
+    """层标题注解；缺失时为空串（标题不参与完整性判定）。"""
+    return str((layer.get("annotations") or {}).get(TITLE) or "").strip()
+
+
+def _layer_size(index: int, layer: dict, ref: str) -> int:
+    """层大小必须已声明为数字串，缺失即拒绝猜测。"""
+    raw_size = str(layer.get("size") or "")
+    if not raw_size:
+        raise FlashError(EXIT_CHECK, f"{ref} 的第 {index} 层缺少 size")
+    return _positive(raw_size, f"layer[{index}].size", ref)
+
+
 def _ledger_parts(ref: str, layers: list[dict]) -> list[OciPart]:
     """逐层账本：标题、digest 与 size 三项缺一不可，缺谁都不猜。"""
     parts: list[OciPart] = []
     for index, layer in enumerate(layers):
-        title = str((layer.get("annotations") or {}).get(TITLE) or "").strip()
-        raw_size = str(layer.get("size") or "")
-        if not raw_size:
-            raise FlashError(EXIT_CHECK, f"{ref} 的第 {index} 层缺少 size")
-        parts.append(
-            OciPart(
-                index,
-                _digest(str(layer.get("digest") or ""), ref),
-                _positive(raw_size, f"layer[{index}].size", ref),
-                title,
-            )
-        )
+        title = _layer_title(layer)
+        size = _layer_size(index, layer, ref)
+        digest = _digest(str(layer.get("digest") or ""), ref)
+        parts.append(OciPart(index, digest, size, title))
     return parts
 
 
