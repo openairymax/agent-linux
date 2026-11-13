@@ -243,14 +243,29 @@ def load_yaml(path: Path, label: str) -> Manifest:
     Raises:
         ToolError: PyYAML 缺失、文件不可读、YAML 非法或顶层不是映射。
     """
+    _need_yaml()
+    text = _read_yaml(path, label)
+    return _parse_yaml(text, path, label)
+
+
+def _need_yaml() -> None:
+    """PyYAML 是解析清单的前提，缺失时给出安装提示。"""
     if yaml is None:
         raise ToolError("PyYAML 不可用：请安装 pyyaml（见 requirements-dev.txt）")
+
+
+def _read_yaml(path: Path, label: str) -> str:
+    """读取 YAML 文本，区分不存在与不可读两种失败。"""
     try:
-        text = path.read_text(encoding="utf-8")
+        return path.read_text(encoding="utf-8")
     except FileNotFoundError as exc:
         raise ToolError(f"{label}文件不存在：{path}") from exc
     except OSError as exc:
         raise ToolError(f"{label}文件无法读取：{path}: {exc}") from exc
+
+
+def _parse_yaml(text: str, path: Path, label: str) -> Manifest:
+    """解析 YAML 并要求顶层是映射。"""
     try:
         data = yaml.safe_load(text)
     except yaml.YAMLError as exc:
@@ -396,11 +411,21 @@ def _delivery_errs(where: str, entry: Manifest, delivery: Any) -> list[str]:
 
 def _evidence_errs(where: str, evidence: Any) -> list[str]:
     """active 物料的 evidence 必须是非空列表，且每项为非空字符串。"""
-    if not isinstance(evidence, list) or not evidence:
+    if not _nonempty_list(evidence):
         return [f"{where}: active 物料要求非空 evidence 列表"]
-    if any(not isinstance(g, str) or not g for g in evidence):
+    if _blank_glob(evidence):
         return [f"{where}.evidence 含非法项"]
     return []
+
+
+def _nonempty_list(value: Any) -> bool:
+    """值必须是非空列表。"""
+    return isinstance(value, list) and bool(value)
+
+
+def _blank_glob(evidence: list) -> bool:
+    """任一 evidence 项不是非空字符串即为非法。"""
+    return any(not isinstance(g, str) or not g for g in evidence)
 
 
 def _defer_errs(where: str, entry: Manifest) -> list[str]:
@@ -445,11 +470,16 @@ def _produce_errs(where: str, produce: Any) -> list[str]:
 
 def _argv_errs(where: str, argv: Any) -> list[str]:
     """单条 argv 校验：须为非空列表，且每个 token 均为非空字符串。"""
-    if not isinstance(argv, list) or not argv:
+    if not _nonempty_list(argv):
         return [f"{where} 必须是非空 argv 列表"]
-    if any(not isinstance(tok, str) or not tok.strip() for tok in argv):
+    if _blank_token(argv):
         return [f"{where} 含非字符串或空 token"]
     return []
+
+
+def _blank_token(argv: list) -> bool:
+    """任一 token 不是去空白后非空的字符串即为非法。"""
+    return any(not isinstance(tok, str) or not tok.strip() for tok in argv)
 
 
 def _notes_unknown(notes: dict) -> list[str]:
