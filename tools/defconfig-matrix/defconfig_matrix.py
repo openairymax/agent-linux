@@ -314,9 +314,15 @@ def _fs_ondisk(kernel_dir):
     }
 
 
+def _cfg_line(stripped: str) -> bool:
+    """合法行：CONFIG 赋值或注释。"""
+    return (CONFIG_VAL_RE.match(stripped) is not None
+            or CONFIG_SET_RE.match(stripped) is not None)
+
+
 def _fmt_line(configs, num, stripped, keys, problems):
     """单行：注释跳过、非法行报错、CONFIG 赋值查重复键。"""
-    if not (CONFIG_VAL_RE.match(stripped) or CONFIG_SET_RE.match(stripped)):
+    if not _cfg_line(stripped):
         if not stripped.startswith("#"):
             problems.append(
                 f"{configs}:{num}: 非法行（既非注释亦非 CONFIG 赋值）: {stripped}")

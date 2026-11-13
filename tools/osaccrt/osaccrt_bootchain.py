@@ -95,7 +95,7 @@ class Trail:
     @property
     def slow(self) -> Link | None:
         """关键服务：链上自身耗时最长的一环，无耗时为 None。"""
-        seen = [item for item in self.links if item.dur_s is not None]
+        seen = _timed(self.links)
         if not seen:
             return None
         return max(seen, key=lambda item: item.dur_s or 0.0)
@@ -126,8 +126,7 @@ class Chain:
     def __post_init__(self) -> None:
         if not isinstance(self.trails, tuple) or not self.trails:
             raise ValueError("trails must be a non-empty tuple")
-        if not all(isinstance(item, Trail) for item in self.trails):
-            raise ValueError("trails must contain Trail items")
+        _trail_rows(self.trails)
 
     @property
     def verdict(self) -> Verdict:
@@ -173,6 +172,17 @@ def payload(chain: Chain) -> bytes:
     return (text + "\n").encode("utf-8")
 
 
+def _timed(links: tuple[Link, ...]) -> list[Link]:
+    """自身耗时为 None 的环节不参与比较。"""
+    return [item for item in links if item.dur_s is not None]
+
+
+def _trail_rows(trails: tuple[Trail, ...]) -> None:
+    """逐条确认固化事实都是 Trail。"""
+    if not all(isinstance(item, Trail) for item in trails):
+        raise ValueError("trails must contain Trail items")
+
+
 def _unit_of(head: str) -> str:
     """取 @ 前的单元名并去掉图形前缀；无词时为空串。"""
     words = head.split()
@@ -191,17 +201,22 @@ def _link(line: str) -> Link | None:
     return Link(unit, at_s, dur_s)
 
 
+def _time_word(word: str, at_txt: str,
+               dur_txt: str | None) -> tuple[str, str | None]:
+    """单个词：'+' 开头开启耗时，耗时开始前计入达成时刻。"""
+    if word.startswith("+"):
+        return at_txt, word[1:]
+    if dur_txt is not None:
+        return at_txt, dur_txt + word
+    return at_txt + word, dur_txt
+
+
 def _times(tail: str) -> tuple[float | None, float | None]:
     """拆分达成时刻与自身耗时；systemd 的时间量词可能含空格。"""
     at_txt = ""
     dur_txt: str | None = None
     for word in tail.split():
-        if word.startswith("+"):
-            dur_txt = word[1:]
-        elif dur_txt is None:
-            at_txt += word
-        else:
-            dur_txt += word
+        at_txt, dur_txt = _time_word(word, at_txt, dur_txt)
     return _secs(at_txt), None if dur_txt is None else _secs(dur_txt)
 
 
