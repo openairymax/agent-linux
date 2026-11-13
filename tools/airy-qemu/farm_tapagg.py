@@ -118,6 +118,11 @@ class TapReport:
     def __post_init__(self) -> None:
         if not isinstance(self.summary, TapSummary):
             raise ValueError("summary must be TapSummary")
+        self._need_suites()
+        self._need_sums()
+
+    def _need_suites(self) -> None:
+        """套件明细必须是 SuiteTally 的非空元组，且名称不重复。"""
         if not isinstance(self.suites, tuple) or not self.suites:
             raise ValueError("suites must be a non-empty tuple")
         names: set[str] = set()
@@ -127,6 +132,9 @@ class TapReport:
             if tally.name in names:
                 raise ValueError(f"duplicate suite: {tally.name!r}")
             names.add(tally.name)
+
+    def _need_sums(self) -> None:
+        """逐字段汇总必须与 summary 相等。"""
         for field, total in self._sums():
             if total != getattr(self.summary, field):
                 raise ValueError(

@@ -546,6 +546,20 @@ def _need_machines(value) -> None:
         raise ValueError(f"duplicate machine arches: {[a.value for a in arches]}")
 
 
+_OPT_FIELDS = (
+    ("exit_code", int),
+    ("tap", TapSummary),
+)
+
+
+def _need_opt(res) -> None:
+    """可选字段：None 或指定类型。"""
+    for name, want in _OPT_FIELDS:
+        value = getattr(res, name)
+        if value is not None and not isinstance(value, want):
+            raise ValueError(f"{name} must be {want.__name__} or None")
+
+
 def _need_result(res) -> None:
     """结果字段的类型与范围（与状态无关的部分）。"""
     if not isinstance(res.job, FarmJob):
@@ -555,10 +569,7 @@ def _need_result(res) -> None:
         raise ValueError(f"state must be terminal, got {res.state.value}")
     if res.duration_s < 0:
         raise ValueError(f"duration_s must be non-negative, got {res.duration_s}")
-    if res.exit_code is not None and not isinstance(res.exit_code, int):
-        raise ValueError("exit_code must be int or None")
-    if res.tap is not None and not isinstance(res.tap, TapSummary):
-        raise ValueError("tap must be TapSummary or None")
+    _need_opt(res)
     if not isinstance(res.qemu_argv, tuple):
         raise ValueError("qemu_argv must be a tuple")
 

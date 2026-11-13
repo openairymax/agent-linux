@@ -46,14 +46,8 @@ def _describe(desc):
     return desc.strip().lstrip("-").strip()
 
 
-def parse_ktap(text):
-    """解析嵌套 KTAP，返回统计 dict；无法构成有效 KTAP 时返回 None。
-
-    dict 字段：
-        leaf_total : int        叶子用例数
-        suites     : list[str]  按出现顺序的套件（子测试）名
-        failures   : set[str]   状态为 not ok 的用例/套件描述名
-    """
+def _ktap_rows(text):
+    """把行流拆成 (套件名序列, 结果序列)，与后续统计解耦。"""
     suites = []
     results = []
     for line in text.splitlines():
@@ -66,13 +60,30 @@ def parse_ktap(text):
             results.append(
                 (result.group("status"), _describe(result.group("desc")))
             )
+    return suites, results
+
+
+def _ktap_fails(results):
+    """not ok 的结果描述集合。"""
+    return {name for status, name in results if status == "not ok"}
+
+
+def parse_ktap(text):
+    """解析嵌套 KTAP，返回统计 dict；无法构成有效 KTAP 时返回 None。
+
+    dict 字段：
+        leaf_total : int        叶子用例数
+        suites     : list[str]  按出现顺序的套件（子测试）名
+        failures   : set[str]   状态为 not ok 的用例/套件描述名
+    """
+    suites, results = _ktap_rows(text)
     leaf_total = len(results) - len(suites)
-    if not suites or not results or leaf_total < 0:
+    if leaf_total < 0 or not suites or not results:
         return None
     return {
         "leaf_total": leaf_total,
         "suites": suites,
-        "failures": {name for status, name in results if status == "not ok"},
+        "failures": _ktap_fails(results),
     }
 
 
