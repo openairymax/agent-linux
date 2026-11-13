@@ -275,18 +275,27 @@ class Parser:
         """解析一个表体子句并累积进 draft。"""
         if self._at_end():
             raise self._error(self._current(), "unexpected end of input inside table body")
+        self._table_item(draft)
+
+    def _table_item(self, draft: _TableDraft) -> None:
+        """按 hook / input / rule / default 的先后识别子句。"""
         if self._check_keyword("hook"):
             draft.hook = self._hook_once(draft.hook)
         elif self._check_keyword("input"):
             draft.inputs.append(self._parse_input())
         elif self._check_keyword("rule"):
             draft.rules.append(self._parse_rule())
-        elif self._check_keyword("default"):
-            draft.default = self._dflt_verdict(draft.default)
         else:
-            raise self._error(
-                self._current(), f"unexpected token in table body: {self._current().text!r}"
-            )
+            self._table_tail(draft)
+
+    def _table_tail(self, draft: _TableDraft) -> None:
+        """识别 default 子句；都不匹配即在当前位置报错。"""
+        if self._check_keyword("default"):
+            draft.default = self._dflt_verdict(draft.default)
+            return
+        raise self._error(
+            self._current(), f"unexpected token in table body: {self._current().text!r}"
+        )
 
     def _hook_once(self, hook: str | None) -> str:
         """hook 子句只允许出现一次；重复时在当前位置报错。"""
