@@ -100,13 +100,18 @@ class Lexer:
                 return
 
     # ── 词法单元读取 ──
-    def _read_string(self, span: SourceSpan) -> Token:
-        self._advance()
+    def _string_chunks(self, span: SourceSpan) -> list[str]:
+        """读到收尾引号为止；遇换行即报未闭合。"""
         chunks: list[str] = []
         while not self._at_end() and self._peek() != '"':
             if self._peek() == "\n":
                 raise self._error(span, "unterminated string literal")
             chunks.append(self._advance())
+        return chunks
+
+    def _read_string(self, span: SourceSpan) -> Token:
+        self._advance()
+        chunks = self._string_chunks(span)
         if self._at_end():
             raise self._error(span, "unterminated string literal")
         self._advance()
@@ -140,17 +145,25 @@ class Lexer:
         kind = TokenKind.KEYWORD if text in KEYWORDS else TokenKind.IDENT
         return Token(kind, text, span)
 
-    def _read_punct(self, span: SourceSpan) -> Token:
-        for two in _TWO_CHAR_PUNCT:
-            if self._peek() == two[0] and self._peek(1) == two[1]:
-                self._advance()
-                self._advance()
-                return Token(TokenKind.PUNCT, two, span)
+    def _match_two(self, pair: tuple[str, str]) -> bool:
+        """两个字符同时命中才算双字符标点。"""
+        return self._peek() == pair[0] and self._peek(1) == pair[1]
+
+    def _one_punct(self, span: SourceSpan) -> Token:
+        """单字符标点；未登记即报错。"""
         ch = self._peek()
         if ch in PUNCT_TOKENS:
             self._advance()
             return Token(TokenKind.PUNCT, ch, span)
         raise self._error(span, f"unexpected character {ch!r}")
+
+    def _read_punct(self, span: SourceSpan) -> Token:
+        for two in _TWO_CHAR_PUNCT:
+            if self._match_two(two):
+                self._advance()
+                self._advance()
+                return Token(TokenKind.PUNCT, two, span)
+        return self._one_punct(span)
 
     def _next_token(self) -> Token:
         span = self._span()

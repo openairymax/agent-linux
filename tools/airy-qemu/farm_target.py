@@ -211,6 +211,17 @@ def resolve_targets(
     )
 
 
+def _arch_pick(
+    manifest: FarmManifest,
+    arches: Iterable[str | Arch] | None,
+) -> tuple[str | Arch, ...]:
+    """缺省或空集时回落到清单里的全部架构。"""
+    requested = tuple(arches) if arches is not None else ()
+    if requested:
+        return requested
+    return tuple(machine.arch for machine in manifest.machines)
+
+
 def _arch_values(
     manifest: FarmManifest,
     arches: Iterable[str | Arch] | None,
@@ -220,10 +231,7 @@ def _arch_values(
         raise FarmConfigError(
             "arches must be an iterable of arch names, not a string"
         )
-    requested = tuple(arches) if arches is not None else ()
-    if requested:
-        return requested
-    return tuple(machine.arch for machine in manifest.machines)
+    return _arch_pick(manifest, arches)
 
 
 def _need_manifest(manifest: FarmManifest) -> None:
@@ -234,17 +242,33 @@ def _need_manifest(manifest: FarmManifest) -> None:
         )
 
 
+# 报错文案里的可选架构名：枚举固定，构建一次即可。
+_ARCH_NAMES = [item.value for item in Arch]
+
+
+def _arch_of_str(value: str) -> Arch | None:
+    """字符串转 Arch；无法识别返回 None。"""
+    try:
+        return Arch(value)
+    except ValueError:
+        return None
+
+
 def _as_arch(value: str | Arch) -> Arch:
     """把架构取值转换为 Arch。"""
     if isinstance(value, Arch):
         return value
-    if isinstance(value, str):
-        try:
-            return Arch(value)
-        except ValueError:
-            pass
-    names = [arch.value for arch in Arch]
-    raise FarmConfigError(f"unsupported arch {value!r}; expected one of {names}")
+    found = _arch_of_str(value) if isinstance(value, str) else None
+    if found is None:
+        raise FarmConfigError(
+            f"unsupported arch {value!r}; expected one of {_ARCH_NAMES}")
+    return found
+
+
+def _dup_arch(arch: Arch, seen: set[Arch], duplicates: list[str]) -> None:
+    """重复架构只记一次，保持首次出现顺序。"""
+    if arch in seen and arch.value not in duplicates:
+        duplicates.append(arch.value)
 
 
 def _unique(arches: tuple[Arch, ...]) -> tuple[Arch, ...]:
@@ -252,8 +276,7 @@ def _unique(arches: tuple[Arch, ...]) -> tuple[Arch, ...]:
     seen: set[Arch] = set()
     duplicates: list[str] = []
     for arch in arches:
-        if arch in seen and arch.value not in duplicates:
-            duplicates.append(arch.value)
+        _dup_arch(arch, seen, duplicates)
         seen.add(arch)
     if duplicates:
         raise FarmConfigError(f"duplicate arches: {duplicates}")
