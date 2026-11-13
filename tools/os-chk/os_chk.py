@@ -251,29 +251,46 @@ def _summarize(stdout: str, stderr: str) -> str:
 
 def run_gate(gate: Gate, repo_root: Path,
              default_timeout: Optional[int] = None) -> GateResult:
-    timeout = gate.timeout_s or default_timeout or DEFAULT_TIMEOUT_S
+    timeout = _timeout_of(gate, default_timeout)
     started = time.monotonic()
     try:
-        proc = subprocess.run(
-            list(gate.argv),
-            cwd=str(repo_root),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-    except FileNotFoundError:
-        detail = f"执行器未找到：{gate.argv[0]}"
-        return GateResult(gate, STATUS_ERROR, 127, "", detail,
-                          time.monotonic() - started, detail)
-    except subprocess.TimeoutExpired:
-        detail = f"执行超时（>{timeout}s）"
-        return GateResult(gate, STATUS_ERROR, 124, "", detail,
-                          time.monotonic() - started, detail)
-    except OSError as exc:
-        detail = f"无法启动执行器：{exc}"
-        return GateResult(gate, STATUS_ERROR, 126, "", detail,
-                          time.monotonic() - started, detail)
+        proc = _exec_gate(gate, repo_root, timeout)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return _broken(gate, started, exc, timeout)
+    return _done(gate, proc, started)
 
+
+def _timeout_of(gate: Gate, default: Optional[int]) -> int:
+    """门禁自带时限优先，其次命令行缺省，最后内置缺省。"""
+    return gate.timeout_s or default or DEFAULT_TIMEOUT_S
+
+
+def _exec_gate(gate: Gate, repo_root: Path, timeout: int):
+    """按门禁 argv 在仓库根下执行，超时交由调用方解释。"""
+    return subprocess.run(
+        list(gate.argv),
+        cwd=str(repo_root),
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+
+
+def _broken(gate: Gate, started: float, exc: BaseException,
+            timeout: int) -> GateResult:
+    """把启动失败与超时映射成固定退出码的 ERROR 结果。"""
+    if isinstance(exc, subprocess.TimeoutExpired):
+        code, detail = 124, f"执行超时（>{timeout}s）"
+    elif isinstance(exc, FileNotFoundError):
+        code, detail = 127, f"执行器未找到：{gate.argv[0]}"
+    else:
+        code, detail = 126, f"无法启动执行器：{exc}"
+    return GateResult(gate, STATUS_ERROR, code, "", detail,
+                      time.monotonic() - started, detail)
+
+
+def _done(gate: Gate, proc, started: float) -> GateResult:
+    """把完成的子进程转成 PASS/FAIL 结果。"""
     duration = time.monotonic() - started
     status = STATUS_PASS if proc.returncode == 0 else STATUS_FAIL
     return GateResult(gate, status, proc.returncode, proc.stdout,
