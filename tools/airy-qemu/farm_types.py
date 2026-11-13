@@ -254,14 +254,13 @@ class KernelImage:
     arch: Arch
 
     def __post_init__(self) -> None:
+        self._norm_path()
+        _need_image(self.path, self.arch)
+
+    def _norm_path(self) -> None:
+        """字符串路径按 Path 归一（frozen 需经 object.__setattr__）。"""
         if isinstance(self.path, str):
             object.__setattr__(self, "path", Path(self.path))
-        if not isinstance(self.path, Path):
-            raise ValueError(f"path must be Path, got {type(self.path).__name__}")
-        if not self.path.name:
-            raise ValueError(f"path must name an image file: {self.path}")
-        if not isinstance(self.arch, Arch):
-            raise ValueError(f"arch must be Arch, got {type(self.arch).__name__}")
 
 
 @dataclass(frozen=True)
@@ -501,6 +500,15 @@ def _need_version(value: str) -> None:
         raise ValueError(f"invalid version: {value!r}")
 
 
+def _need_image(path, arch) -> None:
+    """镜像路径与目标架构的类型判据。"""
+    if not isinstance(path, Path):
+        raise ValueError(f"path must be Path, got {type(path).__name__}")
+    if not path.name:
+        raise ValueError(f"path must name an image file: {path}")
+    _need_enum(arch, Arch, "arch")
+
+
 def _need_job_parts(machine, kernel) -> None:
     """机型与内核必须成对：类型正确且目标架构一致。
 
@@ -559,8 +567,18 @@ def _arch_dup(arches: list) -> bool:
 def _need_machines(value) -> None:
     """清单级机型元组：非空、元素类型、架构唯一。"""
     _need_tup(value, "machines")
+    _machines_rows(value)
+    _arch_rows(value)
+
+
+def _machines_rows(value) -> None:
+    """元组元素必须全是 Machine。"""
     if not _machines_ok(value):
         raise ValueError("machines must contain only Machine instances")
+
+
+def _arch_rows(value) -> None:
+    """机型架构序列不得重复。"""
     arches = [machine.arch for machine in value]
     if _arch_dup(arches):
         raise ValueError(f"duplicate machine arches: {[a.value for a in arches]}")
@@ -582,16 +600,21 @@ def _need_opt(res) -> None:
 
 def _need_result(res) -> None:
     """结果字段的类型与范围（与状态无关的部分）。"""
-    if not isinstance(res.job, FarmJob):
-        raise ValueError("job must be FarmJob")
-    _need_enum(res.state, JobState, "state")
-    if not res.state.terminal:
-        raise ValueError(f"state must be terminal, got {res.state.value}")
+    _need_res_job(res)
     if res.duration_s < 0:
         raise ValueError(f"duration_s must be non-negative, got {res.duration_s}")
     _need_opt(res)
     if not isinstance(res.qemu_argv, tuple):
         raise ValueError("qemu_argv must be a tuple")
+
+
+def _need_res_job(res) -> None:
+    """作业与状态：只有终态才允许构造结果。"""
+    if not isinstance(res.job, FarmJob):
+        raise ValueError("job must be FarmJob")
+    _need_enum(res.state, JobState, "state")
+    if not res.state.terminal:
+        raise ValueError(f"state must be terminal, got {res.state.value}")
 
 
 def _need_evid(res) -> None:

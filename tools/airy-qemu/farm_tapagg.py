@@ -254,8 +254,7 @@ def collect_tap(raw: RawRun) -> TapReport:
 
 def _expect(suites: tuple[tuple[str, int], ...]) -> dict[str, int]:
     """校验套件描述并转为有序映射。"""
-    if not isinstance(suites, tuple) or not suites:
-        raise _cfg("suites must be a non-empty tuple")
+    _need_decl(suites)
     expect: dict[str, int] = {}
     for item in suites:
         name, count = _suite_entry(item)
@@ -263,6 +262,12 @@ def _expect(suites: tuple[tuple[str, int], ...]) -> dict[str, int]:
             raise _cfg(f"duplicate suite: {name!r}")
         expect[name] = count
     return expect
+
+
+def _need_decl(suites) -> None:
+    """套件描述必须是非空元组。"""
+    if not isinstance(suites, tuple) or not suites:
+        raise _cfg("suites must be a non-empty tuple")
 
 
 def _suite_entry(item: tuple[str, int]) -> tuple[str, int]:
@@ -318,14 +323,27 @@ def _record(
 ) -> None:
     """把一条结果行计入对应套件。"""
     body, directive = _split(hit.group("rest") or "")
-    name = _suite_of(body)
+    slot = _slot_of(_suite_of(body), hit, tally)
+    _bump(slot, hit.group("status"), directive)
+
+
+def _slot_of(
+    name: str,
+    hit: re.Match[str],
+    tally: dict[str, list[int]],
+) -> list[int]:
+    """取套件计数槽位；未知套件说明证据与作业不对应。"""
     if name not in tally:
         raise FarmError(
             f"TAP result for unknown suite: {hit.group(0)!r}",
             AIRY_QEMU_ERROR,
         )
-    slot = tally[name]
-    if hit.group("status") == "not ok":
+    return tally[name]
+
+
+def _bump(slot: list[int], status: str, directive: str) -> None:
+    """按状态与 TAP 指令累加计数。"""
+    if status == "not ok":
         slot[_BAD] += 1
     elif directive == "SKIP":
         slot[_SKIP] += 1
