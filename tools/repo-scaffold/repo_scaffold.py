@@ -211,20 +211,24 @@ def _schema_skels(value: Any) -> list[str]:
     return problems
 
 
+def _lic_entry(name: str, entry: Any) -> list[str]:
+    if not isinstance(entry, dict):
+        return [f"licenses.{name} 必须是映射"]
+    problems = _need(entry, LICENSE_KEYS, f"licenses.{name}.")
+    if not _rel_ok(entry.get("file")):
+        problems.append(f"licenses.{name}.file 路径非法")
+    marker = entry.get("marker")
+    if not isinstance(marker, str) or not marker:
+        problems.append(f"licenses.{name}.marker 必须是非空字符串")
+    return problems
+
+
 def _schema_lics(value: Any) -> list[str]:
     if not isinstance(value, dict) or not value:
         return ["licenses 必须是非空映射"]
     problems: list[str] = []
     for name, entry in value.items():
-        if not isinstance(entry, dict):
-            problems.append(f"licenses.{name} 必须是映射")
-            continue
-        problems.extend(_need(entry, LICENSE_KEYS, f"licenses.{name}."))
-        if not _rel_ok(entry.get("file")):
-            problems.append(f"licenses.{name}.file 路径非法")
-        marker = entry.get("marker")
-        if not isinstance(marker, str) or not marker:
-            problems.append(f"licenses.{name}.marker 必须是非空字符串")
+        problems.extend(_lic_entry(name, entry))
     return problems
 
 
@@ -518,21 +522,36 @@ def _cmake_srcs(spec: RepoSpec, base: Path,
     return problems
 
 
-def _kbuild_file(label: str, base: Path,
-                 path: Path) -> tuple[list[str], list[Path]]:
-    """解析单个 Kbuild/Makefile 的模块对象与源文件。"""
-    text = _strip_comments(_read_text(path))
-    composed = {stem for stem, _ in _OBJS_RE.findall(text)}
+def _add_objs(label: str, base: Path, text: str,
+              sources: list[Path]) -> list[str]:
+    """`<mod>-objs := a.o b.o` 聚合行里的对象逐个校验。"""
     problems: list[str] = []
-    sources: list[Path] = []
     for _, value in _OBJS_RE.findall(text):
         for obj in value.split():
             problems += _object_src(label, base, obj, sources)
+    return problems
+
+
+def _plain_objs(label: str, base: Path, text: str, composed: set[str],
+                sources: list[Path]) -> list[str]:
+    """普通 `obj-y += x.o`：聚合名不当独立模块，其余逐个校验。"""
+    problems: list[str] = []
     for value in _OBJ_RE.findall(text):
         for obj in value.split():
             if not obj.endswith(".o") or obj[:-2] in composed:
                 continue
             problems += _object_src(label, base, obj, sources)
+    return problems
+
+
+def _kbuild_file(label: str, base: Path,
+                 path: Path) -> tuple[list[str], list[Path]]:
+    """解析单个 Kbuild/Makefile 的模块对象与源文件。"""
+    text = _strip_comments(_read_text(path))
+    composed = {stem for stem, _ in _OBJS_RE.findall(text)}
+    sources: list[Path] = []
+    problems = _add_objs(label, base, text, sources)
+    problems += _plain_objs(label, base, text, composed, sources)
     return problems, sources
 
 
