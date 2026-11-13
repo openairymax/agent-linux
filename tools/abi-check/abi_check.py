@@ -164,6 +164,43 @@ def read_if_exists(path):
 
 # ─── Parsers ───────────────────────────────────────────────────────────────
 
+def _ssot_ver(text):
+    """SSoT 文档版本号；文档未标注时返回 None。"""
+    m = re.search(r"\*\*文档版本\*\*[：:]\s*(v[\d.]+)", text)
+    return m.group(1) if m else None
+
+
+def _ssot_base(text):
+    """UAPI 模板（6.2 节）的 AIRY_SYS_BASE；模板缺失时返回 None。"""
+    m = re.search(r"#define\s+AIRY_SYS_BASE\s+(\d+)", text)
+    return int(m.group(1)) if m else None
+
+
+def _ssot_calls(text):
+    """3.1 表格的核心 syscall 条目，同名宏只保留首次出现。"""
+    calls = {}
+    for m in re.finditer(
+        r"\|\s*(\d+)\s*\|\s*`([A-Z_]+)`\s*\|\s*`(airy_sys_\w+)`\s*\|",
+        text,
+    ):
+        calls.setdefault(m.group(3), {
+            "name": m.group(3),
+            "macro": m.group(2),
+            "linux_number": int(m.group(1)),
+        })
+    return list(calls.values())
+
+
+def _ssot_range(text):
+    """3.2 表格的保留号段；表格缺失时返回 None。"""
+    m = re.search(
+        r"\|\s*(\d+)-(\d+)\s*\|\s*`AIRY_SYS_RESERVED_\w+`"
+        r"\s*~\s*`AIRY_SYS_RESERVED_\w+`",
+        text,
+    )
+    return [int(m.group(1)), int(m.group(2))] if m else None
+
+
 def parse_ssot(text):
     """Parse SSoT markdown to extract authoritative syscall definitions.
 
@@ -175,57 +212,16 @@ def parse_ssot(text):
     Returns dict: {version, linux_base, syscalls, reserved_range}
       syscalls: list of {name, macro, linux_number}
     """
-    result = {
-        "version": None,
-        "linux_base": None,
-        "syscalls": [],
-        "reserved_range": None,
+    calls = _ssot_calls(text)
+    base = _ssot_base(text)
+    if base is None and calls:
+        base = min(call["linux_number"] for call in calls)
+    return {
+        "version": _ssot_ver(text),
+        "linux_base": base,
+        "syscalls": calls,
+        "reserved_range": _ssot_range(text),
     }
-
-    # Extract document version
-    m = re.search(r"\*\*文档版本\*\*[：:]\s*(v[\d.]+)", text)
-    if m:
-        result["version"] = m.group(1)
-
-    # Extract AIRY_SYS_BASE from UAPI template (section 6.2)
-    m = re.search(r"#define\s+AIRY_SYS_BASE\s+(\d+)", text)
-    if m:
-        result["linux_base"] = int(m.group(1))
-
-    # Extract core syscalls from section 3.1 table:
-    #   | 548 | `AIRY_SYS_CALL` | `airy_sys_call` | ... |
-    seen = set()
-    for m in re.finditer(
-        r"\|\s*(\d+)\s*\|\s*`([A-Z_]+)`\s*\|\s*`(airy_sys_\w+)`\s*\|",
-        text,
-    ):
-        num = int(m.group(1))
-        macro = m.group(2)
-        name = m.group(3)
-        if name in seen:
-            continue
-        seen.add(name)
-        result["syscalls"].append({
-            "name": name,
-            "macro": macro,
-            "linux_number": num,
-        })
-
-    # Fallback: if AIRY_SYS_BASE not found via define, use min syscall number
-    if result["linux_base"] is None and result["syscalls"]:
-        result["linux_base"] = min(s["linux_number"] for s in result["syscalls"])
-
-    # Extract reserved range from section 3.2:
-    #   | 552-571 | `AIRY_SYS_RESERVED_BASE` ~ `AIRY_SYS_RESERVED_END` | ...
-    m = re.search(
-        r"\|\s*(\d+)-(\d+)\s*\|\s*`AIRY_SYS_RESERVED_\w+`"
-        r"\s*~\s*`AIRY_SYS_RESERVED_\w+`",
-        text,
-    )
-    if m:
-        result["reserved_range"] = [int(m.group(1)), int(m.group(2))]
-
-    return result
 
 
 def parse_unistd(text):
