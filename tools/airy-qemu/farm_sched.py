@@ -154,12 +154,7 @@ def _fits(
 
 def _guard(execute: Execute, job: FarmJob) -> JobResult:
     """执行单作业并把执行期错误降级为 ERROR 结果。"""
-    try:
-        result = execute(job)
-    except FarmConfigError:
-        raise
-    except FarmError as exc:
-        return _error(job, exc)
+    result = _run_guard(execute, job)
     if not isinstance(result, JobResult):
         raise FarmConfigError(
             f"execute must return JobResult, got {type(result).__name__}"
@@ -170,6 +165,16 @@ def _guard(execute: Execute, job: FarmJob) -> JobResult:
             f"{job.job_id!r}"
         )
     return result
+
+
+def _run_guard(execute: Execute, job: FarmJob) -> JobResult:
+    """调用执行器；FarmError 降级为 ERROR，配置错误照常上抛。"""
+    try:
+        return execute(job)
+    except FarmConfigError:
+        raise
+    except FarmError as exc:
+        return _error(job, exc)
 
 
 def _error(job: FarmJob, exc: FarmError) -> JobResult:

@@ -393,6 +393,11 @@ def _need_scalar(job: object, fmt: object, size: object) -> None:
         raise _cfg("job must be FarmJob")
     if not isinstance(fmt, KernelFormat):
         raise _cfg(f"fmt must be KernelFormat, got {type(fmt).__name__}")
+    _size_guard(size)
+
+
+def _size_guard(size: object) -> None:
+    """镜像字节数必须是正整数（bool 不算整数）。"""
     if isinstance(size, bool) or size <= 0:
         raise _cfg(f"kernel_size must be positive, got {size!r}")
 
@@ -445,18 +450,27 @@ def _require_fmt(arch: Arch, fmt: KernelFormat, mach: int | None) -> None:
     """校验格式与架构一致（ELF 还需 e_machine 匹配）。"""
     allowed = _ARCH_FMT[arch]
     if fmt not in allowed:
-        names = ", ".join(sorted(item.value for item in allowed))
         raise _cfg(
             f"{arch.value} kernel image has unexpected format {fmt.value}; "
-            f"expected one of: {names}"
+            f"expected one of: {_fmt_names(allowed)}"
         )
     if fmt is KernelFormat.ELF:
-        want = _ELF_MACH[arch]
-        if mach != want:
-            raise _cfg(
-                f"ELF machine {mach} does not match {arch.value} "
-                f"(expected {want})"
-            )
+        _need_elf(arch, mach)
+
+
+def _fmt_names(allowed: frozenset[KernelFormat]) -> str:
+    """可接受格式的报错文案，按名称排序。"""
+    return ", ".join(sorted(item.value for item in allowed))
+
+
+def _need_elf(arch: Arch, mach: int | None) -> None:
+    """ELF 镜像的 e_machine 必须与目标架构一致。"""
+    want = _ELF_MACH[arch]
+    if mach != want:
+        raise _cfg(
+            f"ELF machine {mach} does not match {arch.value} "
+            f"(expected {want})"
+        )
 
 
 def _elf_mach(head: bytes) -> int:
@@ -495,14 +509,21 @@ def _list_tests(path: Path) -> dict[str, int]:
     """解析 kselftest-list.txt 并统计每个套件的用例数。"""
     counts: dict[str, int] = {}
     for lineno, raw in enumerate(_lines(path), 1):
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        suite = _test_suite(path, lineno, raw)
-        counts[suite] = counts.get(suite, 0) + 1
+        _count_one(counts, path, lineno, raw)
     if not counts:
         raise _cfg(f"{path}: no tests listed")
     return counts
+
+
+def _count_one(
+    counts: dict[str, int], path: Path, lineno: int, raw: str
+) -> None:
+    """统计一行有效条目；空行与注释跳过。"""
+    line = raw.strip()
+    if not line or line.startswith("#"):
+        return
+    suite = _test_suite(path, lineno, raw)
+    counts[suite] = counts.get(suite, 0) + 1
 
 
 def _check_src(source: Path, tests: dict[str, int]) -> None:
