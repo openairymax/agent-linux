@@ -170,6 +170,10 @@ def _is_str_list(value: Any) -> bool:
             and all(isinstance(item, str) for item in value))
 
 
+def _is_str(value: Any) -> bool:
+    return isinstance(value, str)
+
+
 def _need(mapping: Mapping[str, Any], keys: frozenset[str],
           scope: str) -> list[str]:
     """报告缺失的必填字段。"""
@@ -262,23 +266,39 @@ def _job_fields(entry: Mapping[str, Any], name: str) -> list[str]:
     return problems
 
 
+def _opt_ok(entry: Mapping[str, Any], key: str, scope: str,
+            ok: Any, msg: str) -> list[str]:
+    """可选字段：缺省即跳过，出现时须通过形状判据。"""
+    if key not in entry or ok(entry[key]):
+        return []
+    return [f"{scope}{key} {msg}"]
+
+
+HELPER_FIELDS = (
+    ("path", _is_str, "必须是字符串"),
+    ("argv", _is_str_list, "必须是字符串列表"),
+)
+
+
+def _helper_schema(key: str, entry: Any) -> list[str]:
+    """单个 helper 条目：字段齐全、path/argv 形状、status 取值。"""
+    scope = f"helpers.{key}."
+    if not isinstance(entry, dict):
+        return [f"helpers.{key} 必须是映射"]
+    problems = _need(entry, HELPER_KEYS, scope)
+    for field, ok, msg in HELPER_FIELDS:
+        problems.extend(_opt_ok(entry, field, scope, ok, msg))
+    if entry.get("status") not in HELPER_STATES:
+        problems.append(f"{scope}status 必须是 {sorted(HELPER_STATES)} 之一")
+    return problems
+
+
 def _schema_helpers(value: Any) -> list[str]:
     if not isinstance(value, dict):
         return ["helpers 必须是映射"]
     problems: list[str] = []
     for key, entry in value.items():
-        scope = f"helpers.{key}."
-        if not isinstance(entry, dict):
-            problems.append(f"helpers.{key} 必须是映射")
-            continue
-        problems.extend(_need(entry, HELPER_KEYS, scope))
-        if "path" in entry and not isinstance(entry["path"], str):
-            problems.append(f"{scope}path 必须是字符串")
-        if entry.get("status") not in HELPER_STATES:
-            problems.append(
-                f"{scope}status 必须是 {sorted(HELPER_STATES)} 之一")
-        if "argv" in entry and not _is_str_list(entry["argv"]):
-            problems.append(f"{scope}argv 必须是字符串列表")
+        problems.extend(_helper_schema(key, entry))
     return problems
 
 
@@ -370,6 +390,21 @@ def check_schema(man: Mapping[str, Any]) -> CheckResult:
 # ─── Checks ────────────────────────────────────────────────────────────────
 
 
+def _cron_list(triggers: Mapping[str, Any]) -> list[Any]:
+    """workflow 的 schedule.cron 取值序列；非列表时按空序列处理。"""
+    schedule = triggers.get("schedule")
+    if not isinstance(schedule, list):
+        return []
+    return [item.get("cron") for item in schedule if isinstance(item, dict)]
+
+
+def _forbid_probs(rules: Mapping[str, Any],
+                  triggers: Mapping[str, Any]) -> list[str]:
+    """清单声明的禁止触发方式一旦出现在 workflow 中即为违规。"""
+    return [f"nightly 不得由 {key} 触发（结果不得阻断 PR）"
+            for key in rules["forbidden"] if key in triggers]
+
+
 def check_trigger(man: Mapping[str, Any],
                   wf: Mapping[str, Any]) -> CheckResult:
     """校验触发条件：唯一 cron、可手动触发、禁止 PR 触发。"""
@@ -378,16 +413,12 @@ def check_trigger(man: Mapping[str, Any],
     if not isinstance(triggers, dict):
         return CheckResult(NAME_TRIGGER, False, "on 段必须是映射")
     problems: list[str] = []
-    schedule = triggers.get("schedule")
-    crons = [item.get("cron") for item in schedule
-             if isinstance(item, dict)] if isinstance(schedule, list) else []
+    crons = _cron_list(triggers)
     if crons != [rules["cron"]]:
         problems.append(f"schedule.cron 期望 {[rules['cron']]}，实际 {crons}")
     if "workflow_dispatch" not in triggers:
         problems.append("缺少 workflow_dispatch 手动触发")
-    for key in rules["forbidden"]:
-        if key in triggers:
-            problems.append(f"nightly 不得由 {key} 触发（结果不得阻断 PR）")
+    problems.extend(_forbid_probs(rules, triggers))
     return _result(NAME_TRIGGER, problems)
 
 
@@ -569,6 +600,31 @@ def read_gate(man: Mapping[str, Any], root: Path) -> str | None:
         return None
 
 
+def _gate_bad(gate_rel: Any, gate: str | None) -> str | None:
+    """登记了 helper_gate 却读不出正文时返回失败详情。"""
+    if isinstance(gate_rel, str) and gate_rel and gate is None:
+        return f"无法读取 helper 门禁 {gate_rel}"
+    return None
+
+
+def _helper_job(spec: Mapping[str, Any], man: Mapping[str, Any],
+                gate: str | None, jobs: Mapping[str, Any],
+                root: Path) -> list[str]:
+    """单个 job 内全部 helper 的契约问题。"""
+    wf_text = _text(jobs.get(spec["name"], {}))
+    text = wf_text if gate is None else gate
+    problems: list[str] = []
+    for key in spec["helpers"]:
+        entry = man["helpers"].get(key)
+        if entry is None:
+            problems.append(f"{spec['name']} 引用了未登记的 helper: {key}")
+            continue
+        if gate is not None:
+            problems.extend(_call_probs(spec["name"], key, wf_text))
+        problems.extend(_helper_probs(spec["name"], entry, text, root))
+    return problems
+
+
 def check_helpers(man: Mapping[str, Any],
                   wf: Mapping[str, Any], root: Path) -> CheckResult:
     """校验 helper 的调用、守卫、SKIP 标记与落地状态。
@@ -578,24 +634,13 @@ def check_helpers(man: Mapping[str, Any],
     旧形态，便于尚未迁移的清单继续受检。
     """
     jobs = _jobs(wf)
-    gate_rel = man.get("helper_gate")
     gate = read_gate(man, root)
-    if isinstance(gate_rel, str) and gate_rel and gate is None:
-        return CheckResult(NAME_HELPERS, False, f"无法读取 helper 门禁 {gate_rel}")
+    bad = _gate_bad(man.get("helper_gate"), gate)
+    if bad is not None:
+        return CheckResult(NAME_HELPERS, False, bad)
     problems: list[str] = []
     for spec in man["jobs"]:
-        wf_text = _text(jobs.get(spec["name"], {}))
-        text = wf_text if gate is None else gate
-        for key in spec["helpers"]:
-            entry = man["helpers"].get(key)
-            if entry is None:
-                problems.append(
-                    f"{spec['name']} 引用了未登记的 helper: {key}")
-                continue
-            if gate is not None:
-                problems.extend(_call_probs(spec["name"], key, wf_text))
-            problems.extend(
-                _helper_probs(spec["name"], entry, text, root))
+        problems.extend(_helper_job(spec, man, gate, jobs, root))
     return _result(NAME_HELPERS, problems)
 
 
