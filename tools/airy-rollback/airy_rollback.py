@@ -457,23 +457,31 @@ def read_snap(path: Path) -> Snapshot | None:
     )
 
 
+def _snap_of(entry: Path, bad: list[str]) -> Snapshot | None:
+    """读取单个快照目录；不可读时记入 bad 并返回 None。"""
+    try:
+        return read_snap(entry)
+    except RollbackError as exc:
+        bad.append(f"{entry.name}: {exc.detail}")
+        return None
+
+
+def _snap_rows(root: Path, bad: list[str]):
+    """按名称序遍历目录项，逐个产出可用快照。"""
+    for entry in sorted(root.iterdir()):
+        if not entry.is_dir():
+            continue
+        snap = _snap_of(entry, bad)
+        if snap is not None:
+            yield snap
+
+
 def scan_snaps(root: Path) -> tuple[list[Snapshot], list[str]]:
     """扫描快照根目录，按创建时间倒序返回可用与损坏两类。"""
     if not root.is_dir():
         raise RollbackError(EXIT_PREFLIGHT, f"快照根目录不存在: {root}")
-    good: list[Snapshot] = []
     bad: list[str] = []
-    for entry in sorted(root.iterdir()):
-        if not entry.is_dir():
-            continue
-        try:
-            snap = read_snap(entry)
-        except RollbackError as exc:
-            bad.append(f"{entry.name}: {exc.detail}")
-            continue
-        if snap is not None:
-            good.append(snap)
-    good.sort(key=_snap_ts, reverse=True)
+    good = sorted(_snap_rows(root, bad), key=_snap_ts, reverse=True)
     return good, bad
 
 
@@ -770,9 +778,9 @@ def run_steps(
     for step in steps:
         proc = runner.run(step.argv, timeout_s)
         if not proc.ok:
-            detail = proc.err or proc.out or "无输出"
             code = EXIT_PARTIAL if done else EXIT_FAIL
-            return code, f"{step.note} 失败（{proc.code}）: {detail}", done
+            detail = f"{step.note} 失败（{proc.code}）: {_fail_detail(proc)}"
+            return code, detail, done
         done += 1
     return EXIT_OK, "", done
 
@@ -807,6 +815,15 @@ def write_audit(path: Path, record: Mapping[str, Any]) -> None:
 _RESULT = {EXIT_OK: "ok", EXIT_PARTIAL: "partial"}
 
 
+def _plan_fields(
+    plan: Plan | None, steps: Sequence[Step]
+) -> tuple[str, str, list[list[str]]]:
+    """(layer, target, 步骤表)；无计划时前者留空、步骤取显式传入的。"""
+    if plan is None:
+        return "", "", [list(step.argv) for step in steps]
+    return plan.layer.value, plan.target, [list(step.argv) for step in plan.steps]
+
+
 def _record(
     actor: str,
     action: str,
@@ -815,14 +832,13 @@ def _record(
     comment: str,
     steps: Sequence[Step] = (),
 ) -> dict[str, Any]:
-    source = plan.steps if plan else steps
-    argv = [list(step.argv) for step in source]
+    layer, target, argv = _plan_fields(plan, steps)
     return {
         "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "actor": actor,
         "action": action,
-        "layer": plan.layer.value if plan else "",
-        "target": plan.target if plan else "",
+        "layer": layer,
+        "target": target,
         "code": outcome.code,
         "result": _RESULT.get(outcome.code, "fail"),
         "comment": comment,
@@ -931,6 +947,21 @@ def _settle(
     return Outcome(EXIT_OK, detail, plan, checks)
 
 
+def _fail_detail(proc) -> str:
+    """失败诊断：stderr 优先，其次 stdout，都没有给占位。"""
+    return proc.err or proc.out or "无输出"
+
+
+def _reboot(manifest: Manifest, runner: Runner) -> str:
+    """执行重启命令；失败返回诊断，成功返回空串。"""
+    proc = runner.run(
+        expand(manifest.commands["reboot"], {}), manifest.timeout_s
+    )
+    if proc.ok:
+        return ""
+    return _fail_detail(proc)
+
+
 def _finish_l3(
     manifest: Manifest,
     args: argparse.Namespace,
@@ -946,13 +977,10 @@ def _finish_l3(
         return Outcome(
             EXIT_OK, "根分区已切换，请重启后执行 verify", plan, checks
         )
-    proc = runner.run(
-        expand(manifest.commands["reboot"], {}), manifest.timeout_s
-    )
-    if not proc.ok:
-        detail = proc.err or proc.out or "无输出"
+    failed = _reboot(manifest, runner)
+    if failed:
         return Outcome(
-            EXIT_PARTIAL, f"根分区已切换但重启失败: {detail}", plan, checks
+            EXIT_PARTIAL, f"根分区已切换但重启失败: {failed}", plan, checks
         )
     return Outcome(
         EXIT_OK, "根分区已切换，系统重启中；重启后执行 verify", plan, checks
