@@ -301,6 +301,23 @@ def _collect_lists(
         _collect_field(path, field, key_name, doc, accs[field])
 
 
+def _rel_key(path: Path, rel: Any) -> tuple:
+    """relationships 元素的 (源, 类型, 目标) 三元组。
+
+    Raises:
+        MergeError: 元素不是对象或缺少任一项。
+    """
+    if not isinstance(rel, dict):
+        raise MergeError(f"{path}: relationships 的元素必须是对象")
+    key = (rel.get("spdxElementId"), rel.get("relationshipType"),
+           rel.get("relatedSpdxElement"))
+    if not all(isinstance(part, str) and part for part in key):
+        raise MergeError(
+            f"{path}: relationship 缺少 spdxElementId/"
+            f"relationshipType/relatedSpdxElement")
+    return key
+
+
 def _collect_rels(path: Path, doc: JsonDoc, acc: _Accumulator) -> None:
     """把 relationships 按 (源, 类型, 目标) 三元组并入累积器。
 
@@ -313,15 +330,14 @@ def _collect_rels(path: Path, doc: JsonDoc, acc: _Accumulator) -> None:
     if not isinstance(rels, list):
         raise MergeError(f"{path}: relationships 必须是数组")
     for rel in rels:
-        if not isinstance(rel, dict):
-            raise MergeError(f"{path}: relationships 的元素必须是对象")
-        key = (rel.get("spdxElementId"), rel.get("relationshipType"),
-               rel.get("relatedSpdxElement"))
-        if not all(isinstance(part, str) and part for part in key):
-            raise MergeError(
-                f"{path}: relationship 缺少 spdxElementId/"
-                f"relationshipType/relatedSpdxElement")
-        acc.add(key, rel, path, "relationship")
+        acc.add(_rel_key(path, rel), rel, path, "relationship")
+
+
+def _add_creators(creators: set[str], info: JsonDoc) -> None:
+    """并入 creationInfo.creators 中的非空字符串。"""
+    for creator in info.get("creators") or []:
+        if isinstance(creator, str) and creator:
+            creators.add(creator)
 
 
 def _collect_info(
@@ -339,9 +355,7 @@ def _collect_info(
         return None
     if not isinstance(info, dict):
         raise MergeError(f"{path}: creationInfo 必须是对象")
-    for creator in info.get("creators") or []:
-        if isinstance(creator, str) and creator:
-            creators.add(creator)
+    _add_creators(creators, info)
     version = info.get("licenseListVersion")
     return str(version) if version else None
 
