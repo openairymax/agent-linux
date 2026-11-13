@@ -188,11 +188,7 @@ class Store:
     def _check_files(self, pack: Path, evidences: list[Evidence]) -> None:
         """证据必须真实落盘且摘要一致，符号链接一律拒绝。"""
         for item in evidences:
-            path = pack / item.path
-            if path.is_symlink() or not path.is_file():
-                raise FileNotFoundError(f"evidence missing: {item.path}")
-            if _digest(path) != item.sha256:
-                raise ValueError(f"evidence digest mismatch: {item.path}")
+            _need_disk(pack, item)
 
 
 @contextmanager
@@ -287,15 +283,27 @@ def _need_free(man: Manifest, packs: list[_Sealed]) -> None:
         raise ValueError(f"{man.supersedes} is already superseded")
 
 
+def _need_disk(pack: Path, item: Evidence) -> None:
+    """证据必须真实落盘且摘要一致，符号链接一律拒绝。"""
+    path = pack / item.path
+    if path.is_symlink() or not path.is_file():
+        raise FileNotFoundError(f"evidence missing: {item.path}")
+    if _digest(path) != item.sha256:
+        raise ValueError(f"evidence digest mismatch: {item.path}")
+
+
+def _need_plain(path: Path) -> None:
+    """单个条目：拒绝符号链接与特殊文件。"""
+    if path.is_symlink():
+        raise ValueError(f"symlink is not allowed in evidence: {path}")
+    if not path.is_file() and not path.is_dir():
+        raise ValueError(f"special file is not allowed in evidence: {path}")
+
+
 def _check_tree(pack: Path) -> None:
     """封口前确认包内只有普通文件与目录，链接与特殊文件一律拒绝。"""
     for path in pack.rglob("*"):
-        if path.is_symlink():
-            raise ValueError(f"symlink is not allowed in evidence: {path}")
-        if not path.is_file() and not path.is_dir():
-            raise ValueError(
-                f"special file is not allowed in evidence: {path}"
-            )
+        _need_plain(path)
 
 
 def _write_seal(pack: Path, man: Manifest, sealed: str) -> None:

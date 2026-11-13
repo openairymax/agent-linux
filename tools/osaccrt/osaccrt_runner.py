@@ -322,16 +322,21 @@ def _sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def _scan_item(item: Path, files: list[Path]) -> None:
+    """单个条目：拒绝链接与特殊文件，普通文件收入结果。"""
+    if item.is_symlink():
+        raise ValueError(f"evidence must not be a symlink: {item}")
+    if item.is_file():
+        files.append(item)
+    elif not item.is_dir():
+        raise ValueError(f"special file is not allowed: {item}")
+
+
 def _files(root: Path) -> list[Path]:
     """列出采集目录下的普通文件；链接与特殊文件一律拒绝。"""
     files: list[Path] = []
     for item in sorted(root.rglob("*")):
-        if item.is_symlink():
-            raise ValueError(f"evidence must not be a symlink: {item}")
-        if item.is_file():
-            files.append(item)
-        elif not item.is_dir():
-            raise ValueError(f"special file is not allowed: {item}")
+        _scan_item(item, files)
     return files
 
 
@@ -493,11 +498,16 @@ def _ruled(result: ExpResult) -> Verdict:
     return result.verdict
 
 
-def _need_unique(plans: tuple[ExpPlan, ...]) -> None:
-    """一组计划内实验编号不得重复，避免互相覆盖证据包。"""
+def _need_plans(plans: tuple[ExpPlan, ...]) -> None:
+    """计划集合只收 ExpPlan 条目。"""
     for plan in plans:
         if not isinstance(plan, ExpPlan):
             raise TypeError("plans must contain ExpPlan items")
+
+
+def _need_unique(plans: tuple[ExpPlan, ...]) -> None:
+    """一组计划内实验编号不得重复，避免互相覆盖证据包。"""
+    _need_plans(plans)
     ids = [plan.exp_id for plan in plans]
     if len(ids) != len(set(ids)):
         raise ValueError(f"duplicate exp_id in plans: {ids}")
