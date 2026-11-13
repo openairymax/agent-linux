@@ -25,6 +25,26 @@ TEST_RE = re.compile(
 )
 
 
+def _plan_total(line):
+    """计划行 → 总用例数；非计划行返回 None。"""
+    m = PLAN_RE.match(line)
+    if not m:
+        return None
+    return int(m.group(2))
+
+
+def _test_result(line):
+    """测试行 → (num, status, desc)；非测试行返回 None。"""
+    m = TEST_RE.match(line)
+    if not m:
+        return None
+    status = m.group("status")
+    rest = m.group("rest") or ""
+    # 剥离前导 "- "，便于展示描述
+    desc = rest.lstrip("- ").strip()
+    return int(m.group("num")), status, desc
+
+
 def parse_tap(text):
     """解析 TAP 文本。
 
@@ -35,34 +55,37 @@ def parse_tap(text):
         results     : list[(num, status, desc)]
     """
     plan_total = None
-    ok_count = 0
-    not_ok_count = 0
     results = []
     for raw in text.splitlines():
         line = raw.rstrip("\n")
-        m = PLAN_RE.match(line)
-        if m:
-            plan_total = int(m.group(2))
+        total = _plan_total(line)
+        if total is not None:
+            plan_total = total
             continue
-        m = TEST_RE.match(line)
-        if not m:
+        item = _test_result(line)
+        if item is None:
             continue
-        num = int(m.group("num"))
-        status = m.group("status")
-        rest = m.group("rest") or ""
-        # 剥离前导 "- "，便于展示描述
-        desc = rest.lstrip("- ").strip()
-        results.append((num, status, desc))
-        if status == "ok":
-            ok_count += 1
-        else:
-            not_ok_count += 1
+        results.append(item)
+    ok_count, not_ok_count = _counts(results)
     return {
         "plan_total": plan_total,
         "ok_count": ok_count,
         "not_ok_count": not_ok_count,
         "results": results,
     }
+
+
+def _counts(results):
+    """(ok 数, not ok 数)：status 只取 ok / not ok 两种取值。"""
+    ok = sum(1 for _, status, _ in results if status == "ok")
+    return ok, len(results) - ok
+
+
+def _print_failures(results):
+    """逐条打印未通过用例。"""
+    for num, status, desc in results:
+        if status == "not ok":
+            print(f"  not ok {num} - {desc}")
 
 
 def main():
@@ -100,9 +123,7 @@ def main():
 
     if not_ok > 0:
         print("失败用例：")
-        for num, status, desc in summary["results"]:
-            if status == "not ok":
-                print(f"  not ok {num} - {desc}")
+        _print_failures(summary["results"])
         if args.fail_on_not_ok:
             print(f"FAIL: {not_ok} 个 not ok 用例（--fail-on-not-ok 已启用）")
             return 1

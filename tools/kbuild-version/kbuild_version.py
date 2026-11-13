@@ -408,11 +408,16 @@ def check_macros(manifest: TupleMap, repo_root: Path) -> CheckResult:
     if block is None:
         return CheckResult(MACRO_NAME, False,
                            f"未找到 define {FILECHK_NAME} 块")
-    cleaned = block.replace("\\#", "#")
-    missing = [name for name in INJECTED_MACROS
-               if not re.search(r"#define\s+" + name + r"\b", cleaned)]
+    missing = _missing_macros(block)
     problems = [f"filechk_version.h 未注入宏: {name}" for name in missing]
     return CheckResult(MACRO_NAME, not problems, "\n".join(problems))
+
+
+def _missing_macros(block: str) -> list[str]:
+    """filechk 块中缺席的 AIRYMAXOS_* 宏名（转义 # 先还原）。"""
+    cleaned = block.replace("\\#", "#")
+    return [name for name in INJECTED_MACROS
+            if not re.search(r"#define\s+" + name + r"\b", cleaned)]
 
 
 def check_contract(manifest: TupleMap, repo_root: Path) -> CheckResult:
