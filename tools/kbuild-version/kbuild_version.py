@@ -269,14 +269,18 @@ def _tuple_shape(tuple_map: Any) -> Optional[List[str]]:
     return [f"version_tuple 缺少字段: {', '.join(missing)}"] if missing else None
 
 
+def _byte_bad(value: Any) -> bool:
+    """0..255 整数判据：布尔值虽是 int 子类也必须拒绝。"""
+    return (isinstance(value, bool) or not isinstance(value, int)
+            or not 0 <= value <= 255)
+
+
 def _byte_errs(tuple_map: TupleMap) -> List[str]:
     """三个数值字段必须落在 0..255：版本码按 ((a) << 8) + (b) 打包。"""
     return [
         f"version_tuple.{key} 必须是 0..255 的整数"
         for key in ("lts", "major", "minor")
-        if isinstance(tuple_map[key], bool)
-        or not isinstance(tuple_map[key], int)
-        or not 0 <= tuple_map[key] <= 255
+        if _byte_bad(tuple_map[key])
     ]
 
 
@@ -306,13 +310,17 @@ def _require_probs(manifest: TupleMap) -> list[str]:
     ]
 
 
+def _path_bad(value: Any, suffix: str) -> bool:
+    """路径登记值形态判据：非空字符串且后缀不符才算问题。"""
+    return isinstance(value, str) and value and not value.endswith(suffix)
+
+
 def _path_probs(manifest: TupleMap) -> list[str]:
-    problems = []
-    for key, suffix in PATH_SUFFIX_KEYS:
-        value = manifest.get(key)
-        if isinstance(value, str) and value and not value.endswith(suffix):
-            problems.append(f"{key} 形态非法（应以 {suffix} 结尾）")
-    return problems
+    return [
+        f"{key} 形态非法（应以 {suffix} 结尾）"
+        for key, suffix in PATH_SUFFIX_KEYS
+        if _path_bad(manifest.get(key), suffix)
+    ]
 
 
 def check_schema(manifest: TupleMap) -> CheckResult:
@@ -453,6 +461,12 @@ def check_contract(manifest: TupleMap, repo_root: Path) -> CheckResult:
                                                "\n".join(actual)))
 
 
+def _define_lines(text: str) -> List[str]:
+    """取规范化后以 #define AIRYMAXOS_ 开头的行。"""
+    return [line for line in _norm_lines(text)
+            if line.startswith(AIRYMAXOS_DEFINE_PREFIX)]
+
+
 def check_version_h(manifest: TupleMap, version_h: str | Path) -> CheckResult:
     """校验真实生成的 version.h 中的 AIRYMAXOS_* 宏块与契约一致。
 
@@ -468,8 +482,7 @@ def check_version_h(manifest: TupleMap, version_h: str | Path) -> CheckResult:
     if text is None:
         return CheckResult(VERSION_H_NAME, False,
                            f"version.h 不存在: {version_h}")
-    actual = [line for line in _norm_lines(text)
-              if line.startswith(AIRYMAXOS_DEFINE_PREFIX)]
+    actual = _define_lines(text)
     expected = _norm_lines(render_contract(manifest["version_tuple"]))
     ok = actual == expected
     return CheckResult(VERSION_H_NAME, ok,
@@ -478,6 +491,20 @@ def check_version_h(manifest: TupleMap, version_h: str | Path) -> CheckResult:
 
 
 # ─── Main ──────────────────────────────────────────────────────────────────
+
+
+def _content_checks(manifest: TupleMap,
+                    repo_root: Path) -> List[CheckResult]:
+    """四元组取值、变量集、include、宏与契约五项内容检查。"""
+    text = _read_text(repo_root / manifest["airymaxos_makefile"]) or ""
+    assigns = parse_vars(text)
+    return [
+        check_tuple(assigns, manifest),
+        check_vars(assigns),
+        check_include(manifest, repo_root),
+        check_macros(manifest, repo_root),
+        check_contract(manifest, repo_root),
+    ]
 
 
 def build_checks(manifest: TupleMap, repo_root: Path,
@@ -498,17 +525,7 @@ def build_checks(manifest: TupleMap, repo_root: Path,
     guard = check_vfile(manifest, repo_root)
     if not guard.passed:
         return [schema, guard]
-    text = _read_text(repo_root / manifest["airymaxos_makefile"]) or ""
-    assigns = parse_vars(text)
-    results = [
-        schema,
-        guard,
-        check_tuple(assigns, manifest),
-        check_vars(assigns),
-        check_include(manifest, repo_root),
-        check_macros(manifest, repo_root),
-        check_contract(manifest, repo_root),
-    ]
+    results = [schema, guard] + _content_checks(manifest, repo_root)
     if version_h is not None:
         results.append(check_version_h(manifest, version_h))
     return results
