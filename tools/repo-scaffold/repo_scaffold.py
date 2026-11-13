@@ -131,18 +131,23 @@ class ScaffoldError(Exception):
 # ─── Loading ───────────────────────────────────────────────────────────────
 
 
+def _parse_file(path: Path) -> Any:
+    """读取并解析 YAML 文件；缺失或语法错误转为 ScaffoldError。"""
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            return yaml.safe_load(handle)
+    except FileNotFoundError:
+        raise ScaffoldError(f"文件不存在：{path}") from None
+    except yaml.YAMLError as exc:
+        raise ScaffoldError(f"YAML 解析失败（{path}）：{exc}") from exc
+
+
 def load_yaml(path: Path) -> dict[str, Any]:
     """读取 YAML 映射；缺失或解析失败时抛 ScaffoldError。"""
     if yaml is None:
         raise ScaffoldError(
             "PyYAML 不可用：请安装 pyyaml（见 requirements-dev.txt）")
-    try:
-        with open(path, "r", encoding="utf-8") as handle:
-            data = yaml.safe_load(handle)
-    except FileNotFoundError:
-        raise ScaffoldError(f"文件不存在：{path}") from None
-    except yaml.YAMLError as exc:
-        raise ScaffoldError(f"YAML 解析失败（{path}）：{exc}") from exc
+    data = _parse_file(path)
     if not isinstance(data, dict):
         raise ScaffoldError(f"顶层必须是映射（mapping）：{path}")
     return data
