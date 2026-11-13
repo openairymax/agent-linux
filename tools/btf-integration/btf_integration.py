@@ -149,18 +149,29 @@ def load_arches(manifest: Manifest, repo_root: Path) -> list[ArchEntry]:
     return entries
 
 
-def matrix_data(manifest: Manifest, repo_root: Path) -> tuple[str, Manifest]:
-    """载入矩阵清单：路径字段合法、文件在册、architectures 是列表。"""
+def _matrix_rel(manifest: Manifest) -> str:
+    """defconfig_matrix_manifest 必须是非空相对路径字符串。"""
     rel = manifest.get("defconfig_matrix_manifest")
     if not isinstance(rel, str) or not rel:
         raise ManifestError("defconfig_matrix_manifest 必须是相对路径字符串")
+    return rel
+
+
+def _matrix_file(rel: str, repo_root: Path) -> Manifest:
+    """矩阵清单必须在册，且 architectures 是列表。"""
     path = repo_root / rel
     if not path.is_file():
         raise ManifestError(f"defconfig 矩阵清单不存在：{rel}")
     data = load_manifest(path)
     if not isinstance(data.get("architectures"), list):
         raise ManifestError(f"{rel}: architectures 必须是列表")
-    return rel, data
+    return data
+
+
+def matrix_data(manifest: Manifest, repo_root: Path) -> tuple[str, Manifest]:
+    """载入矩阵清单：路径字段合法、文件在册、architectures 是列表。"""
+    rel = _matrix_rel(manifest)
+    return rel, _matrix_file(rel, repo_root)
 
 
 def arch_entries(data: Manifest, rel: str) -> list[ArchEntry]:
@@ -173,15 +184,18 @@ def arch_entries(data: Manifest, rel: str) -> list[ArchEntry]:
     return out
 
 
+def _need_entry_str(entry: Manifest, key: str, idx: int, rel: str) -> str:
+    """条目字段必须是非空字符串；否则按位置报错。"""
+    value = entry.get(key)
+    if isinstance(value, str) and value:
+        return value
+    raise ManifestError(f"{rel}: architectures[{idx}].{key} 非法")
+
+
 def arch_entry(entry: Manifest, idx: int, rel: str) -> ArchEntry:
     """单个受检条目的 arch 与 configs；任一项非法即报错，不静默跳过。"""
-    arch = entry.get("arch")
-    configs = entry.get("configs")
-    if not isinstance(arch, str) or not arch:
-        raise ManifestError(f"{rel}: architectures[{idx}].arch 非法")
-    if not isinstance(configs, str) or not configs:
-        raise ManifestError(f"{rel}: architectures[{idx}].configs 非法")
-    return (arch, configs)
+    return (_need_entry_str(entry, "arch", idx, rel),
+            _need_entry_str(entry, "configs", idx, rel))
 
 
 def _top_unknown(manifest: Manifest) -> list[str]:
