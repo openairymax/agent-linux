@@ -299,8 +299,18 @@ def _step_globs(step: Any) -> Globs:
     """按 step 的 uses 取它声明的产物 glob；非产出 step 返回空集。"""
     if not isinstance(step, dict):
         return set()
+    params = _params(step)
     uses = str(step.get("uses", ""))
-    params = step.get("with") or {}
+    return _uses_globs(uses, params)
+
+
+def _params(step: dict) -> dict:
+    """with 参数表；未声明时按空表处理。"""
+    return step.get("with") or {}
+
+
+def _uses_globs(uses: str, params: dict) -> Globs:
+    """按 action 类型读取各自的产物路径键。"""
     if uses.startswith(UPLOAD_ARTIFACT_USES):
         return _split_globs(params.get("path"))
     if uses.startswith(GH_RELEASE_USES):
@@ -447,6 +457,13 @@ def _deferred_errs(where: str, entry: Manifest) -> list[str]:
     problems = [f"{where}: deferred 物料要求 {key}"
                 for key in ("defer_reason", "defer_target")
                 if not entry.get(key)]
+    problems.extend(_defer_left(where, entry))
+    return problems
+
+
+def _defer_left(where: str, entry: Manifest) -> list[str]:
+    """不得登记 evidence 或 produce 的残留痕迹。"""
+    problems = []
     if entry.get("evidence"):
         problems.append(f"{where}: deferred 物料不得登记 evidence")
     if entry.get("produce"):
@@ -746,15 +763,20 @@ def render_notes(version: str, notes: Manifest | None = None) -> str:
     Returns:
         完整的 release notes Markdown；三节合计文字不超过 12 行。
     """
-    disclosures: Manifest = notes or {}
-    sections = [
+    sections = _note_sections(version, notes or {})
+    body = "\n\n".join(
+        f"## {title}\n{content}" for title, content in sections)
+    return f"{body}\n"
+
+
+def _note_sections(version: str,
+                   disclosures: Manifest) -> list[tuple[str, str]]:
+    """概述 / 说明 / 其他三节。"""
+    return [
         ("概述", f"- 版本号 v{version}\n- 发布日期 {date.today():%Y%m}"),
         ("说明", _bullet_list(disclosures.get("summary") or [])),
         ("其他", _bullet_list(disclosures.get("remarks") or [])),
     ]
-    body = "\n\n".join(
-        f"## {title}\n{content}" for title, content in sections)
-    return f"{body}\n"
 
 
 # ─── Report ────────────────────────────────────────────────────────────────
@@ -790,11 +812,21 @@ def _report_ci(results: Sequence[CheckResult], passed: int, total: int,
         return
     print(f"RELEASE-MANIFEST: FAIL ({passed}/{total} checks, "
           f"{failed} failed)")
+    _ci_fails(results)
+
+
+def _ci_fails(results: Sequence[CheckResult]) -> None:
+    """逐条打印失败项及其明细。"""
     for result in results:
         if not result.passed:
             print(f"  FAIL: {result.name}")
-            for line in result.details.splitlines():
-                print(f"    {line}")
+            _ci_lines(result)
+
+
+def _ci_lines(result: CheckResult) -> None:
+    """失败项明细缩进两格。"""
+    for line in result.details.splitlines():
+        print(f"    {line}")
 
 
 def _report_full(results: Sequence[CheckResult], manifest: Manifest,

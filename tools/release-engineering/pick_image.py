@@ -152,11 +152,23 @@ def _fields_ok(item: dict, run: dict, name: str, sha: str) -> bool:
     expired 必须是显式 false：字段缺失与 true 一样不可认领，未标注过期
     状态的制品不能凭缺省值混进发布。
     """
-    return (item.get("name") == name
-            and item.get("expired") is False
-            and run.get("head_sha") == sha
-            and isinstance(item.get("id"), int)
-            and isinstance(run.get("id"), int))
+    return (_named(item, name) and _linked(run, sha)
+            and _int_ids(item, run))
+
+
+def _named(item: dict, name: str) -> bool:
+    """名称一致且显式未过期。"""
+    return item.get("name") == name and item.get("expired") is False
+
+
+def _linked(run: dict, sha: str) -> bool:
+    """运行提交与发布提交一致。"""
+    return run.get("head_sha") == sha
+
+
+def _int_ids(item: dict, run: dict) -> bool:
+    """制品与运行都必须带整数 id。"""
+    return isinstance(item.get("id"), int) and isinstance(run.get("id"), int)
 
 
 def pick(items: Sequence[Any], name: str, sha: str) -> dict[str, Any]:
