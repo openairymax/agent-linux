@@ -143,16 +143,26 @@ def _gate_types(gates):
 
 def _fail_types(failures):
     problems = []
+    _label_type(failures, problems)
+    return problems + _reason_fails(failures)
+
+
+def _label_type(failures, problems):
+    """label 出现时必须是非空字符串以外的字符串。"""
     if "label" in failures and not isinstance(failures["label"], str):
         problems.append("failures.label 必须是字符串")
+
+
+def _reason_fails(failures):
+    """reasons 缺省视为未登记；登记了就必须是含固定键的映射。"""
     reasons = failures.get("reasons")
     if reasons is None:
-        return problems
+        return []
     if not isinstance(reasons, dict):
-        return problems + ["failures.reasons 必须是映射"]
+        return ["failures.reasons 必须是映射"]
     missing = sorted(REASON_KEYS - set(reasons))
-    return problems + [f"failures.reasons 缺少固定键: {key}"
-                       for key in missing]
+    return [f"failures.reasons 缺少固定键: {key}"
+            for key in missing]
 
 
 def _section_types(manifest):
@@ -189,19 +199,29 @@ def check_schema(manifest):
 
 def resolve_arches(manifest, repo_root):
     """从 defconfig 矩阵清单解析 build=true 的架构维度。"""
+    rel, data = _arch_doc(manifest, repo_root)
+    arches = _built(data)
+    if not arches:
+        raise ManifestError(f"{rel} 中没有 build=true 的架构")
+    return arches
+
+
+def _arch_doc(manifest, repo_root):
+    """定位并读取架构清单，返回 (相对路径, 清单内容)。"""
     rel = manifest.get("arch_manifest", "")
     if not rel:
         raise ManifestError("arch_manifest 未登记")
     path = repo_root / rel
     if not path.is_file():
         raise ManifestError(f"架构清单不存在：{path}")
-    data = load_manifest(path)
-    arches = [entry.get("arch")
-              for entry in data.get("architectures", [])
-              if entry.get("build") is True]
-    if not arches:
-        raise ManifestError(f"{rel} 中没有 build=true 的架构")
-    return arches
+    return rel, load_manifest(path)
+
+
+def _built(data):
+    """挑出 build=true 的架构名，保持清单声明顺序。"""
+    return [entry.get("arch")
+            for entry in data.get("architectures", [])
+            if entry.get("build") is True]
 
 
 def load_workflow(manifest, repo_root):
@@ -317,13 +337,21 @@ def _norm_excl(entries):
 
 def _excl_entry(index, entry, combos):
     """单条 exclude 项：非空、维度已知、命中真实组合；合法时返回 None。"""
+    bad = _excl_shape(index, entry)
+    if bad is not None:
+        return bad
+    if not any(_match(combo, entry) for combo in combos):
+        return f"exclude[{index}] 未命中任何组合: {entry}"
+    return None
+
+
+def _excl_shape(index, entry):
+    """非空映射且只含已知维度；不合法时返回报错文案。"""
     if not isinstance(entry, dict) or not entry:
         return f"exclude[{index}] 必须是非空映射"
     unknown = sorted(set(entry) - set(DIMS))
     if unknown:
         return f"exclude[{index}] 含未知维度: {unknown}"
-    if not any(_match(combo, entry) for combo in combos):
-        return f"exclude[{index}] 未命中任何组合: {entry}"
     return None
 
 
@@ -479,18 +507,25 @@ def list_cells(manifest, arches):
 
 
 def _read_summary(path):
-    try:
-        data = json.loads(Path(path).read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        raise ManifestError(f"结果摘要不存在：{path}")
-    except OSError as exc:
-        raise ManifestError(f"结果摘要不可读：{exc}")
-    except json.JSONDecodeError as exc:
-        raise ManifestError(f"结果摘要 JSON 非法：{exc}")
+    data = _load_summary(path)
     entries = data.get("cells") if isinstance(data, dict) else data
     if not isinstance(entries, list):
         raise ManifestError("结果摘要必须是列表或含 cells 列表的映射")
     return entries
+
+
+def _load_summary(path):
+    """读取结果摘要 JSON，把缺失/不可读/非法分别转成 ManifestError。"""
+    try:
+        text = Path(path).read_text(encoding="utf-8")
+    except FileNotFoundError:
+        raise ManifestError(f"结果摘要不存在：{path}")
+    except OSError as exc:
+        raise ManifestError(f"结果摘要不可读：{exc}")
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ManifestError(f"结果摘要 JSON 非法：{exc}")
 
 
 def _cell_key(cell):
@@ -501,13 +536,18 @@ def _index_summary(entries):
     """建立结果索引；缺失维度或重复格抛 ManifestError。"""
     seen = {}
     for index, entry in enumerate(entries):
-        if not isinstance(entry, dict) or any(k not in entry for k in DIMS):
-            raise ManifestError(f"cells[{index}] 缺少维度: {DIMS}")
+        _need_cell(entry, index)
         key = _cell_key(entry)
         if key in seen:
             raise ManifestError(f"cells[{index}] 重复格: {key}")
         seen[key] = entry.get("conclusion")
     return seen
+
+
+def _need_cell(entry, index):
+    """结果格必须是四维齐全的映射。"""
+    if not isinstance(entry, dict) or any(k not in entry for k in DIMS):
+        raise ManifestError(f"cells[{index}] 缺少维度: {DIMS}")
 
 
 def classify_cell(cell, passed, reasons):
