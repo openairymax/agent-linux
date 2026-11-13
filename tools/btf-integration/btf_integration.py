@@ -58,7 +58,7 @@ import argparse
 import re
 import sys
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Callable, Iterator
 
 # tools/lib 是契约检查工具的共享层：结果类型与报告格式只能有一份。
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
@@ -227,21 +227,32 @@ def _schema_top(manifest: Manifest) -> list[str]:
             + _matrix_shape(manifest))
 
 
+def _cfg_list_probs(manifest: Manifest, keys: tuple[str, ...],
+                    pattern: re.Pattern[str], hint: str) -> list[str]:
+    """一组 CONFIG 形态字段统一校验。"""
+    problems: list[str] = []
+    for key in keys:
+        problems.extend(_cfg_list_errs(key, manifest.get(key), pattern, hint))
+    return problems
+
+
+def _list_probs(manifest: Manifest, keys: tuple[str, ...],
+                checker: Callable[[str, Any], list[str]]) -> list[str]:
+    """一组字段交给给定校验函数逐项检查。"""
+    problems: list[str] = []
+    for key in keys:
+        problems.extend(checker(key, manifest.get(key)))
+    return problems
+
+
 def _schema_lists(manifest: Manifest) -> list[str]:
     """四组列表字段各按自身形态校验。"""
-    problems: list[str] = []
-    for key in CONFIG_LIST_KEYS:
-        problems.extend(_cfg_list_errs(
-            key, manifest.get(key), CONFIG_VAL_RE,
-            "（须为 CONFIG_x=y 形态）"))
-    for key in SYMBOL_LIST_KEYS:
-        problems.extend(_cfg_list_errs(
-            key, manifest.get(key), CONFIG_SYM_RE, "符号"))
-    for key in STR_LIST_KEYS:
-        problems.extend(_str_list_errs(key, manifest.get(key)))
-    for key in WORKFLOW_LIST_KEYS:
-        problems.extend(_path_list_errs(key, manifest.get(key)))
-    return problems
+    return (_cfg_list_probs(manifest, CONFIG_LIST_KEYS, CONFIG_VAL_RE,
+                            "（须为 CONFIG_x=y 形态）")
+            + _cfg_list_probs(manifest, SYMBOL_LIST_KEYS, CONFIG_SYM_RE,
+                              "符号")
+            + _list_probs(manifest, STR_LIST_KEYS, _str_list_errs)
+            + _list_probs(manifest, WORKFLOW_LIST_KEYS, _path_list_errs))
 
 
 def check_schema(manifest: Manifest) -> CheckResult:

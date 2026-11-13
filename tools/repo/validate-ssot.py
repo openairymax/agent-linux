@@ -73,6 +73,21 @@ def _id_prefix(rid):
     return m.group(1) if m else rid
 
 
+def _id_pad(rid):
+    """规则 ID 末段数字的原始宽度；末段不是数字时按三位。"""
+    m = re.search(r'(\d+)$', rid)
+    return len(m.group(1)) if m else 3
+
+
+def _expand_ids(start, start_num, end_num):
+    """按起点宽度把区间展开为逐个 ID。"""
+    pad = _id_pad(start)
+    return [
+        f"{_id_prefix(start)}-{str(n).zfill(pad)}"
+        for n in range(start_num, end_num + 1)
+    ]
+
+
 def _expand(start, end):
     """把 OS-KER-001 ~ OS-KER-228 这样的区间展开为逐个 ID。
 
@@ -83,12 +98,7 @@ def _expand(start, end):
     end_num = _id_num(end)
     if start_num is None or end_num is None:
         return []
-    m = re.search(r'(\d+)$', start)
-    pad = len(m.group(1)) if m else 3
-    return [
-        f"{_id_prefix(start)}-{str(n).zfill(pad)}"
-        for n in range(start_num, end_num + 1)
-    ]
+    return _expand_ids(start, start_num, end_num)
 
 
 def _record(entry):
@@ -123,20 +133,24 @@ def _add_deprecated(registered, dep_id, dep_desc):
     }
 
 
+def _add_entries(entries, registered):
+    """实体条目逐个登记。"""
+    for entry in entries:
+        registered[entry['id']] = _record(entry)
+
+
 def _collect(group, registered, dep_desc):
     """把一个条目组并入登记表：实体条目、区间、废弃、离散条目。
 
     两个规则域（OS-* 与 agentrt）的组结构相同，差异只有「不在活动区间内
     的废弃 ID」的说明串，故由调用方给入，避免两份循环各自漂移。
     """
-    for entry in group.get('entries', []):
-        registered[entry['id']] = _record(entry)
+    _add_entries(group.get('entries', []), registered)
     for span in group.get('ranges', []):
         _add_range(registered, span)
     for dep_id in group.get('deprecated', []):
         _add_deprecated(registered, dep_id, dep_desc)
-    for entry in group.get('individual_entries', []):
-        registered[entry['id']] = _record(entry)
+    _add_entries(group.get('individual_entries', []), registered)
 
 
 def load_ssot(yaml_path):
@@ -165,8 +179,8 @@ def md_files(docs_root):
     return [str(p) for p in Path(docs_root).rglob("*.md")]
 
 
-def _git_md(docs_root):
-    """``git ls-files`` 命中的 .md；非 git 仓库或命令失败时返回 None。"""
+def _ls_md(docs_root):
+    """执行 ``git ls-files`` 枚举 .md 正文；非 git 仓库或失败时返回 None。"""
     try:
         proc = subprocess.run(
             ["git", "-C", docs_root, "ls-files", "-z", "--", "*.md"],
@@ -177,7 +191,14 @@ def _git_md(docs_root):
         return None
     if proc.returncode != 0:
         return None
-    raw = proc.stdout.decode("utf-8", errors="replace")
+    return proc.stdout.decode("utf-8", errors="replace")
+
+
+def _git_md(docs_root):
+    """``git ls-files`` 命中的 .md；非 git 仓库或命令失败时返回 None。"""
+    raw = _ls_md(docs_root)
+    if raw is None:
+        return None
     return [os.path.join(docs_root, p) for p in raw.split("\0") if p]
 
 
@@ -342,6 +363,22 @@ def usage(stream=sys.stdout):
     print("  ssot_yaml  — path to ssot-registry.yaml", file=stream)
 
 
+def _require_dir(path, label):
+    """目录必须存在，否则报错退出。"""
+    if os.path.isdir(path):
+        return
+    print(f"ERROR: {label} '{path}' is not a directory")
+    sys.exit(2)
+
+
+def _require_file(path, label):
+    """文件必须存在，否则报错退出。"""
+    if os.path.isfile(path):
+        return
+    print(f"ERROR: {label} '{path}' is not a file")
+    sys.exit(2)
+
+
 def main():
     if sys.argv[1:] in (["-h"], ["--help"]):
         usage()
@@ -354,13 +391,8 @@ def main():
     docs_root = sys.argv[1]
     yaml_path = sys.argv[2]
 
-    if not os.path.isdir(docs_root):
-        print(f"ERROR: docs_root '{docs_root}' is not a directory")
-        sys.exit(2)
-
-    if not os.path.isfile(yaml_path):
-        print(f"ERROR: ssot_yaml '{yaml_path}' is not a file")
-        sys.exit(2)
+    _require_dir(docs_root, "docs_root")
+    _require_file(yaml_path, "ssot_yaml")
 
     print(f"Loading SSoT YAML: {yaml_path}")
     registered = load_ssot(yaml_path)
