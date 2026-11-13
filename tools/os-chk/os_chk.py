@@ -132,11 +132,20 @@ def _gate_sev(item: dict, where: str, gid: str) -> str:
     return severity
 
 
+def _str_args(argv: list) -> bool:
+    """参数元素均为非空字符串。"""
+    return all(isinstance(a, str) and bool(a) for a in argv)
+
+
+def _argv_ok(argv: object) -> bool:
+    """必须是非空列表，且元素均为非空字符串。"""
+    return isinstance(argv, list) and bool(argv) and _str_args(argv)
+
+
 def _gate_argv(item: dict, where: str, gid: str) -> Tuple[str, ...]:
     executor = _gate_exec(item, where, gid)
     argv = executor.get("argv")
-    if (not isinstance(argv, list) or not argv
-            or not all(isinstance(a, str) and a for a in argv)):
+    if not _argv_ok(argv):
         raise RegistryError(
             f"{where} ({gid}): executor.argv 必须是非空字符串列表")
     return tuple(argv)
@@ -382,30 +391,38 @@ def _rep_tail(failed, total, elapsed_s):
     print("-" * 72)
 
 
+def _passed_n(results: Sequence[GateResult]) -> int:
+    """通过的门禁数。"""
+    return sum(1 for r in results if r.status == STATUS_PASS)
+
+
+def _gate_row(r: GateResult) -> dict:
+    """单个门禁结果的 JSON 行。"""
+    return {
+        "id": r.gate.id,
+        "name": r.gate.name,
+        "severity": r.gate.severity,
+        "category": r.gate.category,
+        "status": r.status,
+        "returncode": r.returncode,
+        "duration_s": round(r.duration_s, 3),
+        "detail": r.detail,
+    }
+
+
 def write_json(path: Path, registry_version: str, timestamp: str,
                       fail_on: str, results: Sequence[GateResult]) -> None:
+    passed = _passed_n(results)
     payload = {
         "registry_version": registry_version,
         "timestamp": timestamp,
         "fail_on": fail_on,
         "summary": {
             "total": len(results),
-            "passed": sum(1 for r in results if r.status == STATUS_PASS),
-            "failed": sum(1 for r in results if r.status != STATUS_PASS),
+            "passed": passed,
+            "failed": len(results) - passed,
         },
-        "results": [
-            {
-                "id": r.gate.id,
-                "name": r.gate.name,
-                "severity": r.gate.severity,
-                "category": r.gate.category,
-                "status": r.status,
-                "returncode": r.returncode,
-                "duration_s": round(r.duration_s, 3),
-                "detail": r.detail,
-            }
-            for r in results
-        ],
+        "results": [_gate_row(r) for r in results],
     }
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
                     encoding="utf-8")

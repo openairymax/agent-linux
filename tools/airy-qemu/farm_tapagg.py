@@ -123,15 +123,9 @@ class TapReport:
 
     def _need_suites(self) -> None:
         """套件明细必须是 SuiteTally 的非空元组，且名称不重复。"""
-        if not isinstance(self.suites, tuple) or not self.suites:
-            raise ValueError("suites must be a non-empty tuple")
-        names: set[str] = set()
-        for tally in self.suites:
-            if not isinstance(tally, SuiteTally):
-                raise ValueError("suites must contain SuiteTally entries")
-            if tally.name in names:
-                raise ValueError(f"duplicate suite: {tally.name!r}")
-            names.add(tally.name)
+        _tup_suits(self.suites)
+        _suite_rows(self.suites)
+        _suite_ids(self.suites)
 
     def _need_sums(self) -> None:
         """逐字段汇总必须与 summary 相等。"""
@@ -195,14 +189,19 @@ def parse_tap(text: str, suites: tuple[tuple[str, int], ...]) -> TapReport:
     plans: list[int] = []
     tally: dict[str, list[int]] = {name: [0, 0, 0] for name in expect}
     for line in text.splitlines():
-        plan = _PLAN_RE.match(line)
-        if plan is not None:
-            plans.append(int(plan.group(2)))
-            continue
-        hit = _RESULT_RE.match(line)
-        if hit is not None:
-            _record(hit, tally)
+        _tap_line(line, plans, tally)
     return _build(plans, expect, tally)
+
+
+def _tap_line(line: str, plans: list[int], tally: dict[str, list[int]]) -> None:
+    """一行 TAP：计划行入 plans，结果行入 tally，其余忽略。"""
+    plan = _PLAN_RE.match(line)
+    if plan is not None:
+        plans.append(int(plan.group(2)))
+        return
+    hit = _RESULT_RE.match(line)
+    if hit is not None:
+        _record(hit, tally)
 
 
 def read_tap(
@@ -275,12 +274,42 @@ def _suite_entry(item: tuple[str, int]) -> tuple[str, int]:
     return name, count
 
 
+def _name_ok(name: object) -> bool:
+    """套件名必须是非空字符串。"""
+    return isinstance(name, str) and bool(name)
+
+
+def _count_ok(count: object) -> bool:
+    """用例数必须是正整数，bool 是 int 子类故单独排除。"""
+    return isinstance(count, int) and not isinstance(count, bool) and count > 0
+
+
 def _suite_ok(name: object, count: object, item: object) -> None:
     """名字必须非空、数量必须为正整数；任一不成立则整条拒收。"""
-    bad_name = not isinstance(name, str) or not name
-    bad_count = isinstance(count, bool) or not isinstance(count, int) or count <= 0
-    if bad_name or bad_count:
+    if not _name_ok(name) or not _count_ok(count):
         raise _cfg(f"invalid suite entry: {item!r}")
+
+
+def _tup_suits(suites) -> None:
+    """套件明细必须是非空元组。"""
+    if not isinstance(suites, tuple) or not suites:
+        raise ValueError("suites must be a non-empty tuple")
+
+
+def _suite_rows(suites) -> None:
+    """明细元素必须都是 SuiteTally。"""
+    for tally in suites:
+        if not isinstance(tally, SuiteTally):
+            raise ValueError("suites must contain SuiteTally entries")
+
+
+def _suite_ids(suites) -> None:
+    """套件名不得重复。"""
+    names: set[str] = set()
+    for tally in suites:
+        if tally.name in names:
+            raise ValueError(f"duplicate suite: {tally.name!r}")
+        names.add(tally.name)
 
 
 def _record(
