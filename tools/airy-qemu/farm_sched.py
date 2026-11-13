@@ -150,22 +150,30 @@ def _error(job: FarmJob, exc: FarmError) -> JobResult:
     )
 
 
-def _check(
-    jobs: object,
-    limits: object,
-    execute: object,
-) -> None:
-    """静态校验整批作业与预算。"""
+def _need_jobs(jobs: object) -> None:
+    """作业集合必须是非空元组，且每项都是 FarmJob。"""
     if not isinstance(jobs, tuple) or not jobs:
         raise FarmConfigError("jobs must be a non-empty tuple")
     if any(not isinstance(job, FarmJob) for job in jobs):
         raise FarmConfigError("jobs must contain FarmJob entries")
+
+
+def _need_limits(limits: object) -> None:
+    """预算必须是 FarmLimits 实例。"""
     if not isinstance(limits, FarmLimits):
         raise FarmConfigError(
             f"limits must be FarmLimits, got {type(limits).__name__}"
         )
+
+
+def _need_exec(execute: object) -> None:
+    """执行器必须可调用。"""
     if not callable(execute):
         raise FarmConfigError("execute must be callable")
+
+
+def _check_ids(jobs: tuple[FarmJob, ...], limits: FarmLimits) -> None:
+    """作业标识唯一，且每个作业都能落在农场预算内。"""
     seen: set[str] = set()
     for job in jobs:
         if job.job_id in seen:
@@ -175,6 +183,18 @@ def _check(
             raise FarmConfigError(
                 f"job {job.job_id!r} exceeds farm limits"
             )
+
+
+def _check(
+    jobs: object,
+    limits: object,
+    execute: object,
+) -> None:
+    """静态校验整批作业与预算。"""
+    _need_jobs(jobs)
+    _need_limits(limits)
+    _need_exec(execute)
+    _check_ids(jobs, limits)
 
 
 def _need_result(value: JobResult | None) -> JobResult:
