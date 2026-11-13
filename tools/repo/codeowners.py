@@ -72,7 +72,7 @@ def parse_blocks(lines):
     blocks = []
     state = {"name": "", "paths": [], "owners": []}
     for line in lines:
-        if not line.strip() or COMMENT.match(line) or line[0] in " \t":
+        if _skip(line):
             continue
         match = FIELD.match(line)
         if match:
@@ -82,6 +82,12 @@ def parse_blocks(lines):
         state = {"name": line.strip(), "paths": [], "owners": []}
     flush_block(blocks, state)
     return blocks
+
+
+def _skip(line):
+    """空行、注释与缩进续行都不参与块结构。"""
+    return (not line.strip() or COMMENT.match(line) is not None
+            or line[0] in " \t")
 
 
 def flush_block(blocks, state):
@@ -123,13 +129,18 @@ def field_add(state, key, value):
 
 def render(blocks):
     """把解析结果渲染成 CODEOWNERS 文本，路径列按最长项对齐。"""
-    rows = [(path, owners) for _, group in blocks for path, owners in group]
+    rows = _rows(blocks)
     if not rows:
         raise FeedError("MAINTAINERS 没有可投影的 F:/O: 组合")
     width = max(len(path) for path, _ in rows) + 4
     body = "".join(
         f"{path.ljust(width)}{' '.join(owners)}\n" for path, owners in rows)
     return HEADER + body
+
+
+def _rows(blocks):
+    """摊平块结构为 ``(路径, 所有者)`` 行。"""
+    return [(path, owners) for _, group in blocks for path, owners in group]
 
 
 def main(argv):

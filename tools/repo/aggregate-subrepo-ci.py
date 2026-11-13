@@ -122,6 +122,14 @@ def parse_sub_stat(root):
 
     flags 包含前缀符号：' ' 已检出，'-' 未初始化，'+' 不同步，'U' 冲突。
     """
+    out, err = _sub_status(root)
+    if err is not None:
+        return None, err
+    return _sub_rows(out), None
+
+
+def _sub_status(root):
+    """运行 ``git submodule status``；失败时返回错误描述。"""
     try:
         proc = subprocess.run(
             ["git", "submodule", "status"],
@@ -131,20 +139,24 @@ def parse_sub_stat(root):
             timeout=30,
         )
     except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
-        return None, f"git 不可用或超时：{exc}"
+        return "", f"git 不可用或超时：{exc}"
     if proc.returncode != 0:
-        return None, proc.stderr.strip() or "git submodule status 失败"
+        return "", proc.stderr.strip() or "git submodule status 失败"
+    return proc.stdout, None
 
+
+def _sub_rows(out):
+    """逐行解析 ``<sign><sha> <path>``，忽略不匹配的行。"""
     # 行格式： <sign><sha> <path> (<describe>)
     line_re = re.compile(
         r"^(?P<sign>[ +-U])(?P<sha>[0-9a-f]{7,40})\s+(?P<path>\S+)"
     )
     subs = []
-    for line in proc.stdout.splitlines():
+    for line in out.splitlines():
         m = line_re.match(line)
         if m:
             subs.append((m.group("path"), m.group("sha"), m.group("sign")))
-    return subs, None
+    return subs
 
 
 def fetch_ci_state(api, owner_repo, sha, token):
