@@ -150,6 +150,25 @@ class BootLog:
         return None
 
 
+def _boot_line(
+    line: str,
+    marks: list[Mark],
+    tap: list[str],
+    chain: list[str],
+) -> None:
+    """把一行归入 TAP、关键链或标记序列，其余行忽略。"""
+    secs, rest = _split(line)
+    if rest.startswith(_TAP_LINE):
+        tap.append(rest[len(_TAP_LINE) :])
+        return
+    if rest.startswith(_CHAIN_LINE):
+        chain.append(rest[len(_CHAIN_LINE) :])
+        return
+    mark = _mark(secs, rest)
+    if mark is not None:
+        marks.append(mark)
+
+
 def parse_text(text: str) -> BootLog:
     """把串口全文解析为标记序列、TAP 原文、关键链原文与原始行。"""
     marks: list[Mark] = []
@@ -157,16 +176,7 @@ def parse_text(text: str) -> BootLog:
     chain: list[str] = []
     raw = tuple(text.splitlines())
     for line in raw:
-        secs, rest = _split(line)
-        if rest.startswith(_TAP_LINE):
-            tap.append(rest[len(_TAP_LINE) :])
-            continue
-        if rest.startswith(_CHAIN_LINE):
-            chain.append(rest[len(_CHAIN_LINE) :])
-            continue
-        mark = _mark(secs, rest)
-        if mark is not None:
-            marks.append(mark)
+        _boot_line(line, marks, tap, chain)
     return BootLog(tuple(marks), tuple(tap), tuple(chain), raw)
 
 
