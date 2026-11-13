@@ -768,6 +768,53 @@ def preflight(
     ]
 
 
+def _block_check(device: DeviceFacts) -> Check:
+    if device.kind == "block":
+        return Check("目标是块设备", True, str(device.path))
+    return Check(
+        "目标是块设备", True, f"{device.path}（普通文件，测试模式）", skipped=True
+    )
+
+
+def _system_check(device: DeviceFacts) -> Check:
+    """普通文件靶子上判「系统盘: （未识别）」既非通过也非失败，整条标 skipped。"""
+    hosts = ", ".join(device.system_disks) or "（未识别）"
+    if device.kind != "block":
+        return Check("非系统盘", True, "普通文件靶子无系统盘概念", skipped=True)
+    return Check(
+        "非系统盘",
+        not device.is_system_disk,
+        f"承载 {', '.join(CRITICAL_MOUNTS)} 的磁盘: {hosts}"
+        if device.is_system_disk
+        else f"系统盘: {hosts}",
+        fix="换一块与系统盘无关的盘；写入会覆盖整盘",
+    )
+
+
+def _mount_check(device: DeviceFacts) -> Check:
+    return Check(
+        "未挂载",
+        not device.mountpoints,
+        f"已挂载于 {', '.join(device.mountpoints)}，请先 umount"
+        if device.mountpoints
+        else "无挂载点",
+        fix="umount 该盘上的所有挂载点后重试",
+    )
+
+
+def _ro_check(device: DeviceFacts) -> Check:
+    if device.kind != "block":
+        return Check("非只读", True, "普通文件读写", skipped=True)
+    return Check(
+        "非只读",
+        not device.read_only,
+        "设备处于只读状态（写保护开关或 ro 属性）"
+        if device.read_only
+        else "可写",
+        fix="关闭写保护开关；卡式读卡器或 USB 写保护会置 ro",
+    )
+
+
 def _target_checks(device: DeviceFacts) -> list[Check]:
     """靶子四项：块设备、非系统盘、未挂载、非只读。
 
@@ -775,52 +822,12 @@ def _target_checks(device: DeviceFacts) -> list[Check]:
     （未识别）」既非通过也非失败，读起来像结论，实际什么也没说，整条标
     skipped 才是准确的表述。顺序与报告里的阅读顺序一致，不要重排。
     """
-    block = device.kind == "block"
-    checks: list[Check] = []
-    if block:
-        checks.append(Check("目标是块设备", True, str(device.path)))
-    else:
-        checks.append(
-            Check("目标是块设备", True, f"{device.path}（普通文件，测试模式）", skipped=True)
-        )
-    hosts = ", ".join(device.system_disks) or "（未识别）"
-    if block:
-        checks.append(
-            Check(
-                "非系统盘",
-                not device.is_system_disk,
-                f"承载 {', '.join(CRITICAL_MOUNTS)} 的磁盘: {hosts}"
-                if device.is_system_disk
-                else f"系统盘: {hosts}",
-                fix="换一块与系统盘无关的盘；写入会覆盖整盘",
-            )
-        )
-    else:
-        checks.append(Check("非系统盘", True, "普通文件靶子无系统盘概念", skipped=True))
-    checks.append(
-        Check(
-            "未挂载",
-            not device.mountpoints,
-            f"已挂载于 {', '.join(device.mountpoints)}，请先 umount"
-            if device.mountpoints
-            else "无挂载点",
-            fix="umount 该盘上的所有挂载点后重试",
-        )
-    )
-    if block:
-        checks.append(
-            Check(
-                "非只读",
-                not device.read_only,
-                "设备处于只读状态（写保护开关或 ro 属性）"
-                if device.read_only
-                else "可写",
-                fix="关闭写保护开关；卡式读卡器或 USB 写保护会置 ro",
-            )
-        )
-    else:
-        checks.append(Check("非只读", True, "普通文件读写", skipped=True))
-    return checks
+    return [
+        _block_check(device),
+        _system_check(device),
+        _mount_check(device),
+        _ro_check(device),
+    ]
 
 
 def _capacity_check(device: DeviceFacts, image: ImageFacts) -> Check:
@@ -1256,9 +1263,8 @@ def _progress(
 # ─── 编排 ───────────────────────────────────────────────────────────────────
 
 
-def execute(args: argparse.Namespace) -> tuple[Report, int]:
-    """唯一入口：标题先出，成败都走同一套七段与标记。"""
-    report = Report(
+def _report_of(args: argparse.Namespace) -> Report:
+    return Report(
         command=args.command,
         result="fail",
         started=now_iso(),
@@ -1266,22 +1272,37 @@ def execute(args: argparse.Namespace) -> tuple[Report, int]:
         verify=args.verify,
         host=socket.gethostname(),
     )
-    renderer = Renderer(
+
+
+def _renderer_of(args: argparse.Namespace) -> Renderer:
+    """--json 与 --no-progress 都关掉 TTY 渲染，两者只差日志去向。"""
+    quiet = args.no_progress or args.json
+    return Renderer(
         stream=io.StringIO() if args.json else None,
-        tty=False if (args.no_progress or args.json) else None,
-        pulse=not (args.no_progress or args.json),
+        tty=False if quiet else None,
+        pulse=not quiet,
     )
-    clock = time.monotonic()
-    renderer.title(f"AirymaxOS 烧录工具 {TOOL_VERSION}  ({args.command})")
+
+
+def _dispatch(args: argparse.Namespace, report: Report, renderer: Renderer) -> int:
     try:
         if args.command == "fetch":
             _run_fetch(args, report, renderer)
         else:
             _run(args, report, renderer)
-        code = EXIT_OK
     except FlashError as exc:
         report.error, report.hint = exc.message, exc.hint
-        code = exc.code
+        return exc.code
+    return EXIT_OK
+
+
+def execute(args: argparse.Namespace) -> tuple[Report, int]:
+    """唯一入口：标题先出，成败都走同一套七段与标记。"""
+    report = _report_of(args)
+    renderer = _renderer_of(args)
+    clock = time.monotonic()
+    renderer.title(f"AirymaxOS 烧录工具 {TOOL_VERSION}  ({args.command})")
+    code = _dispatch(args, report, renderer)
     return _close(args, report, renderer, code, clock)
 
 
@@ -1542,24 +1563,38 @@ def _offset(task: Progress, base: int, total: int) -> Callable[[int, int], None]
     return advance
 
 
-def _pull_parts(ledger: OciLedger, out: Path, oras: str) -> tuple[str, str]:
-    """一次 oras pull 取回全部层；齐不齐看清单，不看 oras 的措辞。"""
+def _clear_parts(ledger: OciLedger, out: Path) -> None:
+    """先清掉上一轮的残留块：oras 只补缺失的层，旧块留着会掩盖清单变化。"""
     for part in ledger.parts:
         (out / part.name).unlink(missing_ok=True)
+
+
+def _pull_run(ledger: OciLedger, out: Path, oras: str) -> None:
     proc = subprocess.run(
         [oras, "pull", ledger.target, "-o", str(out)],
         capture_output=True,
         text=True,
     )
-    if proc.returncode != 0:
-        tail = (proc.stderr or proc.stdout).strip().splitlines()
-        detail = tail[-1] if tail else f"退出 {proc.returncode}"
-        raise FlashError(
-            EXIT_IO,
-            f"oras pull 失败: {detail}",
-            hint="仓库或网络不可达；换镜像站后重试同一条命令",
-        )
-    missing = [part.name for part in ledger.parts if not (out / part.name).is_file()]
+    if proc.returncode == 0:
+        return
+    tail = (proc.stderr or proc.stdout).strip().splitlines()
+    detail = tail[-1] if tail else f"退出 {proc.returncode}"
+    raise FlashError(
+        EXIT_IO,
+        f"oras pull 失败: {detail}",
+        hint="仓库或网络不可达；换镜像站后重试同一条命令",
+    )
+
+
+def _missing_parts(ledger: OciLedger, out: Path) -> list[str]:
+    return [part.name for part in ledger.parts if not (out / part.name).is_file()]
+
+
+def _pull_parts(ledger: OciLedger, out: Path, oras: str) -> tuple[str, str]:
+    """一次 oras pull 取回全部层；齐不齐看清单，不看 oras 的措辞。"""
+    _clear_parts(ledger, out)
+    _pull_run(ledger, out, oras)
+    missing = _missing_parts(ledger, out)
     if missing:
         raise FlashError(
             EXIT_CHECK,
@@ -1609,34 +1644,51 @@ def _join_parts(ledger: OciLedger, dest: Path, task: Progress) -> tuple[str, str
     return OK, f"{ledger.chunks} 块拼接完成"
 
 
-def _fetch_checks(
-    ledger: OciLedger, out: Path, oras: str, fetched: bool
-) -> list[Check]:
-    """取回前的三条判定：oras 在位、目录余量够、分块尺寸自洽。"""
+def _even_parts(ledger: OciLedger) -> bool:
+    """除末块外都等于 chunk_size，末块在 1..chunk_size 之间。"""
     sizes = [part.size for part in ledger.parts]
-    even = all(size == ledger.chunk_size for size in sizes[:-1])
-    even = even and 0 < sizes[-1] <= ledger.chunk_size
-    located = shutil.which(oras)
+    if not all(size == ledger.chunk_size for size in sizes[:-1]):
+        return False
+    return 0 < sizes[-1] <= ledger.chunk_size
+
+
+def _oras_check(oras: str, fetched: bool) -> Check:
     if fetched:
-        tool = Check("oras", True, "已取回，本次不需要", skipped=True)
-    else:
-        tool = Check("oras", bool(located), located or f"{oras} 不在 PATH 中")
+        return Check("oras", True, "已取回，本次不需要", skipped=True)
+    located = shutil.which(oras)
+    return Check("oras", bool(located), located or f"{oras} 不在 PATH 中")
+
+
+def _room_check(ledger: OciLedger, out: Path, fetched: bool) -> Check:
     free = shutil.disk_usage(out).free
     need = ledger.size + ledger.chunk_size + SPACE_SLACK
     if fetched:
-        room = Check("磁盘余量", True, f"可用 {human_bytes(free)}", skipped=True)
-    else:
-        room = Check(
-            "磁盘余量", free >= need, f"可用 {human_bytes(free)}，需要 {human_bytes(need)}"
-        )
-    shape = Check(
+        return Check("磁盘余量", True, f"可用 {human_bytes(free)}", skipped=True)
+    return Check(
+        "磁盘余量", free >= need, f"可用 {human_bytes(free)}，需要 {human_bytes(need)}"
+    )
+
+
+def _shape_check(ledger: OciLedger) -> Check:
+    even = _even_parts(ledger)
+    return Check(
         "分块尺寸",
         even,
         f"{ledger.chunks} 块 x {human_bytes(ledger.chunk_size)}"
         if even
         else "块尺寸与清单的 chunk_size 不一致",
     )
-    return [tool, room, shape]
+
+
+def _fetch_checks(
+    ledger: OciLedger, out: Path, oras: str, fetched: bool
+) -> list[Check]:
+    """取回前的三条判定：oras 在位、目录余量够、分块尺寸自洽。"""
+    return [
+        _oras_check(oras, fetched),
+        _room_check(ledger, out, fetched),
+        _shape_check(ledger),
+    ]
 
 
 def _banner_fetch(

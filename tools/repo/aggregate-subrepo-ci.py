@@ -34,6 +34,29 @@ import urllib.request
 DEFAULT_OWNER = os.environ.get("GITHUB_OWNER", "openairymax")
 
 
+def _gm_read(gitmodules):
+    """读 .gitmodules 的 path 行；返回 (stdout, 错误信息)。"""
+    try:
+        proc = subprocess.run(
+            ["git", "config", "-f", gitmodules, "--get-regexp",
+             r"^submodule\..*\.path$"],
+            capture_output=True, text=True, timeout=30,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        return None, f"git 不可用或超时：{exc}"
+    if proc.returncode not in (0, 1):
+        return None, proc.stderr.strip() or "git config 读取失败"
+    return proc.stdout, None
+
+
+def _path_of(line):
+    """`submodule.X.path <path>` → path；字段不足或路径为空时返回 None。"""
+    fields = line.split(None, 1)
+    if len(fields) == 2 and fields[1].strip():
+        return fields[1].strip()
+    return None
+
+
 def sub_paths(root):
     """从 root/.gitmodules 派生声明的子模块路径清单。
 
@@ -43,21 +66,14 @@ def sub_paths(root):
     gitmodules = os.path.join(root, ".gitmodules")
     if not os.path.isfile(gitmodules):
         return [], ".gitmodules 不存在"
-    try:
-        proc = subprocess.run(
-            ["git", "config", "-f", gitmodules, "--get-regexp",
-             r"^submodule\..*\.path$"],
-            capture_output=True, text=True, timeout=30,
-        )
-    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
-        return [], f"git 不可用或超时：{exc}"
-    if proc.returncode not in (0, 1):
-        return [], proc.stderr.strip() or "git config 读取失败"
+    stdout, err = _gm_read(gitmodules)
+    if err is not None:
+        return [], err
     paths = []
-    for line in proc.stdout.splitlines():
-        fields = line.split(None, 1)
-        if len(fields) == 2 and fields[1].strip():
-            paths.append(fields[1].strip())
+    for line in stdout.splitlines():
+        path = _path_of(line)
+        if path:
+            paths.append(path)
     return paths, None
 
 
