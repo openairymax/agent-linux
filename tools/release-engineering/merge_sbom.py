@@ -497,14 +497,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return EXIT_USAGE
 
     try:
-        fragments: list[Fragment] = []
-        for raw in args.inputs:
-            path = Path(raw)
-            fragments.append((path, load_fragment(path)))
-        created = _created_stamp()
-        namespace = args.namespace or _namespace(args.name)
-        document = merge_documents(fragments, args.name, namespace, created)
-        write_document(document, Path(args.output))
+        document = _merge(args)
     except ParseError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return EXIT_USAGE
@@ -512,11 +505,28 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return EXIT_FAIL
 
-    if not args.quiet:
-        print(f"MERGE-SBOM: PASS — {len(document['packages'])} packages, "
-              f"{len(document['relationships'])} relationships "
-              f"-> {args.output}")
+    _report(args, document)
     return EXIT_PASS
+
+
+def _merge(args: argparse.Namespace) -> JsonDoc:
+    """读入全部分片后合并；时间戳与命名空间在读取之后一次性定下。"""
+    fragments: list[Fragment] = [(Path(raw), load_fragment(Path(raw)))
+                                 for raw in args.inputs]
+    created = _created_stamp()
+    namespace = args.namespace or _namespace(args.name)
+    document = merge_documents(fragments, args.name, namespace, created)
+    write_document(document, Path(args.output))
+    return document
+
+
+def _report(args: argparse.Namespace, document: JsonDoc) -> None:
+    """默认打印一行摘要；--quiet 只留退出码。"""
+    if args.quiet:
+        return
+    print(f"MERGE-SBOM: PASS — {len(document['packages'])} packages, "
+          f"{len(document['relationships'])} relationships "
+          f"-> {args.output}")
 
 
 if __name__ == "__main__":
