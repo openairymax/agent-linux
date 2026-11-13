@@ -220,16 +220,21 @@ def _schema_skels(value: Any) -> list[str]:
     return problems
 
 
+def _lic_marker(name: str, entry: Mapping[str, Any]) -> list[str]:
+    """marker 出现时须为非空字符串。"""
+    marker = entry.get("marker")
+    if not isinstance(marker, str) or not marker:
+        return [f"licenses.{name}.marker 必须是非空字符串"]
+    return []
+
+
 def _lic_entry(name: str, entry: Any) -> list[str]:
     if not isinstance(entry, dict):
         return [f"licenses.{name} 必须是映射"]
     problems = _need(entry, LICENSE_KEYS, f"licenses.{name}.")
     if not _rel_ok(entry.get("file")):
         problems.append(f"licenses.{name}.file 路径非法")
-    marker = entry.get("marker")
-    if not isinstance(marker, str) or not marker:
-        problems.append(f"licenses.{name}.marker 必须是非空字符串")
-    return problems
+    return problems + _lic_marker(name, entry)
 
 
 def _schema_lics(value: Any) -> list[str]:
@@ -263,20 +268,30 @@ def _repo_refs(entry: Mapping[str, Any], label: str, names: set[str],
             f"{entry.get('license')!r}")
 
 
-def _repo_probe(entry: Mapping[str, Any], label: str,
-                problems: list[str]) -> None:
-    """entry_probe 只对 native 入口有意义；其余入口出现即为误配。"""
-    entry_file = entry.get("build_entry")
+def _probe_entry(entry_file: Any, label: str, problems: list[str]) -> None:
+    """build_entry 必须登记在 KINDS_BY_ENTRY 内。"""
     if entry_file not in KINDS_BY_ENTRY:
         problems.append(
             f"subrepos[{label}].build_entry 必须是 "
             f"{sorted(KINDS_BY_ENTRY)} 之一")
-    probe = entry.get(PROBE_KEY)
+
+
+def _probe_value(entry_file: Any, probe: Any, label: str,
+                 problems: list[str]) -> None:
+    """entry_probe 只对 native 入口有意义；其余入口出现即为误配。"""
     if KINDS_BY_ENTRY.get(entry_file) == "native":
         if not _rel_ok(probe):
             problems.append(f"subrepos[{label}].entry_probe 必须合法且非空")
     elif probe is not None:
         problems.append(f"subrepos[{label}].entry_probe 仅 Makefile 入口可用")
+
+
+def _repo_probe(entry: Mapping[str, Any], label: str,
+                problems: list[str]) -> None:
+    """子仓入口：build_entry 取值与 entry_probe 适用性两项判定。"""
+    entry_file = entry.get("build_entry")
+    _probe_entry(entry_file, label, problems)
+    _probe_value(entry_file, entry.get(PROBE_KEY), label, problems)
 
 
 def _schema_repo(entry: Any, names: set[str],
@@ -391,6 +406,22 @@ def _repo_specs(man: Mapping[str, Any]) -> list[RepoSpec]:
 # ─── Checks ────────────────────────────────────────────────────────────────
 
 
+def _excl_unreg(excluded: set[str], modules: set[str]) -> list[str]:
+    """排除清单只允许登记在 .gitmodules 里的子模块。"""
+    unknown = excluded - modules
+    if not unknown:
+        return []
+    return [f"excluded 未在 .gitmodules 登记: {', '.join(sorted(unknown))}"]
+
+
+def _excl_overlap(expected: set[str], excluded: set[str]) -> list[str]:
+    """排除清单不得与八子仓清单冲突。"""
+    overlap = expected & excluded
+    if not overlap:
+        return []
+    return [f"excluded 与八子仓冲突: {', '.join(sorted(overlap))}"]
+
+
 def _reg_problems(modules: set[str], expected: set[str],
                   excluded: set[str]) -> list[str]:
     """四类不一致各出一条：缺登记、未纳入、排除未登记、排除与八仓冲突。"""
@@ -401,14 +432,8 @@ def _reg_problems(modules: set[str], expected: set[str],
     extra = modules - expected - excluded
     if extra:
         problems.append(f"未纳入清单的子模块: {', '.join(sorted(extra))}")
-    if excluded - modules:
-        problems.append(
-            f"excluded 未在 .gitmodules 登记: "
-            f"{', '.join(sorted(excluded - modules))}")
-    overlap = expected & excluded
-    if overlap:
-        problems.append(
-            f"excluded 与八子仓冲突: {', '.join(sorted(overlap))}")
+    problems += _excl_unreg(excluded, modules)
+    problems += _excl_overlap(expected, excluded)
     return problems
 
 
@@ -431,36 +456,45 @@ def check_checkout(man: Mapping[str, Any], root: Path) -> CheckResult:
     return _result(NAME_CHECKOUT, problems)
 
 
+def _skel_file(spec_path: str, base: Path, rel: str) -> list[str]:
+    """单个骨架文件：缺失与空文件各出一条。"""
+    path = base / rel
+    if not path.is_file():
+        return [f"{spec_path}: 缺少 {rel}"]
+    if path.stat().st_size == 0:
+        return [f"{spec_path}: 空文件 {rel}"]
+    return []
+
+
 def check_skeleton(man: Mapping[str, Any], root: Path) -> CheckResult:
     """校验公共骨架文件存在且非空。"""
     problems: list[str] = []
     for spec in _repo_specs(man):
         base = root / spec.path
         for rel in spec.skeleton:
-            path = base / rel
-            if not path.is_file():
-                problems.append(f"{spec.path}: 缺少 {rel}")
-            elif path.stat().st_size == 0:
-                problems.append(f"{spec.path}: 空文件 {rel}")
+            problems.extend(_skel_file(spec.path, base, rel))
     return _result(NAME_SKELETON, problems)
+
+
+def _lic_probs(spec: RepoSpec, root: Path) -> list[str]:
+    """单个子仓许可证：存在性、可读性与标识逐条判定。"""
+    path = root / spec.path / spec.license_file
+    if not path.is_file():
+        return [f"{spec.path}: 缺少 {spec.license_file}"]
+    try:
+        text = _read_text(path)
+    except ScaffoldError as exc:
+        return [f"{spec.path}: {exc}"]
+    if spec.marker not in text:
+        return [f"{spec.path}: {spec.license_file} 缺少标识 {spec.marker!r}"]
+    return []
 
 
 def check_license(man: Mapping[str, Any], root: Path) -> CheckResult:
     """校验许可证文件存在且含规定标识。"""
     problems: list[str] = []
     for spec in _repo_specs(man):
-        path = root / spec.path / spec.license_file
-        if not path.is_file():
-            problems.append(f"{spec.path}: 缺少 {spec.license_file}")
-            continue
-        try:
-            text = _read_text(path)
-        except ScaffoldError as exc:
-            problems.append(f"{spec.path}: {exc}")
-            continue
-        if spec.marker not in text:
-            problems.append(
-                f"{spec.path}: {spec.license_file} 缺少标识 {spec.marker!r}")
+        problems.extend(_lic_probs(spec, root))
     return _result(NAME_LICENSE, problems)
 
 
