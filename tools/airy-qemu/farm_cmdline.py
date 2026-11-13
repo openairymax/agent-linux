@@ -188,8 +188,14 @@ def _need_rootfs(target: Target, env: RunEnv) -> None:
     """跨架构运行必须显式给出 rootfs，本机同架构才可走 9p。"""
     host = env.host if env.host is not None else host_arch()
     if env.rootfs is None and host is not target.arch:
-        where = "unknown host" if host is None else host.value
-        raise _cfg(f"{target.arch.value} requires rootfs when running on {where}")
+        where = _rootfs_where(host)
+        raise _cfg(
+            f"{target.arch.value} requires rootfs when running on {where}")
+
+
+def _rootfs_where(host: Arch | None) -> str:
+    """报错文案里的宿主标识。"""
+    return "unknown host" if host is None else host.value
 
 
 def _check(target: Target, job: FarmJob, env: RunEnv) -> None:
