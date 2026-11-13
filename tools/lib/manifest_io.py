@@ -99,9 +99,19 @@ def load_manifest(path: str | Path) -> dict[str, Any]:
     Raises:
         ManifestError: 文件缺失、不可读、YAML 非法或顶层非映射。
     """
+    _need_yaml()
+    return _parse_manifest(path)
+
+
+def _need_yaml() -> None:
+    """PyYAML 是解析清单的前提。"""
     if yaml is None:
         raise ManifestError(
             "PyYAML 不可用：请安装 pyyaml（见 requirements-dev.txt）")
+
+
+def _parse_manifest(path: str | Path) -> dict[str, Any]:
+    """读取并解析清单，异常统一转成 ManifestError。"""
     try:
         with open(path, "r", encoding="utf-8") as fh:
             data = yaml.safe_load(fh)
