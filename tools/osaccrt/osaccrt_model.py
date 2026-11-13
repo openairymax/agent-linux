@@ -211,13 +211,29 @@ def need_line(value: str, name: str) -> None:
 
 def need_signers(sig: tuple[str, str]) -> None:
     """校验双签为两个互异的邮箱地址。"""
+    first, second = _two_sigs(sig)
+    _need_email(first)
+    _need_email(second)
+    _need_distinct(first, second)
+
+
+def _two_sigs(sig: object) -> tuple[str, str]:
+    """双签必须是两个元素的元组或列表。"""
     if not isinstance(sig, (tuple, list)) or len(sig) != 2:
         raise ValueError("waiver_sig must be two signers")
     first, second = sig
-    for signer in (first, second):
-        need_text(signer, "waiver_sig")
-        if "@" not in signer:
-            raise ValueError(f"waiver_sig must be an email: {signer!r}")
+    return first, second
+
+
+def _need_email(signer: str) -> None:
+    """签名必须是含 @ 的非空文本。"""
+    need_text(signer, "waiver_sig")
+    if "@" not in signer:
+        raise ValueError(f"waiver_sig must be an email: {signer!r}")
+
+
+def _need_distinct(first: str, second: str) -> None:
+    """两个签名必须互异。"""
     if first == second:
         raise ValueError("waiver_sig requires two distinct signers")
 
@@ -225,8 +241,18 @@ def need_signers(sig: tuple[str, str]) -> None:
 def need_relpath(path: str) -> None:
     """校验证据路径为包内相对路径，禁止绝对路径与向上逃逸。"""
     need_text(path, "path")
+    _need_posix(path)
+    _need_clean(path)
+
+
+def _need_posix(path: str) -> None:
+    """禁止绝对路径与反斜杠。"""
     if path.startswith("/") or "\\" in path:
         raise ValueError(f"path must be relative POSIX: {path!r}")
+
+
+def _need_clean(path: str) -> None:
+    """禁止 ..、空段与当前目录段。"""
     parts = path.split("/")
     if ".." in parts or "" in parts or "." in parts:
         raise ValueError(f"path must be normalized: {path!r}")

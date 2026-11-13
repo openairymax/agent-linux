@@ -55,23 +55,38 @@ class PackJudge:
             raise TypeError("result must be ExpResult")
         claim = result.verdict
         if claim is None:
-            return Verdict.PASS if _pass_ok(result) else Verdict.FAIL
-        if claim is Verdict.FAIL:
-            return Verdict.FAIL
-        check = _ALLOW[claim]
-        return claim if check(result) else Verdict.FAIL
+            return _derived(result)
+        return claim if _claim_ok(claim, result) else Verdict.FAIL
+
+
+def _derived(result: ExpResult) -> Verdict:
+    """未声明时按证据是否完备推导 PASS 或 FAIL。"""
+    return Verdict.PASS if _pass_ok(result) else Verdict.FAIL
+
+
+def _claim_ok(claim: Verdict, result: ExpResult) -> bool:
+    """显式声明须通过对应校验；FAIL 不参与复核。"""
+    if claim is Verdict.FAIL:
+        return False
+    return _ALLOW[claim](result)
 
 
 def missing_keys(result: ExpResult) -> tuple[str, ...]:
     """返回缺少取证产物的阈值键，顺序与阈值表一致。"""
-    paths = tuple(
+    paths = _cap_paths(result)
+    return tuple(key for key in result.keys if not _hit(paths, key))
+
+
+def _cap_paths(result: ExpResult) -> tuple[str, ...]:
+    """采集步证据路径，保持登记顺序。"""
+    return tuple(
         item.path for item in result.evidences if item.step is Step.CAPTURE
     )
-    return tuple(
-        key
-        for key in result.keys
-        if not any(_covers(path, key) for path in paths)
-    )
+
+
+def _hit(paths: tuple[str, ...], key: str) -> bool:
+    """阈值键是否已有任一产物覆盖。"""
+    return any(_covers(path, key) for path in paths)
 
 
 def _covers(path: str, key: str) -> bool:
