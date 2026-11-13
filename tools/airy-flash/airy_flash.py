@@ -316,6 +316,11 @@ def _oci_kv(tokens: list[str]) -> dict[str, str]:
     return out
 
 
+def _absent(table: dict[str, str], keys: tuple[str, ...]) -> list[str]:
+    """`keys` 中取值缺失或为空的项，保持声明顺序。"""
+    return [key for key in keys if not table.get(key)]
+
+
 def _oci_part(index: int, rest: str, path: Path) -> OciPart:
     """解析一行 `part=0000 sha256=… size=… name=…`，序号须与出现位置一致。
 
@@ -325,7 +330,7 @@ def _oci_part(index: int, rest: str, path: Path) -> OciPart:
     fields = rest.split()
     _oci_seq(fields, index, path)
     tokens = _oci_kv(fields[1:])
-    missing = [key for key in ("sha256", "size", "name") if not tokens.get(key)]
+    missing = _absent(tokens, ("sha256", "size", "name"))
     if missing:
         raise FlashError(
             EXIT_CHECK, f"{path.name} 第 {index} 块缺少 {', '.join(missing)}"
@@ -362,10 +367,7 @@ def _oci_lines(text: str, path: Path) -> tuple[dict[str, str], list[OciPart]]:
 
 def _oci_need(fields: dict[str, str], path: Path) -> None:
     """五个必填字段缺一即拒：缺字段的清单无法判断制品是否完整。"""
-    missing = [
-        key for key in ("ref", "name", "sha256", "size", "chunk_size")
-        if not fields.get(key)
-    ]
+    missing = _absent(fields, ("ref", "name", "sha256", "size", "chunk_size"))
     if missing:
         raise FlashError(EXIT_CHECK, f"{path.name} 缺少字段 {', '.join(missing)}")
 
@@ -744,8 +746,8 @@ def _stat_target(target: Path) -> os.stat_result:
 
 def _mount_points(table: Sequence[Mount], prefix: str) -> tuple[str, ...]:
     """目标自身及其分区的挂载点，去重后按字典序。"""
-    hits = {m.point for m in table
-            if m.source == prefix or m.source.startswith(prefix)}
+    # 分区名以目标名为前缀，startswith 已覆盖目标自身。
+    hits = {m.point for m in table if m.source.startswith(prefix)}
     return tuple(sorted(hits))
 
 
@@ -1596,7 +1598,7 @@ def _target_facts(device: DeviceFacts) -> str:
         "可移动" if device.removable else "",
         device.note,
     )
-    return ", ".join(part for part in parts if part)
+    return ", ".join(filter(None, parts))
 
 
 def _parts_line(device: DeviceFacts) -> str:
@@ -1686,9 +1688,14 @@ def _advice(failed: list[Check]) -> str:
     return _advice_many(failed)
 
 
+def _is_failed(check: Check) -> bool:
+    """未通过且未被跳过的条目才算失败。"""
+    return not check.ok and not check.skipped
+
+
 def _failed(checks: list[Check]) -> list[Check]:
     """真正失败的条目：跳过项不算失败，但仍留在逐条渲染里。"""
-    return [c for c in checks if not c.ok and not c.skipped]
+    return [c for c in checks if _is_failed(c)]
 
 
 def _verdict(
@@ -1855,10 +1862,10 @@ def _join_parts(ledger: OciLedger, dest: Path, task: Progress) -> tuple[str, str
 
 def _even_parts(ledger: OciLedger) -> bool:
     """除末块外都等于 chunk_size，末块在 1..chunk_size 之间。"""
-    sizes = [part.size for part in ledger.parts]
-    if not all(size == ledger.chunk_size for size in sizes[:-1]):
+    parts = ledger.parts
+    if any(part.size != ledger.chunk_size for part in parts[:-1]):
         return False
-    return 0 < sizes[-1] <= ledger.chunk_size
+    return 0 < parts[-1].size <= ledger.chunk_size
 
 
 def _oras_check(oras: str, fetched: bool) -> Check:
@@ -2158,8 +2165,8 @@ def write_report(report: Report, path: Path) -> None:
     rows: list[str] = [f"airymax-flash-report v1 (airy-flash {TOOL_VERSION})"]
     rows.extend(_head_rows(report))
     rows.extend(_opt_rows(report))
-    rows.extend(_check_row(check) for check in report.checks)
-    rows.extend(_stage_row(stage) for stage in report.stages)
+    rows.extend(map(_check_row, report.checks))
+    rows.extend(map(_stage_row, report.stages))
     path.write_text("\n".join(rows) + "\n", encoding="utf-8")
 
 

@@ -135,13 +135,14 @@ def _read_current(path):
     return sys.stdin.read(), None
 
 
+def _tap_line(line):
+    """子测试头或结果行才带 KTAP 语义。"""
+    return _SUBTEST_RE.match(line) or _RESULT_RE.match(line)
+
+
 def _normalize(text):
     """抽取 KTAP 语义行（子测试头与结果行），丢弃内核噪声行。"""
-    kept = [
-        line.rstrip()
-        for line in text.splitlines()
-        if _SUBTEST_RE.match(line) or _RESULT_RE.match(line)
-    ]
+    kept = [line.rstrip() for line in text.splitlines() if _tap_line(line)]
     return "\n".join(kept) + "\n"
 
 
