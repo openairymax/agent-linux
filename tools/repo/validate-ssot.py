@@ -182,6 +182,33 @@ def parse_range(token):
     return [f'{prefix}-{str(n).zfill(pad)}' for n in range(lo, hi + 1)]
 
 
+def _mark(used, rid, rel_path):
+    """把一条规则引用（区间记号展开后）记入使用表。"""
+    for eid in parse_range(rid):
+        used.setdefault(eid, []).append(rel_path)
+
+
+def _text_of(md_path):
+    """读取文档正文；不可读时返回 None，由调用方跳过该文件。"""
+    try:
+        return Path(md_path).read_text(encoding='utf-8', errors='ignore')
+    except Exception:
+        return None
+
+
+def _scan_text(text, rel_path, used):
+    """单份文档的三类规则引用：OS-*、OS-STD-NNN、agentrt。"""
+    for match in OS_PATTERN.finditer(text):
+        _mark(used, match.group().rstrip('.,;:)]}'), rel_path)
+    for match in OS_STD_PLAIN_PATTERN.finditer(text):
+        _mark(used, match.group(), rel_path)
+    # 跳过 OS-STD-PROD-031 之类的后缀误匹配：其前一个字符为 '-'
+    for match in AGENTRT_PATTERN.finditer(text):
+        if match.start() >= 1 and text[match.start() - 1] == '-':
+            continue
+        _mark(used, match.group().rstrip('.,;:)]}'), rel_path)
+
+
 def scan_documents(docs_root, registered):
     """Scan all .md files for rule ID usage."""
     used = {}  # id -> [file_paths]
@@ -189,36 +216,15 @@ def scan_documents(docs_root, registered):
     # Files to skip (the SSoT registry itself, YAML files, etc.)
     skip_files = {'09-ssot-registry.md', 'ssot-registry.yaml'}
 
-    def record(rid, rel_path):
-        for eid in parse_range(rid):
-            used.setdefault(eid, []).append(rel_path)
-
     for md_path in md_files(docs_root):
         if os.path.basename(md_path) in skip_files:
             continue
 
-        try:
-            text = Path(md_path).read_text(encoding='utf-8', errors='ignore')
-        except Exception:
+        text = _text_of(md_path)
+        if text is None:
             continue
 
-        rel_path = os.path.relpath(md_path, docs_root)
-
-        # Find OS-* rule IDs
-        for match in OS_PATTERN.finditer(text):
-            record(match.group().rstrip('.,;:)]}'), rel_path)
-
-        # Find OS-STD-NNN plain format
-        for match in OS_STD_PLAIN_PATTERN.finditer(text):
-            record(match.group(), rel_path)
-
-        # Find agentrt rule IDs (but not inside OS-* IDs)
-        # 跳过 OS-STD-PROD-031 之类的后缀误匹配：其前一个字符为 '-'
-        for match in AGENTRT_PATTERN.finditer(text):
-            start = match.start()
-            if start >= 1 and text[start-1] == '-':
-                continue
-            record(match.group().rstrip('.,;:)]}'), rel_path)
+        _scan_text(text, os.path.relpath(md_path, docs_root), used)
 
     return used
 

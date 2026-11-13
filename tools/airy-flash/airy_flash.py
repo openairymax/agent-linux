@@ -170,6 +170,25 @@ def pad(text: str, width: int) -> str:
 # ─── 校验和 ─────────────────────────────────────────────────────────────────
 
 
+def _bare_name(name: str) -> str:
+    """去掉 sha256sum 的二进制标记 `*` 与 `./` 前缀。"""
+    name = name.strip().lstrip("*").strip()
+    while name.startswith("./"):
+        name = name[2:]
+    return name
+
+
+def _sum_pair(line: str) -> tuple[str, str] | None:
+    """单行 → (摘要, 文件名)；畸形行返回 None。"""
+    parts = line.split(None, 1)
+    if len(parts) != 2:
+        return None
+    digest = parts[0].lower()
+    if not _is_hex64(digest):
+        return None
+    return digest, _bare_name(parts[1])
+
+
 def parse_sums(text: str) -> dict[str, str]:
     """解析 sha256sum 格式（兼容二进制标记 `*` 与 `./` 前缀）。"""
     out: dict[str, str] = {}
@@ -177,17 +196,9 @@ def parse_sums(text: str) -> dict[str, str]:
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
-        parts = line.split(None, 1)
-        if len(parts) != 2:
-            continue
-        digest, name = parts
-        digest = digest.lower()
-        if len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
-            continue
-        name = name.strip().lstrip("*").strip()
-        while name.startswith("./"):
-            name = name[2:]
-        out[Path(name).name] = digest
+        pair = _sum_pair(line)
+        if pair is not None:
+            out[Path(pair[1]).name] = pair[0]
     return out
 
 
@@ -260,6 +271,24 @@ def _oci_digest(raw: str, label: str, path: Path) -> str:
     return digest
 
 
+def _oci_seq(fields: list[str], index: int, path: Path) -> None:
+    """首列必须是随位置递增的块序号：序号错位就是块错位。"""
+    if not fields or not fields[0].isdigit() or int(fields[0]) != index:
+        raise FlashError(
+            EXIT_CHECK, f"{path.name} 的 part 序号应从 0 连续递增（第 {index + 1} 行不符）"
+        )
+
+
+def _oci_kv(tokens: list[str]) -> dict[str, str]:
+    """`key=value` token → 字段表；无等号的噪声 token 跳过。"""
+    out: dict[str, str] = {}
+    for token in tokens:
+        key, sep, value = token.partition("=")
+        if sep:
+            out[key] = value
+    return out
+
+
 def _oci_part(index: int, rest: str, path: Path) -> OciPart:
     """解析一行 `part=0000 sha256=… size=… name=…`，序号须与出现位置一致。
 
@@ -267,15 +296,8 @@ def _oci_part(index: int, rest: str, path: Path) -> OciPart:
     不行的：必须逐行相等，否则 3.4 GiB 会拼出一份静默损坏的镜像。
     """
     fields = rest.split()
-    if not fields or not fields[0].isdigit() or int(fields[0]) != index:
-        raise FlashError(
-            EXIT_CHECK, f"{path.name} 的 part 序号应从 0 连续递增（第 {index + 1} 行不符）"
-        )
-    tokens: dict[str, str] = {}
-    for token in fields[1:]:
-        key, sep, value = token.partition("=")
-        if sep:
-            tokens[key] = value
+    _oci_seq(fields, index, path)
+    tokens = _oci_kv(fields[1:])
     missing = [key for key in ("sha256", "size", "name") if not tokens.get(key)]
     if missing:
         raise FlashError(

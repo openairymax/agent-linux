@@ -132,11 +132,22 @@ def fetch_ci_state(api, owner_repo, sha, token):
     return _ci_status(api, owner_repo, sha, token, len(runs))
 
 
+def _runs_hit(runs):
+    """首条给出定论的 check run → (state, detail)；全部无定论时 None。"""
+    failed = {"failure", "cancelled", "timed_out", "action_required"}
+    pending = {"queued", "in_progress", "waiting", "pending"}
+    for run in runs:
+        status = run.get("status")
+        conclusion = run.get("conclusion")
+        if status in pending:
+            return "pending", f"{len(runs)} check runs（进行中）"
+        if status == "completed" and conclusion in failed:
+            return "red", f"check run {run.get('name')!r} conclusion={conclusion}"
+    return None
+
+
 def _ci_runs(api, owner_repo, sha, token):
     """check runs 的判定：返回 (runs, verdict)，无定论时 verdict 为 None。"""
-    fail_conclusions = {
-        "failure", "cancelled", "timed_out", "action_required",
-    }
     url = f"{api}/repos/{owner_repo}/commits/{sha}/check-runs?per_page=100"
     status, payload = http_request("GET", url, token)
     if status == 404:
@@ -144,15 +155,7 @@ def _ci_runs(api, owner_repo, sha, token):
     if status != 200 or not isinstance(payload, dict):
         return [], ("unknown", f"check-runs HTTP {status}")
     runs = payload.get("check_runs", []) or []
-    for run in runs:
-        st = run.get("status")
-        con = run.get("conclusion")
-        if st in ("queued", "in_progress", "waiting", "pending"):
-            return runs, ("pending", f"{len(runs)} check runs（进行中）")
-        if st == "completed" and con in fail_conclusions:
-            return runs, ("red",
-                          f"check run {run.get('name')!r} conclusion={con}")
-    return runs, None
+    return runs, _runs_hit(runs)
 
 
 def _ci_status(api, owner_repo, sha, token, run_count):
