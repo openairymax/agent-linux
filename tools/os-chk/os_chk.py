@@ -166,11 +166,16 @@ def _gate_exec(item: dict, where: str, gid: str) -> dict:
 def _gate_timeout(item: dict, where: str, gid: str) -> Optional[int]:
     """缺省时限由调用方补齐；显式声明则必须是正整数秒。"""
     timeout_s = item.get("timeout_s")
-    if timeout_s is not None and (
-            not isinstance(timeout_s, int) or isinstance(timeout_s, bool)
-            or timeout_s <= 0):
+    if timeout_s is not None and not _secs_ok(timeout_s):
         raise RegistryError(f"{where} ({gid}): timeout_s 必须是正整数")
     return timeout_s
+
+
+def _secs_ok(value: object) -> bool:
+    """正整数秒；bool 是 int 子类故单独排除。"""
+    if isinstance(value, bool):
+        return False
+    return isinstance(value, int) and value > 0
 
 
 def _parse_gate(item, idx: int, seen: set) -> Gate:
@@ -213,6 +218,17 @@ def _need_gates(doc: dict) -> list:
 
 
 def parse_registry(text: str) -> Tuple[str, List[Gate]]:
+    doc = _load_reg(text)
+    version = _need_version(doc)
+    raw_gates = _need_gates(doc)
+    seen: set = set()
+    gates = [_parse_gate(item, idx, seen)
+             for idx, item in enumerate(raw_gates)]
+    return version, gates
+
+
+def _load_reg(text: str) -> dict:
+    """解析 YAML 文本并要求根节点是映射。"""
     if yaml is None:
         raise RegistryError("PyYAML 未安装：pip install pyyaml")
     try:
@@ -221,13 +237,7 @@ def parse_registry(text: str) -> Tuple[str, List[Gate]]:
         raise RegistryError(f"注册表 YAML 解析失败：{exc}") from exc
     if not isinstance(doc, dict):
         raise RegistryError("注册表根节点必须是映射（mapping）")
-
-    version = _need_version(doc)
-    raw_gates = _need_gates(doc)
-    seen: set = set()
-    gates = [_parse_gate(item, idx, seen)
-             for idx, item in enumerate(raw_gates)]
-    return version, gates
+    return doc
 
 
 # ─── Repository / gate execution ───────────────────────────────────────────
@@ -307,16 +317,21 @@ def _done(gate: Gate, proc, started: float) -> GateResult:
                                                         proc.stderr))
 
 
+def _rank(result: GateResult) -> int:
+    """严重级排序；未知级别排在末尾。"""
+    return SEVERITY_ORDER.get(result.gate.severity, len(SEVERITY_ORDER))
+
+
+def _blocks(result: GateResult, threshold: int) -> bool:
+    """未通过且严重级达到阻断阈值。"""
+    return result.status != STATUS_PASS and _rank(result) <= threshold
+
+
 def evaluate(results: Sequence[GateResult], fail_on: str) -> List[GateResult]:
     if fail_on == "none":
         return []
     threshold = SEVERITY_ORDER[fail_on]
-
-    def rank(result: GateResult) -> int:
-        return SEVERITY_ORDER.get(result.gate.severity, len(SEVERITY_ORDER))
-
-    return [r for r in results
-            if r.status != STATUS_PASS and rank(r) <= threshold]
+    return [r for r in results if _blocks(r, threshold)]
 
 
 # ─── Report ────────────────────────────────────────────────────────────────
@@ -346,21 +361,23 @@ def print_report(results: Sequence[GateResult], registry_version: str,
               elapsed_s, ts)
 
 
+def _dump_rows(results) -> None:
+    """逐条打印未通过门禁的一行摘要。"""
+    for r in results:
+        print(f"  {_marker(r.status)} {r.gate.id} {r.gate.name}: {r.detail}")
+
+
 def _rep_ci(results, failed, blocking, passed, total, elapsed_s):
     """CI 形态：一行判定，未通过项逐条列出；阻塞项另有计数。"""
     if not blocking:
         extra = "" if not failed else f", {len(failed)} non-blocking"
         print(f"OS-CHK: PASS ({passed}/{total} gates{extra}, "
               f"{elapsed_s:.1f}s)")
-        for r in failed:
-            print(f"  {_marker(r.status)} {r.gate.id} {r.gate.name}: "
-                  f"{r.detail}")
+        _dump_rows(failed)
         return
     print(f"OS-CHK: FAIL ({passed}/{total} gates, "
           f"{len(blocking)} blocking, {elapsed_s:.1f}s)")
-    for r in blocking:
-        print(f"  {_marker(r.status)} {r.gate.id} {r.gate.name}: "
-              f"{r.detail}")
+    _dump_rows(blocking)
 
 
 def _rep_full(results, registry_version, failed, verbose, passed, total,

@@ -97,15 +97,20 @@ class SuiteTally(TapCounts):
     skip_count: int = 0
 
     def __post_init__(self) -> None:
-        if not isinstance(self.name, str) or not self.name:
-            raise ValueError("name must be a non-empty string")
+        _need_basic(self)
         for field in ("plan_total", "ok_count", "not_ok_count", "skip_count"):
             _need_count(getattr(self, field), field)
-        if self.executed > self.plan_total:
-            raise ValueError(
-                f"executed exceeds plan_total: {self.executed} > "
-                f"{self.plan_total}"
-            )
+
+
+def _need_basic(tally: "SuiteTally") -> None:
+    """名字非空，且已执行数不超过计划数。"""
+    if not isinstance(tally.name, str) or not tally.name:
+        raise ValueError("name must be a non-empty string")
+    if tally.executed > tally.plan_total:
+        raise ValueError(
+            f"executed exceeds plan_total: {tally.executed} > "
+            f"{tally.plan_total}"
+        )
 
 
 @dataclass(frozen=True)
