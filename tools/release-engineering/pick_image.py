@@ -133,6 +133,15 @@ def is_cand(item: Any, name: str, sha: str) -> bool:
     run = item.get("workflow_run")
     if not isinstance(run, dict):
         return False
+    return _fields_ok(item, run, name, sha)
+
+
+def _fields_ok(item: dict, run: dict, name: str, sha: str) -> bool:
+    """名称、未过期、提交与运行 id 四项同时合规才可认领。
+
+    expired 必须是显式 false：字段缺失与 true 一样不可认领，未标注过期
+    状态的制品不能凭缺省值混进发布。
+    """
     return (item.get("name") == name
             and item.get("expired") is False
             and run.get("head_sha") == sha
