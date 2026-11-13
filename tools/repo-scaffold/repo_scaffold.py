@@ -287,13 +287,16 @@ def _schema_repo(entry: Any, names: set[str],
     return problems
 
 
+def _scalar_probs(man: Mapping[str, Any], key: str) -> list[str]:
+    """可选标量字段出现时须为非空字符串。"""
+    if key in man and (not isinstance(man[key], str) or not man[key]):
+        return [f"{key} 必须是非空字符串"]
+    return []
+
+
 def _head_scalars(man: Mapping[str, Any]) -> list[str]:
     """version 与 gitmodules 出现即须为非空字符串，后者还须是合法路径。"""
-    problems = [
-        f"{key} 必须是非空字符串"
-        for key in ("version", "gitmodules")
-        if key in man and (not isinstance(man[key], str) or not man[key])
-    ]
+    problems = _scalar_probs(man, "version") + _scalar_probs(man, "gitmodules")
     if "gitmodules" in man and not _rel_ok(man["gitmodules"]):
         problems.append("gitmodules 路径非法")
     return problems
@@ -326,6 +329,19 @@ def _schema_maps(man: Mapping[str, Any]) -> list[str]:
     return problems
 
 
+def _entry_probs(entry: Any, names: set[str], licenses: Any,
+                 seen: set[str]) -> list[str]:
+    """单个仓条目：契约校验 + path 唯一性（首次出现才登记）。"""
+    problems = _schema_repo(entry, names, licenses)
+    path = entry.get("path") if isinstance(entry, dict) else None
+    if not isinstance(path, str):
+        return problems
+    if path in seen:
+        problems.append(f"subrepos[].path 重复: {path}")
+    seen.add(path)
+    return problems
+
+
 def _schema_list(man: Mapping[str, Any], repos: list) -> list[str]:
     """八仓清单：数量、逐仓契约与 path 唯一性。"""
     problems: list[str] = []
@@ -336,12 +352,7 @@ def _schema_list(man: Mapping[str, Any], repos: list) -> list[str]:
              if isinstance(man.get("skeletons"), dict) else set())
     seen: set[str] = set()
     for entry in repos:
-        problems.extend(_schema_repo(entry, names, man.get("licenses")))
-        path = entry.get("path") if isinstance(entry, dict) else None
-        if isinstance(path, str):
-            if path in seen:
-                problems.append(f"subrepos[].path 重复: {path}")
-            seen.add(path)
+        problems.extend(_entry_probs(entry, names, man.get("licenses"), seen))
     return problems
 
 
@@ -375,14 +386,9 @@ def _repo_specs(man: Mapping[str, Any]) -> list[RepoSpec]:
 # ─── Checks ────────────────────────────────────────────────────────────────
 
 
-def check_registry(man: Mapping[str, Any], root: Path) -> CheckResult:
-    """校验 .gitmodules 与八子仓清单一致。"""
-    try:
-        modules = _gitmodules(root / man["gitmodules"])
-    except ScaffoldError as exc:
-        return _result(NAME_REGISTRY, [str(exc)])
-    expected = {spec.path for spec in _repo_specs(man)}
-    excluded = set(man["excluded"])
+def _reg_problems(modules: set[str], expected: set[str],
+                  excluded: set[str]) -> list[str]:
+    """四类不一致各出一条：缺登记、未纳入、排除未登记、排除与八仓冲突。"""
     problems: list[str] = []
     missing = expected - modules
     if missing:
@@ -398,7 +404,18 @@ def check_registry(man: Mapping[str, Any], root: Path) -> CheckResult:
     if overlap:
         problems.append(
             f"excluded 与八子仓冲突: {', '.join(sorted(overlap))}")
-    return _result(NAME_REGISTRY, problems)
+    return problems
+
+
+def check_registry(man: Mapping[str, Any], root: Path) -> CheckResult:
+    """校验 .gitmodules 与八子仓清单一致。"""
+    try:
+        modules = _gitmodules(root / man["gitmodules"])
+    except ScaffoldError as exc:
+        return _result(NAME_REGISTRY, [str(exc)])
+    expected = {spec.path for spec in _repo_specs(man)}
+    return _result(NAME_REGISTRY, _reg_problems(
+        modules, expected, set(man["excluded"])))
 
 
 def check_checkout(man: Mapping[str, Any], root: Path) -> CheckResult:
@@ -559,6 +576,25 @@ def _kbuild_file(label: str, base: Path,
     return problems, sources
 
 
+def _sub_entry(sub: Path) -> Path | None:
+    """子目录的 Kbuild/Makefile 入口；两者都没有返回 None。"""
+    for name in ("Kbuild", "Makefile"):
+        candidate = sub / name
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _sub_srcs(spec: RepoSpec, base: Path,
+              obj: str) -> tuple[list[str], list[str]]:
+    """单个子目录引用：找到真实入口再递归收集源文件。"""
+    sub = base / obj.rstrip("/")
+    sub_entry = _sub_entry(sub)
+    if sub_entry is None:
+        return [f"{spec.path}: 模块目录缺少 Kbuild {obj}"], []
+    return _kbuild_file(spec.path, sub, sub_entry)
+
+
 def _kbuild_srcs(spec: RepoSpec, base: Path,
                  entry: Path) -> list[str]:
     """校验 Kbuild 入口及其子目录引用的源文件。"""
@@ -566,20 +602,10 @@ def _kbuild_srcs(spec: RepoSpec, base: Path,
     text = _strip_comments(_read_text(entry))
     for value in _OBJ_RE.findall(text):
         for obj in value.split():
-            if not obj.endswith("/"):
-                continue
-            sub = base / obj.rstrip("/")
-            for name in ("Kbuild", "Makefile"):
-                sub_entry = sub / name
-                if sub_entry.is_file():
-                    break
-            else:
-                problems.append(f"{spec.path}: 模块目录缺少 Kbuild {obj}")
-                continue
-            sub_problems, sub_sources = _kbuild_file(
-                spec.path, sub, sub_entry)
-            problems += sub_problems
-            sources += sub_sources
+            if obj.endswith("/"):
+                sub_probs, sub_sources = _sub_srcs(spec, base, obj)
+                problems += sub_probs
+                sources += sub_sources
     if not sources:
         problems.append(f"{spec.path}: 构建入口未引用任何源文件")
     return problems

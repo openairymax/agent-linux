@@ -362,26 +362,43 @@ def _snap_ts(snap: Snapshot) -> datetime:
     return _snap_ts_text(snap.created)
 
 
-def read_snap(path: Path) -> Snapshot | None:
-    """读取单个快照目录；无元数据返回 None，元数据损坏抛错。"""
-    meta = path / META_NAME
-    if not meta.is_file():
-        return None
+def _meta_read(meta: Path) -> Mapping[str, Any]:
+    """读取快照元数据；不可读或非合法 JSON 即判完整性失败。"""
     try:
         raw = json.loads(meta.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise RollbackError(EXIT_INTEGRITY, f"{meta}: {exc}") from exc
     if not isinstance(raw, Mapping):
         raise RollbackError(EXIT_INTEGRITY, f"{meta}: 元数据必须是对象")
+    return raw
+
+
+def _meta_kind(meta: Path, raw: Mapping[str, Any]) -> Kind:
+    """kind 必须是已知枚举；非法即判完整性失败。"""
     try:
-        kind = Kind(_text(raw, "kind", EXIT_INTEGRITY))
+        return Kind(_text(raw, "kind", EXIT_INTEGRITY))
     except ValueError as exc:
         raise RollbackError(EXIT_INTEGRITY, f"{meta}: kind 非法") from exc
-    created = _text(raw, "created", EXIT_INTEGRITY)
-    _snap_ts_text(created)
+
+
+def _meta_tx(meta: Path, raw: Mapping[str, Any]) -> int | None:
+    """dnf_tx 可选；出现即须为整数。"""
     tx = raw.get("dnf_tx")
     if tx is not None and not isinstance(tx, int):
         raise RollbackError(EXIT_INTEGRITY, f"{meta}: dnf_tx 必须是整数")
+    return tx
+
+
+def read_snap(path: Path) -> Snapshot | None:
+    """读取单个快照目录；无元数据返回 None，元数据损坏抛错。"""
+    meta = path / META_NAME
+    if not meta.is_file():
+        return None
+    raw = _meta_read(meta)
+    kind = _meta_kind(meta, raw)
+    created = _text(raw, "created", EXIT_INTEGRITY)
+    _snap_ts_text(created)
+    tx = _meta_tx(meta, raw)
     return Snapshot(
         path=path,
         version=_text(raw, "version", EXIT_INTEGRITY),
