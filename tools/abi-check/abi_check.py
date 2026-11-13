@@ -201,6 +201,14 @@ def _ssot_range(text):
     return [int(m.group(1)), int(m.group(2))] if m else None
 
 
+def _base_of(text, calls):
+    """显式基址优先；缺失时取最小已分配编号。"""
+    base = _ssot_base(text)
+    if base is None and calls:
+        return min(call["linux_number"] for call in calls)
+    return base
+
+
 def parse_ssot(text):
     """Parse SSoT markdown to extract authoritative syscall definitions.
 
@@ -213,15 +221,21 @@ def parse_ssot(text):
       syscalls: list of {name, macro, linux_number}
     """
     calls = _ssot_calls(text)
-    base = _ssot_base(text)
-    if base is None and calls:
-        base = min(call["linux_number"] for call in calls)
+    base = _base_of(text, calls)
     return {
         "version": _ssot_ver(text),
         "linux_base": base,
         "syscalls": calls,
         "reserved_range": _ssot_range(text),
     }
+
+
+def _nr_scan(pattern, text):
+    """按 __NR_ 定义行提取 (名字, 编号) 序列。"""
+    return [
+        {"name": m.group(1), "linux_number": int(m.group(2))}
+        for m in re.finditer(pattern, text)
+    ]
 
 
 def parse_unistd(text):
@@ -235,22 +249,14 @@ def parse_unistd(text):
     result = {"syscalls": [], "reserved": [], "nr_syscalls": None}
 
     # Match: #define __NR_airy_sys_call 548
-    for m in re.finditer(
+    result["syscalls"] = _nr_scan(
         r"#define\s+__NR_(airy_sys_\w+)\s+(\d+)", text,
-    ):
-        result["syscalls"].append({
-            "name": m.group(1),
-            "linux_number": int(m.group(2)),
-        })
+    )
 
     # Match: #define __NR_airy_reserved_4 552
-    for m in re.finditer(
+    result["reserved"] = _nr_scan(
         r"#define\s+__NR_(airy_reserved_\d+)\s+(\d+)", text,
-    ):
-        result["reserved"].append({
-            "name": m.group(1),
-            "linux_number": int(m.group(2)),
-        })
+    )
 
     # Match: #define __NR_syscalls 572
     m = re.search(r"#define\s+__NR_syscalls\s+(\d+)", text)
@@ -289,19 +295,29 @@ def parse_tbl(text):
     """
     result = {"syscalls": [], "reserved": []}
     for line in text.splitlines():
-        entry = _tbl_row(line)
-        if entry is None:
-            continue
-        bucket = _tbl_bucket(entry["name"])
-        if bucket is not None:
-            result[bucket].append(entry)
+        _tbl_feed(result, line)
     return result
+
+
+def _tbl_feed(result, line):
+    """一行：解析成条目后按名字前缀归桶。"""
+    entry = _tbl_row(line)
+    if entry is None:
+        return
+    bucket = _tbl_bucket(entry["name"])
+    if bucket is not None:
+        result[bucket].append(entry)
+
+
+def _tbl_skip(stripped):
+    """空行与注释行不属于表项。"""
+    return not stripped or stripped.startswith("#")
 
 
 def _tbl_row(line):
     """一行 syscall_64.tbl → 条目；空行、注释与格式不符的行返回 None。"""
     stripped = line.strip()
-    if not stripped or stripped.startswith("#"):
+    if _tbl_skip(stripped):
         return None
     # Format: <number> <abi> <name> <entry_point>
     m = re.match(r"(\d+)\s+(\S+)\s+(\S+)\s+(\S+)", stripped)
@@ -348,6 +364,18 @@ def compute_sha256(path):
     return digest.hexdigest()
 
 
+def _git_head(target):
+    """查询 target 所在目录的最近提交；无法启动时返回非零码。"""
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(target.parent), "log", "-1", "--format=%H",
+             "--", target.name],
+            capture_output=True, text=True, check=False)
+    except OSError:
+        return 1, ""
+    return proc.returncode, proc.stdout.strip()
+
+
 def src_commit(path):
     """Best-effort detection of the git commit owning `path`.
 
@@ -355,15 +383,8 @@ def src_commit(path):
     tree (e.g. the docs submodule is not checked out).
     """
     target = Path(path).resolve()
-    try:
-        proc = subprocess.run(
-            ["git", "-C", str(target.parent), "log", "-1", "--format=%H",
-             "--", target.name],
-            capture_output=True, text=True, check=False)
-    except OSError:
-        return None
-    commit = proc.stdout.strip()
-    return commit if proc.returncode == 0 and commit else None
+    code, commit = _git_head(target)
+    return commit if code == 0 and commit else None
 
 
 def rel_src_path(ssot_path, repo_root):
