@@ -115,11 +115,28 @@ def print_report(
         tail: 追加在版本行末尾的补充信息（如架构数）；空串表示不追加。
     """
     total = len(results)
-    passed = sum(1 for item in results if item.passed)
+    passed = _pass_count(results)
     failed = total - passed
     if check_mode:
         _brief(results, tag, passed, total, failed)
         return
+    _verbose(results, title, version, tail, total, failed)
+
+
+def _pass_count(results: Sequence[CheckResult]) -> int:
+    """通过项数，与总数配对给出汇总分母。"""
+    return sum(1 for item in results if item.passed)
+
+
+def _verbose(
+    results: Sequence[CheckResult],
+    title: str,
+    version: str,
+    tail: str,
+    total: int,
+    failed: int,
+) -> None:
+    """完整报告：报告头、逐项结果与汇总行。"""
     _banner(title, version, tail)
     for item in results:
         print(f"{'[+] PASS' if item.passed else '[-] FAIL'}: {item.name}")
