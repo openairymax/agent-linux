@@ -234,11 +234,26 @@ def need_relpath(path: str) -> None:
 
 def _need_ths(items: tuple[Threshold, ...]) -> None:
     """校验阈值表非空、类型正确且键唯一。"""
+    _need_tup(items)
+    _need_items(items)
+    _need_uniq(items)
+
+
+def _need_tup(items: object) -> None:
+    """阈值表必须是非空元组。"""
     if not isinstance(items, tuple) or not items:
         raise ValueError("thresholds must be a non-empty tuple")
+
+
+def _need_items(items: tuple[Threshold, ...]) -> None:
+    """阈值表元素必须都是 Threshold。"""
     for item in items:
         if not isinstance(item, Threshold):
             raise ValueError("thresholds must contain Threshold items")
+
+
+def _need_uniq(items: tuple[Threshold, ...]) -> None:
+    """同一阈值键只能出现一次，重复会让判定歧义。"""
     keys = [item.key for item in items]
     if len(keys) != len(set(keys)):
         raise ValueError(f"duplicate threshold keys: {keys}")
