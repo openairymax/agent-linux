@@ -193,8 +193,13 @@ def _mf_required(manifest, problems):
     if not required:
         problems.append("required_configs 不能为空")
     for item in required:
-        if not isinstance(item, str) or not item.startswith("CONFIG_"):
-            problems.append(f"required_configs 含非 CONFIG_ 项: {item!r}")
+        _mf_item(item, problems)
+
+
+def _mf_item(item, problems):
+    """单个必备项必须是以 CONFIG_ 开头的字符串。"""
+    if not isinstance(item, str) or not item.startswith("CONFIG_"):
+        problems.append(f"required_configs 含非 CONFIG_ 项: {item!r}")
 
 
 def _arch_schema(idx, entry, seen):
@@ -233,12 +238,22 @@ def _arch_key(entry, where, seen, problems):
 
 def _arch_flags(entry, where, problems):
     """kind/build/cross 的取值与类型。"""
-    if "kind" in entry and entry.get("kind") not in KIND_CHOICES:
-        problems.append(f"{where}.kind 必须是 {' 或 '.join(KIND_CHOICES)}")
-    if "build" in entry and not isinstance(entry.get("build"), bool):
-        problems.append(f"{where}.build 必须是布尔值")
+    _arch_kind(entry, where, problems)
+    _arch_build(entry, where, problems)
     if not isinstance(entry.get("cross"), str):
         problems.append(f"{where}.cross 必须是字符串")
+
+
+def _arch_kind(entry, where, problems):
+    """kind 若给出，必须在白名单内。"""
+    if "kind" in entry and entry.get("kind") not in KIND_CHOICES:
+        problems.append(f"{where}.kind 必须是 {' 或 '.join(KIND_CHOICES)}")
+
+
+def _arch_build(entry, where, problems):
+    """build 若给出，必须是布尔值。"""
+    if "build" in entry and not isinstance(entry.get("build"), bool):
+        problems.append(f"{where}.build 必须是布尔值")
 
 
 def _arch_ident(entry, where, seen, problems):
@@ -250,8 +265,7 @@ def _arch_ident(entry, where, seen, problems):
 def _arch_paths(entry, where, problems):
     """configs 路径形态，以及 build=true 与 kind=fragment 的固定搭配。"""
     configs = entry.get("configs")
-    if not isinstance(configs, str) or not configs.startswith("arch/") \
-            or not configs.endswith("/configs/airy_defconfig"):
+    if not _cfg_path_ok(configs):
         problems.append(
             f"{where}.configs 必须是 arch/<kdir>/configs/airy_defconfig 形态")
     if entry.get("build") is True and entry.get("kind") != KIND_FRAGMENT:
@@ -259,9 +273,28 @@ def _arch_paths(entry, where, problems):
             f"{where}: build=true 要求 kind=fragment（CI 固定走 merge_config 三步法）")
 
 
+def _cfg_path_ok(configs):
+    """configs 必须是字符串且形如 arch/<kdir>/configs/airy_defconfig。"""
+    if not isinstance(configs, str):
+        return False
+    return configs.startswith("arch/") and configs.endswith(
+        "/configs/airy_defconfig")
+
+
 def check_fs(manifest, kernel_dir):
     """清单登记项与磁盘上的 airy_defconfig 双向一致（OS-BUILD-028）。"""
     problems = []
+    registered = _fs_registered(manifest, kernel_dir, problems)
+    for configs in sorted(_fs_ondisk(kernel_dir) - registered):
+        problems.append(f"磁盘存在但清单未登记: {configs}")
+
+    return CheckResult(
+        "清单 ↔ 文件系统双向一致 (OS-BUILD-028)", not problems,
+        "\n".join(problems))
+
+
+def _fs_registered(manifest, kernel_dir, problems):
+    """核对清单登记项是否落盘，返回已登记路径集合。"""
     registered = set()
     for entry in manifest.get("architectures", []):
         configs = entry.get("configs")
@@ -270,17 +303,15 @@ def check_fs(manifest, kernel_dir):
         registered.add(configs)
         if not (kernel_dir / configs).is_file():
             problems.append(f"清单已登记但文件缺失: {configs}")
+    return registered
 
-    on_disk = {
+
+def _fs_ondisk(kernel_dir):
+    """磁盘上已有的 airy_defconfig 相对路径集合。"""
+    return {
         str(path.relative_to(kernel_dir))
         for path in kernel_dir.glob("arch/*/configs/airy_defconfig")
     }
-    for configs in sorted(on_disk - registered):
-        problems.append(f"磁盘存在但清单未登记: {configs}")
-
-    return CheckResult(
-        "清单 ↔ 文件系统双向一致 (OS-BUILD-028)", not problems,
-        "\n".join(problems))
 
 
 def _fmt_line(configs, num, stripped, keys, problems):
@@ -448,6 +479,12 @@ def check_ci_req(manifest, repo_root):
         return CheckResult(
             name, False,
             f"{CI_CONF_LIB_REL}: 未找到 REQUIRED_CONF=(...) 必备 CONFIG 清单块")
+    problems = _ci_diff(manifest, blocks)
+    return CheckResult(name, not problems, "\n".join(problems))
+
+
+def _ci_diff(manifest, blocks):
+    """对比清单必备项与 CI 清单块，返回差异描述。"""
     want = set(manifest.get("required_configs", []))
     found = set()
     for block in blocks:
@@ -461,7 +498,7 @@ def check_ci_req(manifest, repo_root):
     if extra:
         problems.append(
             f"{CI_CONF_LIB_REL}: required 列表含清单外项: {', '.join(extra)}")
-    return CheckResult(name, not problems, "\n".join(problems))
+    return problems
 
 
 def kbuild_refs(kernel_dir):
