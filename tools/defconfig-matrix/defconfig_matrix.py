@@ -508,14 +508,19 @@ def kbuild_refs(kernel_dir):
         directory = kernel_dir / rel
         if not directory.is_dir():
             continue
-        for name in ("Kbuild", "Makefile"):
-            path = directory / name
-            if not path.is_file():
-                continue
-            text = path.read_text(encoding="utf-8", errors="replace")
-            for symbol in CONFIG_REF_RE.findall(text):
-                refs.setdefault(symbol, set()).add(f"{rel}/{name}")
+        _kbuild_dir(refs, rel, directory)
     return refs
+
+
+def _kbuild_dir(refs, rel, directory):
+    """收集单个目录下两份构建文件中的 CONFIG 引用。"""
+    for name in ("Kbuild", "Makefile"):
+        path = directory / name
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for symbol in CONFIG_REF_RE.findall(text):
+            refs.setdefault(symbol, set()).add(f"{rel}/{name}")
 
 
 def declared_cfg(kernel_dir):

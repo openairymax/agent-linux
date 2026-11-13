@@ -494,11 +494,20 @@ def _miss_issues(name, row):
 
 def _num_conflict(name, row):
     """三方编号互不相同才报一行；零到一个编号视为一致。"""
-    nums = [num for _miss, _short, num in row if num is not None]
+    nums = _row_nums(row)
     if len(set(nums)) <= 1:
         return ""
-    shown = ", ".join(f"{short}={num}" for _miss, short, num in row)
-    return f"  {name}: {shown} (不一致)"
+    return f"  {name}: {_row_show(row)} (不一致)"
+
+
+def _row_nums(row):
+    """已出现过的编号，缺失来源不计。"""
+    return [num for _miss, _short, num in row if num is not None]
+
+
+def _row_show(row):
+    """按来源列出 short=num，供不一致提示。"""
+    return ", ".join(f"{short}={num}" for _miss, short, num in row)
 
 
 def check_3way(ssot, unistd, tbl):
@@ -619,8 +628,21 @@ def check_sys_nr(unistd):
 
 def check_x32(unistd, tbl):
     """Check no airy syscall in 512-547 (x32 forbidden zone)."""
-    failures = []
+    failures = _x32_fails(unistd, tbl)
 
+    if failures:
+        return CheckResult(
+            "无 512-547 区域的 syscall (x32 禁止区域)", False,
+            "\n".join(failures))
+    return CheckResult(
+        "无 512-547 区域的 syscall (x32 禁止区域)", True,
+        f"无 airy syscall 落入 x32 禁止区域 "
+        f"[{X32_FORBIDDEN_START}, {X32_FORBIDDEN_END}]")
+
+
+def _x32_fails(unistd, tbl):
+    """收集落入 x32 禁止区域的 syscall。"""
+    failures = []
     for source_name, syscalls in [
         ("unistd.h", unistd["syscalls"]),
         ("syscall_64.tbl", tbl["syscalls"]),
@@ -631,15 +653,7 @@ def check_x32(unistd, tbl):
                     f"  {source_name}: {s['name']} = {s['linux_number']} "
                     f"在 x32 禁止区域 "
                     f"[{X32_FORBIDDEN_START}, {X32_FORBIDDEN_END}]")
-
-    if failures:
-        return CheckResult(
-            "无 512-547 区域的 syscall (x32 禁止区域)", False,
-            "\n".join(failures))
-    return CheckResult(
-        "无 512-547 区域的 syscall (x32 禁止区域)", True,
-        f"无 airy syscall 落入 x32 禁止区域 "
-        f"[{X32_FORBIDDEN_START}, {X32_FORBIDDEN_END}]")
+    return failures
 
 
 def check_sc_hdr(sc_header, ssot, unistd, tbl):
@@ -674,11 +688,21 @@ def _core_macro(name, macro, expected, num, ssot_num):
     if num is None:
         return [f"  {macro}: [SC] 契约头中缺失"]
     out = []
+    _expect_num(out, macro, num, expected)
+    _expect_ssot(out, macro, num, ssot_num)
+    return out
+
+
+def _expect_num(out, macro, num, expected):
+    """编号偏离期望时记一行。"""
     if num != expected:
         out.append(f"  {macro} = {num} (期望 {expected})")
+
+
+def _expect_ssot(out, macro, num, ssot_num):
+    """与 SSoT 编号不一致时记一行。"""
     if ssot_num is not None and ssot_num != num:
         out.append(f"  {macro}: [SC]={num}, SSoT={ssot_num} (不一致)")
-    return out
 
 
 def mark_issue(name, value, expect):
@@ -783,10 +807,20 @@ def rsvd_seen(reserved, label):
 def rsvd_span(seen, label):
     """覆盖判据：552-571 逐号在册，且不得出现区间外的槽。"""
     expected = range(EXPECTED_RESERVED_START, EXPECTED_RESERVED_END + 1)
-    missing = [n for n in expected if n not in seen]
-    extra = [n for n in sorted(seen) if n not in expected]
+    missing = _span_miss(seen, expected)
+    extra = _span_extra(seen, expected)
     return (_slot_msg(label, "缺失预留槽", missing) +
             _slot_msg(label, "越界预留槽", extra))
+
+
+def _span_miss(seen, expected):
+    """区间内未在册的槽号。"""
+    return [n for n in expected if n not in seen]
+
+
+def _span_extra(seen, expected):
+    """区间外却已登记在册的槽号。"""
+    return [n for n in sorted(seen) if n not in expected]
 
 
 def _slot_msg(label, what, nums):
