@@ -983,30 +983,41 @@ def _bl_fields(baseline, ssot, unistd):
     ]
 
 
+def _bl_maps(baseline, ssot):
+    """基线与当前 SSoT 的 syscall 名 → 编号映射。"""
+    return ({s["name"]: s["linux_number"]
+             for s in baseline.get("syscalls", [])},
+            {s["name"]: s["linux_number"] for s in ssot["syscalls"]})
+
+
+def _bl_drift(name, bl_num, cur_map):
+    """基线已登记项：当前缺失或编号变更；一致时返回 None。"""
+    cur_num = cur_map.get(name)
+    if cur_num is None:
+        return (f"  syscall '{name}' 在当前 SSoT 中缺失 "
+                f"(基线编号={bl_num})")
+    if cur_num != bl_num:
+        return (f"  syscall '{name}': 当前={cur_num}, "
+                f"基线={bl_num} (编号变更!)")
+    return None
+
+
+def _bl_new(name, cur_num, bl_map):
+    """当前新增项：基线未登记；已登记时返回 None。"""
+    if name in bl_map:
+        return None
+    return (f"  syscall '{name}' 在基线中缺失 "
+            f"(当前编号={cur_num}, 新增?)")
+
+
 def _bl_calls(baseline, ssot):
     """syscall 名 → 编号映射的双向差异：缺失、编号变更、新增。"""
-    bl_map = {s["name"]: s["linux_number"]
-              for s in baseline.get("syscalls", [])}
-    cur_map = {s["name"]: s["linux_number"] for s in ssot["syscalls"]}
-
-    failures = []
-    for name, bl_num in sorted(bl_map.items()):
-        cur_num = cur_map.get(name)
-        if cur_num is None:
-            failures.append(
-                f"  syscall '{name}' 在当前 SSoT 中缺失 "
-                f"(基线编号={bl_num})")
-        elif cur_num != bl_num:
-            failures.append(
-                f"  syscall '{name}': 当前={cur_num}, "
-                f"基线={bl_num} (编号变更!)")
-
-    for name, cur_num in sorted(cur_map.items()):
-        if name not in bl_map:
-            failures.append(
-                f"  syscall '{name}' 在基线中缺失 "
-                f"(当前编号={cur_num}, 新增?)")
-    return failures
+    bl_map, cur_map = _bl_maps(baseline, ssot)
+    lost = [_bl_drift(name, num, cur_map)
+            for name, num in sorted(bl_map.items())]
+    added = [_bl_new(name, num, bl_map)
+             for name, num in sorted(cur_map.items())]
+    return [msg for msg in lost + added if msg is not None]
 
 
 # 快照与文档逐项对齐的三类标量：(键, 报错前缀)。版本一项在两张表里同名
@@ -1337,12 +1348,23 @@ def src_rows(paths, snapshot, baseline, has_ssot, repo_root):
     ]
 
 
-def main():
-    args = parse_opts()
+def _root(args):
+    """仓库根：显式给出则用之，否则按脚本位置探测。"""
     repo_root = Path(args.repo_root) if args.repo_root else find_repo_root()
     if not repo_root.is_dir():
         print(f"ERROR: repo root not found: {repo_root}", file=sys.stderr)
         sys.exit(2)
+    return repo_root
+
+
+def _failed(results):
+    """存在失败检查项即返回 1，否则 0。"""
+    return 1 if any(not res.passed for res in results) else 0
+
+
+def main():
+    args = parse_opts()
+    repo_root = _root(args)
 
     paths = resolve(args, repo_root)
     has_ssot = gate_ssot(args, paths["ssot"])
@@ -1360,8 +1382,8 @@ def main():
                                     repo_root),
                  args.check, note)
 
-    failed = sum(1 for r in results if not r.passed)
-    sys.exit(1 if failed > 0 else 0)
+    failed = _failed(results)
+    sys.exit(failed)
 
 
 if __name__ == "__main__":

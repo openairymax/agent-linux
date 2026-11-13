@@ -246,6 +246,47 @@ def _check_ident(path: Path, doc: JsonDoc) -> None:
             f"{path}: dataLicense 必须为 {DATA_LICENSE}（实际 {license_id!r}）")
 
 
+def _collect_item(
+    path: Path,
+    field: str,
+    key_name: str,
+    item: Any,
+    acc: _Accumulator,
+) -> None:
+    """校验单个列表元素并并入累积器。
+
+    Raises:
+        MergeError: 元素不是对象或缺少去重键。
+    """
+    if not isinstance(item, dict):
+        raise MergeError(f"{path}: {field} 的元素必须是对象")
+    key = item.get(key_name)
+    if not isinstance(key, str) or not key:
+        raise MergeError(f"{path}: {field} 元素缺少非空 {key_name}")
+    acc.add(key, item, path, field)
+
+
+def _collect_field(
+    path: Path,
+    field: str,
+    key_name: str,
+    doc: JsonDoc,
+    acc: _Accumulator,
+) -> None:
+    """并入单个列表型字段。
+
+    Raises:
+        MergeError: 字段不是数组。
+    """
+    items = doc.get(field)
+    if items is None:
+        return
+    if not isinstance(items, list):
+        raise MergeError(f"{path}: {field} 必须是数组")
+    for item in items:
+        _collect_item(path, field, key_name, item, acc)
+
+
 def _collect_lists(
     path: Path,
     doc: JsonDoc,
@@ -257,18 +298,7 @@ def _collect_lists(
         MergeError: 字段不是数组、元素不是对象或缺少去重键。
     """
     for field, key_name in LIST_FIELDS:
-        items = doc.get(field)
-        if items is None:
-            continue
-        if not isinstance(items, list):
-            raise MergeError(f"{path}: {field} 必须是数组")
-        for item in items:
-            if not isinstance(item, dict):
-                raise MergeError(f"{path}: {field} 的元素必须是对象")
-            key = item.get(key_name)
-            if not isinstance(key, str) or not key:
-                raise MergeError(f"{path}: {field} 元素缺少非空 {key_name}")
-            accs[field].add(key, item, path, field)
+        _collect_field(path, field, key_name, doc, accs[field])
 
 
 def _collect_rels(path: Path, doc: JsonDoc, acc: _Accumulator) -> None:
