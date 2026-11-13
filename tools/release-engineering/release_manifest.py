@@ -544,13 +544,24 @@ def _recipe_one(where: str, argv: Sequence[str], gates: set[str]) -> list[str]:
     """单条 produce argv 校验；命令头不对时不再解读其余 token。"""
     if len(argv) < 2 or argv[0] != DISPATCH_REL:
         return [f"{where} 必须以 {DISPATCH_REL} <门禁> 开头"]
-    problems = []
-    if argv[1] not in gates:
-        problems.append(f"{where} 引用的门禁不存在: {argv[1]}")
-    unknown = {m for tok in argv for m in PH_RE.findall(tok)} - PRODUCE_PH
-    if unknown:
-        problems.append(f"{where} 含未知占位符: {', '.join(sorted(unknown))}")
+    problems = _need_gate(where, argv[1], gates)
+    problems += _ph_probs(where, argv)
     return problems
+
+
+def _need_gate(where: str, gate: str, gates: set[str]) -> list[str]:
+    """命令头之后必须指向仓库内真实门禁。"""
+    if gate in gates:
+        return []
+    return [f"{where} 引用的门禁不存在: {gate}"]
+
+
+def _ph_probs(where: str, argv: Sequence[str]) -> list[str]:
+    """占位符限于可解析白名单，未知的排序后一次列出。"""
+    unknown = {m for tok in argv for m in PH_RE.findall(tok)} - PRODUCE_PH
+    if not unknown:
+        return []
+    return [f"{where} 含未知占位符: {', '.join(sorted(unknown))}"]
 
 
 def check_recipes(manifest: Manifest, repo_root: Path) -> CheckResult:
@@ -595,22 +606,38 @@ def check_pipeline(manifest: Manifest, repo_root: Path) -> CheckResult:
     except ToolError as exc:
         return CheckResult(name, False, str(exc))
 
-    problems = []
+    problems, evidenced = _declared_probs(manifest, declared)
+    problems.extend(_unlisted(declared, evidenced))
+    return CheckResult(name, not problems, "\n".join(problems))
+
+
+def _declared_probs(manifest: Manifest, declared: Globs) -> tuple[list[str], Globs]:
+    """active 物料声明的产物必须在流水线里声明，返回问题与取证集合。"""
+    problems: list[str] = []
     evidenced: Globs = set()
     for item in manifest.get("materials", []):
         if item.get("delivery") != DELIVERY_ACTIVE:
             continue
-        for raw in item.get("evidence", []):
-            glob = normalize_glob(raw)
-            evidenced.add(glob)
-            if glob not in declared:
-                problems.append(
-                    f"active 物料 {item.get('id')} 的产物 {glob} 未在 release.yml 声明")
+        problems.extend(_item_probs(item, declared, evidenced))
+    return problems, evidenced
 
-    for glob in sorted(declared - evidenced):
-        problems.append(f"release.yml 产出 {glob} 未在清单登记（未登记物料）")
 
-    return CheckResult(name, not problems, "\n".join(problems))
+def _item_probs(item: Manifest, declared: Globs, evidenced: Globs) -> list[str]:
+    """单条物料登记的全部产物：逐个归一化、记账并要求流水线已声明。"""
+    problems = []
+    for raw in item.get("evidence", []):
+        glob = normalize_glob(raw)
+        evidenced.add(glob)
+        if glob not in declared:
+            problems.append(
+                f"active 物料 {item.get('id')} 的产物 {glob} 未在 release.yml 声明")
+    return problems
+
+
+def _unlisted(declared: Globs, evidenced: Globs) -> list[str]:
+    """流水线产出而清单未登记，按字节序逐条列出。"""
+    return [f"release.yml 产出 {glob} 未在清单登记（未登记物料）"
+            for glob in sorted(declared - evidenced)]
 
 
 # ─── Checksums ─────────────────────────────────────────────────────────────

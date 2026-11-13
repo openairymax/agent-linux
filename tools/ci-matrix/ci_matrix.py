@@ -106,13 +106,23 @@ def _is_str_list(value):
 
 def _matrix_types(matrix):
     """校验 matrix 段各字段类型；缺失字段由 _missing 单独报告。"""
-    problems = [f"matrix.{key} 必须是字符串列表"
-                for key in MATRIX_STRS
-                if key in matrix and not _is_str_list(matrix[key])]
-    problems.extend(f"matrix.{key} 必须是{desc}"
-                    for key, kind, desc in MATRIX_PLAIN
-                    if key in matrix and not isinstance(matrix[key], kind))
+    problems = _str_list_probs(matrix)
+    problems += _plain_probs(matrix)
     return problems
+
+
+def _str_list_probs(matrix):
+    """字符串列表字段：出现在段里就必须是字符串列表。"""
+    return [f"matrix.{key} 必须是字符串列表"
+            for key in MATRIX_STRS
+            if key in matrix and not _is_str_list(matrix[key])]
+
+
+def _plain_probs(matrix):
+    """标量字段：出现在段里就必须是声明的那种类型。"""
+    return [f"matrix.{key} 必须是{desc}"
+            for key, kind, desc in MATRIX_PLAIN
+            if key in matrix and not isinstance(matrix[key], kind)]
 
 
 def _budget_types(budget):

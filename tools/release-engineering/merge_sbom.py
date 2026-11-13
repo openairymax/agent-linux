@@ -386,15 +386,7 @@ def merge_documents(
     accs = {field: _Accumulator() for field, _ in LIST_FIELDS}
     relationships = _Accumulator()
     creators: set[str] = set()
-    license_list_version: str | None = None
-
-    for path, doc in fragments:
-        _check_ident(path, doc)
-        _collect_lists(path, doc, accs)
-        _collect_rels(path, doc, relationships)
-        declared = _collect_info(path, doc, creators)
-        if declared:
-            license_list_version = _max_version(license_list_version, declared)
+    license_list_version = _digest(fragments, accs, relationships, creators)
 
     creators.add(TOOL_CREATOR)
     creation_info: JsonDoc = {
@@ -418,13 +410,35 @@ def merge_documents(
             key=lambda rel: (rel["spdxElementId"], rel["relationshipType"],
                              rel["relatedSpdxElement"])),
     }
+    _add_lists(document, accs)
+    return document
+
+
+def _digest(
+    fragments: Sequence[Fragment],
+    accs: dict[str, _Accumulator],
+    relationships: _Accumulator,
+    creators: set[str],
+) -> str | None:
+    """逐分片校验身份并收集各表，返回声明的最高许可清单版本。"""
+    top: str | None = None
+    for path, doc in fragments:
+        _check_ident(path, doc)
+        _collect_lists(path, doc, accs)
+        _collect_rels(path, doc, relationships)
+        declared = _collect_info(path, doc, creators)
+        if declared:
+            top = _max_version(top, declared)
+    return top
+
+
+def _add_lists(document: JsonDoc, accs: dict[str, _Accumulator]) -> None:
+    """补可选的顶层列表字段；空集不落键，非空按各自 SPDXID 排序。"""
     for field in ("files", "externalDocumentRefs",
                   "hasExtractedLicensingInfos"):
         values = accs[field].values()
         if values:
-            key_name = LIST_KEYS[field]
-            document[field] = sorted(values, key=lambda item: item[key_name])
-    return document
+            document[field] = sorted(values, key=lambda item: item[LIST_KEYS[field]])
 
 
 def write_document(document: JsonDoc, output: Path) -> None:
