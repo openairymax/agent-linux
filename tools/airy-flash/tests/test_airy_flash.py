@@ -170,6 +170,18 @@ def test_non_tty_progress_keeps_emitting_with_readings() -> None:
     assert len(lines) == 2
     assert "10%" in lines[0] and "12%" in lines[1]
     assert "/s ETA" in lines[0] and "1.00 KiB" in lines[0]
+    assert re.search(r"已用 \d+(?:\.\d+)?s", lines[0])
+
+
+def test_non_tty_progress_reports_stage_time() -> None:
+    """读数行带本阶段已用时长：翻日志时能区分刚开始与磨了很久。"""
+    stream = io.StringIO()
+    renderer = af.Renderer(stream=stream, tty=False)
+    renderer.stage_start(af.Stage(1, 4, "写入设备", af.FAIL))
+    renderer._stage_at -= 65
+    renderer.stage_progress(10, 100, 1024.0, 3.0)
+    line = stream.getvalue().splitlines()[0]
+    assert "已用 1m05s" in line
 
 
 def test_tty_progress_stays_on_one_line() -> None:

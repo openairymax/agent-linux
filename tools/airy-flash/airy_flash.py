@@ -1245,6 +1245,7 @@ class Renderer:
         self._bar_open = False
         self._last_bucket = -1
         self._last_emit = 0.0
+        self._stage_at = time.monotonic()
         self._current = Stage(0, 0, "", OK)
 
     def _write(self, text: str) -> None:
@@ -1279,6 +1280,7 @@ class Renderer:
     def stage_start(self, stage: Stage) -> None:
         """只登记当前阶段：进度行与结束行各自自带前缀，避免半行残留。"""
         self._current = stage
+        self._stage_at = time.monotonic()
         self._last_bucket = -1
         self._last_emit = 0.0
 
@@ -1322,6 +1324,10 @@ class Renderer:
         # 日志判断卡死时踩过）。刻度仍随状态跃迁输出，另外按心跳间隔补发
         # 带读数的行——百分比、已写字节、当前速率与 ETA 都在，慢和死就不
         # 再是同一种现象。
+        #
+        # 读数行还带本阶段已用时长：只有速率与 ETA 时，隔段时间翻日志的人
+        # 无法判断这是刚开始还是已经磨了很久；已用与结束行的阶段耗时同源，
+        # 两处能直接对上。
         moment = time.monotonic()
         if not self._due(bucket, moment):
             return
@@ -1330,7 +1336,8 @@ class Renderer:
         self._write(
             f"  [ .. ] {head} {ratio * 100:3.0f}% "
             f"{human_bytes(done)}/{human_bytes(total)} "
-            f"{human_bytes(rate)}/s ETA {human_duration(eta)}\n"
+            f"{human_bytes(rate)}/s ETA {human_duration(eta)} "
+            f"已用 {human_duration(moment - self._stage_at)}\n"
         )
 
     def heartbeat(self, stage: Stage, seconds: float) -> None:
