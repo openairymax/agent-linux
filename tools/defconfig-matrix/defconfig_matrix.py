@@ -220,8 +220,8 @@ def _arch_keys(entry, where):
     return problems
 
 
-def _arch_ident(entry, where, seen, problems):
-    """arch 是唯一键；kind/build/cross 决定这条记录怎么被构建。"""
+def _arch_key(entry, where, seen, problems):
+    """arch 是唯一键：非空且不重复。"""
     arch = entry.get("arch")
     if not isinstance(arch, str) or not arch:
         problems.append(f"{where}.arch 必须是非空字符串")
@@ -230,12 +230,21 @@ def _arch_ident(entry, where, seen, problems):
     else:
         seen.add(arch)
 
+
+def _arch_flags(entry, where, problems):
+    """kind/build/cross 的取值与类型。"""
     if "kind" in entry and entry.get("kind") not in KIND_CHOICES:
         problems.append(f"{where}.kind 必须是 {' 或 '.join(KIND_CHOICES)}")
     if "build" in entry and not isinstance(entry.get("build"), bool):
         problems.append(f"{where}.build 必须是布尔值")
     if not isinstance(entry.get("cross"), str):
         problems.append(f"{where}.cross 必须是字符串")
+
+
+def _arch_ident(entry, where, seen, problems):
+    """arch 是唯一键；kind/build/cross 决定这条记录怎么被构建。"""
+    _arch_key(entry, where, seen, problems)
+    _arch_flags(entry, where, problems)
 
 
 def _arch_paths(entry, where, problems):

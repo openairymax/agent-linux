@@ -163,22 +163,36 @@ def _meta(line: str, meta: dict[str, str]) -> None:
     meta[key] = value
 
 
+def _need_runs(runs: str) -> int:
+    """runs 必须是正整数字面量。"""
+    if not runs.isdigit() or int(runs) < 1:
+        raise ValueError(f"runs must be positive: {runs!r}")
+    return int(runs)
+
+
+def _need_img(
+    iso: tuple[str, str] | None,
+    meta: dict[str, str],
+    rows: dict[tuple[str, int], dict[str, str]],
+) -> int:
+    """缺项与非法取值校验，返回轮次数。"""
+    if iso is None:
+        raise ValueError("manifest lacks the iso line")
+    absent = [key for key in _REQUIRED if key not in meta]
+    if absent:
+        raise ValueError(f"manifest lacks fields: {absent}")
+    if not rows:
+        raise ValueError("manifest lacks run rows")
+    return _need_runs(meta["runs"])
+
+
 def _image(
     iso: tuple[str, str] | None,
     meta: dict[str, str],
     rows: dict[tuple[str, int], dict[str, str]],
 ) -> Image:
     """装配镜像对象，缺项与非法取值一律拒绝。"""
-    if iso is None:
-        raise ValueError("manifest lacks the iso line")
-    absent = [key for key in _REQUIRED if key not in meta]
-    if absent:
-        raise ValueError(f"manifest lacks fields: {absent}")
-    runs = meta["runs"]
-    if not runs.isdigit() or int(runs) < 1:
-        raise ValueError(f"runs must be positive: {runs!r}")
-    if not rows:
-        raise ValueError("manifest lacks run rows")
+    runs = _need_img(iso, meta, rows)
     boots = tuple(
         _boot(firmware, index, item)
         for (firmware, index), item in sorted(rows.items())
@@ -188,7 +202,7 @@ def _image(
         name=iso[1],
         arch=meta["arch"],
         firmware=meta["firmware"],
-        runs=int(runs),
+        runs=runs,
         result=meta["result"],
         boots=boots,
     )

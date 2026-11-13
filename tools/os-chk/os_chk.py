@@ -181,6 +181,22 @@ def _parse_gate(item, idx: int, seen: set) -> Gate:
     return gate
 
 
+def _need_version(doc: dict) -> str:
+    """version 必须是非空字符串。"""
+    version = doc.get("version")
+    if not isinstance(version, str) or not version.strip():
+        raise RegistryError("注册表缺少合法 version 字段")
+    return version
+
+
+def _need_gates(doc: dict) -> list:
+    """gates 必须是非空列表。"""
+    raw_gates = doc.get("gates")
+    if not isinstance(raw_gates, list) or not raw_gates:
+        raise RegistryError("注册表 gates 必须是非空列表")
+    return raw_gates
+
+
 def parse_registry(text: str) -> Tuple[str, List[Gate]]:
     if yaml is None:
         raise RegistryError("PyYAML 未安装：pip install pyyaml")
@@ -191,14 +207,8 @@ def parse_registry(text: str) -> Tuple[str, List[Gate]]:
     if not isinstance(doc, dict):
         raise RegistryError("注册表根节点必须是映射（mapping）")
 
-    version = doc.get("version")
-    if not isinstance(version, str) or not version.strip():
-        raise RegistryError("注册表缺少合法 version 字段")
-
-    raw_gates = doc.get("gates")
-    if not isinstance(raw_gates, list) or not raw_gates:
-        raise RegistryError("注册表 gates 必须是非空列表")
-
+    version = _need_version(doc)
+    raw_gates = _need_gates(doc)
     seen: set = set()
     gates = [_parse_gate(item, idx, seen)
              for idx, item in enumerate(raw_gates)]
@@ -473,24 +483,23 @@ def _dump_json(args, version: str, ts: str,
     return EXIT_PASS
 
 
-def main(argv: Optional[Sequence[str]] = None) -> int:
-    args = _parse_args(argv)
-    if args is None:
-        return EXIT_USAGE
-
+def _setup(args) -> Optional[tuple]:
+    """解析仓库根、注册表与 gate 选择；任一环节失败返回 None。"""
     root = _repo_root(args)
     if root is None:
-        return EXIT_USAGE
+        return None
     loaded = _load_registry(root, args)
     if loaded is None:
-        return EXIT_USAGE
+        return None
     version, gates = loaded
     gates = _pick(gates, args.gate)
     if gates is None:
-        return EXIT_USAGE
-    if args.list:
-        return _list_gates(gates)
+        return None
+    return root, version, gates
 
+
+def _exec(gates: List[Gate], root: Path, args, version: str) -> int:
+    """跑完全部 gate、打印报告并给出退出码。"""
     started = time.monotonic()
     results = [run_gate(gate, root, args.timeout) for gate in gates]
     elapsed = time.monotonic() - started
@@ -501,8 +510,22 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     code = _dump_json(args, version, ts, results)
     if code != EXIT_PASS:
         return code
-    blocking = evaluate(results, args.fail_on)
-    return EXIT_BLOCKED if blocking else EXIT_PASS
+    return EXIT_BLOCKED if evaluate(results, args.fail_on) else EXIT_PASS
+
+
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    """命令行入口：见文件头的两种用法说明。"""
+    args = _parse_args(argv)
+    if args is None:
+        return EXIT_USAGE
+
+    setup = _setup(args)
+    if setup is None:
+        return EXIT_USAGE
+    root, version, gates = setup
+    if args.list:
+        return _list_gates(gates)
+    return _exec(gates, root, args, version)
 
 
 if __name__ == "__main__":
