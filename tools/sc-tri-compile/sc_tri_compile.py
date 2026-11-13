@@ -1150,6 +1150,15 @@ def print_report(results, header_files, cc, sources, check_mode):
     _print_body(results, header_files, cc, sources, passed, total, failed)
 
 
+def _print_fail(r):
+    """失败项才输出，含逐行明细。"""
+    if r.passed:
+        return
+    print(f"  FAIL: {r.name}")
+    for line in r.details.splitlines():
+        print(f"    {line}")
+
+
 def _print_ci(results, passed, total, failed):
     """CI 模式：一行判定加失败项明细，便于在流水线日志里定位。"""
     if failed == 0:
@@ -1157,10 +1166,7 @@ def _print_ci(results, passed, total, failed):
         return
     print(f"SC TRI-COMPILE: FAIL ({passed}/{total} checks, {failed} failed)")
     for r in results:
-        if not r.passed:
-            print(f"  FAIL: {r.name}")
-            for line in r.details.splitlines():
-                print(f"    {line}")
+        _print_fail(r)
 
 
 def _print_body(results, header_files, cc, sources, passed, total, failed):
@@ -1196,14 +1202,23 @@ def _print_head(header_files, cc, sources, passed, total, failed):
     print()
 
 
+def _status_of(r):
+    """判定对应的标记与状态文字。"""
+    return ("[+]", "PASS") if r.passed else ("[-]", "FAIL")
+
+
+def _print_detail(details):
+    """逐行输出缩进明细。"""
+    for line in details.splitlines():
+        print(f"      {line}")
+
+
 def _print_one(r):
     """单项判定：标记、状态、名称与明细。"""
-    marker = "[+]" if r.passed else "[-]"
-    status = "PASS" if r.passed else "FAIL"
+    marker, status = _status_of(r)
     print(f"{marker} {status}: {r.name}")
     if r.details:
-        for line in r.details.splitlines():
-            print(f"      {line}")
+        _print_detail(r.details)
     print()
 
 

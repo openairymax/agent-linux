@@ -110,18 +110,23 @@ class NightlyError(Exception):
 # ─── Loading ───────────────────────────────────────────────────────────────
 
 
+def _open_yaml(path: Path) -> Any:
+    """打开并解析 YAML；缺失或语法错误转成 NightlyError。"""
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            return yaml.safe_load(handle)
+    except FileNotFoundError:
+        raise NightlyError(f"文件不存在：{path}") from None
+    except yaml.YAMLError as exc:
+        raise NightlyError(f"YAML 解析失败（{path}）：{exc}") from exc
+
+
 def load_yaml(path: Path) -> dict[str, Any]:
     """读取 YAML 映射；缺失或解析失败时抛 NightlyError。"""
     if yaml is None:
         raise NightlyError(
             "PyYAML 不可用：请安装 pyyaml（见 requirements-dev.txt）")
-    try:
-        with open(path, "r", encoding="utf-8") as handle:
-            data = yaml.safe_load(handle)
-    except FileNotFoundError:
-        raise NightlyError(f"文件不存在：{path}") from None
-    except yaml.YAMLError as exc:
-        raise NightlyError(f"YAML 解析失败（{path}）：{exc}") from exc
+    data = _open_yaml(path)
     if not isinstance(data, dict):
         raise NightlyError(f"顶层必须是映射（mapping）：{path}")
     return data
@@ -139,12 +144,24 @@ def _jobs(wf: Mapping[str, Any]) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def _step_map(step: Any) -> bool:
+    """step 必须是映射才纳入。"""
+    return isinstance(step, dict)
+
+
+def _raw_steps(job: Any) -> Any:
+    """job 原样的 steps 值；job 不是映射时为 None。"""
+    if not isinstance(job, dict):
+        return None
+    return job.get("steps")
+
+
 def _steps(job: Any) -> list[dict[str, Any]]:
     """取 job 的 step 列表，过滤非映射条目。"""
-    value = job.get("steps") if isinstance(job, dict) else None
+    value = _raw_steps(job)
     if not isinstance(value, list):
         return []
-    return [step for step in value if isinstance(step, dict)]
+    return [step for step in value if _step_map(step)]
 
 
 def _scripts(job: Any) -> list[str]:
@@ -259,18 +276,25 @@ def _schema_jobs(value: Any) -> list[str]:
     return problems
 
 
+def _job_name(entry: Any, names: set[str]) -> tuple[str | None, list[str]]:
+    """取合法的 job 名并登记；名字非法时返回 None 与一条问题。"""
+    name = entry.get("name")
+    if not isinstance(name, str) or not name:
+        return None, ["jobs[].name 必须是非空字符串"]
+    problems = [f"jobs[].name 重复: {name}"] if name in names else []
+    names.add(name)
+    return name, problems
+
+
 def _schema_job(entry: Any, names: set[str]) -> list[str]:
     """单个 job 条目：名字合法才继续核对字段，重名也照样登记。"""
     if not isinstance(entry, dict):
         return ["jobs 条目必须是映射"]
     problems = _need(entry, JOB_KEYS, "jobs[].")
-    name = entry.get("name")
-    if not isinstance(name, str) or not name:
-        return problems + ["jobs[].name 必须是非空字符串"]
-    if name in names:
-        problems.append(f"jobs[].name 重复: {name}")
-    names.add(name)
-    return problems + _job_fields(entry, name)
+    name, name_probs = _job_name(entry, names)
+    if name is None:
+        return problems + name_probs
+    return problems + name_probs + _job_fields(entry, name)
 
 
 def _job_fields(entry: Mapping[str, Any], name: str) -> list[str]:
