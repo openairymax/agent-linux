@@ -412,18 +412,33 @@ def _xml_meta(root):
 
 def _xml_sys(entry, prefix):
     """单条 <syscall>：返回 (大写后缀, 原名, 编号)，不合规即 ValueError。"""
+    name, raw_number = _xml_pair(entry)
+    _need_prefix(name, prefix)
+    return name[len(prefix):].upper(), name, _xml_num(name, raw_number)
+
+
+def _xml_pair(entry):
+    """<name>/<number> 都必须非空；两者一起报，免得逐个文件来回修。"""
     name = (entry.findtext("name") or "").strip()
     raw_number = (entry.findtext("number") or "").strip()
     if not name or not raw_number:
         raise ValueError("syscall.xml <syscall> 缺少 <name>/<number>")
+    return name, raw_number
+
+
+def _need_prefix(name, prefix):
+    """名称必须带约定前缀，否则表与内核入口对不上。"""
     if not name.startswith(prefix):
         raise ValueError(f"syscall.xml 名称 {name} 未带前缀 {prefix}")
+
+
+def _xml_num(name, raw_number):
+    """编号按 C 字面量解析（0x 前缀可用），失败时带原名报错。"""
     try:
-        number = int(raw_number, 0)
+        return int(raw_number, 0)
     except ValueError as exc:
         raise ValueError(
             f"syscall.xml {name} 的 <number> 非整数: {raw_number}") from exc
-    return name[len(prefix):].upper(), name, number
 
 
 def _xml_core(root, prefix):
@@ -638,15 +653,23 @@ def parse_probe(stdout):
     """Parse probe output into {(kind, struct, field): int}."""
     values = {}
     for line in stdout.splitlines():
-        parts = line.split()
-        if not parts:
-            continue
-        kind = parts[0]
-        if kind in ("T", "S", "D", "E") and len(parts) == 3:
-            values[(kind, parts[1], "")] = int(parts[2])
-        elif kind == "O" and len(parts) == 4:
-            values[(kind, parts[1], parts[2])] = int(parts[3])
+        parsed = _probe_row(line.split())
+        if parsed is not None:
+            key, number = parsed
+            values[key] = number
     return values
+
+
+def _probe_row(parts):
+    """一行探针输出 → (键, 数值)；空行与不认识的形态丢弃。"""
+    if not parts:
+        return None
+    kind = parts[0]
+    if kind in ("T", "S", "D", "E") and len(parts) == 3:
+        return (kind, parts[1], ""), int(parts[2])
+    if kind == "O" and len(parts) == 4:
+        return (kind, parts[1], parts[2]), int(parts[3])
+    return None
 
 
 def collect_probe(cc, include_flags, workdir):
@@ -683,9 +706,15 @@ def check_consist(item, expected, per_path, key, failures):
     if missing:
         failures.append(f"  {item}: 探针未返回 ({', '.join(missing)})")
         return
-    if set(values.values()) != {expected}:
-        shown = ", ".join(f"{k}={v}" for k, v in values.items())
-        failures.append(f"  {item}: 期望 {expected}, 实测 {shown}")
+    _need_same(item, expected, values, failures)
+
+
+def _need_same(item, expected, values, failures):
+    """所有路径取值一致且等于期望；否则一条带出实得表。"""
+    if set(values.values()) == {expected}:
+        return
+    shown = ", ".join(f"{k}={v}" for k, v in values.items())
+    failures.append(f"  {item}: 期望 {expected}, 实测 {shown}")
 
 
 def type_size_check(per_path, probe_failures):
@@ -1113,19 +1142,30 @@ def _fail(msg):
 
 def _dirs(args):
     """定出契约头目录与内核源码根；两者缺失都无法给出判定，直接收场。"""
-    repo_root = Path(args.repo_root) if args.repo_root else find_repo_root()
-    if not repo_root.is_dir():
-        _fail(f"repo root not found: {repo_root}")
-
-    headers_dir = (Path(args.headers_dir) if args.headers_dir
-                   else repo_root / DEFAULT_HEADERS_REL)
-    kernel_dir = (Path(args.kernel_dir) if args.kernel_dir
-                  else repo_root / DEFAULT_KERNEL_REL)
-    if not headers_dir.is_dir():
-        _fail(f"headers dir not found: {headers_dir}")
-    if not kernel_dir.is_dir():
-        _fail(f"kernel dir not found: {kernel_dir}")
+    repo_root = _repo_root(args)
+    headers_dir = _pick(args.headers_dir, repo_root / DEFAULT_HEADERS_REL)
+    kernel_dir = _pick(args.kernel_dir, repo_root / DEFAULT_KERNEL_REL)
+    _need_dir(headers_dir, "headers dir")
+    _need_dir(kernel_dir, "kernel dir")
     return headers_dir, kernel_dir
+
+
+def _repo_root(args):
+    """显式 --repo-root 优先，否则向上探测；找不到即收场。"""
+    root = Path(args.repo_root) if args.repo_root else find_repo_root()
+    _need_dir(root, "repo root")
+    return root
+
+
+def _pick(given, default):
+    """显式目录优先于仓库内缺省相对路径。"""
+    return Path(given) if given else default
+
+
+def _need_dir(path, what):
+    """目录不存在就无法给出判定，按既有失败通道收场。"""
+    if not path.is_dir():
+        _fail(f"{what} not found: {path}")
 
 
 def _pick_cc(arg):
