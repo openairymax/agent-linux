@@ -518,12 +518,16 @@ def _unquote(text):
     return QUOTES_RE.sub("", text)
 
 
+def _missing_tokens(tokens, haystack):
+    """未被 haystack 覆盖的门禁片段，保持清单声明顺序。"""
+    return [token for token in tokens if _unquote(token) not in haystack]
+
+
 def check_tokens(job, manifest, repo_root=None):
     """编译门禁语义片段齐备（workflow 内联段 + 其调用的门禁脚本）。"""
     text = _job_text(job)
     haystack = _unquote(text + "\n" + _gate_text(text, repo_root))
-    missing = [token for token in manifest["gates"]["required_tokens"]
-               if _unquote(token) not in haystack]
+    missing = _missing_tokens(manifest["gates"]["required_tokens"], haystack)
     return CheckResult("编译门禁语义片段齐备", not missing,
                        "\n".join(f"缺少片段: {token}" for token in missing))
 
@@ -658,10 +662,15 @@ def _split(seen, expected):
             _absent(expected, seen), _extra(seen, expected))
 
 
+def _bad_cell(key, value, expected):
+    """结论不是 success，且该格落在矩阵定义内。"""
+    return value != "success" and key in expected
+
+
 def _failed(seen, expected):
     """矩阵定义内、结论不是 success 的格。"""
     return {key: value for key, value in seen.items()
-            if value != "success" and key in expected}
+            if _bad_cell(key, value, expected)}
 
 
 def _absent(expected, seen):
@@ -674,15 +683,23 @@ def _extra(seen, expected):
     return sorted(set(seen) - set(expected))
 
 
+def _miss_rows(tag, keys):
+    """缺失/越界格的一行，格式 `TAG arch/config/compiler`。"""
+    return [f"{tag} {key[1]}/{key[2]}/{key[0]}" for key in keys]
+
+
+def _fail_row(key, value, expected, passed, reasons):
+    """失败格的一行；格体缺失时按维度元组就地重建。"""
+    cell = expected.get(key, dict(zip(DIMS, key)))
+    reason = classify_cell(cell, passed, reasons)
+    return f"FAIL {key[1]}/{key[2]}/{key[0]}: {reason} ({value})"
+
+
 def _problems(missing, unknown, failed, expected, passed, reasons):
     """失败归因行：缺失与越界在前，失败格按 §3.4 语义分类。"""
-    rows = [f"MISSING {key[1]}/{key[2]}/{key[0]}" for key in missing]
-    rows += [f"UNKNOWN {key[1]}/{key[2]}/{key[0]}" for key in unknown]
-    for key, value in sorted(failed.items()):
-        cell = expected.get(key, dict(zip(DIMS, key)))
-        reason = classify_cell(cell, passed, reasons)
-        rows.append(f"FAIL {key[1]}/{key[2]}/{key[0]}: {reason} ({value})")
-    return rows
+    rows = _miss_rows("MISSING", missing) + _miss_rows("UNKNOWN", unknown)
+    return rows + [_fail_row(key, value, expected, passed, reasons)
+                   for key, value in sorted(failed.items())]
 
 
 def run_summary(manifest, arches, path):

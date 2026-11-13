@@ -420,7 +420,7 @@ def _rep_tail(failed, total, elapsed_s):
 
 def _passed_n(results: Sequence[GateResult]) -> int:
     """通过的门禁数。"""
-    return sum(1 for r in results if r.status == STATUS_PASS)
+    return sum(r.status == STATUS_PASS for r in results)
 
 
 def _gate_row(r: GateResult) -> dict:

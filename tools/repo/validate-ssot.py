@@ -254,10 +254,15 @@ def _scan_std(text, rel_path, used):
         _mark(used, match.group(), rel_path)
 
 
+def _dash_prefixed(text, start):
+    """匹配位置前紧邻 '-'，即它是更长标识符的后缀。"""
+    return start >= 1 and text[start - 1] == '-'
+
+
 def _scan_rt(text, rel_path, used):
     """agentrt 规则引用；跳过前一个字符为 '-' 的后缀误匹配。"""
     for match in AGENTRT_PATTERN.finditer(text):
-        if match.start() >= 1 and text[match.start() - 1] == '-':
+        if _dash_prefixed(text, match.start()):
             continue
         _mark(used, match.group().rstrip('.,;:)]}'), rel_path)
 

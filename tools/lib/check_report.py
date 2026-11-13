@@ -125,7 +125,7 @@ def print_report(
 
 def _pass_count(results: Sequence[CheckResult]) -> int:
     """通过项数，与总数配对给出汇总分母。"""
-    return sum(1 for item in results if item.passed)
+    return sum(item.passed for item in results)
 
 
 def _verbose(
