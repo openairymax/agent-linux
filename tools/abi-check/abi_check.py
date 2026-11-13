@@ -818,14 +818,19 @@ def _src_maps(unistd, tbl):
     return (("unistd.h", u_map), ("syscall_64.tbl", t_map))
 
 
+def _xref_scan(macro, num, name, maps, out):
+    """核心宏在全部来源中逐项比对。"""
+    for src, src_map in maps:
+        _xref_one(macro, num, name, src, src_map, out)
+
+
 def _xref_cores(sc_header, maps, out):
     """逐条核心 syscall 比对；头文件未声明的宏直接跳过。"""
     for name, macro, _expected in CORE_SYSCALLS:
         num = sc_header["core_macros"].get(macro)
         if num is None:
             continue
-        for src, src_map in maps:
-            _xref_one(macro, num, name, src, src_map, out)
+        _xref_scan(macro, num, name, maps, out)
 
 
 def rsvd_issues(reserved, label):
@@ -883,17 +888,22 @@ def rsvd_rows(seen, label):
     return issues
 
 
+def _rsvd_entry(s, num, label, issues):
+    """入口点只允许登记表项。"""
+    entry = s.get("entry")
+    if entry is not None and entry != RESERVED_TBL_ENTRY:
+        issues.append(
+            f"  {label}: {num} 入口点 {entry} "
+            f"(期望 {RESERVED_TBL_ENTRY})")
+
+
 def _rsvd_row(s, num, label, issues):
     """单个在册槽：命名与入口点两重判定。"""
     name = f"{RESERVED_NAME_PREFIX}{num - EXPECTED_BASE}"
     if s["name"] != name:
         issues.append(
             f"  {label}: {num} 命名 {s['name']} (期望 {name})")
-    entry = s.get("entry")
-    if entry is not None and entry != RESERVED_TBL_ENTRY:
-        issues.append(
-            f"  {label}: {num} 入口点 {entry} "
-            f"(期望 {RESERVED_TBL_ENTRY})")
+    _rsvd_entry(s, num, label, issues)
 
 
 def check_rsvd(unistd, tbl):
@@ -961,17 +971,23 @@ def check_tbl_abi(tbl):
         f"预留入口 sys_ni_syscall")
 
 
+def _sw_hit(name, expected, num, ssot_map):
+    """落位差异提示：缺失、编号不符或与 SSoT 不一致。"""
+    if num is None:
+        return f"  {name}: 在 sw_64 syscall.tbl 中缺失"
+    if num != expected:
+        return f"  {name}: sw_64={num} (期望 {expected})"
+    if ssot_map.get(name) != num:
+        return (f"  {name}: sw_64={num}, SSoT={ssot_map.get(name)} "
+                f"(不一致)")
+    return None
+
+
 def _sw_core(name, expected, sw_map, ssot_map, failures):
     """单个核心 syscall 在 sw_64 表中的落位。"""
-    num = sw_map.get(name)
-    if num is None:
-        failures.append(f"  {name}: 在 sw_64 syscall.tbl 中缺失")
-    elif num != expected:
-        failures.append(f"  {name}: sw_64={num} (期望 {expected})")
-    elif ssot_map.get(name) != num:
-        failures.append(
-            f"  {name}: sw_64={num}, SSoT={ssot_map.get(name)} "
-            f"(不一致)")
+    msg = _sw_hit(name, expected, sw_map.get(name), ssot_map)
+    if msg is not None:
+        failures.append(msg)
 
 
 def check_sw64_tbl(ssot, sw_tbl):
@@ -992,11 +1008,17 @@ def check_sw64_tbl(ssot, sw_tbl):
         f"预留入口 sys_ni_syscall，abi 均为 common")
 
 
+def _sw_maps(ssot, sw_tbl):
+    """名字到编号的两张映射表。"""
+    sw_map = {s["name"]: s["linux_number"] for s in sw_tbl["syscalls"]}
+    ssot_map = {s["name"]: s["linux_number"] for s in ssot["syscalls"]}
+    return sw_map, ssot_map
+
+
 def _sw_fails(ssot, sw_tbl):
     """核心宏、预留槽与入口点的全部差异。"""
     failures = []
-    sw_map = {s["name"]: s["linux_number"] for s in sw_tbl["syscalls"]}
-    ssot_map = {s["name"]: s["linux_number"] for s in ssot["syscalls"]}
+    sw_map, ssot_map = _sw_maps(ssot, sw_tbl)
 
     for name, _macro, expected in CORE_SYSCALLS:
         _sw_core(name, expected, sw_map, ssot_map, failures)
@@ -1035,16 +1057,24 @@ def _wire_inc(riscv_uapi, loong_uapi):
     return fails
 
 
+def _riscv_inc(tbl):
+    """包含 <asm/unistd.h> 的次数必须是 2（原型 + 表项）。"""
+    includes = tbl.count(RISCV_TBL_INCLUDE)
+    if includes != 2:
+        return (f"  riscv syscall_table.c 包含 <asm/unistd.h> "
+                f"{includes} 次 (期望 2: 原型 + 表项)")
+    return None
+
+
 def _wire_riscv(tbl):
     """riscv keeps its own wrapper prefix and includes the header twice."""
     fails = []
     if not RISCV_EXPAND_RE.search(tbl):
         fails.append("  riscv syscall_table.c 未以 "
                      "[nr] = __riscv_##call, 展开")
-    includes = tbl.count(RISCV_TBL_INCLUDE)
-    if includes != 2:
-        fails.append(f"  riscv syscall_table.c 包含 <asm/unistd.h> "
-                     f"{includes} 次 (期望 2: 原型 + 表项)")
+    inc = _riscv_inc(tbl)
+    if inc is not None:
+        fails.append(inc)
     if RISCV_TABLE_DECL not in tbl:
         fails.append("  riscv syscall_table.c 缺 "
                      "void * const sys_call_table[__NR_syscalls]")
