@@ -426,15 +426,17 @@ SCHEMAS = (
 )
 
 
+def _str_prob(key: str, value: Any) -> list[str]:
+    """单个身份字段：出现时必须是非空字符串。"""
+    if isinstance(value, str) and value:
+        return []
+    return [f"{key} 必须是非空字符串"]
+
+
 def _schema_strings(man: Mapping[str, Any]) -> list[str]:
     """标量身份字段：一旦出现就必须是非空字符串。"""
-    problems: list[str] = []
-    for key in STR_KEYS:
-        if key not in man:
-            continue
-        if not isinstance(man[key], str) or not man[key]:
-            problems.append(f"{key} 必须是非空字符串")
-    return problems
+    return [problem for key in STR_KEYS if key in man
+            for problem in _str_prob(key, man[key])]
 
 
 def check_schema(man: Mapping[str, Any]) -> CheckResult:
@@ -526,12 +528,22 @@ def check_perms(man: Mapping[str, Any],
     return _result(NAME_PERMS, problems)
 
 
+def _missing_jobs(expected: list[str],
+                  jobs: Mapping[str, Any]) -> list[str]:
+    """清单登记但 workflow 缺失的 job。"""
+    return [f"缺少 job: {name}" for name in expected if name not in jobs]
+
+
+def _extra_jobs(expected: list[str],
+                jobs: Mapping[str, Any]) -> list[str]:
+    """workflow 出现但清单未登记的 job。"""
+    return [f"未登记 job: {name}" for name in jobs if name not in expected]
+
+
 def _job_name_probs(expected: list[str],
                     jobs: Mapping[str, Any]) -> list[str]:
     """job 集合与清单的双向差异：缺失与未登记。"""
-    missing = [f"缺少 job: {name}" for name in expected if name not in jobs]
-    extra = [f"未登记 job: {name}" for name in jobs if name not in expected]
-    return missing + extra
+    return _missing_jobs(expected, jobs) + _extra_jobs(expected, jobs)
 
 
 def check_jobs(man: Mapping[str, Any],
@@ -573,6 +585,21 @@ def _job_probs(spec: Mapping[str, Any], job: Mapping[str, Any]) -> list[str]:
     return _needs_probs(spec, job) + _always_probs(spec, job)
 
 
+def _runs_labels(runs: Any) -> set[str]:
+    """runs-on 取值归一为标签集合。"""
+    if isinstance(runs, str):
+        return {runs}
+    return set(runs or [])
+
+
+def _runner_prob(spec: Mapping[str, Any], runs: Any,
+                 label: str) -> list[str]:
+    """单个 job 的 runner 标签是否命中清单。"""
+    if label in _runs_labels(runs):
+        return []
+    return [f"{spec['name']}.runs-on 期望 {label}，实际 {runs}"]
+
+
 def check_runner(man: Mapping[str, Any],
                  wf: Mapping[str, Any]) -> CheckResult:
     """校验每个 job 的 runner 标签。"""
@@ -581,10 +608,7 @@ def check_runner(man: Mapping[str, Any],
     problems: list[str] = []
     for spec in man["jobs"]:
         runs = jobs.get(spec["name"], {}).get("runs-on")
-        labels = {runs} if isinstance(runs, str) else set(runs or [])
-        if label not in labels:
-            problems.append(
-                f"{spec['name']}.runs-on 期望 {label}，实际 {runs}")
+        problems.extend(_runner_prob(spec, runs, label))
     return _result(NAME_RUNNER, problems)
 
 
@@ -602,18 +626,32 @@ def check_timeout(man: Mapping[str, Any],
     problems: list[str] = []
     for spec in man["jobs"]:
         actual = jobs.get(spec["name"], {}).get("timeout-minutes")
-        if not _is_int(actual):
-            problems.append(f"{spec['name']} 缺少整数 timeout-minutes")
-            continue
-        if actual != spec["timeout_minutes"]:
-            problems.append(
-                f"{spec['name']}.timeout-minutes 期望 "
-                f"{spec['timeout_minutes']}，实际 {actual}")
-        if actual > ceiling:
-            problems.append(
-                f"{spec['name']}.timeout-minutes 超过托管 runner 上限 "
-                f"{ceiling}")
+        problems.extend(_timeout_probs(spec, actual, ceiling))
     return _result(NAME_TIMEOUT, problems)
+
+
+def _timeout_decl(spec: Mapping[str, Any], actual: int) -> list[str]:
+    """超时值与清单声明逐字相等。"""
+    if actual == spec["timeout_minutes"]:
+        return []
+    return [f"{spec['name']}.timeout-minutes 期望 "
+            f"{spec['timeout_minutes']}，实际 {actual}"]
+
+
+def _timeout_cap(spec: Mapping[str, Any], actual: int,
+                 ceiling: int) -> list[str]:
+    """超时值不得超过托管 runner 硬上限。"""
+    if actual <= ceiling:
+        return []
+    return [f"{spec['name']}.timeout-minutes 超过托管 runner 上限 {ceiling}"]
+
+
+def _timeout_probs(spec: Mapping[str, Any], actual: Any,
+                   ceiling: int) -> list[str]:
+    """单个 job 的超时：类型、与清单相等、不超硬上限。"""
+    if not _is_int(actual):
+        return [f"{spec['name']} 缺少整数 timeout-minutes"]
+    return _timeout_decl(spec, actual) + _timeout_cap(spec, actual, ceiling)
 
 
 def _env_keys(*layers: Any) -> set[str]:
@@ -704,6 +742,19 @@ def _gate_bad(gate_rel: Any, gate: str | None) -> str | None:
     return None
 
 
+def _one_helper(spec: Mapping[str, Any], key: str, man: Mapping[str, Any],
+                wf_text: str, gate: str | None, text: str,
+                root: Path) -> list[str]:
+    """单个 helper 的登记与契约问题。"""
+    entry = man["helpers"].get(key)
+    if entry is None:
+        return [f"{spec['name']} 引用了未登记的 helper: {key}"]
+    if gate is None:
+        return _helper_probs(spec["name"], entry, text, root)
+    return (_call_probs(spec["name"], key, wf_text)
+            + _helper_probs(spec["name"], entry, text, root))
+
+
 def _helper_job(spec: Mapping[str, Any], man: Mapping[str, Any],
                 gate: str | None, jobs: Mapping[str, Any],
                 root: Path) -> list[str]:
@@ -712,13 +763,8 @@ def _helper_job(spec: Mapping[str, Any], man: Mapping[str, Any],
     text = wf_text if gate is None else gate
     problems: list[str] = []
     for key in spec["helpers"]:
-        entry = man["helpers"].get(key)
-        if entry is None:
-            problems.append(f"{spec['name']} 引用了未登记的 helper: {key}")
-            continue
-        if gate is not None:
-            problems.extend(_call_probs(spec["name"], key, wf_text))
-        problems.extend(_helper_probs(spec["name"], entry, text, root))
+        problems.extend(
+            _one_helper(spec, key, man, wf_text, gate, text, root))
     return problems
 
 
