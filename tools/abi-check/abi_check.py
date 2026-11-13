@@ -765,12 +765,15 @@ def rsvd_span(seen, label):
     expected = range(EXPECTED_RESERVED_START, EXPECTED_RESERVED_END + 1)
     missing = [n for n in expected if n not in seen]
     extra = [n for n in sorted(seen) if n not in expected]
-    issues = []
-    if missing:
-        issues.append(f"  {label}: 缺失预留槽 {missing}")
-    if extra:
-        issues.append(f"  {label}: 越界预留槽 {extra}")
-    return issues
+    return (_slot_msg(label, "缺失预留槽", missing) +
+            _slot_msg(label, "越界预留槽", extra))
+
+
+def _slot_msg(label, what, nums):
+    """空集不报；有槽号时一条说明带出整组。"""
+    if not nums:
+        return []
+    return [f"  {label}: {what} {nums}"]
 
 
 def rsvd_rows(seen, label):
@@ -1294,14 +1297,32 @@ def gate_ssot(args, ssot_path):
     """SSoT 的缺失语义：显式路径是硬契约，缺省路径只在硬要求时报错。"""
     available = ssot_path.is_file()
     if args.ssot_path and not available:
-        print(f"ERROR: file not found: {ssot_path}", file=sys.stderr)
-        sys.exit(2)
-    if not available and (args.require_ssot or args.update_snapshot):
-        reason = "--require-ssot" if args.require_ssot else "--update-snapshot"
-        print(f"ERROR: authoritative SSoT not found: {ssot_path} "
-              f"({reason})", file=sys.stderr)
-        sys.exit(2)
+        _die(f"file not found: {ssot_path}")
+    if not available:
+        _need_ssot(args, ssot_path)
     return available
+
+
+def _die(msg):
+    """参数级错误统一走退出码 2，与运行期判定失败区分开。"""
+    print(f"ERROR: {msg}", file=sys.stderr)
+    sys.exit(2)
+
+
+def _need_ssot(args, ssot_path):
+    """缺省路径缺席时，只有显式要求（require/update）才算错。"""
+    reason = _ssot_reason(args)
+    if reason:
+        _die(f"authoritative SSoT not found: {ssot_path} ({reason})")
+
+
+def _ssot_reason(args):
+    """说出「为什么需要 SSoT」：先认 --require-ssot，再认 --update-snapshot。"""
+    if args.require_ssot:
+        return "--require-ssot"
+    if args.update_snapshot:
+        return "--update-snapshot"
+    return ""
 
 
 def emit_snap(ssot_path, snapshot_path, repo_root):
