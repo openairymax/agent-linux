@@ -189,29 +189,57 @@ def fetch_ci_state(api, owner_repo, sha, token):
     return _ci_status(api, owner_repo, sha, token, len(runs))
 
 
+_FAILED_CONCLUSIONS = frozenset(
+    {"failure", "cancelled", "timed_out", "action_required"})
+_PENDING_STATUS = frozenset({"queued", "in_progress", "waiting", "pending"})
+
+
+def _is_red(status, conclusion):
+    """check run 已结束且结论属于失败集合。"""
+    return status == "completed" and conclusion in _FAILED_CONCLUSIONS
+
+
+def _run_hit(run, count):
+    """单条 check run 的定论；无定论时 None。"""
+    status = run.get("status")
+    conclusion = run.get("conclusion")
+    if status in _PENDING_STATUS:
+        return "pending", f"{count} check runs（进行中）"
+    if _is_red(status, conclusion):
+        return "red", f"check run {run.get('name')!r} conclusion={conclusion}"
+    return None
+
+
 def _runs_hit(runs):
     """首条给出定论的 check run → (state, detail)；全部无定论时 None。"""
-    failed = {"failure", "cancelled", "timed_out", "action_required"}
-    pending = {"queued", "in_progress", "waiting", "pending"}
     for run in runs:
-        status = run.get("status")
-        conclusion = run.get("conclusion")
-        if status in pending:
-            return "pending", f"{len(runs)} check runs（进行中）"
-        if status == "completed" and conclusion in failed:
-            return "red", f"check run {run.get('name')!r} conclusion={conclusion}"
+        hit = _run_hit(run, len(runs))
+        if hit is not None:
+            return hit
     return None
+
+
+def _runs_field(payload):
+    """响应中的 check_runs 列表；缺省时为空表。"""
+    return payload.get("check_runs") or []
+
+
+def _runs_payload(status, payload):
+    """check-runs 响应归类：返回 (runs, verdict)，成功时 verdict 为 None。"""
+    if status == 404:
+        return [], ("unknown", "repo/commit 未找到")
+    if status != 200 or not isinstance(payload, dict):
+        return [], ("unknown", f"check-runs HTTP {status}")
+    return _runs_field(payload), None
 
 
 def _ci_runs(api, owner_repo, sha, token):
     """check runs 的判定：返回 (runs, verdict)，无定论时 verdict 为 None。"""
     url = f"{api}/repos/{owner_repo}/commits/{sha}/check-runs?per_page=100"
     status, payload = http_request("GET", url, token)
-    if status == 404:
-        return [], ("unknown", "repo/commit 未找到")
-    if status != 200 or not isinstance(payload, dict):
-        return [], ("unknown", f"check-runs HTTP {status}")
-    runs = payload.get("check_runs", []) or []
+    runs, verdict = _runs_payload(status, payload)
+    if verdict is not None:
+        return runs, verdict
     return runs, _runs_hit(runs)
 
 
@@ -224,14 +252,27 @@ def _combined(api, owner_repo, sha, token):
     return None
 
 
-def _ci_status(api, owner_repo, sha, token, run_count):
-    """combined status 的判定：check runs 无定论时以它收口。"""
-    combined = _combined(api, owner_repo, sha, token)
+def _comb_verdict(combined):
+    """combined status 的定论：红、pending 或 None。"""
     if combined in ("failure", "error"):
         return "red", f"combined status={combined}"
     if combined == "pending":
         return "pending", "combined status=pending"
-    if not run_count and combined in (None, "no status"):
+    return None
+
+
+def _no_runs(combined, run_count):
+    """既无 check runs，combined status 也没有定论。"""
+    return not run_count and combined in (None, "no status")
+
+
+def _ci_status(api, owner_repo, sha, token, run_count):
+    """combined status 的判定：check runs 无定论时以它收口。"""
+    combined = _combined(api, owner_repo, sha, token)
+    verdict = _comb_verdict(combined)
+    if verdict is not None:
+        return verdict
+    if _no_runs(combined, run_count):
         return "unknown", "无 check runs / status"
     return "green", f"{run_count} check runs，combined={combined}"
 
