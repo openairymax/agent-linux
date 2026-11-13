@@ -243,9 +243,14 @@ class Report:
             "error": self.error,
             "hint": self.hint,
             "warnings": list(self.warnings),
-            "image": self.image.as_dict() if self.image else None,
-            "device": self.device.as_dict() if self.device else None,
-            "oci": self.oci.as_dict() if self.oci else None,
+            "image": _opt(self.image),
+            "device": _opt(self.device),
+            "oci": _opt(self.oci),
             "checks": [c.as_dict() for c in self.checks],
             "stages": [s.as_dict() for s in self.stages],
         }
+
+
+def _opt(item) -> dict[str, object] | None:
+    """可选子对象字典化；未设置时保持 None，不省略键。"""
+    return item.as_dict() if item is not None else None

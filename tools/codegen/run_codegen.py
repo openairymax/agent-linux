@@ -60,18 +60,26 @@ def _invoke(module: object, entry: str, repo_root: Path) -> int:
     return int(func(repo_root))
 
 
+def _run_stage(name: GeneratorName, repo_root: Path, check: bool) -> int:
+    """跑单个阶段的全部入口；首个非零返回码即透传。"""
+    description, check_entries = STAGES[name]
+    entries = check_entries if check else (GENERATE_ENTRY,)
+    print(f"[codegen] {name.value}: {description}")
+    module = importlib.import_module(name.value)
+    for entry in entries:
+        rc = _invoke(module, entry, repo_root)
+        if rc != int(ExitCode.SUCCESS):
+            print(f"[codegen] {name.value}.{entry} FAILED (rc={rc})", file=sys.stderr)
+            return rc
+    return int(ExitCode.SUCCESS)
+
+
 def run_pipeline(repo_root: Path, *, check: bool) -> int:
     """按 PIPELINE_ORDER 编排全部阶段；check=True 走零漂移校验。"""
     for name in PIPELINE_ORDER:
-        description, check_entries = STAGES[name]
-        entries = check_entries if check else (GENERATE_ENTRY,)
-        print(f"[codegen] {name.value}: {description}")
-        module = importlib.import_module(name.value)
-        for entry in entries:
-            rc = _invoke(module, entry, repo_root)
-            if rc != int(ExitCode.SUCCESS):
-                print(f"[codegen] {name.value}.{entry} FAILED (rc={rc})", file=sys.stderr)
-                return rc
+        rc = _run_stage(name, repo_root, check)
+        if rc != int(ExitCode.SUCCESS):
+            return rc
     action = "verified" if check else "generated"
     print(f"[codegen] all {len(PIPELINE_ORDER)} generators {action} successfully")
     return int(ExitCode.SUCCESS)

@@ -171,8 +171,8 @@ def _val_badge(badge_block) -> None:
         _badge_field(name, by_name[name], shift, width)
 
 
-def _val_bf(contract: BitfieldContract) -> None:
-    """校验 .bf 布局与 contracts.md §2 期望布局逐位一致（§9.1）。"""
+def _bf_blocks(contract: BitfieldContract):
+    """取出 IPC 头与徽标两个必需块；缺块即判负。"""
     blocks = contract.blocks_by_name
     ipc_block = blocks.get(IPC_BLOCK_NAME)
     badge_block = blocks.get(BADGE_BLOCK_NAME)
@@ -180,6 +180,11 @@ def _val_bf(contract: BitfieldContract) -> None:
         raise ContractValidationError(f"{BF64_REL}: block {IPC_BLOCK_NAME} not found")
     if badge_block is None:
         raise ContractValidationError(f"{BF64_REL}: block {BADGE_BLOCK_NAME} not found")
+    return ipc_block, badge_block
+
+
+def _val_ipc(ipc_block) -> None:
+    """校验 IPC 头的宽度、魔数与字段布局。"""
     if ipc_block.width != IPC_HEADER_SIZE * 8:
         raise ContractValidationError(
             f"{BF64_REL}: {IPC_BLOCK_NAME} width {ipc_block.width} "
@@ -189,6 +194,12 @@ def _val_bf(contract: BitfieldContract) -> None:
         raise ContractValidationError(f"ipc magic constant drift: {MAGIC_LITERAL}")
     offsets = {name: offset for name, offset, _ in _EXPECTED_IPC_LAYOUT}
     _val_ftable(ipc_block, offsets)
+
+
+def _val_bf(contract: BitfieldContract) -> None:
+    """校验 .bf 布局与 contracts.md §2 期望布局逐位一致（§9.1）。"""
+    ipc_block, badge_block = _bf_blocks(contract)
+    _val_ipc(ipc_block)
     _val_badge(badge_block)
 
 
