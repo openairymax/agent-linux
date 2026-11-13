@@ -922,14 +922,25 @@ def _copy_stream(
                 return written
             _write_all(dst, block)
             written += len(block)
-            if progress is not None:
-                progress(written, total)
+            _tick(progress, written, total)
     except OSError as exc:
-        raise FlashError(
-            EXIT_IO,
-            f"写入失败于偏移 {human_bytes(written)}: {exc.strerror or exc}",
-            hint=_io_hint(exc),
-        ) from exc
+        raise _write_fail(written, exc) from exc
+
+
+def _tick(progress: Callable[[int, int], None] | None,
+          written: int, total: int) -> None:
+    """有进度回调时才上报已写字节。"""
+    if progress is not None:
+        progress(written, total)
+
+
+def _write_fail(written: int, exc: OSError) -> FlashError:
+    """按已写字节数构造带偏移的写入错误。"""
+    return FlashError(
+        EXIT_IO,
+        f"写入失败于偏移 {human_bytes(written)}: {exc.strerror or exc}",
+        hint=_io_hint(exc),
+    )
 
 
 def write_image(
@@ -958,20 +969,31 @@ def write_image(
 
 def flush_device(device: Path) -> None:
     """独立成阶段：U 盘的 fsync 常常比写入本身还久。"""
+    fd = _open_for_flush(device)
     try:
-        fd = os.open(device, os.O_RDONLY)
+        _fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def _open_for_flush(device: Path) -> int:
+    """只读打开设备以便 fsync；权限不足与其它 IO 错误分开报。"""
+    try:
+        return os.open(device, os.O_RDONLY)
     except OSError as exc:
         if exc.errno in (errno.EACCES, errno.EPERM):
             raise FlashError(EXIT_IO, "刷盘需要写权限，请以 root 运行") from exc
         raise FlashError(EXIT_IO, f"刷盘失败: {exc.strerror or exc}") from exc
+
+
+def _fsync(fd: int) -> None:
+    """fsync 失败时带上 errno 对应的处置建议。"""
     try:
         os.fsync(fd)
     except OSError as exc:
         raise FlashError(
             EXIT_IO, f"fsync 失败: {exc.strerror or exc}", hint=_io_hint(exc)
         ) from exc
-    finally:
-        os.close(fd)
 
 
 def sample_ranges(size: int, window: int = SAMPLE_WINDOW) -> list[tuple[int, int]]:
@@ -1172,16 +1194,29 @@ class Renderer:
         ratio = done / total if total else 1.0
         head = self._head(self._current)
         if self.tty:
-            width = 24
-            filled = max(0, min(width, int(ratio * width)))
-            bar = "#" * filled + "." * (width - filled)
-            self._write(
-                f"\r  [ .. ] {head} {bar} {ratio * 100:3.0f}% "
-                f"{human_bytes(done)}/{human_bytes(total)} "
-                f"{human_bytes(rate)}/s ETA {human_duration(eta)}"
-            )
+            self._write(self._tty_line(head, ratio, done, total, rate, eta))
             self._bar_open = True
             return
+        self._log_progress(head, ratio, done, total, rate, eta)
+
+    def _tty_line(self, head: str, ratio: float, done: int, total: int,
+                  rate: float, eta: float) -> str:
+        """TTY 上的单行进度条：回车回到行首，条宽固定。"""
+        width = 24
+        filled = max(0, min(width, int(ratio * width)))
+        bar = "#" * filled + "." * (width - filled)
+        return (f"\r  [ .. ] {head} {bar} {ratio * 100:3.0f}% "
+                f"{human_bytes(done)}/{human_bytes(total)} "
+                f"{human_bytes(rate)}/s ETA {human_duration(eta)}")
+
+    def _due(self, bucket: int, moment: float) -> bool:
+        """同刻度内只在心跳间隔到期时补发。"""
+        return (bucket != self._last_bucket
+                or moment - self._last_emit >= self.BEAT)
+
+    def _log_progress(self, head: str, ratio: float, done: int, total: int,
+                      rate: float, eta: float) -> None:
+        """非 TTY 的里程碑行与心跳补发。"""
         bucket = int(ratio * self.MILESTONES)
         # 100% 里程碑与紧随其后的 stage_end 结果行重复，日志里两行同义；
         # 仅保留 0/25/50/75 四个过程刻度。
@@ -1193,7 +1228,7 @@ class Renderer:
         # 带读数的行——百分比、已写字节、当前速率与 ETA 都在，慢和死就不
         # 再是同一种现象。
         moment = time.monotonic()
-        if bucket == self._last_bucket and moment - self._last_emit < self.BEAT:
+        if not self._due(bucket, moment):
             return
         self._last_bucket = bucket
         self._last_emit = moment
@@ -1230,14 +1265,18 @@ class Renderer:
         mark = "成功" if report.result == "pass" else "失败"
         self.field("判定", mark)
         self.field("用时", human_duration(elapsed))
-        if report.error:
-            self.field("原因", report.error)
-        if report.hint:
-            self.field("建议", report.hint)
+        self._opt_fields(report)
         for line in report.warnings:
             self.field("提示", line)
         if report_path:
             self.field("报告", report_path)
+
+    def _opt_fields(self, report: Report) -> None:
+        """原因与建议只在存在时输出。"""
+        if report.error:
+            self.field("原因", report.error)
+        if report.hint:
+            self.field("建议", report.hint)
 
     def marker(self, report: Report) -> None:
         status = "PASS" if report.result == "pass" else "FAIL"
@@ -1840,16 +1879,9 @@ def _run_fetch(
     ledger, source = _ledger_arg(args)
     report.oci = ledger
     out = Path(args.out)
-    try:
-        out.mkdir(parents=True, exist_ok=True)
-    except OSError as exc:
-        raise FlashError(
-            EXIT_USAGE, f"建不了输出目录 {out}: {exc.strerror or exc}"
-        ) from exc
+    _ensure_dir(out)
     dest = out / ledger.name
-    fetched = (
-        not args.force and dest.is_file() and dest.stat().st_size == ledger.size
-    )
+    fetched = _cached(args, dest, ledger)
     image = ImageFacts(
         path=dest, size=ledger.size, expected=ledger.sha256, sums_file=source
     )
@@ -1865,6 +1897,23 @@ def _run_fetch(
     steps = _fetch_steps(report, image, ledger, dest, fetched, args.oras)
     for index, (name, body) in enumerate(steps, 1):
         _stage(renderer, report, index, len(steps), name, body)
+
+
+def _ensure_dir(out: Path) -> None:
+    """输出目录不存在就建；失败按用法错误报出。"""
+    try:
+        out.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise FlashError(
+            EXIT_USAGE, f"建不了输出目录 {out}: {exc.strerror or exc}"
+        ) from exc
+
+
+def _cached(args: argparse.Namespace, dest: Path, ledger) -> bool:
+    """非 --force 且已存在同尺寸文件时视为已取回。"""
+    if args.force or not dest.is_file():
+        return False
+    return dest.stat().st_size == ledger.size
 
 
 def _write_report(args: argparse.Namespace, report: Report) -> str:
