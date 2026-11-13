@@ -7,6 +7,7 @@ stat 模式走通，写入/回读用普通文件当靶子（--allow-file 的测�
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import io
 import json
@@ -524,6 +525,30 @@ def test_write_image_copies_and_reports_progress(tmp_path: Path) -> None:
 
 def test_flush_device_syncs_file_target(tmp_path: Path) -> None:
     af.flush_device(make_target(tmp_path, 512))
+
+
+class _DropMidWrite:
+    """只在第二次写入时掉线，复现 U 盘写到手一半脱离总线的形态。"""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def write(self, block: bytes) -> int:
+        self.calls += 1
+        if self.calls > 1:
+            raise OSError(errno.ENOSPC, "No space left on device")
+        return len(block)
+
+
+def test_copy_stream_maps_drop_to_actionable_hint(tmp_path: Path) -> None:
+    image = tmp_path / "x.iso"
+    image.write_bytes(b"payload" * 10)
+    with open(image, "rb") as src:
+        with pytest.raises(af.FlashError) as caught:
+            af._copy_stream(src, _DropMidWrite(), 16, None, 70)
+    assert caught.value.code == af.EXIT_IO
+    assert "写入失败于偏移" in caught.value.message
+    assert "掉线" in caught.value.hint
 
 
 def test_readback_full_matches_and_detects_tamper(tmp_path: Path) -> None:

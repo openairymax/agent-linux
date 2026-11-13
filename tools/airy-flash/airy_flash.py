@@ -864,6 +864,28 @@ def _write_all(dst: io.FileIO, block: bytes) -> None:
         offset += dst.write(block[offset:])
 
 
+# 写入途中的失败几乎都不是「磁盘满了」：容量预检已经按镜像大小放行，块设备
+# 顺序写却在中途报 ENOSPC，实测是 U 盘掉线后内核把 offline 的失败写映射成
+# 空间不足（dmesg 里同时出现 device offline error）。把 errno 翻成处置动作，
+# 免得使用者照着「空间不足」去换更大的盘。
+_IO_HINTS: tuple[tuple[int, str], ...] = (
+    (errno.ENOSPC, "介质在写入途中断开或掉线；重插 U 盘后重试，仍失败则换口或换线"),
+    (errno.EIO, "介质读写中断或出现坏块；重插后重试，仍失败则换盘"),
+    (errno.ENODEV, "介质已离线（设备节点消失）；重插 U 盘后再跑"),
+    (errno.ENXIO, "介质已离线（设备节点不可用）；重插 U 盘后再跑"),
+    (errno.EACCES, "写块设备需要 root；用 sudo 重跑"),
+    (errno.EPERM, "写块设备需要 root；用 sudo 重跑"),
+)
+
+
+def _io_hint(exc: OSError) -> str:
+    """把写/刷盘的 errno 翻成一句话处置；未知 errno 给通用建议。"""
+    for code, hint in _IO_HINTS:
+        if exc.errno == code:
+            return hint
+    return "确认介质接触与供电；仍失败则换一块盘"
+
+
 def _copy_stream(
     src: io.BufferedReader,
     dst: io.FileIO,
@@ -886,6 +908,7 @@ def _copy_stream(
         raise FlashError(
             EXIT_IO,
             f"写入失败于偏移 {human_bytes(written)}: {exc.strerror or exc}",
+            hint=_io_hint(exc),
         ) from exc
 
 
@@ -908,6 +931,7 @@ def write_image(
             raise FlashError(
                 EXIT_IO,
                 f"截断失败于偏移 {human_bytes(written)}: {exc.strerror or exc}",
+                hint=_io_hint(exc),
             ) from exc
     return written
 
@@ -923,7 +947,9 @@ def flush_device(device: Path) -> None:
     try:
         os.fsync(fd)
     except OSError as exc:
-        raise FlashError(EXIT_IO, f"fsync 失败: {exc.strerror or exc}") from exc
+        raise FlashError(
+            EXIT_IO, f"fsync 失败: {exc.strerror or exc}", hint=_io_hint(exc)
+        ) from exc
     finally:
         os.close(fd)
 
