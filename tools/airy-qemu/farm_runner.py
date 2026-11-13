@@ -88,12 +88,8 @@ class RawRun:
 
     def _chk_argv(self) -> None:
         """命令与标识：作业名非空，argv 为非空字符串元组。"""
-        if not isinstance(self.job_id, str) or not self.job_id:
-            raise ValueError("job_id must be a non-empty string")
-        if not isinstance(self.argv, tuple) or not self.argv:
-            raise ValueError("argv must be a non-empty tuple")
-        if any(not isinstance(arg, str) for arg in self.argv):
-            raise ValueError("argv must contain only strings")
+        _need_job(self.job_id)
+        _need_argv(self.argv)
 
     def _chk_proc(self) -> None:
         """进程结局：退出码与时长不能是 bool 伪装，超时标记必须是真布尔。"""
@@ -201,28 +197,42 @@ def _paths(job: FarmJob, out_dir: object) -> tuple[Path, Path]:
 
 def _dir(value: object) -> Path:
     """规范化输出目录并按需创建。"""
-    path = Path(value) if isinstance(value, str) else value
-    if not isinstance(path, Path) or not path.name:
-        raise _cfg(f"out_dir must be a non-empty path, got {value!r}")
+    path = _need_path(value, "out_dir")
     if path.exists() and not path.is_dir():
         raise _cfg(f"out_dir is not a directory: {path}")
+    return _mkdir(path, "out_dir")
+
+
+def _file(value: object, name: str) -> Path:
+    """规范化证据文件路径，拒绝目录并创建父目录。"""
+    path = _need_path(value, name)
+    if path.exists() and path.is_dir():
+        raise _cfg(f"{name} is a directory: {path}")
+    return _parent(path, name)
+
+
+def _need_path(value: object, name: str) -> Path:
+    """把字符串转为 Path，并要求路径可命名。"""
+    path = Path(value) if isinstance(value, str) else value
+    if not isinstance(path, Path) or not path.name:
+        raise _cfg(f"{name} must be a non-empty path, got {value!r}")
+    return path
+
+
+def _mkdir(path: Path, name: str) -> Path:
+    """创建目录（含父目录），失败转成 FarmError。"""
     try:
         path.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
         raise FarmError(
-            f"cannot create out_dir {path}: {exc}",
+            f"cannot create {name} {path}: {exc}",
             AIRY_QEMU_ERROR,
         ) from exc
     return path
 
 
-def _file(value: object, name: str) -> Path:
-    """规范化证据文件路径，拒绝目录并创建父目录。"""
-    path = Path(value) if isinstance(value, str) else value
-    if not isinstance(path, Path) or not path.name:
-        raise _cfg(f"{name} must be a non-empty path, got {value!r}")
-    if path.exists() and path.is_dir():
-        raise _cfg(f"{name} is a directory: {path}")
+def _parent(path: Path, name: str) -> Path:
+    """创建证据文件的父目录，失败转成 FarmError。"""
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
@@ -231,6 +241,20 @@ def _file(value: object, name: str) -> Path:
             AIRY_QEMU_ERROR,
         ) from exc
     return path
+
+
+def _need_job(job_id: object) -> None:
+    """作业标识必须是非空字符串。"""
+    if not isinstance(job_id, str) or not job_id:
+        raise ValueError("job_id must be a non-empty string")
+
+
+def _need_argv(argv: object) -> None:
+    """argv 必须是非空字符串元组。"""
+    if not isinstance(argv, tuple) or not argv:
+        raise ValueError("argv must be a non-empty tuple")
+    if any(not isinstance(arg, str) for arg in argv):
+        raise ValueError("argv must contain only strings")
 
 
 def _spawn(

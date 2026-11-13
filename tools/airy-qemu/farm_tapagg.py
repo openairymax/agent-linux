@@ -327,25 +327,39 @@ def _build(
     tally: dict[str, list[int]],
 ) -> TapReport:
     """由计划行与计数构造自洽的报告。"""
+    _need_plan(plans)
+    total = sum(expect.values())
+    _need_budget(sum(plans), total)
+    suites = tuple(
+        _tally(name, expect[name], tally[name]) for name in expect
+    )
+    return TapReport(_summary(total, suites), suites)
+
+
+def _need_plan(plans: list[int]) -> None:
+    """没有计划行意味着 TAP 证据不完整，不能当成功处理。"""
     if not plans:
         raise FarmError(
             "TAP evidence has no plan line",
             AIRY_QEMU_ERROR,
         )
-    total = sum(expect.values())
-    declared = sum(plans)
+
+
+def _need_budget(declared: int, total: int) -> None:
+    """声明数不能超过预检期望，否则证据与作业不对应。"""
     if declared > total:
         raise FarmError(
             f"TAP declares {declared} tests, preflight expected {total}",
             AIRY_QEMU_ERROR,
         )
-    suites = tuple(
-        _tally(name, expect[name], tally[name]) for name in expect
-    )
+
+
+def _summary(total: int, suites: tuple[SuiteTally, ...]) -> TapSummary:
+    """按套件明细汇总全局计数。"""
     ok = sum(tally.ok_count for tally in suites)
     bad = sum(tally.not_ok_count for tally in suites)
     skip = sum(tally.skip_count for tally in suites)
-    return TapReport(TapSummary(total, ok, bad, skip), suites)
+    return TapSummary(total, ok, bad, skip)
 
 
 def _tally(name: str, plan: int, slot: list[int]) -> SuiteTally:
