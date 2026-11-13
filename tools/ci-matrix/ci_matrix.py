@@ -553,11 +553,21 @@ def _need_cell(entry, index):
 def classify_cell(cell, passed, reasons):
     """按 §3.4 失败语义为单格归因。"""
     config, arch, compiler = (cell[key] for key in DIMS)
-    if compiler == "clang" and (config, arch, "gcc") in passed:
+    if _compiler_miss(compiler, config, arch, passed):
         return reasons["compiler"]
-    if arch != "x86_64" and (config, "x86_64", compiler) in passed:
+    if _arch_miss(arch, config, compiler, passed):
         return reasons["cross_arch"]
     return reasons.get(config, reasons["other"])
+
+
+def _compiler_miss(compiler, config, arch, passed):
+    """clang 失败而同配置 gcc 通过，归因为编译器。"""
+    return compiler == "clang" and (config, arch, "gcc") in passed
+
+
+def _arch_miss(arch, config, compiler, passed):
+    """非 x86_64 失败而 x86_64 通过，归因为跨架构。"""
+    return arch != "x86_64" and (config, "x86_64", compiler) in passed
 
 
 def _expected(manifest, arches):
@@ -568,11 +578,24 @@ def _expected(manifest, arches):
 def _split(seen, expected):
     """把逐格结果分成通过、失败、缺失、越界四组。"""
     passed = {key for key, value in seen.items() if value == "success"}
-    failed = {key: value for key, value in seen.items()
-              if value != "success" and key in expected}
-    return (passed, failed,
-            sorted(set(expected) - set(seen)),
-            sorted(set(seen) - set(expected)))
+    return (passed, _failed(seen, expected),
+            _absent(expected, seen), _extra(seen, expected))
+
+
+def _failed(seen, expected):
+    """矩阵定义内、结论不是 success 的格。"""
+    return {key: value for key, value in seen.items()
+            if value != "success" and key in expected}
+
+
+def _absent(expected, seen):
+    """矩阵应当出现但结果未上报的格。"""
+    return sorted(set(expected) - set(seen))
+
+
+def _extra(seen, expected):
+    """结果上报了但矩阵未定义的格。"""
+    return sorted(set(seen) - set(expected))
 
 
 def _problems(missing, unknown, failed, expected, passed, reasons):
