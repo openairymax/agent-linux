@@ -110,17 +110,22 @@ def _need_yaml() -> None:
             "PyYAML 不可用：请安装 pyyaml（见 requirements-dev.txt）")
 
 
-def _parse_manifest(path: str | Path) -> dict[str, Any]:
-    """读取并解析清单，异常统一转成 ManifestError。"""
+def _read_manifest(path: str | Path) -> Any:
+    """读取 YAML 正文；文件与语法异常统一转成 ManifestError。"""
     try:
         with open(path, "r", encoding="utf-8") as fh:
-            data = yaml.safe_load(fh)
+            return yaml.safe_load(fh)
     except FileNotFoundError as exc:
         raise ManifestError(f"清单文件不存在：{path}") from exc
     except OSError as exc:
         raise ManifestError(f"清单文件不可读：{path}: {exc}") from exc
     except yaml.YAMLError as exc:
         raise ManifestError(f"清单 YAML 解析失败：{exc}") from exc
+
+
+def _parse_manifest(path: str | Path) -> dict[str, Any]:
+    """读取并解析清单，顶层必须是映射。"""
+    data = _read_manifest(path)
     if not isinstance(data, dict):
         raise ManifestError("清单顶层必须是映射（mapping）")
     return data
@@ -161,6 +166,18 @@ def open_gate(
         ``Gate``；环境或清单不合法时为 ``None``。
     """
     args = parser.parse_args(argv)
+    root = _gate_early(args, kernel)
+    if root is None:
+        return None
+    path = _manifest_path(args, root, default_manifest)
+    manifest = _load_or_none(loader, path, error)
+    if manifest is None:
+        return None
+    return Gate(args, root, manifest, _kernel_arg(root, kernel))
+
+
+def _gate_early(args: argparse.Namespace, kernel: bool) -> Path | None:
+    """yaml 可用性与运行环境校验；失败时打印 ERROR 并返回 None。"""
     if yaml is None:
         print("ERROR: PyYAML 不可用，请安装 pyyaml", file=sys.stderr)
         return None
@@ -168,12 +185,12 @@ def open_gate(
     if bad is not None:
         print(f"ERROR: {bad}", file=sys.stderr)
         return None
-    path = _manifest_path(args, root, default_manifest)
-    manifest = _load_or_none(loader, path, error)
-    if manifest is None:
-        return None
-    kernel_dir = root / _KERNEL_DIR
-    return Gate(args, root, manifest, kernel_dir if kernel else None)
+    return root
+
+
+def _kernel_arg(root: Path, kernel: bool) -> Path | None:
+    """kernel 为真时给出内核源码目录，否则为 None。"""
+    return root / _KERNEL_DIR if kernel else None
 
 
 def _gate_root(args: argparse.Namespace, kernel: bool) -> tuple[Path, str | None]:
@@ -236,6 +253,17 @@ def run_gate(
     results = list(build(gate))
     print_report(results, tag, gate.args.check, title,
                  str(gate.manifest.get("version", "?")),
-                 tail(gate) if tail else "")
-    failed = any(not item.passed for item in results)
-    sys.exit(EXIT_FAIL if failed else EXIT_PASS)
+                 _tail_text(gate, tail))
+    sys.exit(_exit_code(results))
+
+
+def _tail_text(gate: Gate, tail: Callable[[Gate], str] | None) -> str:
+    """版本行末尾的补充信息；未提供时为空串。"""
+    return tail(gate) if tail else ""
+
+
+def _exit_code(results: Sequence[CheckResult]) -> int:
+    """任一检查失败即以 EXIT_FAIL 退出。"""
+    if any(not item.passed for item in results):
+        return EXIT_FAIL
+    return EXIT_PASS
