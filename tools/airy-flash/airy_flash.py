@@ -1068,14 +1068,18 @@ def sample_ranges(size: int, window: int = SAMPLE_WINDOW) -> list[tuple[int, int
     return [(0, window), (middle, middle + window), (size - window, size)]
 
 
+def _diff_index(left: bytes, right: bytes) -> int:
+    """首个不同字节的下标；全同或为空时为 0。"""
+    return next((i for i, (a, b) in enumerate(zip(left, right)) if a != b), 0)
+
+
 def _rb_diff(left: bytes, right: bytes, cursor: int) -> str:
     """同长两块比对；不一致时给出首个差异偏移，一致时返回空串。"""
     if len(left) != len(right):
         return f"偏移 {cursor} 读取长度不一致"
     if left == right:
         return ""
-    index = next((i for i, (a, b) in enumerate(zip(left, right)) if a != b), 0)
-    return f"偏移 {cursor + index} 内容不一致"
+    return f"偏移 {cursor + _diff_index(left, right)} 内容不一致"
 
 
 def _rb_span(src: io.BufferedReader, dst: io.FileIO, span: tuple[int, int],
@@ -1107,6 +1111,23 @@ def _rb_ranges(image: Path, mode: str,
     return ranges, sum(end - start for start, end in ranges)
 
 
+def _rb_all(
+    src: io.BufferedReader,
+    dst: io.FileIO,
+    ranges: list[tuple[int, int]],
+    chunk: int,
+    progress: Callable[[int, int], None] | None,
+    total: int,
+) -> str:
+    """逐区间比对；返回首个差异说明，一致时为空串。"""
+    done = 0
+    for span in ranges:
+        note, done = _rb_span(src, dst, span, chunk, progress, total, done)
+        if note:
+            return note
+    return ""
+
+
 def readback(
     image: Path,
     device: Path,
@@ -1118,16 +1139,13 @@ def readback(
 ) -> tuple[bool, str, list[tuple[int, int]]]:
     """回读比对。返回 (一致, 说明, 比对区间)。"""
     ranges, total = _rb_ranges(image, mode, window)
-    done = 0
     try:
         with open(image, "rb") as src, open(device, "rb", buffering=0) as dst:
-            for span in ranges:
-                note, done = _rb_span(
-                    src, dst, span, chunk, progress, total, done)
-                if note:
-                    return False, note, ranges
+            note = _rb_all(src, dst, ranges, chunk, progress, total)
     except OSError as exc:
         raise FlashError(EXIT_IO, f"回读失败: {exc.strerror or exc}") from exc
+    if note:
+        return False, note, ranges
     return True, f"比对 {len(ranges)} 段 / {human_bytes(total)}", ranges
 
 
@@ -1514,6 +1532,31 @@ def _steps(
     return steps
 
 
+def _io_message(name: str, exc: OSError) -> str:
+    """IO 失败的统一文案。"""
+    return f"{name}失败: {exc.strerror or exc}"
+
+
+def _stage_body(
+    renderer: Renderer,
+    report: Report,
+    stage: Stage,
+    name: str,
+    body: Task,
+    advance: Progress,
+) -> tuple[str, str]:
+    """执行阶段体：FlashError 原样上抛，OSError 收成 EXIT_IO。"""
+    try:
+        return body(advance)
+    except FlashError as exc:
+        _end(renderer, report, stage, FAIL, exc.message)
+        raise
+    except OSError as exc:
+        message = _io_message(name, exc)
+        _end(renderer, report, stage, FAIL, message)
+        raise FlashError(EXIT_IO, message) from exc
+
+
 def _stage(
     renderer: Renderer,
     report: Report,
@@ -1528,15 +1571,8 @@ def _stage(
     clock = time.monotonic()
     with Ticker(renderer, stage) as tick:
         advance = _progress(renderer, tick, _meter(clock))
-        try:
-            status, detail = body(advance)
-        except FlashError as exc:
-            _end(renderer, report, stage, FAIL, exc.message)
-            raise
-        except OSError as exc:
-            message = f"{name}失败: {exc.strerror or exc}"
-            _end(renderer, report, stage, FAIL, message)
-            raise FlashError(EXIT_IO, message) from exc
+        status, detail = _stage_body(
+            renderer, report, stage, name, body, advance)
     if status == OK:
         detail = f"{detail}  {human_duration(time.monotonic() - clock)}"
     _end(renderer, report, stage, status, detail)
@@ -1634,6 +1670,11 @@ def _preflight(
     _verdict(report, renderer, checks, "预检未通过，未触碰目标设备")
 
 
+def _advice_many(failed: list[Check]) -> str:
+    """多条失败并列：带条目前缀便于现场对号。"""
+    return "；".join(f"{c.name}：{c.fix}" if c.fix else c.name for c in failed)
+
+
 def _advice(failed: list[Check]) -> str:
     """把失败项的处置动作拼成一句建议；没有 fix 的条目只报条目名。
 
@@ -1642,7 +1683,7 @@ def _advice(failed: list[Check]) -> str:
     """
     if len(failed) == 1:
         return failed[0].fix or failed[0].name
-    return "；".join(f"{c.name}：{c.fix}" if c.fix else c.name for c in failed)
+    return _advice_many(failed)
 
 
 def _failed(checks: list[Check]) -> list[Check]:
@@ -1898,6 +1939,27 @@ def _fetch_steps(
     ]
 
 
+def _pull(oras: str, ref: str, tmp: str):
+    """执行 oras pull；oras 不可用时返回 None。"""
+    try:
+        return subprocess.run(
+            [oras, "pull", f"{ref}-ledger", "-o", tmp],
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return None
+
+
+def _pull_ledger(ref: str, oras: str, tmp: str) -> Path | None:
+    """拉取 <tag>-ledger 制品；成功且含账本文件时返回其路径。"""
+    proc = _pull(oras, ref, tmp)
+    if proc is None or proc.returncode != 0:
+        return None
+    path = Path(tmp) / "iso-oci.txt"
+    return path if path.is_file() else None
+
+
 def _ledger_from(ref: str, oras: str) -> tuple[OciLedger, str]:
     """先取 <tag>-ledger 制品里的 iso-oci.txt，未命中才回落清单注解。
 
@@ -1908,16 +1970,8 @@ def _ledger_from(ref: str, oras: str) -> tuple[OciLedger, str]:
     正常路径。
     """
     with tempfile.TemporaryDirectory(prefix="airy-ledger.") as tmp:
-        try:
-            proc = subprocess.run(
-                [oras, "pull", f"{ref}-ledger", "-o", tmp],
-                capture_output=True,
-                text=True,
-            )
-        except OSError:
-            proc = None
-        path = Path(tmp) / "iso-oci.txt"
-        if proc is not None and proc.returncode == 0 and path.is_file():
+        path = _pull_ledger(ref, oras, tmp)
+        if path is not None:
             return parse_oci(path), f"{ref}-ledger（账本命中）"
     return ledger_from_ref(ref, oras), f"{ref}（账本未命中，按清单注解重建）"
 
