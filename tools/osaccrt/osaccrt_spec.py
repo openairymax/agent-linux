@@ -150,14 +150,24 @@ def parse_spec(data: Mapping[str, object]) -> SpecTable:
     if not isinstance(data, Mapping):
         raise ValueError("spec root must be a table")
     check_keys(data, _ROOTS, what="spec")
-    schema = data.get("schema")
-    if isinstance(schema, bool) or not isinstance(schema, int):
-        raise ValueError(f"schema must be an integer: {schema!r}")
-    rows = data.get("threshold")
-    if not isinstance(rows, list):
-        raise ValueError("threshold must be an array of tables")
+    schema = _schema(data.get("schema"))
+    rows = _spec_rows(data.get("threshold"))
     items = tuple(_row(row, idx) for idx, row in enumerate(rows))
     return SpecTable(schema, items)
+
+
+def _schema(value: object) -> int:
+    """schema 必须是非布尔整数。"""
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"schema must be an integer: {value!r}")
+    return value
+
+
+def _spec_rows(value: object) -> list:
+    """threshold 必须是数组。"""
+    if not isinstance(value, list):
+        raise ValueError("threshold must be an array of tables")
+    return value
 
 
 def _row(row: object, idx: int) -> Threshold:
