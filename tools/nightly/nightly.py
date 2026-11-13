@@ -486,21 +486,30 @@ def check_jobs(man: Mapping[str, Any],
     return _result(NAME_JOBS, problems)
 
 
-def _job_probs(spec: Mapping[str, Any], job: Mapping[str, Any]) -> list[str]:
-    """校验单个 job 的 depends 与触发条件。"""
-    name = spec["name"]
-    problems: list[str] = []
+def _needs_probs(spec: Mapping[str, Any], job: Mapping[str, Any]) -> list[str]:
+    """单个 job 的 needs 与清单一致。"""
     needs = job.get("needs")
     actual = {needs} if isinstance(needs, str) else set(needs or [])
-    if actual != set(spec["needs"]):
-        problems.append(
-            f"{name}.needs 期望 {spec['needs']}，实际 {sorted(actual)}")
+    if actual == set(spec["needs"]):
+        return []
+    return [f"{spec['name']}.needs 期望 {spec['needs']}，"
+            f"实际 {sorted(actual)}"]
+
+
+def _always_probs(spec: Mapping[str, Any],
+                  job: Mapping[str, Any]) -> list[str]:
+    """always() 触发条件与清单声明一致。"""
     cond = str(job.get("if", ""))
-    if spec.get("always") and "always()" not in cond:
-        problems.append(f"{name} 缺少 if: always()")
-    if not spec.get("always") and "always()" in cond:
-        problems.append(f"{name} 不应无条件执行")
-    return problems
+    if spec.get("always"):
+        if "always()" in cond:
+            return []
+        return [f"{spec['name']} 缺少 if: always()"]
+    return [f"{spec['name']} 不应无条件执行"] if "always()" in cond else []
+
+
+def _job_probs(spec: Mapping[str, Any], job: Mapping[str, Any]) -> list[str]:
+    """校验单个 job 的 depends 与触发条件。"""
+    return _needs_probs(spec, job) + _always_probs(spec, job)
 
 
 def check_runner(man: Mapping[str, Any],
@@ -565,6 +574,27 @@ def _var_defs(script: str) -> set[str]:
     return set(_ASSIGN_RE.findall(script))
 
 
+def _undef_names(script: str, defined: set[str]) -> set[str]:
+    """脚本引用但既未定义、也不在放行名单里的变量。"""
+    used = _var_refs(script) - defined - _var_defs(script)
+    return {name for name in used
+            if name not in _VAR_ALLOWED and not name.startswith(_VAR_PREFIXES)}
+
+
+def _script_probs(job_name: str, job: Mapping[str, Any],
+                  base: set[str]) -> set[tuple[str, str]]:
+    """单个 job 内全部 step 的未定义变量。"""
+    problems: set[tuple[str, str]] = set()
+    job_env = _env_keys(job.get("env"))
+    for step in _steps(job):
+        script = step.get("run")
+        if not isinstance(script, str):
+            continue
+        defined = base | job_env | _env_keys(step.get("env"))
+        problems |= {(job_name, name) for name in _undef_names(script, defined)}
+    return problems
+
+
 def check_vars(man: Mapping[str, Any],
                wf: Mapping[str, Any]) -> CheckResult:
     """校验脚本引用的 shell 变量都有定义。"""
@@ -573,16 +603,7 @@ def check_vars(man: Mapping[str, Any],
     problems: set[tuple[str, str]] = set()
     for spec in man["jobs"]:
         job = jobs.get(spec["name"], {})
-        job_env = _env_keys(job.get("env"))
-        for step in _steps(job):
-            script = step.get("run")
-            if not isinstance(script, str):
-                continue
-            defined = base | job_env | _env_keys(step.get("env"))
-            for name in _var_refs(script) - defined - _var_defs(script):
-                if name in _VAR_ALLOWED or name.startswith(_VAR_PREFIXES):
-                    continue
-                problems.add((spec["name"], name))
+        problems |= _script_probs(spec["name"], job, base)
     details = [f"{job} 引用了未定义的变量 ${name}"
                for job, name in sorted(problems)]
     return _result(NAME_VARS, details)
