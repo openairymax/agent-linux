@@ -288,28 +288,40 @@ def parse_tbl(text):
       reserved: list of {name, linux_number, abi, entry}  (airy_reserved_* slots)
     """
     result = {"syscalls": [], "reserved": []}
-
     for line in text.splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
+        entry = _tbl_row(line)
+        if entry is None:
             continue
-        # Format: <number> <abi> <name> <entry_point>
-        m = re.match(r"(\d+)\s+(\S+)\s+(\S+)\s+(\S+)", stripped)
-        if not m:
-            continue
-        name = m.group(3)
-        entry = {
-            "name": name,
-            "linux_number": int(m.group(1)),
-            "abi": m.group(2),
-            "entry": m.group(4),
-        }
-        if name.startswith("airy_sys_"):
-            result["syscalls"].append(entry)
-        elif name.startswith(RESERVED_NAME_PREFIX):
-            result["reserved"].append(entry)
-
+        bucket = _tbl_bucket(entry["name"])
+        if bucket is not None:
+            result[bucket].append(entry)
     return result
+
+
+def _tbl_row(line):
+    """一行 syscall_64.tbl → 条目；空行、注释与格式不符的行返回 None。"""
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#"):
+        return None
+    # Format: <number> <abi> <name> <entry_point>
+    m = re.match(r"(\d+)\s+(\S+)\s+(\S+)\s+(\S+)", stripped)
+    if not m:
+        return None
+    return {
+        "name": m.group(3),
+        "linux_number": int(m.group(1)),
+        "abi": m.group(2),
+        "entry": m.group(4),
+    }
+
+
+def _tbl_bucket(name):
+    """按名字前缀归桶：自有 syscall 与保留槽分列，其余行不取。"""
+    if name.startswith("airy_sys_"):
+        return "syscalls"
+    if name.startswith(RESERVED_NAME_PREFIX):
+        return "reserved"
+    return None
 
 
 def load_baseline(path):
@@ -467,13 +479,26 @@ def core_row(name, maps):
 
 def core_issues(name, row):
     """问题清单：缺项逐源各报一条，编号不一致合并报一次。"""
-    fails = [f"  {name}: 在 {miss} 中缺失"
-             for miss, _short, num in row if num is None]
-    nums = [num for _miss, _short, num in row if num is not None]
-    if len(set(nums)) > 1:
-        shown = ", ".join(f"{short}={num}" for _miss, short, num in row)
-        fails.append(f"  {name}: {shown} (不一致)")
+    fails = _miss_issues(name, row)
+    conflict = _num_conflict(name, row)
+    if conflict:
+        fails.append(conflict)
     return fails
+
+
+def _miss_issues(name, row):
+    """某个来源里查不到该 syscall，逐条列名。"""
+    return [f"  {name}: 在 {miss} 中缺失"
+            for miss, _short, num in row if num is None]
+
+
+def _num_conflict(name, row):
+    """三方编号互不相同才报一行；零到一个编号视为一致。"""
+    nums = [num for _miss, _short, num in row if num is not None]
+    if len(set(nums)) <= 1:
+        return ""
+    shown = ", ".join(f"{short}={num}" for _miss, short, num in row)
+    return f"  {name}: {shown} (不一致)"
 
 
 def check_3way(ssot, unistd, tbl):
@@ -625,19 +650,23 @@ def check_sc_hdr(sc_header, ssot, unistd, tbl):
 
 def hdr_core(sc_header, ssot):
     """4 个核心宏：存在、等于期望编号、与 SSoT 一致。"""
+    ssot_map = syscall_map(ssot)
+    macros = sc_header["core_macros"]
+    return [issue
+            for name, macro, expected in CORE_SYSCALLS
+            for issue in _core_macro(name, macro, expected,
+                                     macros.get(macro), ssot_map.get(name))]
+
+
+def _core_macro(name, macro, expected, num, ssot_num):
+    """单个核心宏的三重判定：缺失、与期望不符、与 SSoT 不符。"""
+    if num is None:
+        return [f"  {macro}: [SC] 契约头中缺失"]
     out = []
-    ssot_map = {s["name"]: s["linux_number"] for s in ssot["syscalls"]}
-    for name, macro, expected in CORE_SYSCALLS:
-        num = sc_header["core_macros"].get(macro)
-        if num is None:
-            out.append(f"  {macro}: [SC] 契约头中缺失")
-            continue
-        if num != expected:
-            out.append(f"  {macro} = {num} (期望 {expected})")
-        ssot_num = ssot_map.get(name)
-        if ssot_num is not None and ssot_num != num:
-            out.append(
-                f"  {macro}: [SC]={num}, SSoT={ssot_num} (不一致)")
+    if num != expected:
+        out.append(f"  {macro} = {num} (期望 {expected})")
+    if ssot_num is not None and ssot_num != num:
+        out.append(f"  {macro}: [SC]={num}, SSoT={ssot_num} (不一致)")
     return out
 
 
@@ -676,14 +705,16 @@ def hdr_span(sc_header, ssot):
     end = res.get("AIRY_SYS_RESERVED_END")
     if base is None or end is None:
         return []
-    ssot_range = ssot["reserved_range"]
+    return _span_issue(base, end, ssot["reserved_range"])
+
+
+def _span_issue(base, end, ssot_range):
+    """两端标记齐了才谈得上交叉校验：SSoT 缺段与取值不符分开报。"""
     if ssot_range is None:
         return ["  SSoT 预留段缺失，无法与 [SC] 契约头交叉校验"]
-    if [base, end] != ssot_range:
-        return [
-            f"  预留段: [SC]=[{base}, {end}], SSoT={ssot_range} "
-            f"(不一致)"]
-    return []
+    if [base, end] == ssot_range:
+        return []
+    return [f"  预留段: [SC]=[{base}, {end}], SSoT={ssot_range} (不一致)"]
 
 
 def _xref_one(macro, num, name, src, src_map, out):
