@@ -198,16 +198,20 @@ def _rel_ok(value: Any) -> bool:
     return all(part not in ("", ".", "..") for part in value.split("/"))
 
 
+def _skel_entry(name: str, files: Any) -> list[str]:
+    """单个骨架项的校验：文件列表非空，且每项都是合法相对路径。"""
+    if not _is_str_list(files):
+        return [f"skeletons.{name} 必须是非空字符串列表"]
+    return [f"skeletons.{name} 路径非法: {item}"
+            for item in files if not _rel_ok(item)]
+
+
 def _schema_skels(value: Any) -> list[str]:
     if not isinstance(value, dict) or not value:
         return ["skeletons 必须是非空映射"]
     problems: list[str] = []
     for name, files in value.items():
-        if not _is_str_list(files):
-            problems.append(f"skeletons.{name} 必须是非空字符串列表")
-            continue
-        problems += [f"skeletons.{name} 路径非法: {item}"
-                     for item in files if not _rel_ok(item)]
+        problems.extend(_skel_entry(name, files))
     return problems
 
 

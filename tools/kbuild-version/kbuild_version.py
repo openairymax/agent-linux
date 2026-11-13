@@ -194,6 +194,23 @@ def render_contract(tuple_map: TupleMap) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _define_at(lines: List[str]) -> Optional[int]:
+    """filechk 定义块的起始行号；找不到返回 None。"""
+    head = f"define {FILECHK_NAME}"
+    for index, line in enumerate(lines):
+        if line.strip().startswith(head):
+            return index
+    return None
+
+
+def _endef_at(lines: List[str], begin: int) -> Optional[int]:
+    """定义块之后第一个 endef 的行号；不闭合返回 None。"""
+    for index in range(begin, len(lines)):
+        if lines[index].strip() == "endef":
+            return index
+    return None
+
+
 def filechk_block(text: str) -> Optional[str]:
     """截取顶层 Makefile 中的 filechk 注入块。
 
@@ -204,12 +221,10 @@ def filechk_block(text: str) -> Optional[str]:
         `define filechk_version.h ... endef` 块；不存在或不闭合时为 None。
     """
     lines = text.splitlines()
-    start = next((i for i, line in enumerate(lines)
-                  if line.strip().startswith(f"define {FILECHK_NAME}")), None)
+    start = _define_at(lines)
     if start is None:
         return None
-    end = next((i for i in range(start + 1, len(lines))
-                if lines[i].strip() == "endef"), None)
+    end = _endef_at(lines, start + 1)
     return None if end is None else "\n".join(lines[start:end + 1])
 
 

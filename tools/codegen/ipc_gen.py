@@ -152,6 +152,15 @@ def _val_ftable(ipc_block, offsets: dict[str, int]) -> None:
     _ftable_sets(by_name, offsets)
 
 
+def _badge_field(name: str, field, shift: int, width: int) -> None:
+    """单个徽章字段的位移与位宽须与 contracts.md §2 一致。"""
+    if field.low != shift or field.width != width:
+        raise ContractValidationError(
+            f"{BF64_REL}: badge {name} shift/width {field.low}/{field.width} "
+            f"!= contracts.md §2 {shift}/{width}"
+        )
+
+
 def _val_badge(badge_block) -> None:
     by_name = {f.name: f for f in badge_block.fields}
     if badge_block.width != 64:
@@ -159,12 +168,7 @@ def _val_badge(badge_block) -> None:
     if set(by_name) != set(_EXPECTED_BADGE_LAYOUT):
         raise ContractValidationError(f"{BF64_REL}: {BADGE_BLOCK_NAME} field set mismatch")
     for name, (shift, width) in _EXPECTED_BADGE_LAYOUT.items():
-        field = by_name[name]
-        if field.low != shift or field.width != width:
-            raise ContractValidationError(
-                f"{BF64_REL}: badge {name} shift/width {field.low}/{field.width} "
-                f"!= contracts.md §2 {shift}/{width}"
-            )
+        _badge_field(name, by_name[name], shift, width)
 
 
 def _val_bf(contract: BitfieldContract) -> None:

@@ -1077,6 +1077,26 @@ def _label(stage: Stage) -> str:
     return f"{stage.index}/{stage.total} {stage.name}"
 
 
+def _marker_digest(report: Report) -> str:
+    """标记行的 sha256：优先实算值，其次映像声明的期望值。"""
+    if not report.image:
+        return ""
+    return report.image.digest or report.image.expected
+
+
+def _marker_facts(report: Report) -> list[str]:
+    """标记行的已有事实：check 与早期失败不该出现空字段。"""
+    parts = [f"command={report.command}", f"host={report.host}"]
+    if report.image:
+        parts.append(f"image={report.image.path}")
+    digest = _marker_digest(report)
+    if digest:
+        parts.append(f"sha256={digest}")
+    if report.device:
+        parts.append(f"device={report.device.path}")
+    return parts
+
+
 class Renderer:
     """人读输出的唯一来源：预检项、阶段与摘要共用一套列宽。
 
@@ -1211,20 +1231,8 @@ class Renderer:
             self.field("报告", report_path)
 
     def marker(self, report: Report) -> None:
-        # 只写已有事实：check 与早期失败不该出现空字段。
-        # 失败时可能还没算完摘要，用期望值兜底，便于把日志对回发布物。
-        parts = [f"command={report.command}", f"host={report.host}"]
-        if report.image:
-            parts.append(f"image={report.image.path}")
-        digest = ""
-        if report.image:
-            digest = report.image.digest or report.image.expected
-        if digest:
-            parts.append(f"sha256={digest}")
-        if report.device:
-            parts.append(f"device={report.device.path}")
         status = "PASS" if report.result == "pass" else "FAIL"
-        self._write(f"\nAIRY-FLASH-{status} " + " ".join(parts) + "\n")
+        self._write(f"\nAIRY-FLASH-{status} " + " ".join(_marker_facts(report)) + "\n")
 
     def next_steps(self, command: str) -> None:
         """按子命令给出可执行的下一步，避免 plan 成功被误当成已写入。"""
