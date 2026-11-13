@@ -403,6 +403,11 @@ def _xml_meta(root):
     meta = root.find("meta")
     if meta is None:
         raise ValueError("syscall.xml 缺少 <meta>")
+    return _meta_prefix(meta)
+
+
+def _meta_prefix(meta):
+    """读取非空的 prefix_symbol 与 prefix_function。"""
     symbol = (meta.findtext("prefix_symbol") or "").strip()
     func = (meta.findtext("prefix_function") or "").strip()
     if not symbol or not func:
@@ -611,6 +616,16 @@ def tri_check(cc, include_flags, header_files):
 
 def probe_src():
     """Generate a C program printing type sizes, layouts and DSL markers."""
+    lines = _probe_head()
+    lines += _probe_dsl()
+    lines += _probe_types()
+    lines += _probe_layout()
+    lines += ["\treturn 0;", "}", ""]
+    return "\n".join(lines)
+
+
+def _probe_head():
+    """头文件、分支断言与 main 入口。"""
     lines = ["#include <stdio.h>"]
     lines += [f"#include <linux/airymax/{h}>" for h in PROBE_HEADERS]
     lines += [
@@ -626,7 +641,12 @@ def probe_src():
         "{",
         '\tprintf("D branches %d\\n", AIRY_PROBE_BRANCHES);',
     ]
-    lines += [
+    return lines
+
+
+def _probe_dsl():
+    """DSL 分支标记与逐条错误码探针。"""
+    lines = [
         "#ifdef AIRY_SC_FALLBACK",
         '\tprintf("D errs 1\\n");',
     ]
@@ -637,16 +657,27 @@ def probe_src():
         '\tprintf("D errs 0\\n");',
         "#endif",
     ]
-    for tname in TYPE_SIZES:
-        lines.append(f'\tprintf("T {tname} %zu\\n", sizeof({tname}));')
+    return lines
+
+
+def _probe_types():
+    """类型尺寸探针。"""
+    return [f'\tprintf("T {tname} %zu\\n", sizeof({tname}));'
+            for tname in TYPE_SIZES]
+
+
+def _probe_layout():
+    """结构体尺寸与字段偏移探针。"""
+    lines = []
     for struct, _size, fields in LAYOUT:
-        lines.append(f'\tprintf("S {struct} %zu\\n", sizeof(struct {struct}));')
+        size = f'\tprintf("S {struct} %zu\\n", sizeof(struct {struct}));'
+        lines.append(size)
         for field, _off in fields:
             lines.append(
-                f'\tprintf("O {struct} {field} %zu\\n", ' f"offsetof(struct {struct}, {field}));"
+                f'\tprintf("O {struct} {field} %zu\\n", '
+                f"offsetof(struct {struct}, {field}));"
             )
-    lines += ["\treturn 0;", "}", ""]
-    return "\n".join(lines)
+    return lines
 
 
 def parse_probe(stdout):
@@ -664,6 +695,11 @@ def _probe_row(parts):
     """一行探针输出 → (键, 数值)；空行与不认识的形态丢弃。"""
     if not parts:
         return None
+    return _row_of(parts)
+
+
+def _row_of(parts):
+    """按字段数区分三列与四列形态，其余返回 None。"""
     kind = parts[0]
     if kind in ("T", "S", "D", "E") and len(parts) == 3:
         return (kind, parts[1], ""), int(parts[2])
@@ -851,13 +887,32 @@ def _dsl_delta(declared):
 
 def _dsl_drift(label, values):
     """Return failures where one path's probed magnitudes deviate."""
-    failures = []
+    failures = _drift_flag(label, values)
+    failures += _drift_core(label, values)
+    failures += _drift_alias(label, values)
+    return failures
+
+
+def _drift_flag(label, values):
+    """降级路径必须激活错误码块。"""
     if values.get(("D", "errs", "")) != 1:
-        failures.append(f"  [{label}] [DSL] 错误码块未激活")
+        return [f"  [{label}] [DSL] 错误码块未激活"]
+    return []
+
+
+def _drift_core(label, values):
+    """逐个核心错误码比对实测值。"""
+    failures = []
     for core, want in DSL_ERR_CORE.items():
         got = values.get(("E", core, ""))
         if got != want:
             failures.append(f"  [{label}] {core} 期望 {want}, 实测 {got}")
+    return failures
+
+
+def _drift_alias(label, values):
+    """逐个别名比对，期望值取自其核心码。"""
+    failures = []
     for alias, core in DSL_ERR_ALIASES.items():
         got = values.get(("E", alias, ""))
         want = DSL_ERR_CORE[core]
@@ -883,17 +938,11 @@ def dsl_err_check(per_path, header_text):
     alias must resolve to the pinned core magnitude on both dsl-* paths, and
     no alias may leak into a regular build.
     """
-    dsl_labels = [
-        label for label, _flags in COMPILE_PATHS if label.startswith(DSL_PREFIX)
-    ]
+    dsl_labels = _dsl_labels()
     if not dsl_labels:
         return CheckResult(DSL_ERR_CHECK_NAME, False, "  COMPILE_PATHS 未包含 [DSL] 降级路径")
 
-    failures = _dsl_delta(scan_dsl_alias(header_text))
-    for label in dsl_labels:
-        failures += _dsl_drift(label, per_path.get(label, {}))
-    failures += _dsl_leak(per_path, dsl_labels)
-
+    failures = _dsl_fails(per_path, header_text, dsl_labels)
     if failures:
         return CheckResult(DSL_ERR_CHECK_NAME, False, "\n".join(failures))
     return CheckResult(
@@ -902,6 +951,15 @@ def dsl_err_check(per_path, header_text):
         f"{len(DSL_ERR_ALIASES)} 个别名映射到 {len(DSL_ERR_CORE)} 个核心码，"
         f"{len(dsl_labels)} 条降级路径数值一致",
     )
+
+
+def _dsl_fails(per_path, header_text, dsl_labels):
+    """别名声明与各降级路径实测值的全部偏差。"""
+    failures = _dsl_delta(scan_dsl_alias(header_text))
+    for label in dsl_labels:
+        failures += _dsl_drift(label, per_path.get(label, {}))
+    failures += _dsl_leak(per_path, dsl_labels)
+    return failures
 
 
 def check_sc_sym(sources):
