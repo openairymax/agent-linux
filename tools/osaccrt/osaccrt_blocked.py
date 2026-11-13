@@ -201,10 +201,15 @@ def verify(manifest: Manifest) -> bool:
     return _blocked_ok(result)
 
 
+def _blocked_hit(result: ExpResult) -> bool:
+    """登记项命中，且实验编号在登记列表内。"""
+    entry = _match(result.blocked_reason)
+    return entry is not None and result.exp_id in entry.exps
+
+
 def _blocked_ok(result: ExpResult) -> bool:
     """登记项命中，且证据只覆盖准备阶段。"""
-    entry = _match(result.blocked_reason)
-    if entry is None or result.exp_id not in entry.exps:
+    if not _blocked_hit(result):
         return False
     paths = {item.path for item in result.evidences}
     return paths == {_PREP} and set(result.steps) == {Step.PREPARE}
