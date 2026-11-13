@@ -92,19 +92,11 @@ class RunEnv:
     def __post_init__(self) -> None:
         object.__setattr__(self, "ksft_dir", _as_path(self.ksft_dir, "ksft_dir"))
         _text(self.vng, "vng")
-        if self.rootfs is not None:
-            object.__setattr__(self, "rootfs", _as_path(self.rootfs, "rootfs"))
+        object.__setattr__(self, "rootfs", _opt_path(self.rootfs, "rootfs"))
         _root_dev(self.root_dev)
-        if self.root_fstype:
-            _text(self.root_fstype, "root_fstype")
-            if self.rootfs is None:
-                raise _cfg("root_fstype requires rootfs")
-        if self.busybox is not None:
-            object.__setattr__(self, "busybox", _as_path(self.busybox, "busybox"))
-        if self.host is not None and not isinstance(self.host, Arch):
-            raise _cfg(
-                f"host must be Arch or None, got {type(self.host).__name__}"
-            )
+        _fstype_guard(self.rootfs, self.root_fstype)
+        object.__setattr__(self, "busybox", _opt_path(self.busybox, "busybox"))
+        _need_host(self.host)
 
 
 def ksft_cmd(job: FarmJob) -> str:
@@ -246,3 +238,23 @@ def _root_dev(value: object) -> str:
     if not isinstance(value, str) or not _DEV_RE.fullmatch(value):
         raise _cfg(f"root_dev must be a /dev node path, got {value!r}")
     return value
+
+
+def _opt_path(value: object, name: str) -> Path | None:
+    """可选路径字段：缺省保持 None，给出即须为非空路径。"""
+    return None if value is None else _as_path(value, name)
+
+
+def _fstype_guard(rootfs: Path | None, fstype: str) -> None:
+    """root_fstype 只对显式 rootfs 有意义。"""
+    if not fstype:
+        return
+    _text(fstype, "root_fstype")
+    if rootfs is None:
+        raise _cfg("root_fstype requires rootfs")
+
+
+def _need_host(host: Arch | None) -> None:
+    """host 缺省为 None，给出即须为 Arch。"""
+    if host is not None and not isinstance(host, Arch):
+        raise _cfg(f"host must be Arch or None, got {type(host).__name__}")

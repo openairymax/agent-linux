@@ -310,17 +310,26 @@ def check_suite(
 
 def _timeout_of(settings: Path, lineno: int, raw: str) -> int | None:
     """单行解析：注释与无关键返回 None，timeout 取非负整数。"""
+    pair = _settings_pair(settings, lineno, raw)
+    if pair is None or pair[0] != "timeout":
+        return None
+    value = pair[1]
+    if not _NUM_RE.fullmatch(value):
+        raise _cfg(f"{settings}:{lineno}: invalid timeout {value!r}")
+    return int(value)
+
+
+def _settings_pair(
+    settings: Path, lineno: int, raw: str
+) -> tuple[str, str] | None:
+    """拆出一行的键值对；空行与注释返回 None，缺等号即报错。"""
     line = raw.strip()
     if not line or line.startswith("#"):
         return None
     if "=" not in line:
         raise _cfg(f"{settings}:{lineno}: expected key=value, got {raw!r}")
     key, value = (part.strip() for part in line.split("=", 1))
-    if key != "timeout":
-        return None
-    if not _NUM_RE.fullmatch(value):
-        raise _cfg(f"{settings}:{lineno}: invalid timeout {value!r}")
-    return int(value)
+    return key, value
 
 
 def suite_timeout(path: Path) -> int:
