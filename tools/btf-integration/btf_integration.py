@@ -271,6 +271,19 @@ def _cfg_bad_items(key: str, values: list, pattern: re.Pattern[str],
     return problems
 
 
+def _need_nonempty(key: str, values: Any) -> list[str]:
+    """列表字段必须是已赋值的列表；否则给出唯一问题。"""
+    if not isinstance(values, list) or not values:
+        return [f"{key} 必须是非空列表"]
+    return []
+
+
+def _str_bad(key: str, values: list) -> list[str]:
+    """逐条判非空字符串，保持清单顺序输出问题。"""
+    return [f"{key} 含空项" for item in values
+            if not isinstance(item, str) or not item]
+
+
 def _str_list_errs(key: str, values: Any) -> list[str]:
     """校验一个非空字符串列表。
 
@@ -281,10 +294,16 @@ def _str_list_errs(key: str, values: Any) -> list[str]:
     Returns:
         问题描述列表；空列表表示合法。
     """
-    if not isinstance(values, list) or not values:
-        return [f"{key} 必须是非空列表"]
-    return [f"{key} 含空项" for item in values
-            if not isinstance(item, str) or not item]
+    problems = _need_nonempty(key, values)
+    if not problems:
+        problems = _str_bad(key, values)
+    return problems
+
+
+def _yml_bad(key: str, values: list) -> list[str]:
+    """逐条判 ``.yml`` 后缀，保持清单顺序输出问题。"""
+    return [f"{key} 含非 .yml 路径: {item!r}" for item in values
+            if not isinstance(item, str) or not item.endswith(".yml")]
 
 
 def _path_list_errs(key: str, values: Any) -> list[str]:
@@ -297,10 +316,10 @@ def _path_list_errs(key: str, values: Any) -> list[str]:
     Returns:
         问题描述列表；空列表表示合法。
     """
-    if not isinstance(values, list) or not values:
-        return [f"{key} 必须是非空列表"]
-    return [f"{key} 含非 .yml 路径: {item!r}" for item in values
-            if not isinstance(item, str) or not item.endswith(".yml")]
+    problems = _need_nonempty(key, values)
+    if not problems:
+        problems = _yml_bad(key, values)
+    return problems
 
 
 def check_frags(entries: list[ArchEntry], kernel_dir: Path) -> CheckResult:
@@ -485,19 +504,35 @@ def check_ci_supply(manifest: Manifest, repo_root: Path) -> CheckResult:
     tokens = manifest.get("btf_artifacts", [])
     problems: list[str] = []
     for rel in manifest.get("ci_workflows", []):
-        try:
-            text = (repo_root / rel).read_text(encoding="utf-8")
-        except OSError as exc:
-            problems.append(f"{rel}: 无法读取: {exc}")
-            continue
-        text += "\n" + _gate_text(text, repo_root)
-        if package not in text:
-            problems.append(f"{rel}: 未安装生成 BTF 所需的工具包 '{package}'")
-        for token in tokens:
-            if token not in text:
-                problems.append(f"{rel}: 未断言 BTF 产物标识 '{token}'")
+        problems.extend(_wf_probs(rel, repo_root, package, tokens))
     return CheckResult("CI 提供 pahole 且断言 BTF 产物 (OS-OBS-012)",
                        not problems, "\n".join(problems))
+
+
+def _wf_text(rel: str, repo_root: Path) -> tuple[str | None, list[str]]:
+    """读取 workflow 正文并拼入门禁脚本正文；不可读时返回错误。"""
+    try:
+        text = (repo_root / rel).read_text(encoding="utf-8")
+    except OSError as exc:
+        return None, [f"{rel}: 无法读取: {exc}"]
+    return text + "\n" + _gate_text(text, repo_root), []
+
+
+def _tok_probs(rel: str, tokens: list, text: str) -> list[str]:
+    """逐个断言 BTF 产物标识，保持清单顺序输出问题。"""
+    return [f"{rel}: 未断言 BTF 产物标识 '{token}'"
+            for token in tokens if token not in text]
+
+
+def _wf_probs(rel: str, repo_root: Path, package: Any,
+              tokens: list) -> list[str]:
+    """单个 workflow 的 pahole 与 BTF 产物断言问题。"""
+    text, problems = _wf_text(rel, repo_root)
+    if text is None:
+        return problems
+    if package not in text:
+        problems.append(f"{rel}: 未安装生成 BTF 所需的工具包 '{package}'")
+    return problems + _tok_probs(rel, tokens, text)
 
 
 def build_checks(manifest: Manifest, repo_root: Path,
