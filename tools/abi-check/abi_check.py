@@ -520,6 +520,18 @@ def check_3way(ssot, unistd, tbl):
 
 def check_base_nr(ssot, unistd, tbl):
     """Check syscall base number is 548."""
+    failures = _base_fails(ssot, unistd, tbl)
+
+    if failures:
+        return CheckResult("编号起点为 548", False, "\n".join(failures))
+    return CheckResult(
+        "编号起点为 548", True,
+        f"AIRY_SYS_BASE = {ssot['linux_base']}, "
+        f"所有 airy syscall >= {EXPECTED_BASE}")
+
+
+def _base_fails(ssot, unistd, tbl):
+    """收集编号起点与逐条编号的越界证据，保持来源顺序。"""
     failures = []
 
     if ssot["linux_base"] != EXPECTED_BASE:
@@ -533,18 +545,17 @@ def check_base_nr(ssot, unistd, tbl):
         ("unistd.h", unistd["syscalls"]),
         ("syscall_64.tbl", tbl["syscalls"]),
     ]:
-        for s in syscalls:
-            if s["linux_number"] < EXPECTED_BASE:
-                failures.append(
-                    f"  {source_name}: {s['name']} = {s['linux_number']} "
-                    f"< {EXPECTED_BASE}")
+        _low_nums(source_name, syscalls, failures)
+    return failures
 
-    if failures:
-        return CheckResult("编号起点为 548", False, "\n".join(failures))
-    return CheckResult(
-        "编号起点为 548", True,
-        f"AIRY_SYS_BASE = {ssot['linux_base']}, "
-        f"所有 airy syscall >= {EXPECTED_BASE}")
+
+def _low_nums(source_name, syscalls, failures):
+    """单个来源中编号低于起点的 airy syscall 逐条入账。"""
+    for s in syscalls:
+        if s["linux_number"] < EXPECTED_BASE:
+            failures.append(
+                f"  {source_name}: {s['name']} = {s['linux_number']} "
+                f"< {EXPECTED_BASE}")
 
 
 def _range_dups(source_name, syscalls, failures):
@@ -727,16 +738,25 @@ def _xref_one(macro, num, name, src, src_map, out):
 def hdr_xref(sc_header, unistd, tbl):
     """核心编号与 unistd.h / syscall_64.tbl 交叉校验。"""
     out = []
-    unistd_map = {s["name"]: s["linux_number"] for s in unistd["syscalls"]}
-    tbl_map = {s["name"]: s["linux_number"] for s in tbl["syscalls"]}
+    _xref_cores(sc_header, _src_maps(unistd, tbl), out)
+    return out
+
+
+def _src_maps(unistd, tbl):
+    """按名字索引两份来源的编号，保持来源声明顺序。"""
+    u_map = {s["name"]: s["linux_number"] for s in unistd["syscalls"]}
+    t_map = {s["name"]: s["linux_number"] for s in tbl["syscalls"]}
+    return (("unistd.h", u_map), ("syscall_64.tbl", t_map))
+
+
+def _xref_cores(sc_header, maps, out):
+    """逐条核心 syscall 比对；头文件未声明的宏直接跳过。"""
     for name, macro, _expected in CORE_SYSCALLS:
         num = sc_header["core_macros"].get(macro)
         if num is None:
             continue
-        for src, src_map in (("unistd.h", unistd_map),
-                             ("syscall_64.tbl", tbl_map)):
+        for src, src_map in maps:
             _xref_one(macro, num, name, src, src_map, out)
-    return out
 
 
 def rsvd_issues(reserved, label):
@@ -813,22 +833,34 @@ def entry_issues(syscalls, reserved, label):
     issues = []
 
     for s in syscalls:
-        if s["abi"] != "common":
-            issues.append(
-                f"  {label}: {s['name']} ({s['linux_number']}) "
-                f"abi={s['abi']} (期望 common)")
-        expected_entry = f"sys_{s['name']}"
-        if s["entry"] != expected_entry:
-            issues.append(
-                f"  {label}: {s['name']} 入口点 {s['entry']} "
-                f"(期望 {expected_entry})")
+        _entry_row(s, label, issues)
 
-    for s in reserved:
-        if s["abi"] != "common":
-            issues.append(
-                f"  {label}: {s['name']} ({s['linux_number']}) "
-                f"abi={s['abi']} (期望 common)")
+    _abi_only(reserved, label, issues)
     return issues
+
+
+def _entry_row(s, label, issues):
+    """核心条目：abi 必须是 common，入口点必须是 sys_<name>。"""
+    _need_abi(s, label, issues)
+    expected_entry = f"sys_{s['name']}"
+    if s["entry"] != expected_entry:
+        issues.append(
+            f"  {label}: {s['name']} 入口点 {s['entry']} "
+            f"(期望 {expected_entry})")
+
+
+def _abi_only(rows, label, issues):
+    """预留条目只要求 abi 为 common。"""
+    for s in rows:
+        _need_abi(s, label, issues)
+
+
+def _need_abi(s, label, issues):
+    """abi 列不是 common 时记录一条失败。"""
+    if s["abi"] != "common":
+        issues.append(
+            f"  {label}: {s['name']} ({s['linux_number']}) "
+            f"abi={s['abi']} (期望 common)")
 
 
 def check_tbl_abi(tbl):
@@ -1151,16 +1183,26 @@ def _report_ci(results, passed, total, failed, note):
     """CI mode: one verdict line, plus the details of what failed."""
     if note:
         print(note)
+    _ci_verdict(results, passed, total, failed)
+
+
+def _ci_verdict(results, passed, total, failed):
+    """全通过时只打一行；否则逐条列出失败项。"""
     if not failed:
         print(f"ABI CHECK: PASS ({passed}/{total} checks)")
         return
     print(f"ABI CHECK: FAIL ({passed}/{total} checks, "
           f"{failed} failed)")
     for r in results:
-        if not r.passed:
-            print(f"  FAIL: {r.name}")
-            for line in r.details.splitlines():
-                print(f"    {line}")
+        _ci_row(r)
+
+
+def _ci_row(r):
+    """CI 模式的单条失败明细。"""
+    if not r.passed:
+        print(f"  FAIL: {r.name}")
+        for line in r.details.splitlines():
+            print(f"    {line}")
 
 
 def _report_head(ssot, unistd, tbl, sw_tbl, baseline, sources, note):
@@ -1196,19 +1238,28 @@ def _report_head(ssot, unistd, tbl, sw_tbl, baseline, sources, note):
 
 def _report_rows(results, passed, total, failed):
     """Verbose mode body: one block per check, in declaration order."""
+    _rows_head(passed, total, failed)
+    for r in results:
+        _rows_one(r)
+
+
+def _rows_head(passed, total, failed):
+    """详细模式正文抬头：通过/失败计数。"""
     print("-" * 72)
     print(f"Checks: {passed}/{total} passed, {failed} failed")
     print("-" * 72)
     print()
 
-    for r in results:
-        marker = "[+]" if r.passed else "[-]"
-        status = "PASS" if r.passed else "FAIL"
-        print(f"{marker} {status}: {r.name}")
-        if r.details:
-            for line in r.details.splitlines():
-                print(f"      {line}")
-        print()
+
+def _rows_one(r):
+    """单条检查的详细块，含可选的多行明细。"""
+    marker = "[+]" if r.passed else "[-]"
+    status = "PASS" if r.passed else "FAIL"
+    print(f"{marker} {status}: {r.name}")
+    if r.details:
+        for line in r.details.splitlines():
+            print(f"      {line}")
+    print()
 
 
 def _report_tail(failed):
