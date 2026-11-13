@@ -1151,18 +1151,27 @@ def check_baseline(ssot, unistd, tbl, baseline):
         f"nr={baseline.get('nr_syscalls')})")
 
 
-def _bl_fields(baseline, ssot, unistd):
-    """标量字段（基线、号段上界、预留区间）的一致性差异。"""
-    pairs = (
+def _bl_pairs(baseline, ssot, unistd):
+    """标量字段的 (键, 基线值, 当前值) 三元组序列。"""
+    return (
         ("linux_base", baseline.get("linux_base"), ssot["linux_base"]),
         ("nr_syscalls", baseline.get("nr_syscalls"), unistd["nr_syscalls"]),
         ("reserved_range", baseline.get("reserved_range"),
          ssot["reserved_range"]),
     )
+
+
+def _bl_bad(bl, cur):
+    """基线有该字段且与当前值不同才算差异。"""
+    return bl is not None and bl != cur
+
+
+def _bl_fields(baseline, ssot, unistd):
+    """标量字段（基线、号段上界、预留区间）的一致性差异。"""
     return [
         f"  {key}: 当前={cur}, 基线={bl}"
-        for key, bl, cur in pairs
-        if bl is not None and bl != cur
+        for key, bl, cur in _bl_pairs(baseline, ssot, unistd)
+        if _bl_bad(bl, cur)
     ]
 
 
@@ -1237,16 +1246,38 @@ def drift_calls(doc, snap):
     return fails
 
 
+def _drift_msg(entry, doc, snap):
+    """单个 syscall 的差异行；完全一致时返回 None。"""
+    if entry not in snap:
+        return f"  syscall '{entry}' 在快照中缺失 (文档={doc[entry]})"
+    if entry not in doc:
+        return f"  syscall '{entry}' 在文档中缺失 (快照={snap[entry]})"
+    if doc[entry] != snap[entry]:
+        return (f"  syscall '{entry}': 文档={doc[entry]}, "
+                f"快照={snap[entry]}")
+    return None
+
+
 def _drift_one(entry, doc, snap):
     """单个 syscall 的差异行；完全一致时返回空列表。"""
-    if entry not in snap:
-        return [f"  syscall '{entry}' 在快照中缺失 (文档={doc[entry]})"]
-    if entry not in doc:
-        return [f"  syscall '{entry}' 在文档中缺失 (快照={snap[entry]})"]
-    if doc[entry] != snap[entry]:
-        return [f"  syscall '{entry}': 文档={doc[entry]}, "
-                f"快照={snap[entry]}"]
-    return []
+    msg = _drift_msg(entry, doc, snap)
+    return [] if msg is None else [msg]
+
+
+def _drift_early(name, snapshot, authoritative):
+    """快照缺失或来源非权威时的提前返回；可继续比对时返回 None。"""
+    if snapshot is None:
+        return CheckResult(
+            name, False,
+            f"  契约快照缺失: {DEFAULT_SNAPSHOT_REL}\n"
+            f"  运行 --update-snapshot 从权威 SSoT 重新导出")
+    if not authoritative:
+        return CheckResult(
+            name, True,
+            f"权威 SSoT 文档不可得（镜像未检出 ../docs），"
+            f"漂移比对不可用；本次以派生契约快照为 SSoT 来源。"
+            f"{describe_snap(snapshot)}")
+    return None
 
 
 def check_drift(ssot, snapshot, authoritative):
@@ -1258,18 +1289,11 @@ def check_drift(ssot, snapshot, authoritative):
     provenance so the report never hides which source was used.
     """
     name = "SSoT 契约快照一致"
-    if snapshot is None:
-        return CheckResult(
-            name, False,
-            f"  契约快照缺失: {DEFAULT_SNAPSHOT_REL}\n"
-            f"  运行 --update-snapshot 从权威 SSoT 重新导出")
+    early = _drift_early(name, snapshot, authoritative)
+    if early is not None:
+        return early
 
     provenance = describe_snap(snapshot)
-    if not authoritative:
-        return CheckResult(
-            name, True,
-            f"权威 SSoT 文档不可得（镜像未检出 ../docs），"
-            f"漂移比对不可用；本次以派生契约快照为 SSoT 来源。{provenance}")
 
     snap = snap_ssot(snapshot)
     doc = pair_map(ssot)
