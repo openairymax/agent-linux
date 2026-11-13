@@ -210,11 +210,21 @@ def _image(
 
 def _boot(firmware: str, index: int, item: dict[str, str]) -> Boot:
     """装配单轮结论，缺 install/boot 视为清单不完整。"""
+    _need_fields(firmware, index, item)
+    secs = _secs_of(item.get("boot_s", ""))
+    return Boot(firmware, index, item["install"], item["boot"], secs)
+
+
+def _need_fields(firmware: str, index: int, item: dict[str, str]) -> None:
+    """install 与 boot 是单轮结论的最小事实，缺一不可。"""
     missing = [key for key in ("install", "boot") if key not in item]
     if missing:
         raise ValueError(f"run {firmware}/{index} lacks fields: {missing}")
-    raw = item.get("boot_s", "")
+
+
+def _secs_of(raw: str) -> float | None:
+    """解析启动耗时；空值表示缺测，负数视为非法证据。"""
     secs = float(raw) if raw else None
     if secs is not None and secs < 0:
         raise ValueError(f"boot_s must not be negative: {raw!r}")
-    return Boot(firmware, index, item["install"], item["boot"], secs)
+    return secs

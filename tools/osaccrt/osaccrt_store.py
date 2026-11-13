@@ -256,12 +256,28 @@ def _check_id(exp_id: str) -> None:
 
 def _check_target(man: Manifest, packs: list[_Sealed]) -> None:
     """supersedes 必须指向已封口、更早日期且尚未被取代的包。"""
+    target = _target_of(man, packs)
+    _need_earlier(target, man)
+    _need_free(man, packs)
+
+
+def _target_of(man: Manifest, packs: list[_Sealed]) -> _Sealed:
+    """定位被取代的包；找不到说明引用悬空。"""
     target = [item for item in packs
               if item.manifest.exp_id == man.supersedes]
     if not target:
         raise ValueError(f"supersedes unknown experiment: {man.supersedes}")
-    if target[0].pack.parent.name >= man.date:
+    return target[0]
+
+
+def _need_earlier(target: _Sealed, man: Manifest) -> None:
+    """被取代的包必须落在更早的日期目录。"""
+    if target.pack.parent.name >= man.date:
         raise ValueError("supersedes must start a new date directory")
+
+
+def _need_free(man: Manifest, packs: list[_Sealed]) -> None:
+    """同一实验不能被两个包重复取代。"""
     if any(item.manifest.supersedes == man.supersedes for item in packs):
         raise ValueError(f"{man.supersedes} is already superseded")
 
