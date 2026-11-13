@@ -201,12 +201,15 @@ def _ssot_range(text):
     return [int(m.group(1)), int(m.group(2))] if m else None
 
 
+def _lowest(calls):
+    """最小已分配编号；无条目时返回 None。"""
+    return min((call["linux_number"] for call in calls), default=None)
+
+
 def _base_of(text, calls):
     """显式基址优先；缺失时取最小已分配编号。"""
     base = _ssot_base(text)
-    if base is None and calls:
-        return min(call["linux_number"] for call in calls)
-    return base
+    return base if base is not None else _lowest(calls)
 
 
 def parse_ssot(text):
@@ -397,17 +400,22 @@ def rel_src_path(ssot_path, repo_root):
     return rel.replace(os.sep, "/")
 
 
+def _snap_src(ssot, ssot_path, repo_root, commit):
+    """快照出处：来源仓、路径、提交、摘要与文档版本。"""
+    return {
+        "repo": "docs-linux",
+        "path": rel_src_path(ssot_path, repo_root),
+        "commit": commit or "unknown",
+        "sha256": compute_sha256(ssot_path),
+        "doc_version": ssot.get("version"),
+    }
+
+
 def build_snapshot(ssot, ssot_path, repo_root, commit=None):
     """Derive a machine-readable contract snapshot from the authoritative SSoT."""
     return {
         "schema_version": SNAPSHOT_SCHEMA_VERSION,
-        "source": {
-            "repo": "docs-linux",
-            "path": rel_src_path(ssot_path, repo_root),
-            "commit": commit or "unknown",
-            "sha256": compute_sha256(ssot_path),
-            "doc_version": ssot.get("version"),
-        },
+        "source": _snap_src(ssot, ssot_path, repo_root, commit),
         "generated_by": SNAPSHOT_GENERATED_BY,
         "linux_base": ssot.get("linux_base"),
         "syscalls": [dict(entry) for entry in ssot.get("syscalls", [])],
@@ -542,10 +550,15 @@ def check_3way(ssot, unistd, tbl):
     if failures:
         return CheckResult(title, False, "\n".join(failures))
 
-    summary = ", ".join(
-        f"{n}={maps['ssot'][n]}" for n, _, _ in CORE_SYSCALLS)
+    summary = _core_sum(maps)
     return CheckResult(
         title, True, f"4 核心 syscall 编号三方一致: {summary}")
+
+
+def _core_sum(maps):
+    """核心 syscall 在三方中的编号摘要。"""
+    return ", ".join(
+        f"{n}={maps['ssot'][n]}" for n, _, _ in CORE_SYSCALLS)
 
 
 def check_base_nr(ssot, unistd, tbl):
@@ -588,11 +601,17 @@ def _low_nums(source_name, syscalls, failures):
                 f"< {EXPECTED_BASE}")
 
 
-def _range_dups(source_name, syscalls, failures):
-    """同一编号被多个 syscall 复用时记一条失败。"""
+def _num_names(syscalls):
+    """编号 → 名字列表，保持出现顺序。"""
     num_to_names = {}
     for item in syscalls:
         num_to_names.setdefault(item["linux_number"], []).append(item["name"])
+    return num_to_names
+
+
+def _range_dups(source_name, syscalls, failures):
+    """同一编号被多个 syscall 复用时记一条失败。"""
+    num_to_names = _num_names(syscalls)
     for num, names in sorted(num_to_names.items()):
         if len(names) > 1:
             failures.append(
@@ -661,6 +680,16 @@ def check_x32(unistd, tbl):
         f"[{X32_FORBIDDEN_START}, {X32_FORBIDDEN_END}]")
 
 
+def _x32_hits(source_name, syscalls, failures):
+    """单个来源中落入 x32 禁止区域的 syscall。"""
+    for s in syscalls:
+        if X32_FORBIDDEN_START <= s["linux_number"] <= X32_FORBIDDEN_END:
+            failures.append(
+                f"  {source_name}: {s['name']} = {s['linux_number']} "
+                f"在 x32 禁止区域 "
+                f"[{X32_FORBIDDEN_START}, {X32_FORBIDDEN_END}]")
+
+
 def _x32_fails(unistd, tbl):
     """收集落入 x32 禁止区域的 syscall。"""
     failures = []
@@ -668,12 +697,7 @@ def _x32_fails(unistd, tbl):
         ("unistd.h", unistd["syscalls"]),
         ("syscall_64.tbl", tbl["syscalls"]),
     ]:
-        for s in syscalls:
-            if X32_FORBIDDEN_START <= s["linux_number"] <= X32_FORBIDDEN_END:
-                failures.append(
-                    f"  {source_name}: {s['name']} = {s['linux_number']} "
-                    f"在 x32 禁止区域 "
-                    f"[{X32_FORBIDDEN_START}, {X32_FORBIDDEN_END}]")
+        _x32_hits(source_name, syscalls, failures)
     return failures
 
 
