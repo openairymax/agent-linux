@@ -258,11 +258,17 @@ def _cfg_list_errs(key: str, values: Any, pattern: re.Pattern[str],
     """
     if not isinstance(values, list) or not values:
         return [f"{key} 必须是非空列表"]
-    return [
-        f"{key} 含非法项{hint}: {item!r}"
-        for item in values
-        if not isinstance(item, str) or not pattern.match(item)
-    ]
+    return _cfg_bad_items(key, values, pattern, hint)
+
+
+def _cfg_bad_items(key: str, values: list, pattern: re.Pattern[str],
+                   hint: str) -> list[str]:
+    """逐条判合法，保持清单顺序输出问题。"""
+    problems = []
+    for item in values:
+        if not isinstance(item, str) or not pattern.match(item):
+            problems.append(f"{key} 含非法项{hint}: {item!r}")
+    return problems
 
 
 def _str_list_errs(key: str, values: Any) -> list[str]:

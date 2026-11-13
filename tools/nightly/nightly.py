@@ -276,14 +276,32 @@ def _schema_job(entry: Any, names: set[str]) -> list[str]:
 def _job_fields(entry: Mapping[str, Any], name: str) -> list[str]:
     """timeout/needs/helpers/always 四项都以 job 名为前缀报错。"""
     problems: list[str] = []
+    _need_timeout(entry, name, problems)
+    _need_str_lists(entry, name, problems)
+    _need_always(entry, name, problems)
+    return problems
+
+
+def _need_timeout(entry: Mapping[str, Any], name: str,
+                  problems: list[str]) -> None:
+    """timeout_minutes 必须是整数。"""
     if not _is_int(entry.get("timeout_minutes")):
         problems.append(f"jobs[{name}].timeout_minutes 必须是整数")
+
+
+def _need_str_lists(entry: Mapping[str, Any], name: str,
+                    problems: list[str]) -> None:
+    """needs 与 helpers 必须是字符串列表。"""
     for key in ("needs", "helpers"):
         if not _is_str_list(entry.get(key)):
             problems.append(f"jobs[{name}].{key} 必须是字符串列表")
+
+
+def _need_always(entry: Mapping[str, Any], name: str,
+                 problems: list[str]) -> None:
+    """always 出现时必须是布尔值。"""
     if "always" in entry and not isinstance(entry["always"], bool):
         problems.append(f"jobs[{name}].always 必须是布尔值")
-    return problems
 
 
 def _opt_ok(entry: Mapping[str, Any], key: str, scope: str,
@@ -771,17 +789,29 @@ def check_budget(man: Mapping[str, Any], wf: Mapping[str, Any],
     entry = man["helpers"][key]
     job = _budget_job(man, wf)
     gate = read_gate(man, root) if root is not None else None
-    problems: list[str] = []
-    if gate is not None:
-        problems.extend(_call_probs("预算检测", key, _text(job)))
+    problems = _gate_probs(gate, key, job)
     text = _text(job) if gate is None else gate
+    _budget_args(rules, entry, text, problems)
+    return _result(NAME_BUDGET, problems)
+
+
+def _gate_probs(gate: str | None, key: str,
+                job: Any) -> list[str]:
+    """仅有 gate 时校验 job 命令里的调用契约。"""
+    if gate is None:
+        return []
+    return _call_probs("预算检测", key, _text(job))
+
+
+def _budget_args(rules: Mapping[str, Any], entry: Mapping[str, Any],
+                 text: str, problems: list[str]) -> None:
+    """预算脚本被调用，且参数与清单一致。"""
     if entry["path"] not in text:
         problems.append(f"未调用预算检测 {entry['path']}")
-    else:
-        expected = " ".join(rules["argv"])
-        if expected not in text:
-            problems.append(f"预算检测参数不匹配: {expected}")
-    return _result(NAME_BUDGET, problems)
+        return
+    expected = " ".join(rules["argv"])
+    if expected not in text:
+        problems.append(f"预算检测参数不匹配: {expected}")
 
 
 def _budget_job(man: Mapping[str, Any],
@@ -837,20 +867,38 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_USAGE
 
     man = gate.manifest
-    schema = check_schema(man)
-    if not schema.passed:
-        print_report([schema], "NIGHTLY", gate.args.check, TITLE,
-                     str(man.get("version", "?")))
+    if not _schema_ok(gate, man):
         return EXIT_FAIL
+    wf = _load_wf(gate, man)
+    if wf is None:
+        return EXIT_FAIL
+    return _report(gate, man, wf)
 
+
+def _schema_ok(gate: Any, man: Mapping[str, Any]) -> bool:
+    """schema 不通过时先打印单条报告。"""
+    schema = check_schema(man)
+    if schema.passed:
+        return True
+    print_report([schema], "NIGHTLY", gate.args.check, TITLE,
+                 str(man.get("version", "?")))
+    return False
+
+
+def _load_wf(gate: Any, man: Mapping[str, Any]) -> Any:
+    """读取 workflow；失败时打印单条报告并返回 None。"""
     try:
-        wf = load_yaml(gate.root / man["workflow"])
+        return load_yaml(gate.root / man["workflow"])
     except NightlyError as exc:
         print_report([CheckResult("workflow 可解析", False, str(exc))],
                      "NIGHTLY", gate.args.check, TITLE,
                      str(man.get("version", "?")))
-        return EXIT_FAIL
+        return None
 
+
+def _report(gate: Any, man: Mapping[str, Any],
+            wf: Mapping[str, Any]) -> int:
+    """执行全部检查、打印报告并给出退出码。"""
     results = build_checks(man, wf, gate.root)
     print_report(results, "NIGHTLY", gate.args.check, TITLE,
                  str(man.get("version", "?")))
