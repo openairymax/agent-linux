@@ -121,15 +121,24 @@ TITLE = "org.opencontainers.image.title"
 # ─── 人读格式化 ──────────────────────────────────────────────────────────────
 
 
+BYTE_UNITS = ("B", "KiB", "MiB", "GiB", "TiB")
+
+
+def _unit_text(size: float, unit: str) -> str:
+    """整数字节不带小数，其余单位保留两位。"""
+    if unit == "B":
+        return f"{size:.0f} {unit}"
+    return f"{size:.2f} {unit}"
+
+
 def human_bytes(value: float) -> str:
     """字节数 → "3.43 GiB" 这类固定三位有效数字的短表示。"""
-    units = ("B", "KiB", "MiB", "GiB", "TiB")
     size = float(value)
-    for unit in units:
-        if size < 1024 or unit == units[-1]:
-            return f"{size:.0f} {unit}" if unit == "B" else f"{size:.2f} {unit}"
+    for unit in BYTE_UNITS[:-1]:
+        if size < 1024:
+            return _unit_text(size, unit)
         size /= 1024
-    return f"{size:.2f} TiB"  # pragma: no cover - 循环已覆盖
+    return _unit_text(size, BYTE_UNITS[-1])
 
 
 def human_duration(seconds: float) -> str:
@@ -189,14 +198,19 @@ def _sum_pair(line: str) -> tuple[str, str] | None:
     return digest, _bare_name(parts[1])
 
 
+def _sum_line(raw: str):
+    """有效行 → (digest, name)；空行、注释与非法行返回 None。"""
+    line = raw.strip()
+    if not line or line.startswith("#"):
+        return None
+    return _sum_pair(line)
+
+
 def parse_sums(text: str) -> dict[str, str]:
     """解析 sha256sum 格式（兼容二进制标记 `*` 与 `./` 前缀）。"""
     out: dict[str, str] = {}
     for raw in text.splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        pair = _sum_pair(line)
+        pair = _sum_line(raw)
         if pair is not None:
             out[Path(pair[1]).name] = pair[0]
     return out
