@@ -44,7 +44,7 @@ import re
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Final
+from typing import Callable, Final
 
 # 2. 本工具模块导入
 from farm_types import Arch, FarmConfigError, FarmJob, KernelImage, Suite
@@ -171,19 +171,6 @@ def detect_fmt(head: bytes) -> KernelFormat:
     return _fmt_of(head)
 
 
-def _fmt_of(head: bytes) -> KernelFormat:
-    """按 ELF → arm64 → riscv → x86 的顺序比对头部 magic。"""
-    if _is_elf(head):
-        return KernelFormat.ELF
-    if _is_arm64(head):
-        return KernelFormat.ARM64
-    if _is_riscv(head):
-        return KernelFormat.RISCV
-    if _is_bzimage(head):
-        return KernelFormat.BZIMAGE
-    return KernelFormat.UNKNOWN
-
-
 def _is_elf(head: bytes) -> bool:
     """头部前四字节是否为 ELF magic。"""
     return head[:4] == ELF_MAGIC
@@ -204,6 +191,23 @@ def _is_bzimage(head: bytes) -> bool:
     """0x1fe 处是否为引导标志且 0x202 处为 HdrS。"""
     boot = head[BZ_FLAG_OFF : BZ_FLAG_OFF + 2] == BZ_FLAG
     return boot and head[BZ_SIG_OFF : BZ_SIG_OFF + 4] == BZ_SIG
+
+
+# 头部 magic 探测顺序：先命中先返回，顺序即判定优先级。
+_FMT_ORDER: tuple[tuple[Callable[[bytes], bool], KernelFormat], ...] = (
+    (_is_elf, KernelFormat.ELF),
+    (_is_arm64, KernelFormat.ARM64),
+    (_is_riscv, KernelFormat.RISCV),
+    (_is_bzimage, KernelFormat.BZIMAGE),
+)
+
+
+def _fmt_of(head: bytes) -> KernelFormat:
+    """按 ELF → arm64 → riscv → x86 的顺序比对头部 magic。"""
+    for probe, fmt in _FMT_ORDER:
+        if probe(head):
+            return fmt
+    return KernelFormat.UNKNOWN
 
 
 def check_job(job: FarmJob, env: PreflightEnv) -> Preflight:
@@ -227,8 +231,14 @@ def check_job(job: FarmJob, env: PreflightEnv) -> Preflight:
     tests = check_ksft(env)
     for suite in job.suites:
         check_suite(suite, env, tests)
-    pairs = tuple((suite.name, tests[suite.name]) for suite in job.suites)
-    return Preflight(job, fmt, size, pairs, env.source, mach)
+    return Preflight(job, fmt, size, _job_pairs(job, tests), env.source, mach)
+
+
+def _job_pairs(
+    job: FarmJob, tests: dict[str, int]
+) -> tuple[tuple[str, int], ...]:
+    """按作业顺序收集每个套件的已安装用例数。"""
+    return tuple((suite.name, tests[suite.name]) for suite in job.suites)
 
 
 def check_kernel(kernel: KernelImage) -> tuple[KernelFormat, int, int | None]:
@@ -246,17 +256,23 @@ def check_kernel(kernel: KernelImage) -> tuple[KernelFormat, int, int | None]:
     if not isinstance(kernel, KernelImage):
         raise _cfg(f"kernel must be KernelImage, got {type(kernel).__name__}")
     path = _need_file(kernel.path, "kernel image")
+    size = _kernel_size(path)
+    head = _read_head(path)
+    fmt = detect_fmt(head)
+    mach = _elf_mach(head) if fmt is KernelFormat.ELF else None
+    _require_fmt(kernel.arch, fmt, mach)
+    return fmt, size, mach
+
+
+def _kernel_size(path: Path) -> int:
+    """镜像字节数；无法 stat 或为空都拒收。"""
     try:
         size = path.stat().st_size
     except OSError as exc:
         raise _cfg(f"cannot stat kernel image {path}: {exc}") from exc
     if size <= 0:
         raise _cfg(f"kernel image is empty: {path}")
-    head = _read_head(path)
-    fmt = detect_fmt(head)
-    mach = _elf_mach(head) if fmt is KernelFormat.ELF else None
-    _require_fmt(kernel.arch, fmt, mach)
-    return fmt, size, mach
+    return size
 
 
 def check_ksft(env: PreflightEnv) -> dict[str, int]:
@@ -328,6 +344,12 @@ def _settings_pair(
         return None
     if "=" not in line:
         raise _cfg(f"{settings}:{lineno}: expected key=value, got {raw!r}")
+    key, value = _kv_parts(line)
+    return key, value
+
+
+def _kv_parts(line: str) -> tuple[str, str]:
+    """按首个等号拆分并去掉两侧空白。"""
     key, value = (part.strip() for part in line.split("=", 1))
     return key, value
 
@@ -352,11 +374,17 @@ def suite_timeout(path: Path) -> int:
         return DEFAULT_GUEST_TIMEOUT_S
     if not settings.is_file():
         raise _cfg(f"settings is not a file: {settings}")
+    value = _first_timeout(settings)
+    return DEFAULT_GUEST_TIMEOUT_S if value is None else value
+
+
+def _first_timeout(settings: Path) -> int | None:
+    """按行序返回首个生效的 timeout；没有则 None。"""
     for lineno, raw in enumerate(_lines(settings), 1):
         value = _timeout_of(settings, lineno, raw)
         if value is not None:
             return value
-    return DEFAULT_GUEST_TIMEOUT_S
+    return None
 
 
 def _need_scalar(job: object, fmt: object, size: object) -> None:
