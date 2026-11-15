@@ -204,12 +204,22 @@ def pick(text):
     """解析能力类列表；空串表示「未指定」，由调用方决定缺省语义。"""
     if not text:
         return []
-    want = [p.strip() for p in text.split(",") if p.strip()]
-    bad = [p for p in want if p not in CLASSES]
+    want = _names(text)
+    _reject(want)
+    return [c for c in CLASSES if c in want]
+
+
+def _names(text):
+    """逗号分隔的能力类名，去掉空白与空项。"""
+    return [p.strip() for p in text.split(",") if p.strip()]
+
+
+def _reject(names):
+    """未知能力类直接按用法错误退出，不静默丢弃。"""
+    bad = [p for p in names if p not in CLASSES]
     if bad:
         sys.stderr.write("参数错误: 未知能力类: %s\n" % ",".join(bad))
         raise SystemExit(EINVAL)
-    return [c for c in CLASSES if c in want]
 
 
 def evaluate(root, only):
