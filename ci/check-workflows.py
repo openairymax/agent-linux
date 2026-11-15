@@ -405,25 +405,46 @@ def check_name(name: str, text: str) -> list[str]:
 
 def check_gate_libs() -> list[str]:
     """门禁只能调用它 source 的库函数，缺失会在构建中途才暴露。"""
+    home = lib_home()
+    errors: list[str] = []
+    for path in gate_scripts():
+        errors.extend(lib_calls(path, home))
+    return errors
+
+
+def lib_home() -> dict[str, str]:
+    """函数名 → 定义它的 ci/lib 文件名；同名只记最先遍历到的一份。"""
     home: dict[str, str] = {}
     for path in CILIB.glob("*.sh"):
         for name in FUNC_DEF.findall(path.read_text()):
             home.setdefault(name, path.name)
+    return home
+
+
+def gate_scripts() -> list[Path]:
+    """受审脚本：ci/gates/*.sh 与分发器 ci/ci.sh。"""
+    return sorted(CIGATES.glob("*.sh")) + [ROOT / "ci" / "ci.sh"]
+
+
+def code_lines(text: str) -> str:
+    """去掉整行注释：注释里提到的调用不算调用。"""
+    return "\n".join(
+        "" if line.lstrip().startswith("#") else line
+        for line in text.splitlines())
+
+
+def lib_calls(path: Path, home: dict[str, str]) -> list[str]:
+    """列出该脚本里既未定义、也未 source 的库函数调用。"""
+    text = path.read_text()
+    sourced = set(SOURCE_LIB.findall(text))
+    local = set(FUNC_DEF.findall(text))
+    rel = path.relative_to(ROOT)
     errors: list[str] = []
-    scripts = sorted(CIGATES.glob("*.sh")) + [ROOT / "ci" / "ci.sh"]
-    for path in scripts:
-        text = path.read_text()
-        body = "\n".join(
-            "" if line.lstrip().startswith("#") else line
-            for line in text.splitlines())
-        sourced = set(SOURCE_LIB.findall(text))
-        local = set(FUNC_DEF.findall(text))
-        rel = path.relative_to(ROOT)
-        for name in sorted(set(FUNC_CALL.findall(body))):
-            lib = home.get(name)
-            if lib is None or name in local or lib[:-3] in sourced:
-                continue
-            errors.append(f"{rel}: 调用 {name}() 但未 source ci/lib/{lib}")
+    for name in sorted(set(FUNC_CALL.findall(code_lines(text)))):
+        lib = home.get(name)
+        if lib is None or name in local or lib[:-3] in sourced:
+            continue
+        errors.append(f"{rel}: 调用 {name}() 但未 source ci/lib/{lib}")
     return errors
 
 
