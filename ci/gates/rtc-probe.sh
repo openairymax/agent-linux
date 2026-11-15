@@ -287,19 +287,37 @@ is_num()
     esac
 }
 
+probe_read()
+{
+    command -v airy-observe >/dev/null 2>&1 || {
+        err "缺少命令: airy-observe"
+        return 1
+    }
+    airy-observe --section rtc 2>/dev/null || {
+        err "airy-observe --section rtc 无法执行"
+        return 1
+    }
+}
+
+probe_drift()
+{
+    local drift="$1"
+
+    if ! is_num "${drift}"; then
+        bad "RTC 偏差为 ${drift:-absent}（since_epoch 不可读）"
+        return 0
+    fi
+    if [ "${drift}" -gt "${DRIFT}" ] || [ "${drift}" -lt "-${DRIFT}" ]; then
+        warn "RTC 与系统时钟相差 ${drift}s（阈值 ${DRIFT}s）：装机写入可能未落地"
+    fi
+}
+
 live_probe()
 {
     local out dev epoch drift hcto
 
-    command -v airy-observe >/dev/null 2>&1 || {
-        err "缺少命令: airy-observe"
-        exit "${EINVAL}"
-    }
     group "实物面"
-    out=$(airy-observe --section rtc 2>/dev/null) || {
-        err "airy-observe --section rtc 无法执行"
-        exit "${EINVAL}"
-    }
+    out=$(probe_read) || exit "${EINVAL}"
     dev=$(field "${out}" rtc.device)
     epoch=$(field "${out}" rtc.epoch)
     drift=$(field "${out}" rtc.drift)
@@ -311,13 +329,7 @@ live_probe()
     fi
     say "RTC ${dev} epoch=${epoch:-absent} drift=${drift:-absent}s hctosys=${hcto:-absent}"
     is_num "${epoch}" || bad "RTC 读数为 ${epoch:-absent}（写入未落地）"
-    if is_num "${drift}"; then
-        if [ "${drift}" -gt "${DRIFT}" ] || [ "${drift}" -lt "-${DRIFT}" ]; then
-            warn "RTC 与系统时钟相差 ${drift}s（阈值 ${DRIFT}s）：装机写入可能未落地"
-        fi
-    else
-        bad "RTC 偏差为 ${drift:-absent}（since_epoch 不可读）"
-    fi
+    probe_drift "${drift}"
     case "${hcto}" in
         0|1) ;;
         *) bad "hctosys=${hcto:-absent}（不是 0/1）" ;;
