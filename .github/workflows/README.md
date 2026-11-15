@@ -63,8 +63,20 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 
 - `acceptance: true` — 生成验收 ISO，并断言会话内出现 `AIRYMAX-SMOKE-PASS`。
 - `release_tag` — 把产品 ISO 发布到 `ghcr.io`；发布按 `(tag, digest)` 幂等，
-  已有同名标签时拒绝替换，除非显式 `replace: true`。重打同一版本是一个决定，
-  不是一个副作用。
+  已有同名标签时拒绝替换。重打同一版本是一个决定，不是一个副作用。
+- `rpms_run` — 首个版本建页前，改从指定 `release` run 的制品取内核包，
+  不碰还不存在的发布页（第 5.6 节第 2 步）。
+- `replace: true` — 仅在重建同一版本的发行物时开启；开启即表示接受覆盖
+  该 tag 已有的 OCI 产物。
+
+`release.yml` 的参数含义：
+
+- `tag` — 要发布或重放的版本号，必填；与推送触发的 `v*` 标签同源。
+- `publish_run` — 只重放该 run 的 `build-and-sign` 制品，跳过重编；发布页
+  因此可以晚于制品建（第 5.6 节第 3 步）。
+
+`nightly.yml` 与 `payload-seed.yml` 不带派发参数：手动运行与定时运行执行
+同一套判据，不给「手动模式」留一条没被定时验证过的旁路。
 
 ## 4. 命名与结构约定
 
@@ -187,7 +199,10 @@ L2/L3 都不改判据，只改「同一份物料要付几次成本」。任何�
 | `image-build.yml` | `ci/gates/image-*.sh`、`ci/gates/tap-*.sh` | 组装 77 min（内核占 73 min）+ 装机 22 min | 介质、dnf 工具链、闭包池三层 |
 | `release.yml` | `ci/gates/release-*.sh` | 内核四腿约 210 min | 无（ccache 待验证） |
 | `kernel-verify.yml` | `ci/gates/kernel-*.sh` | 28 格矩阵约 123 min | 无 |
-| `os-chk-verify.yml` | `ci/gates/os-chk*.sh` + pytest | 约 5 min | apt/pip 由 setup 动作自管 |
+| `airy-verify.yml` | `ci/gates/kernel-airy.sh`、`ci/gates/kernel-build.sh` | 四架构 `airy_defconfig` 约 41 min | 无 |
+| `os-chk-verify.yml` | `ci/gates/lint.sh`（含 QG-01/QG-02 度量棘轮）与各 OS-CHK 门禁、pytest | 约 5 min | apt/pip 由 setup 动作自管 |
+| `nightly.yml` | `tools/nightly/nightly.py --check`、`ci/gates/nightly-helpers.sh` | 全量套件，单 job 上限 360 min | 无 |
+| `payload-seed.yml` | `ci/gates/payload-seed.sh`（`probe` / `warm`） | 只搬缓存池字节，不下载；层已存在时为零 | actions 缓存（闭包池） |
 | `mgmt-verify.yml`、`ssot-verify.yml` | `ci/gates/repo-*.sh`、`tools/repo/validate-ssot.py` | 约 3 min | 无 |
 
 ## 5.5 变更纪律
@@ -265,6 +280,18 @@ PATH="$HOME/.local/bin:$PATH" ./ci/lint.sh
 - 父仓的 `kernel`、`system`、`distro` 等以 gitlink 固定 SHA。CI 检出的是该
   SHA 的内容，因此未推到远端的本地提交会让 checkout 失败（远端报
   `upload-pack: not our ref`），这不是权限问题，是对象不在远端。
+
+按流水线对照「最先红在哪、本地怎么复跑」：
+
+| 流水线 | 典型失败点 | 本地复跑 |
+|--------|------------|----------|
+| `os-chk-verify` | `lint` 在度量棘轮、workflow 规则或 distro 静态门禁处判红；工具链 pytest 失败 | `./ci/lint.sh`、`./ci/ci.sh python-verify --kind oschk` |
+| `kernel-verify` | 某一格配置构建失败、`W=2` 出现告警、checkpatch/sparse 报出问题 | `./ci/ci.sh kernel-build --config <cfg> --arch <arch> --compiler gcc`、`./ci/ci.sh kernel-analyze --kind sparse` |
+| `airy-verify` | Airymax CONFIG 缺失、BTF 未内嵌、`security/airy` 与其他子树符号冲突 | `./ci/ci.sh kernel-airy --kind assert --arch <arch>` |
+| `image-build` | 组装段看 `kern=` / `iso=` 分段行；装机段看 TAP 里第一条 `not ok` | `./ci/ci.sh image-verify --out <dir>`、`ACCEPTANCE=true ./ci/ci.sh tap-extract --dir <dir>` |
+| `release` | `release-sign probe` 的私钥自检；`channel-fetch` 取不到 `channel.json` | `./ci/ci.sh release-sign probe`、`./ci/ci.sh channel-fetch --tag <tag> --repo <owner/name> --dir <dir>` |
+| `nightly` | helper 未落地或清单契约漂移 | `python3 tools/nightly/nightly.py --check`、`./ci/ci.sh nightly-helpers <helper>` |
+| `payload-seed` | `probe` 输出的 `tag=` 为空（上游不可达）或 `missing=0`（层已存在），两者都不该让流水线红 | `./ci/ci.sh payload-seed probe --arch <arch>` |
 
 ## 8. 许可
 
