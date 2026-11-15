@@ -142,37 +142,52 @@ pp_read()
     [ "${#PP_BASE[@]}" -gt 0 ]
 }
 
-pp_audit()
+pp_need_read()
 {
-    local i base sum got bad=0
-    pp_read "${MANIFEST}" || {
-        err "载荷清单缺失或没有 rpm 行: ${MANIFEST}"
-        return 1
-    }
+    pp_read "${MANIFEST}" && return 0
+    err "载荷清单缺失或没有 rpm 行: ${MANIFEST}"
+    return 1
+}
+
+pp_need_count()
+{
     [ -n "${PP_COUNT}" ] || {
         err "载荷清单缺少 count=，无法判定完整性"
         return 1
     }
-    [ "${PP_COUNT}" = "${#PP_BASE[@]}" ] || {
-        err "载荷清单计数不符: count=${PP_COUNT}，实际 ${#PP_BASE[@]} 行"
-        return 1
-    }
-    if [ -n "${ARCH}" ] && [ -n "${PP_ARCH}" ] && [ "${PP_ARCH}" != "${ARCH}" ]; then
-        err "载荷架构不符: 清单 ${PP_ARCH}，期望 ${ARCH}"
+    [ "${PP_COUNT}" = "${#PP_BASE[@]}" ] && return 0
+    err "载荷清单计数不符: count=${PP_COUNT}，实际 ${#PP_BASE[@]} 行"
+    return 1
+}
+
+pp_need_arch()
+{
+    [ -n "${ARCH}" ] || return 0
+    [ -n "${PP_ARCH}" ] || return 0
+    [ "${PP_ARCH}" = "${ARCH}" ] && return 0
+    err "载荷架构不符: 清单 ${PP_ARCH}，期望 ${ARCH}"
+    return 1
+}
+
+pp_one()
+{
+    local base="$1" sum="$2" got
+    if [ ! -f "${DIR}/${base}" ]; then
+        err "清单点名但目录内不存在: ${base}"
         return 1
     fi
+    got="$(sha256sum "${DIR}/${base}" | cut -d' ' -f1)"
+    [ "${got}" = "${sum}" ] && return 0
+    err "sha256 不符: ${base}（清单 ${sum}，实为 ${got}）"
+    return 1
+}
+
+pp_audit()
+{
+    local i bad=0
+    pp_need_read && pp_need_count && pp_need_arch || return 1
     for i in "${!PP_BASE[@]}"; do
-        base="${PP_BASE[$i]}"
-        sum="${PP_SUM[$i]}"
-        if [ ! -f "${DIR}/${base}" ]; then
-            err "清单点名但目录内不存在: ${base}"
-            bad=$((bad + 1))
-            continue
-        fi
-        got="$(sha256sum "${DIR}/${base}" | cut -d' ' -f1)"
-        [ "${got}" = "${sum}" ] && continue
-        err "sha256 不符: ${base}（清单 ${sum}，实为 ${got}）"
-        bad=$((bad + 1))
+        pp_one "${PP_BASE[$i]}" "${PP_SUM[$i]}" || bad=$((bad + 1))
     done
     [ "${bad}" -eq 0 ]
 }
