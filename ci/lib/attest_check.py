@@ -109,21 +109,31 @@ def report(have, got):
           % (got, subject, ",".join(sorted(have)[:3])))
 
 
-def run(argv):
-    path, subj_file, bid, kind = argv
-    st = load(path)
-    errs = []
-    check_doc(st, errs)
-    pred = st.get("predicate") or {}
-    params = (pred.get("buildDefinition") or {}).get("externalParameters") or {}
-    kind = params.get("kind") or kind
-    label = "ISO" if kind == "iso" else "资产"
+def predicate(st):
+    """证明里的构建谓词；缺失时以空表继续，让后续断言各自报缺。"""
+    return st.get("predicate") or {}
+
+
+def scan(st, kind, subj_file, errs):
+    """按证明声明的产物类型统计 subject 集合，并核对期望清单。"""
+    params = ((predicate(st).get("buildDefinition") or {})
+              .get("externalParameters") or {})
+    label = "ISO" if (params.get("kind") or kind) == "iso" else "资产"
     have = scan_subject(st, label, errs)
     if subj_file:
         cmp_sets(have, scan_want(subj_file), label, errs)
     if not have:
         errs.append("%s 集合为空" % label)
-    got = check_build(pred, bid, errs)
+    return have
+
+
+def run(argv):
+    path, subj_file, bid, kind = argv
+    st = load(path)
+    errs = []
+    check_doc(st, errs)
+    have = scan(st, kind, subj_file, errs)
+    got = check_build(predicate(st), bid, errs)
     if not errs:
         report(have, got)
         return 0
