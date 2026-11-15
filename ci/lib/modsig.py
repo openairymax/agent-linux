@@ -166,6 +166,33 @@ def check_taint(path):
     return 0
 
 
+def want_struct(args):
+    """本次是否要跑模块签名结构校验。"""
+    return args.kind in ("struct", "all")
+
+
+def want_taint(args):
+    """本次是否要跑内核污染位校验。"""
+    return args.kind in ("taint", "all")
+
+
+def need_root(args, root):
+    """结构校验必须有 --root；缺失时给出退出码，否则返回 None。"""
+    if root is not None or not want_struct(args):
+        return None
+    unavail("--kind %s 需要 --root" % args.kind)
+    return EINVAL
+
+
+def taint_path(args, root):
+    """污染位来源：显式 --taint 优先，其次构建根下的伪文件。"""
+    if args.taint:
+        return args.taint
+    if root is not None:
+        return root / "proc/sys/kernel/tainted"
+    return "/proc/sys/kernel/tainted"
+
+
 def main():
     ap = argparse.ArgumentParser(description="模块签名尾部与 taint 校验")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -178,18 +205,15 @@ def main():
     args = ap.parse_args()
 
     root = Path(args.root) if args.root else None
-    if args.kind in ("struct", "all") and root is None:
-        unavail("--kind %s 需要 --root" % args.kind)
-        return EINVAL
-    if args.kind in ("struct", "all"):
+    rc = need_root(args, root)
+    if rc:
+        return rc
+    if want_struct(args):
         rc = check_struct(root, args.kernel)
         if rc:
             return rc
-    if args.kind in ("taint", "all"):
-        src = args.taint
-        if not src and root is not None:
-            src = root / "proc/sys/kernel/tainted"
-        return check_taint(src or "/proc/sys/kernel/tainted")
+    if want_taint(args):
+        return check_taint(taint_path(args, root))
     return 0
 
 
