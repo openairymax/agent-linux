@@ -26,6 +26,9 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 GATES="${ROOT}/gates"
 
+# shellcheck source=lib/timing.sh
+. "${ROOT}/lib/timing.sh"
+
 usage()
 {
     cat <<'EOF'
@@ -67,4 +70,11 @@ gate_file="${GATES}/${gate}.sh"
     exit 2
 }
 
-exec bash "${gate_file}" "$@"
+# 不用 exec：门禁退出后还要记一段、打印汇总，退出码原样透传。失败也留
+# 计时——最需要归因的正是失败的那一段。
+timing_start "${gate}"
+rc=0
+bash "${gate_file}" "$@" || rc=$?
+timing_end "${gate}"
+timing_sum
+exit "${rc}"
