@@ -30,6 +30,7 @@ mkdir -p "${FX}/ci/gates" "${FX}/ci/lib" "${FX}/bin" \
     "${FX}/system/services"
 cp "${GATE}" "${FX}/ci/gates/channel-fetch.sh"
 cp "${ROOT}/ci/lib/log.sh" "${FX}/ci/lib/log.sh"
+cp "${ROOT}/ci/lib/channel.sh" "${FX}/ci/lib/channel.sh"
 cp -a "${ROOT}/system/services/airyupdate" "${FX}/system/services/"
 
 ok()

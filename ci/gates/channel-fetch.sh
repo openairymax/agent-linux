@@ -28,16 +28,11 @@ readonly EINVAL=5
 readonly ETRUST=3
 # shellcheck source=../lib/log.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/log.sh"
+# shellcheck source=../lib/channel.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/channel.sh"
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
-FEED="${ROOT}/system/services"
-
-TAG=""
-REPO=""
-DIR=""
 WF="image-build.yml"
 ART="airymaxos-acceptance"
-NAME="channel.json"
 LIMIT=50
 
 usage()
@@ -51,65 +46,20 @@ EOF
 }
 
 while [ "$#" -gt 0 ]; do
+    channel_opt "$1" "${2:-}" && { shift "${CH_SHIFT}"; continue; }
     case "$1" in
-        --tag)      TAG="${2:-}"; shift 2 ;;
-        --repo)     REPO="${2:-}"; shift 2 ;;
-        --dir)      DIR="${2:-}"; shift 2 ;;
         --workflow) WF="${2:-}"; shift 2 ;;
         --artifact) ART="${2:-}"; shift 2 ;;
-        --name)     NAME="${2:-}"; shift 2 ;;
         --limit)    LIMIT="${2:-}"; shift 2 ;;
         -h|--help)  usage; exit 0 ;;
         *) err "未知参数: $1"; exit "${EINVAL}" ;;
     esac
 done
 
-[ -n "${TAG}" ] && [ -n "${REPO}" ] && [ -n "${DIR}" ] || {
-    usage >&2; exit "${EINVAL}"; }
-case "${TAG}" in
-v[0-9]*) ;;
-*) err "--tag 需形如 vX.Y.Z: ${TAG}"; exit "${EINVAL}" ;;
-esac
-
-need_cmd gh python3 sha256sum
-[ -d "${FEED}/airyupdate" ] ||
-    { err "缺少客户端校验包: ${FEED}/airyupdate"; exit "${EINVAL}"; }
-mkdir -p "${DIR}" || { err "无法创建目录: ${DIR}"; exit "${EINVAL}"; }
-
-WANT="${TAG#v}"
-TMP="$(mktemp -d)"
-trap 'rm -rf "${TMP}"' EXIT
-
-PICK=""
-MSG=""
-
-# verify FILE —— 用客户端解析器复验，成功时把清单版本写入 PICK。
-#
-# 复用客户端的 feed.load_manifest 而不是在此重写字段校验：服务端与客户端
-# 对「什么算可信清单」只能有一套口径，两边各写一份必然在某次改动后分叉。
-verify()
-{
-    local out rc
-
-    PICK=""
-    MSG=""
-    out="$(PYTHONPATH="${FEED}" python3 -c '
-import sys
-from airyupdate.feed import Untrusted, load_manifest
-try:
-    manifest = load_manifest(open(sys.argv[1], "rb").read())
-except Untrusted as exc:
-    sys.stderr.write(str(exc) + "\n")
-    sys.exit(3)
-print(manifest.version)
-' "$1" 2>&1)"
-    rc=$?
-    case "${rc}" in
-        0) PICK="${out}" ;;
-        *) MSG="${out}" ;;
-    esac
-    return "${rc}"
-}
+channel_need
+need_cmd gh
+mkdir -p "${CH_DIR}" || { err "无法创建目录: ${CH_DIR}"; exit "${EINVAL}"; }
+channel_tmp
 
 # place SRC DEST —— 先写临时名再改名，避免留下半份清单被下游当成完整件。
 place()
@@ -118,9 +68,9 @@ place()
 }
 
 group "gh run list ${WF}"
-gh run list --workflow "${WF}" --repo "${REPO}" --status success \
+gh run list --workflow "${WF}" --repo "${CH_REPO}" --status success \
     --limit "${LIMIT}" --json databaseId,createdAt >"${TMP}/runs.json" ||
-    die "列举 ${WF} 运行记录失败（${REPO}）"
+    die "列举 ${WF} 运行记录失败（${CH_REPO}）"
 endgroup
 
 ids="$(python3 -c '
@@ -130,29 +80,30 @@ for run in sorted(json.load(open(sys.argv[1])),
     print(run["databaseId"])
 ' "${TMP}/runs.json")" || die "运行记录不是合法 JSON"
 
-[ -n "${ids}" ] || die "${REPO} 没有成功的 ${WF} 运行"
+[ -n "${ids}" ] || die "${CH_REPO} 没有成功的 ${WF} 运行"
 
-DEST="${DIR}/${NAME}"
+DEST="${CH_DIR}/${CH_NAME}"
 while IFS= read -r id; do
     [ -n "${id}" ] || continue
     dl="${TMP}/run-${id}"
-    if ! gh run download "${id}" --repo "${REPO}" --name "${ART}" \
+    if ! gh run download "${id}" --repo "${CH_REPO}" --name "${ART}" \
             --dir "${dl}" >/dev/null 2>&1; then
         note "run ${id} 无 ${ART} 制品，跳过"
         continue
     fi
-    src="${dl}/${NAME}"
-    [ -f "${src}" ] || { note "run ${id} 制品内无 ${NAME}，跳过"; continue; }
+    src="${dl}/${CH_NAME}"
+    [ -f "${src}" ] ||
+        { note "run ${id} 制品内无 ${CH_NAME}，跳过"; continue; }
 
-    verify "${src}"
+    channel_verify "${src}"
     rc=$?
     case "${rc}" in
     0) ;;
-    "${ETRUST}") err "run ${id} 的 ${NAME} 不可信: ${MSG}"; exit 1 ;;
-    *) err "客户端校验器不可用（rc=${rc}）: ${MSG}"; exit "${EINVAL}" ;;
+    "${ETRUST}") err "run ${id} 的 ${CH_NAME} 不可信: ${CH_MSG}"; exit 1 ;;
+    *) err "客户端校验器不可用（rc=${rc}）: ${CH_MSG}"; exit "${EINVAL}" ;;
     esac
-    if [ "${PICK}" != "${WANT}" ]; then
-        note "run ${id} 的清单版本 ${PICK}，非 ${WANT}，跳过"
+    if [ "${CH_PICK}" != "${CH_WANT}" ]; then
+        note "run ${id} 的清单版本 ${CH_PICK}，非 ${CH_WANT}，跳过"
         continue
     fi
 
@@ -162,4 +113,4 @@ while IFS= read -r id; do
     exit 0
 done <<<"${ids}"
 
-die "没有 run 提供 ${WANT} 的 ${NAME}（${REPO} 近 ${LIMIT} 次成功的 ${WF}）"
+die "没有 run 提供 ${CH_WANT} 的 ${CH_NAME}（${CH_REPO} 近 ${LIMIT} 次成功的 ${WF}）"
