@@ -11,7 +11,10 @@
 #   wireless   注册了 ieee80211 PHY 且有挂在其下的网络接口
 #   audio      有 sound card 且至少一个 PCM 节点
 #   input      有输入设备且至少一个是键盘（capabilities/key 含 KEY_A）
-#   backlight  背光节点存在且 max_brightness 为正、brightness 可读
+#   backlight  屏幕背光节点 max_brightness 为正、brightness 可读；键盘背光只作
+#              附属计数，不能顶替屏幕背光——两者的用户可观测面不同（亮度键
+#              调的是屏幕，键盘灯亮不代表能调屏幕），用键盘灯报 pass 会把
+#              「无屏幕背光」这件事藏起来
 #
 # 每类结论只有三种：pass、n/a、fail。n/a 必须带 note，说明是「本机无此
 # 硬件」还是「硬件在但缺内核能力」；后者要写明顺延版本。fail 表示硬件
@@ -181,14 +184,24 @@ def usable(node):
 
 
 def class_backlight(root):
+    """屏幕背光决定结论，键盘背光只计数。
+
+    屏幕背光节点由显示驱动导出：KMS 未绑定时该类节点整体不存在，此前若把
+    键盘背光当成通过条件，285H 这类「只有键盘灯、亮度键无效」的机器会被判
+    pass，与 I-25「无背光必须如实报 degraded」相反。屏幕节点在但不可读写仍
+    判 fail——硬件在位而判据不成立，与「本机根本无屏幕背光」分开。
+    """
     scr = nodes(root / "sys/class/backlight", "*")
     kbd = nodes(root / "sys/class/leds", "*kbd_backlight*")
-    if not scr and not kbd:
+    if not scr:
+        if kbd:
+            return ("n/a", "no-screen-backlight",
+                    "无屏幕背光节点（显示驱动未绑定 KMS），仅键盘背光可用")
         return ("n/a", "no-backlight", "本机无背光设备")
-    good = [n.name for n in scr + kbd if usable(n)]
+    good = [n.name for n in scr if usable(n)]
     if good:
         return ("pass", "node=%s,kbd=%d" % (good[0], len(kbd)), "")
-    return ("fail", "backlight-unusable", "背光节点不可读写")
+    return ("fail", "backlight-unusable", "屏幕背光节点不可读写")
 
 
 CLASS_FN = {
