@@ -1444,14 +1444,25 @@ Progress = Callable[[int, int], None]
 Task = Callable[[Progress], tuple[str, str]]
 
 
-def _meter(started: float) -> Callable[[int, int], tuple[float, float]]:
-    """返回 (已完成, 总量) → (瞬时速率, 剩余秒数) 的换算器。"""
+def _meter() -> Callable[[int, int], tuple[float, float]]:
+    """返回 (已完成, 总量) → (瞬时速率, 剩余秒数) 的换算器。
+
+    速率取相邻两次上报的增量，而不是从阶段起点累计：断点续传时存量块会在
+    第一次上报前就在盘上，算进分母会得到「389 GiB/s」这种读数——数字是真的，
+    但描述的不是本次传输。首报只立基线，之后的增量才进速率，ETA 也只覆盖
+    还没取的部分。
+    """
+    seen = [-1, 0.0]
+    last = [0.0, 0.0]
 
     def compute(done: int, total: int) -> tuple[float, float]:
-        elapsed = max(time.monotonic() - started, 1e-6)
-        rate = done / elapsed
-        remaining = (total - done) / rate if rate > 0 else 0.0
-        return rate, remaining
+        now = time.monotonic()
+        span = now - seen[1]
+        if seen[0] >= 0 and done > seen[0] and span >= 0.05:
+            rate = (done - seen[0]) / span
+            last[:] = (rate, (total - done) / rate)
+        seen[:] = (done, now)
+        return last[0], last[1]
 
     return compute
 
@@ -1604,7 +1615,7 @@ def _stage(
     renderer.stage_start(stage)
     clock = time.monotonic()
     with Ticker(renderer, stage) as tick:
-        advance = _progress(renderer, tick, _meter(clock))
+        advance = _progress(renderer, tick, _meter())
         status, detail = _stage_body(
             renderer, report, stage, name, body, advance)
     if status == OK:
@@ -1812,8 +1823,14 @@ def _offset(task: Progress, base: int, total: int) -> Callable[[int, int], None]
 
 
 def _part_ref(ledger: OciLedger, part: OciPart) -> str:
-    """单层的 blob 地址：仓库名加该层 digest，不经 tag 再解析一次。"""
-    return f"{ledger.ref}@{part.digest}"
+    """单层的 blob 地址：仓库名加该层 digest。
+
+    账本里的逐块 digest 是不带算法前缀的十六进制（与 `sha256=` 那一列同源），
+    而 oras 只认 `<repo>@sha256:<hex>`；缺前缀会被判成非法引用，0.0.4 现场
+    就卡在这一步——前 14 块因尺寸命中直接跳过，第一个真正要取的块才暴露。
+    """
+    digest = part.digest if ":" in part.digest else f"sha256:{part.digest}"
+    return f"{ledger.ref}@{digest}"
 
 
 def _part_size(path: Path) -> int:
@@ -1911,6 +1928,9 @@ def _pull_parts(
 ) -> tuple[str, str]:
     """逐块取回：块级进度、块级停滞判定、块级续传，失败只赔一块。"""
     _drop_stale(ledger, out)
+    have = sum(min(_part_size(out / part.name), part.size) for part in ledger.parts)
+    if have:
+        task(have, ledger.size)
     base = 0
     for part in ledger.parts:
         _blob_run(ledger, part, out, oras, task, base)
