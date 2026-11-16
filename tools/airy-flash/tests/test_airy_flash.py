@@ -945,40 +945,60 @@ def write_oci(root: Path, *, payload: bytes, chunk: int, name: str = "airymaxos.
     return oci
 
 
-def stub_oras(root: Path, *, code: int = 0, ledger: bool = True) -> Path:
-    """假 oras：把 fixtures/ 下的分块拷进 -o 目录；code≠0 时模拟拉取失败。
+def stub_oras(
+    root: Path, *, code: int = 0, ledger: bool = True, stall: bool = False
+) -> Path:
+    """假 oras：按清单把单个 blob 写到 --output；code≠0 模拟全链路失败。
 
     `ledger=False` 模拟早于账本制品的发布物：拉 -ledger 后缀的那次直接
     失败，取件侧应回落到清单注解，而不是把整个取件判死。
+    `stall=True` 模拟「连接建立但零字节」：只创建空文件不落内容，用于断言
+    停滞判定不会无限等待。每次调用都记一行到 called，供「续传不重取」断言。
     """
     script = root / "oras-stub"
     script.write_text(
         "#!/bin/sh\n"
+        'here=$(dirname "$0")\n'
         'out=""\n'
         'prev=""\n'
+        'last=""\n'
         'for arg in "$@"; do\n'
         '    [ "$prev" = "-o" ] && out="$arg"\n'
+        '    [ "$prev" = "--output" ] && out="$arg"\n'
         '    prev="$arg"\n'
+        '    last="$arg"\n'
         "done\n"
+        'digest="${last##*@}"\n'
+        'digest="${digest#sha256:}"\n'
+        'name=$(awk -v d="$digest" \'index($0, "sha256=" d " ")'
+        ' { sub(/^.*name=/, ""); print; exit }\' "$here/iso-oci.txt")\n'
+        'echo "$1 $2 $name" >> "$here/called"\n'
         f"exit_code={code}\n"
         'if [ "$exit_code" -ne 0 ]; then\n'
         '    echo "pull failed" >&2\n'
         '    exit "$exit_code"\n'
         "fi\n"
         f"ledger_hit={1 if ledger else 0}\n"
-        'case "$*" in\n'
-        "*-ledger*)\n"
-        '    if [ "$ledger_hit" -eq 0 ]; then\n'
-        '        echo "not found" >&2\n'
-        "        exit 1\n"
-        "    fi\n"
-        '    cp "$(dirname "$0")/iso-oci.txt" "$out"/\n'
+        'case "$1" in\n'
+        "pull)\n"
+        '    case "$*" in\n'
+        "    *-ledger*)\n"
+        '        if [ "$ledger_hit" -eq 0 ]; then\n'
+        '            echo "not found" >&2\n'
+        "            exit 1\n"
+        "        fi\n"
+        '        cp "$here/iso-oci.txt" "$out"/\n'
+        "        ;;\n"
+        '    *) cp "$here"/fixtures/* "$out"/ ;;\n'
+        "    esac\n"
         "    ;;\n"
-        "*)\n"
-        '    cp "$(dirname "$0")"/fixtures/* "$out"/\n'
+        "blob)\n"
+        f"    stall={1 if stall else 0}\n"
+        '    if [ "$stall" -eq 1 ]; then : > "$out"; sleep 30; exit 0; fi\n'
+        '    if [ -z "$name" ]; then echo "blob not found: $digest" >&2; exit 1; fi\n'
+        '    cp "$here/fixtures/$name" "$out"\n'
         "    ;;\n"
-        "esac\n"
-        'touch "$(dirname "$0")/called"\n',
+        "esac\n",
         encoding="utf-8",
     )
     script.chmod(0o755)
@@ -1161,14 +1181,72 @@ def test_cli_fetch_surfaces_oras_failure(
     )
     text = capsys.readouterr().out
     assert code == EXIT_IO
-    assert "oras pull 失败" in text
+    assert "第 0 块取回失败" in text
     assert "AIRY-FLASH-FAIL command=fetch " in text
+
+
+def test_cli_fetch_keeps_complete_parts(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """续传判据是块级字节数：本轮重跑只补缺块，已完整的块不再走网络。"""
+    payload = b"A" * 200 + b"B" * 200 + b"C" * 50
+    oci = write_oci(tmp_path, payload=payload, chunk=200)
+    out = tmp_path / "iso"
+    out.mkdir()
+    (out / "airymaxos.iso.part0000").write_bytes(b"A" * 200)
+
+    code = af.main(
+        [
+            "fetch",
+            "--oci",
+            str(oci),
+            "--out",
+            str(out),
+            "--oras",
+            str(stub_oras(tmp_path)),
+            "--no-progress",
+        ]
+    )
+    called = (tmp_path / "called").read_text(encoding="utf-8")
+    assert code == EXIT_OK
+    assert (out / "airymaxos.iso").read_bytes() == payload
+    assert "part0000" not in called
+    assert "part0001" in called and "part0002" in called
+    capsys.readouterr()
+
+
+def test_cli_fetch_fails_stalled_block(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """零字节连接必须判负：三次尝试后退出 IO，不留半块，也不无限等待。"""
+    oci = write_oci(tmp_path, payload=b"S" * 400, chunk=200)
+    monkeypatch.setattr(af, "STALL_SECS", 0.05)
+    monkeypatch.setattr(af, "POLL_SECS", 0.02)
+
+    code = af.main(
+        [
+            "fetch",
+            "--oci",
+            str(oci),
+            "--out",
+            str(tmp_path / "iso"),
+            "--oras",
+            str(stub_oras(tmp_path, stall=True)),
+            "--no-progress",
+        ]
+    )
+    text = capsys.readouterr().out
+    attempts = (tmp_path / "called").read_text(encoding="utf-8").count("blob fetch")
+    assert code == EXIT_IO
+    assert "无字节增长" in text and "第 0 块" in text
+    assert attempts == af.PART_TRIES
+    assert not list((tmp_path / "iso").glob("*.part*"))
 
 
 def test_cli_fetch_rejects_tampered_part(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    payload = b"T" * 400
+    payload = b"T" * 200 + b"U" * 200
     oci = write_oci(tmp_path, payload=payload, chunk=200)
     tampered = tmp_path / "fixtures" / "airymaxos.iso.part0001"
     tampered.write_bytes(b"X" * 200)

@@ -116,6 +116,12 @@ OCI_KEYS = ("ref", "tag", "name", "sha256", "size", "chunk_size", "chunks")
 # 取件侧只按这组键读，避免两侧各自发明字段名。
 ANN = "org.openairymax.iso"
 TITLE = "org.opencontainers.image.title"
+# 取回的时间边界：0.0.4 实测单块 192 MiB 在镜像站约 30 s，停滞 60 s 即判死；
+# 一块失败只赔一块，三次不成才整段判负。账本只有一层小文件，超时给足但不无限等。
+STALL_SECS = 60.0
+PART_TRIES = 3
+POLL_SECS = 0.5
+LEDGER_SECS = 180.0
 
 
 # ─── 人读格式化 ──────────────────────────────────────────────────────────────
@@ -599,11 +605,19 @@ def _proc_tail(proc: subprocess.CompletedProcess[str]) -> str:
 
 def ledger_from_ref(ref: str, oras: str) -> OciLedger:
     """取远端清单再解析；网络或凭据问题归 IO，清单不自洽归校验。"""
-    proc = subprocess.run(
-        [oras, "manifest", "fetch", "--format", "json", ref],
-        capture_output=True,
-        text=True,
-    )
+    try:
+        proc = subprocess.run(
+            [oras, "manifest", "fetch", "--format", "json", ref],
+            capture_output=True,
+            text=True,
+            timeout=LEDGER_SECS,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise FlashError(
+            EXIT_IO,
+            f"oras manifest fetch {human_duration(LEDGER_SECS)} 未返回",
+            hint="镜像站不响应；换镜像站或改用 --oci 传本地 iso-oci.txt",
+        ) from exc
     if proc.returncode != 0:
         detail = _proc_tail(proc)
         raise FlashError(
@@ -1797,43 +1811,111 @@ def _offset(task: Progress, base: int, total: int) -> Callable[[int, int], None]
     return advance
 
 
-def _clear_parts(ledger: OciLedger, out: Path) -> None:
-    """先清掉上一轮的残留块：oras 只补缺失的层，旧块留着会掩盖清单变化。"""
+def _part_ref(ledger: OciLedger, part: OciPart) -> str:
+    """单层的 blob 地址：仓库名加该层 digest，不经 tag 再解析一次。"""
+    return f"{ledger.ref}@{part.digest}"
+
+
+def _part_size(path: Path) -> int:
+    """块的落盘字节数；不存在按 0，让续传判据只写一个比较。"""
+    try:
+        return path.stat().st_size
+    except OSError:
+        return 0
+
+
+def _drop_stale(ledger: OciLedger, out: Path) -> None:
+    """只删长度不符的残块：已完整的块留着续传，残块会把新字节接在旧片段后。"""
     for part in ledger.parts:
-        (out / part.name).unlink(missing_ok=True)
+        path = out / part.name
+        if path.is_file() and _part_size(path) != part.size:
+            path.unlink(missing_ok=True)
 
 
-def _pull_run(ledger: OciLedger, out: Path, oras: str) -> None:
-    proc = subprocess.run(
-        [oras, "pull", ledger.target, "-o", str(out)],
-        capture_output=True,
-        text=True,
+def _stall_err(part: OciPart, got: int, waited: float) -> FlashError:
+    return FlashError(
+        EXIT_IO,
+        f"第 {part.index} 块 {human_duration(waited)} 无字节增长"
+        f"（已收 {human_bytes(got)}/{human_bytes(part.size)}）：判为传输停滞并中止",
+        hint="网络或镜像站不响应；重跑同一条命令会按块续传，不重取已完成的块",
     )
-    if proc.returncode == 0:
-        return
-    detail = _proc_tail(proc)
+
+
+def _watch(
+    proc: subprocess.Popen[str], path: Path, part: OciPart, task: Progress, base: int,
+    total: int,
+) -> None:
+    """看住单块落盘字节：有增长就报进度，超过 STALL_SECS 不增长即判停滞。"""
+    seen = 0
+    since = time.monotonic()
+    while proc.poll() is None:
+        got = _part_size(path)
+        if got != seen:
+            seen, since = got, time.monotonic()
+        task(base + got, total)
+        if time.monotonic() - since >= STALL_SECS:
+            proc.kill()
+            proc.wait()
+            raise _stall_err(part, got, STALL_SECS)
+        time.sleep(POLL_SECS)
+
+
+def _tail_of(text: str) -> str:
+    """进程输出的末行；空输出返回空串，由调用方补退出码。"""
+    lines = text.strip().splitlines()
+    return lines[-1] if lines else ""
+
+
+def _blob_try(
+    ledger: OciLedger, part: OciPart, out: Path, oras: str, task: Progress, base: int
+) -> None:
+    """一次取块尝试：退出码为 0 且落盘字节数等于清单值才算成功。"""
+    path = out / part.name
+    cmd = [oras, "blob", "fetch", "--output", str(path), _part_ref(ledger, part)]
+    with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as err:
+        proc = subprocess.Popen(
+            cmd, stdout=subprocess.DEVNULL, stderr=err, text=True
+        )
+        _watch(proc, path, part, task, base, ledger.size)
+        code = proc.wait()
+        if code == 0 and _part_size(path) == part.size:
+            return
+        err.seek(0)
+        detail = _tail_of(err.read()) or f"退出 {code}"
     raise FlashError(
         EXIT_IO,
-        f"oras pull 失败: {detail}",
-        hint="仓库或网络不可达；换镜像站后重试同一条命令",
+        f"第 {part.index} 块取回失败: {detail}",
+        hint="仓库或网络不可达；重跑同一条命令会按块续传",
     )
 
 
-def _missing_parts(ledger: OciLedger, out: Path) -> list[str]:
-    return [part.name for part in ledger.parts if not (out / part.name).is_file()]
+def _blob_run(
+    ledger: OciLedger, part: OciPart, out: Path, oras: str, task: Progress, base: int
+) -> None:
+    """单块最多试 PART_TRIES 次：残块先删再重来，已完成的块不受牵连。"""
+    path = out / part.name
+    if _part_size(path) == part.size:
+        return
+    for attempt in range(1, PART_TRIES + 1):
+        try:
+            _blob_try(ledger, part, out, oras, task, base)
+            return
+        except FlashError:
+            path.unlink(missing_ok=True)
+            if attempt == PART_TRIES:
+                raise
 
 
-def _pull_parts(ledger: OciLedger, out: Path, oras: str) -> tuple[str, str]:
-    """一次 oras pull 取回全部层；齐不齐看清单，不看 oras 的措辞。"""
-    _clear_parts(ledger, out)
-    _pull_run(ledger, out, oras)
-    missing = _missing_parts(ledger, out)
-    if missing:
-        raise FlashError(
-            EXIT_CHECK,
-            f"缺少 {len(missing)} 块（首块 {missing[0]}）",
-            hint="发布物与清单不一致：重新取 iso-oci.txt 后重试",
-        )
+def _pull_parts(
+    ledger: OciLedger, out: Path, oras: str, task: Progress
+) -> tuple[str, str]:
+    """逐块取回：块级进度、块级停滞判定、块级续传，失败只赔一块。"""
+    _drop_stale(ledger, out)
+    base = 0
+    for part in ledger.parts:
+        _blob_run(ledger, part, out, oras, task, base)
+        base += part.size
+        task(base, ledger.size)
     return OK, f"{ledger.chunks} 块 {human_bytes(ledger.size)}"
 
 
@@ -1956,7 +2038,7 @@ def _fetch_steps(
             ("校验镜像", lambda task: _hash(image, report, ledger.sha256, task)),
         ]
     return [
-        ("拉取分块", lambda _task: _pull_parts(ledger, dest.parent, oras)),
+        ("拉取分块", lambda task: _pull_parts(ledger, dest.parent, oras, task)),
         ("校验分块", lambda task: _check_parts(ledger, dest.parent, task)),
         ("拼接镜像", lambda task: _join_parts(ledger, dest, task)),
         ("校验镜像", lambda task: _hash(image, report, ledger.sha256, task)),
@@ -1964,14 +2046,15 @@ def _fetch_steps(
 
 
 def _pull(oras: str, ref: str, tmp: str):
-    """执行 oras pull；oras 不可用时返回 None。"""
+    """执行 oras pull；oras 不可用或超时视为未命中，回落清单注解。"""
     try:
         return subprocess.run(
             [oras, "pull", f"{ref}-ledger", "-o", tmp],
             capture_output=True,
             text=True,
+            timeout=LEDGER_SECS,
         )
-    except OSError:
+    except (OSError, subprocess.TimeoutExpired):
         return None
 
 
