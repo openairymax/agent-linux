@@ -25,6 +25,10 @@ on:
         description: '只发布该 run 的 build-and-sign 制品（首个版本建页前用）'
         type: string
         default: ''
+      replace:
+        description: '覆盖 ghcr 同 tag 的既有证明（仅重切同版本发行物时开启）'
+        type: boolean
+        default: false
 
 concurrency:
   # 一个 tag 只能有一条发布流水线。tag 重指（收回错误的发布提交）时
@@ -375,7 +379,12 @@ jobs:
       # 一步以「缺少命令: oras」收场，页面已建、资产已传、唯独没有证明。
       - uses: oras-project/setup-oras@22ce207df3b08e061f537244349aac6ae1d214f6 # v1
 
+      # 同一个 tag 重切发行物时，ghcr 上留着上一轮的 attest-<tag>：所证事实
+      # （提交、引用、subject 集合）不同，门禁按设计拒绝静默覆盖。缺少显式
+      # 替换通道时，唯一出路是重跑整条构建——而重跑并不改变已经产出的字节，
+      # 只是把同一次发布再花三小时。通道与 image-build 同口径：默认关闭，
+      # 由人工在明知「这是重切」时打开。
       - name: Publish release attestation
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ci/ci.sh attest publish --kind rel --out . --tag "${{ steps.meta.outputs.tag }}" --ref ghcr.io/openairymax/airymaxos --token "$GHCR_TOKEN"
+        run: ci/ci.sh attest publish --kind rel --out . --tag "${{ steps.meta.outputs.tag }}" --ref ghcr.io/openairymax/airymaxos --token "$GHCR_TOKEN" ${{ inputs.replace && '--force' || '' }}
