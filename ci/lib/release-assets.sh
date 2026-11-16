@@ -27,6 +27,8 @@ AIRY_ASSETS_ENOREL=3
 # 接口终点由库自己拥有：调用方各自拼 URL 时，环境变量名就成了隐式契约，
 # 写错只是 404 而不是报错。GITHUB_API_URL 在 GHES 与本地演练时覆盖默认值。
 AIRY_ASSETS_API="${GITHUB_API_URL:-https://api.github.com}"
+# 上传走独立主机（GHES 为 <host>/api/uploads），与读接口不同源，故单独一处。
+AIRY_ASSETS_UPLOAD="${GITHUB_UPLOADS_URL:-https://uploads.github.com}"
 
 # 期望集：摘要清单登记的物料，扣除只经 ghcr 交付的 OCI 镜像包，再加清单
 # 自身与 release notes 及其署名；channel.json 只在目录里存在时保留，因为它
@@ -68,18 +70,30 @@ airy_asset_want()
 # 只读演练允许无令牌跑公开仓库：没有令牌就不发 Authorization 头，
 # 而不是发一个空的 Bearer（后者会被 401 挡回，把演练变成伪失败）。
 #
+# 鉴权参数由 airy_auth 统一刷新：库内已有四条路径（读 JSON、删资产、传资产、
+# 取字节），各拼一次「谁带令牌」就变成四份实现，其中一份迟早会漏。
+AIRY_AUTH=()
+
+airy_auth()
+{
+    AIRY_AUTH=()
+    if [ -n "${TOKEN:-}" ]; then
+        AIRY_AUTH=(-H "Authorization: Bearer ${TOKEN}")
+    fi
+    return 0
+}
+
 # 第四个参数是写操作的请求体文件：JSON 走文件而不是命令行，免得引号在
 # 两层解析里各转义一次。读与写共用同一处鉴权与版本头——「谁带了令牌」
 # 若分成两份实现，其中一份迟早会忘。
 airy_assets_api()
 {
     local method="$1" url="$2" out="$3" body="${4:-}"
-    local -a auth=() args=(-sS -X "${method}" -o "${out}" -w '%{http_code}')
-    if [ -n "${TOKEN:-}" ]; then
-        auth=(-H "Authorization: Bearer ${TOKEN}")
-    fi
-    if [ "${#auth[@]}" -gt 0 ]; then
-        args+=("${auth[@]}")
+    local args=(-sS -X "${method}" -o "${out}" -w '%{http_code}')
+
+    airy_auth
+    if [ "${#AIRY_AUTH[@]}" -gt 0 ]; then
+        args+=("${AIRY_AUTH[@]}")
     fi
     args+=(-H 'Accept: application/vnd.github+json'
            -H 'X-GitHub-Api-Version: 2022-11-28')
@@ -87,6 +101,60 @@ airy_assets_api()
         args+=(-H 'Content-Type: application/json' --data-binary "@${body}")
     fi
     curl "${args[@]}" "${url}"
+}
+
+# airy_asset_del REPO ID —— 收回一件资产。404 视为已不在页面：调用方要的
+# 事实是「这件资产不再挂在这里」，而不是「删除请求曾经成功过」。
+airy_asset_del()
+{
+    local repo="$1" id="$2" code
+
+    code="$(airy_assets_api DELETE \
+        "${AIRY_ASSETS_API}/repos/${repo}/releases/assets/${id}" /dev/null)"
+    case "${code}" in
+        200|204|404) return 0 ;;
+    esac
+    err "删除资产 ${id} 失败: HTTP ${code}"
+    return 1
+}
+
+# airy_asset_put REPO RID FILE NAME OUT —— 上传一件资产，201 时资产 JSON 落 OUT。
+# Release 不接受同名覆盖（422 只报 already_exists），替换必须先由调用方删旧。
+airy_asset_put()
+{
+    local repo="$1" rid="$2" file="$3" name="$4" out="$5" code
+
+    airy_auth
+    code="$(curl -sS -X POST -o "${out}" -w '%{http_code}' \
+        ${AIRY_AUTH[@]+"${AIRY_AUTH[@]}"} \
+        -H 'Accept: application/vnd.github+json' \
+        -H 'X-GitHub-Api-Version: 2022-11-28' \
+        -H 'Content-Type: application/octet-stream' \
+        --data-binary "@${file}" \
+        "${AIRY_ASSETS_UPLOAD}/repos/${repo}/releases/${rid}/assets?name=${name}")"
+    if [ "${code}" != 201 ]; then
+        err "上传 ${name} 失败: HTTP ${code}"
+        return 1
+    fi
+    return 0
+}
+
+# airy_asset_get REPO ID OUT —— 按资产 id 取回原始字节。跟随 302 到对象存储：
+# curl -L 不会把 Authorization 带到别的域，令牌不外泄。
+airy_asset_get()
+{
+    local repo="$1" id="$2" out="$3" code
+
+    airy_auth
+    code="$(curl -sSL -o "${out}" -w '%{http_code}' \
+        ${AIRY_AUTH[@]+"${AIRY_AUTH[@]}"} \
+        -H 'Accept: application/octet-stream' \
+        "${AIRY_ASSETS_API}/repos/${repo}/releases/assets/${id}")"
+    if [ "${code}" != 200 ]; then
+        err "取回资产 ${id} 失败: HTTP ${code}"
+        return 1
+    fi
+    return 0
 }
 
 # 实测集：`<asset id> <name>` 每行一条。Release 不存在返回 ENOREL，
