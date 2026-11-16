@@ -15,10 +15,12 @@
 # 是后者，因此 usb 腿才是 isohybrid 三元一致性的有效证据。
 #
 # 标记语义：
-#   * 产品 ISO  —— AIRYMAX-DESKTOP-READY（桌面会话真的起来了）
+#   * 产品 ISO  —— AIRYMAX-DESKTOP-READY 与 AIRYMAX-NET-READY（桌面会话真的
+#                  起来了，且首启联机四元组成立）
 #   * 验收 ISO  —— AIRYMAX-SMOKE-PASS（会话内冒烟全部通过）
 # 两者都是「冷启动后被 guest 自己写进串口」的字符串，宿主机不参与判定，
-# 因此不存在「宿主以为好了」的假通过。
+# 因此不存在「宿主以为好了」的假通过。验收剖面由 T31 判联机，产品探针在
+# 该剖面被 mask，同一观测点只有一个判定者。
 #
 # 退出码: 0 通过；1 装机或冷启动失败；5 参数不满足。
 # ===========================================================================
@@ -66,8 +68,12 @@ done
 [ -f "${ISO}" ] || die "ISO 不存在: ${ISO}"
 [ -x "${RUNNER}" ] || die "缺少装机入口: ${RUNNER}"
 
-marker=AIRYMAX-DESKTOP-READY
-[ "$(airy_profile)" -eq 1 ] && marker=AIRYMAX-SMOKE-PASS
+markers=(AIRYMAX-DESKTOP-READY AIRYMAX-NET-READY)
+[ "$(airy_profile)" -eq 1 ] && markers=(AIRYMAX-SMOKE-PASS)
+marker_args=()
+for m in "${markers[@]}"; do
+    marker_args+=(--boot-marker "${m}")
+done
 
 mkdir -p "${OUT}"
 
@@ -78,11 +84,11 @@ progress_start "${OUT}"
 trap progress_stop EXIT
 "${RUNNER}" --iso "${ISO}" --out "${OUT}" \
     --runs "${RUNS}" --firmware "${FIRMWARE}" --media "${MEDIA}" \
-    --boot-marker "${marker}" \
+    "${marker_args[@]}" \
     --install-timeout "${INSTALL_TIMEOUT}" --boot-timeout "${BOOT_TIMEOUT}" \
     | tee "${OUT}/tap.txt"
 rc=$?
 progress_stop
 
 [ "${rc}" -eq 0 ] || die "装机/冷启动失败（rc=${rc}），TAP 见 ${OUT}/tap.txt"
-say "验收通过: marker=${marker} firmware=${FIRMWARE} media=${MEDIA} runs=${RUNS}"
+say "验收通过: marker=${markers[*]} firmware=${FIRMWARE} media=${MEDIA} runs=${RUNS}"
