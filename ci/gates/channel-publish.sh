@@ -24,16 +24,12 @@ set -uo pipefail
 readonly EINVAL=5
 # shellcheck source=../lib/log.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/log.sh"
+# shellcheck source=../lib/channel.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/channel.sh"
 # shellcheck source=../lib/release-assets.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/release-assets.sh"
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
-FEED="${ROOT}/system/services"
-
-TAG=""
-REPO="${GITHUB_REPOSITORY:-}"
-DIR=""
-NAME="channel.json"
+CH_REPO="${GITHUB_REPOSITORY:-}"
 DRY=0
 
 usage()
@@ -45,67 +41,27 @@ EOF
 }
 
 while [ "$#" -gt 0 ]; do
+    channel_opt "$1" "${2:-}" && { shift "${CH_SHIFT}"; continue; }
     case "$1" in
-        --tag)      TAG="${2:-}"; shift 2 ;;
-        --repo)     REPO="${2:-}"; shift 2 ;;
-        --dir)      DIR="${2:-}"; shift 2 ;;
-        --name)     NAME="${2:-}"; shift 2 ;;
         --dry-run)  DRY=1; shift ;;
         -h|--help)  usage; exit 0 ;;
         *) err "未知参数: $1"; exit "${EINVAL}" ;;
     esac
 done
 
-[ -n "${TAG}" ] && [ -n "${REPO}" ] && [ -n "${DIR}" ] || {
-    usage >&2; exit "${EINVAL}"; }
-case "${TAG}" in
-v[0-9]*) ;;
-*) err "--tag 需形如 vX.Y.Z: ${TAG}"; exit "${EINVAL}" ;;
-esac
-
-need_cmd python3 sha256sum curl cmp
-[ -d "${FEED}/airyupdate" ] ||
-    { err "缺少客户端校验包: ${FEED}/airyupdate"; exit "${EINVAL}"; }
-[ -f "${DIR}/${NAME}" ] || { err "缺少清单: ${DIR}/${NAME}"; exit "${EINVAL}"; }
+channel_need
+need_cmd curl cmp
+[ -f "${CH_DIR}/${CH_NAME}" ] ||
+    { err "缺少清单: ${CH_DIR}/${CH_NAME}"; exit "${EINVAL}"; }
 
 TOKEN="${TOKEN:-${GITHUB_TOKEN:-${GH_TOKEN:-}}}"
 [ -n "${TOKEN}" ] || { err "缺少 GITHUB_TOKEN"; exit "${EINVAL}"; }
 export TOKEN
 
-WANT="${TAG#v}"
-TMP="$(mktemp -d)"
-trap 'rm -rf "${TMP}"' EXIT
+channel_tmp
 
-PICK=""
-MSG=""
 RID=""
 HAVE=""
-
-# verify FILE —— 客户端解析器复验，成功时把清单版本写入 PICK。
-#
-# 与 channel-fetch 同一处口径：什么算可信清单只能由客户端代码判定，服务端
-# 另写一份校验必然在某次字段变动后与客户端分叉。
-verify()
-{
-    local out rc
-
-    out="$(PYTHONPATH="${FEED}" python3 -c '
-import sys
-from airyupdate.feed import Untrusted, load_manifest
-try:
-    manifest = load_manifest(open(sys.argv[1], "rb").read())
-except Untrusted as exc:
-    sys.stderr.write(str(exc) + "\n")
-    sys.exit(3)
-print(manifest.version)
-' "$1" 2>&1)"
-    rc=$?
-    case "${rc}" in
-        0) PICK="${out}" ;;
-        *) MSG="${out}" ;;
-    esac
-    return "${rc}"
-}
 
 # json_id FILE —— 取对象 id。上传与建页两处都只需要这一个字段。
 json_id()
@@ -118,10 +74,10 @@ json_id()
 # 输出——命令替换会另起子 shell，赋值留在里面就丢了。
 rel_of()
 {
-    airy_asset_have "${REPO}" "${TAG}" "${TMP}/have" "${TMP}/rel.json" ||
+    airy_asset_have "${CH_REPO}" "${CH_TAG}" "${TMP}/have" "${TMP}/rel.json" ||
         return $?
     RID="$(json_id "${TMP}/rel.json")" || return 1
-    HAVE="$(awk -v n="${NAME}" '$2 == n { print $1 }' "${TMP}/have")"
+    HAVE="$(awk -v n="${CH_NAME}" '$2 == n { print $1 }' "${TMP}/have")"
     return 0
 }
 
@@ -131,8 +87,8 @@ drop_old()
     local id
 
     for id in ${HAVE}; do
-        airy_asset_del "${REPO}" "${id}" || return 1
-        say "收回旧 ${NAME}（id ${id}）"
+        airy_asset_del "${CH_REPO}" "${id}" || return 1
+        say "收回旧 ${CH_NAME}（id ${id}）"
     done
     return 0
 }
@@ -142,11 +98,11 @@ single()
 {
     local n
 
-    airy_asset_have "${REPO}" "${TAG}" "${TMP}/have2" "${TMP}/rel2.json" ||
+    airy_asset_have "${CH_REPO}" "${CH_TAG}" "${TMP}/have2" "${TMP}/rel2.json" ||
         return 1
-    n="$(awk -v n="${NAME}" '$2 == n' "${TMP}/have2" | wc -l)"
+    n="$(awk -v n="${CH_NAME}" '$2 == n' "${TMP}/have2" | wc -l)"
     if [ "${n}" -ne 1 ]; then
-        err "页面上 ${NAME} 应有 1 件，实得 ${n}"
+        err "页面上 ${CH_NAME} 应有 1 件，实得 ${n}"
         return 1
     fi
     return 0
@@ -158,50 +114,50 @@ readback()
 {
     local back="${TMP}/back"
 
-    airy_asset_get "${REPO}" "$1" "${back}" || return 1
-    if ! cmp -s "${DIR}/${NAME}" "${back}"; then
-        err "读回字节与本地不一致: ${NAME}"
+    airy_asset_get "${CH_REPO}" "$1" "${back}" || return 1
+    if ! cmp -s "${CH_DIR}/${CH_NAME}" "${back}"; then
+        err "读回字节与本地不一致: ${CH_NAME}"
         return 1
     fi
     say "读回 id $1 字节一致"
     return 0
 }
 
-group "复验 ${NAME}"
-verify "${DIR}/${NAME}" || { err "清单不可信：${MSG}"; exit 1; }
-[ "${PICK}" = "${WANT}" ] ||
-    { err "清单版本 ${PICK} 与 ${TAG} 不同源，拒绝发布"; exit 1; }
-say "版本 ${PICK}，客户端解析器通过"
+group "复验 ${CH_NAME}"
+channel_verify "${CH_DIR}/${CH_NAME}" || { err "清单不可信：${CH_MSG}"; exit 1; }
+[ "${CH_PICK}" = "${CH_WANT}" ] ||
+    { err "清单版本 ${CH_PICK} 与 ${CH_TAG} 不同源，拒绝发布"; exit 1; }
+say "版本 ${CH_PICK}，客户端解析器通过"
 endgroup
 
-group "发布页 ${REPO} ${TAG}"
+group "发布页 ${CH_REPO} ${CH_TAG}"
 rel_of
 rc=$?
 case "${rc}" in
 0) ;;
-"${AIRY_ASSETS_ENOREL}") err "发布页不存在: ${REPO} ${TAG}"; exit 3 ;;
+"${AIRY_ASSETS_ENOREL}") err "发布页不存在: ${CH_REPO} ${CH_TAG}"; exit 3 ;;
 *) exit 1 ;;
 esac
 say "Release id ${RID}，当前 $(wc -l <"${TMP}/have") 件资产"
 if [ -n "${HAVE}" ]; then
-    say "页面上已有同名 ${NAME}（旧 id ${HAVE//$'\n'/ }），按替换处理"
+    say "页面上已有同名 ${CH_NAME}（旧 id ${HAVE//$'\n'/ }），按替换处理"
 else
-    say "页面上尚无 ${NAME}，按新增处理"
+    say "页面上尚无 ${CH_NAME}，按新增处理"
 fi
 
 if [ "${DRY}" -eq 1 ]; then
-    say "演练：${NAME} 未上传（预案正确）"
+    say "演练：${CH_NAME} 未上传（预案正确）"
     endgroup
     exit 0
 fi
 
 drop_old || exit 1
-airy_asset_put "${REPO}" "${RID}" "${DIR}/${NAME}" "${NAME}" \
+airy_asset_put "${CH_REPO}" "${RID}" "${CH_DIR}/${CH_NAME}" "${CH_NAME}" \
     "${TMP}/put.json" || exit 1
 NID="$(json_id "${TMP}/put.json")" || { err "上传回执无法解析"; exit 1; }
 single || exit 1
 readback "${NID}" || exit 1
-say "已发布 ${NAME}：$(sha256sum "${DIR}/${NAME}" | cut -c1-16)…"
+say "已发布 ${CH_NAME}：$(sha256sum "${CH_DIR}/${CH_NAME}" | cut -c1-16)…"
 endgroup
 
-say "通道清单发布完成: ${REPO} ${TAG} ${NAME}"
+say "通道清单发布完成: ${CH_REPO} ${CH_TAG} ${CH_NAME}"
