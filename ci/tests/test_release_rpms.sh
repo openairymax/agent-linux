@@ -9,9 +9,9 @@
 # 制品或发布页资产复制出来，判定逻辑在没有网络、没有 token 的机器上逐条
 # 打穿。
 #
-# 两条取件路径（--run-id 的制品 / 发布页资产）在磁盘上布局不同：制品保留
-# dist/rpm/<arch>/ 层级，发布页是平铺的。摘要清单只有一份，校验与计数都
-# 必须在清单所在位置成立，不能各自假定布局。
+# 两条取件路径（--run-id 的制品 / 发布页资产）在磁盘上都落成 <dir>/<arch>/：
+# 制品自带 dist/rpm/<arch>/ 层级，发布页由门禁逐架构下载铺成同形。摘要清单
+# 只有一份，校验与计数都必须在清单所在位置成立，不能各自假定布局。
 #
 # 用法: bash ci/tests/test_release_rpms.sh
 # 退出码: 0 全部通过；1 有断言失败。
@@ -106,19 +106,36 @@ case "${1:-} ${2:-}" in
     # 首个位置参数是 TAG，真实 CLI 靠它定位发布页；替身按 FAKE/rel 取件，
     # 但必须把它吞掉，否则会被当成未知开关。
     case "${1:-}" in '' | --*) ;; *) shift ;; esac
-    dir=""
+    dir="" pats=()
     while [ "$#" -gt 0 ]; do
         case "$1" in
         --dir)     dir="${2:-}"; shift 2 ;;
         --clobber) shift ;;
-        --pattern) shift 2 ;;
+        --pattern) pats+=("${2:-}"); shift 2 ;;
         --repo)    shift 2 ;;
         *)         flag_die "$1" ;;
         esac
     done
     [ -d "${FAKE}/rel" ] || exit 1
     mkdir -p "${dir}"
-    cp -a "${FAKE}/rel/." "${dir}/"
+    # --pattern 必须像真实 CLI 一样过滤：不过滤时多次取件会把别的架构的包
+    # 复制进本架构目录，门禁的计数判据就被替身的宽松掩盖了。真实 CLI 在
+    # 一个模式都不匹配时退 1，替身照此。
+    hit=0
+    for f in "${FAKE}/rel"/*; do
+        [ -e "$f" ] || continue
+        base="$(basename "$f")"
+        if [ "${#pats[@]}" -eq 0 ]; then
+            cp -a "$f" "${dir}/"
+            continue
+        fi
+        for p in "${pats[@]}"; do
+            case "${base}" in
+            $p) cp -a "$f" "${dir}/"; hit=1; break ;;
+            esac
+        done
+    done
+    [ "${#pats[@]}" -eq 0 ] || [ "${hit}" -eq 1 ] || exit 1
     ;;
 *) exit 2 ;;
 esac
@@ -219,13 +236,21 @@ sums "${FAKE}/art/80/release-artifacts-0.0.4/${SUM}" "${D}" "${K1}" >/dev/null
 expect "多架构缺一员仍判负" 1 "未登记 aarch64 内核包" \
     --tag v0.0.4 --repo o/r --dir "${OUT}" --run-id 80 --arch "${A}" --arch "${A2}"
 
-# ---- 发布页路径：平铺，清单与包同目录 ----
+# ---- 发布页路径：逐架构落盘，清单在根 ----
+# 发布页资产本身是平铺的，门禁按 --arch 逐个下载到 <dir>/<arch>/：装配段拿到
+# 的单架构目录里不会混进别的架构的包，跨架构预演扫根目录时四个架构又都在场。
 mkfix
 D="${FAKE}/rel"
 rpm "${D}/${K1}"
-sums "${D}/${SUM}" "${D}" "${K1}" >/dev/null
-expect "发布页平铺布局" 0 "发行内核包就绪: 1 个" --tag v0.0.4 --repo o/r \
-    --dir "${OUT}"
+rpm "${D}/${AR}"
+sums "${D}/${SUM}" "${D}" "${K1}" "${AR}" >/dev/null
+expect "发布页逐架构布局" 0 "发行内核包就绪: 1 个 x86_64" --tag v0.0.4 --repo o/r \
+    --dir "${OUT}" --arch "${A}" --arch aarch64
+if [ -f "${OUT}/${A}/${K1}" ] && [ -f "${OUT}/aarch64/${AR}" ]; then
+    ok "逐架构目录隔离"
+else
+    bad "逐架构目录隔离"
+fi
 
 # ---- 判据 ----
 mkfix

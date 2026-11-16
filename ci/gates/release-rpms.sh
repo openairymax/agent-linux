@@ -92,12 +92,22 @@ if [ -n "${RUN_ID}" ]; then
     endgroup
 else
     group "gh release download ${TAG}"
-    pat=()
+    # 发布页下载默认平铺，多个 --arch 落进同一目录。装配段取的是 --env-key
+    # 出口的单架构目录，而 build-desktop 的 collect_rpms 会递归扫该目录下
+    # 每个 *.rpm 并要求架构与本轮目标一致：平铺时别的架构的包会被当成载荷
+    # 候选，判「架构不符」（run 43786747433）。逐架构落到 <dir>/<arch>/，
+    # 装配段得到的仍是单架构目录，跨架构预演扫根目录时四个架构也都在场，
+    # 两个判据同时成立。制品路径已有 dist/rpm/<arch>/ 层级，两条取件口
+    # 因此同形。
     for a in "${ARCHS[@]}"; do
-        pat+=(--pattern "airymaxos-kernel*.${a}.rpm")
+        mkdir -p "${DIR}/${a}"
+        gh release download "${TAG}" --repo "${REPO}" --dir "${DIR}/${a}" --clobber \
+            --pattern "airymaxos-kernel*.${a}.rpm" ||
+            die "${TAG} 未取到 ${a} 内核包"
     done
     gh release download "${TAG}" --repo "${REPO}" --dir "${DIR}" --clobber \
-        "${pat[@]}" --pattern "agent-linux-${ver}.sha256sum"
+        --pattern "agent-linux-${ver}.sha256sum" ||
+        die "${TAG} 未取到 agent-linux-${ver}.sha256sum"
     endgroup
 fi
 
@@ -115,9 +125,10 @@ rel_arch()
     grep -E "  airymaxos-kernel[^ ]*\.${a}\.rpm$" "${sum}" >"${list}" || true
     [ -s "${list}" ] || die "${TAG} 的校验和未登记 ${a} 内核包"
 
-    # 校验和里只写文件名，而制品保留了 dist/rpm/<arch>/ 的目录层级（发布页
-    # 下载是平铺的）。先按清单里的首个文件名反查它落盘的目录，再在该目录里
-    # 整批复验：两种取件路径因此共用同一份清单，不各自假定布局。
+    # 校验和里只写文件名，而两条取件口都把包落在 <dir>/<arch>/ 下（制品是
+    # dist/rpm/<arch>/，发布页由上面的逐架构下载铺成同形）。先按清单里的
+    # 首个文件名反查它落盘的目录，再在该目录里整批复验：两种取件路径因此
+    # 共用同一份清单，不各自假定布局。
     first="$(awk 'NR==1{print $2}' "${list}")"
     probe="$(find "${DIR}" -name "${first#\*}" -print -quit)"
     [ -n "${probe}" ] || die "${TAG} 制品内找不到 ${first#\*}"
@@ -143,10 +154,9 @@ for a in "${ARCHS[@]}"; do
     [ -n "${RET_DIR}" ] || RET_DIR="${REL_DIR}"
 done
 
-# 取件方要的是「发行资产在哪」，不止「内核包在哪」。制品路径把 RPM 留在
-# dist/rpm/<arch>/ 里，摘要清单留在制品根；发布页路径两者平铺。若只交出
-# RPM 目录，下游就得自己在里面按通配符找清单——平铺时碰巧找到，制品路径
-# 必然找不到，而失败消息会写成「发行目录没有校验和」，把布局差异伪装成
-# 资产缺失。布局由本门禁唯一掌握，两个出口一起给出，下游不再猜。
+# 取件方要的是「发行资产在哪」，不止「内核包在哪」。两条取件口都把 RPM 留在
+# <dir>/<arch>/ 里，摘要清单留在 <dir> 根；若只交出 RPM 目录，下游就得自己
+# 在里面按通配符找清单，失败消息会写成「发行目录没有校验和」，把布局差异
+# 伪装成资产缺失。布局由本门禁唯一掌握，两个出口一起给出，下游不再猜。
 env_set "${ENV_KEY}" "${RET_DIR}"
 env_set AIRYMAX_REL_SUM "${sum}"
