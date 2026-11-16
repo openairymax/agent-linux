@@ -5,7 +5,7 @@
 #
 # 用法: ci/lint.sh [--no-distro]
 #
-# 检查九件事：
+# 检查十件事：
 #   1. workflow 薄化与命名约束（ci/check-workflows.py）；
 #   2. ci/ 与 tools/ 下每个 shell 脚本可被 bash -n 解析；
 #   3. 函数名不超过 15 字节（ci/name_lint.py，N001，覆盖 shell 与 python）；
@@ -15,7 +15,8 @@
 #   6. 门禁脚本里「声明后从未使用」的 readonly 常量（无外部依赖）；
 #   7. ci/tests 下的门禁分支回归；
 #   8. 有 shellcheck 就用上，没有只告警——本地开发者不该被工具缺失拦住；
-#   9. distro 子仓静态门禁（ci/gates/distro-lint.sh，含其工具单测）。
+#   9. distro 子仓静态门禁（ci/gates/distro-lint.sh，含其工具单测）；
+#  10. 基底耦合点两向对账（ci/gates/coupling-scan.sh，成册件 §10 主表）。
 #
 # 第 9 项此前只在流水线里跑，本地「两个入口都绿」靠人记：run 40938020614
 # 的 os-chk-verify 就红在 distro 的一条旧语义断言上，而提交前只跑过本文件。
@@ -160,6 +161,18 @@ while IFS= read -r f; do
     bash "${f}" || { err "回归失败: ${f#"${ROOT}/"}"; rc=1; }
 done < <(find "${ROOT}/ci/tests" -type f -name 'test_*.sh' | sort)
 say "已运行 ${n} 个回归脚本"
+endgroup
+
+group "基底耦合点对账"
+# 成册件 §10 主表是耦合点的唯一事实源，门禁的两向对账只在真实树上跑才有
+# 意义：回归脚本用的是夹具，判不了「本仓漏登记」。未检出 docs 树时门禁
+# 自身退 0 并打印不适用，单仓检出不会因此变红。
+if bash "${ROOT}/ci/ci.sh" coupling-scan; then
+    say "通过"
+else
+    err "基底耦合点对账未通过（ci/ci.sh coupling-scan）"
+    rc=1
+fi
 endgroup
 
 if [ "${no_distro}" -eq 0 ]; then
