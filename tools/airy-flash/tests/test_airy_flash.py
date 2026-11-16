@@ -1185,6 +1185,34 @@ def test_cli_fetch_surfaces_oras_failure(
     assert "AIRY-FLASH-FAIL command=fetch " in text
 
 
+def test_part_ref_prefixes_digest_algo() -> None:
+    """账本的块 digest 不带算法前缀：拼 blob 地址时必须补齐，否则 oras 判非法。"""
+    part = af.OciPart(index=14, digest="ab" * 32, size=1, name="x.part0014")
+    ledger = af.OciLedger(
+        ref="ghcr.io/openairymax/airymaxos-iso",
+        tag="v0.0.4",
+        name="x",
+        sha256="cd" * 32,
+        size=1,
+        chunk_size=1,
+        parts=(part,),
+    )
+    assert af._part_ref(ledger, part) == (
+        "ghcr.io/openairymax/airymaxos-iso@sha256:" + "ab" * 32
+    )
+
+
+def test_meter_skips_resume_baseline(monkeypatch: pytest.MonkeyPatch) -> None:
+    """续传的存量块只立基线：速率与 ETA 只算本次真正取回的字节。"""
+    ticks = iter([10.0, 11.0])
+    monkeypatch.setattr(af.time, "monotonic", lambda: next(ticks))
+    meter = af._meter()
+    assert meter(1000, 2000) == (0.0, 0.0)
+    rate, eta = meter(1100, 2000)
+    assert rate == pytest.approx(100.0)
+    assert eta == pytest.approx(9.0)
+
+
 def test_cli_fetch_keeps_complete_parts(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
