@@ -114,6 +114,13 @@ jobs:
       - name: Display capability gates
         run: ci/ci.sh desktop-capability
 
+      # R1-14 / 判据⑨①：磁盘、网络、模型三项状态此前只在三个命令的退出码
+      # 里，桌面用户既不知道命令名，也看不到结论。本门禁判面板确实调用三
+      # 个生产者、菜单项可点可见、打包三处同源，并用桩生产者覆盖齐备/缺件/
+      # 降级三种收场——「装上了但菜单里没有」是最容易被漏掉的一类缺口。
+      - name: Desktop status panel gates
+        run: ci/ci.sh desktop-status
+
       # I-27：闭源库带 PT_GNU_STACK=RWE 时，W^X 会在 dlopen 阶段拒绝它。
       # 内核侧受理白名单需要 file_mprotect 钩子与可写策略通道，本版登记顺延，
       # 这里只钉住「交付链不许用清位或重编可执行栈绕过」，以及例外清单可出。
