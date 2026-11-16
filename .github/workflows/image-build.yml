@@ -431,8 +431,14 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: Checkout distro submodule
-        run: git submodule update --init distro
+      # 组装链的读点是 distro 与 system：装机/冷启动腿读 distro（kickstart、
+      # 冒烟夹具），通道清单回写读 system（客户端校验包
+      # system/services/airyupdate）。此前只取 distro，三条腿全绿之后才在
+      # channel-publish 因缺校验包判负（build 22 / run 43877344664），
+      # 整轮产物拿不到通道且失败点在最后一步。取法与组装段同一份清单，
+      # 漏列会被 submodules.sh 的空目录校验拦在起步。
+      - name: Checkout submodules
+        run: ci/ci.sh submodules
 
       - name: Free runner disk
         run: ci/ci.sh free-disk
