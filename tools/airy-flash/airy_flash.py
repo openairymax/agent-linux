@@ -1002,10 +1002,28 @@ def _copy_stream(
             if not block:
                 return written
             _write_all(dst, block)
+            _flow(dst, written, len(block))
             written += len(block)
             _tick(progress, written, total)
     except OSError as exc:
         raise _write_fail(written, exc) from exc
+
+
+def _flow(dst: io.FileIO, start: int, length: int) -> None:
+    """把刚写入的窗口交给内核异步回写，别让脏页攒到阈值再长时间阻塞。
+
+    U 盘实写约 8 MiB/s，页缓存会先吃下两 GB 以上，之后单次 write() 卡在脏页
+    回收里数分钟（0.0.4 实测写入阶段 6 分 23 秒只有心跳、没有一行进度）。每块
+    提交一次回写（SYNC_FILE_RANGE_WRITE 只起刷不等待），应用领先量被压在脏页
+    阈值内，write() 只在小窗口上阻塞，进度行与速率因此连续可读。
+    """
+    hint = getattr(os, "sync_file_range", None)
+    if hint is None:
+        return
+    try:
+        hint(dst.fileno(), start, length, os.SYNC_FILE_RANGE_WRITE)
+    except (AttributeError, OSError):
+        return
 
 
 def _tick(progress: Callable[[int, int], None] | None,
@@ -1173,6 +1191,8 @@ def readback(
         raise FlashError(EXIT_IO, f"回读失败: {exc.strerror or exc}") from exc
     if note:
         return False, note, ranges
+    if mode == "full":
+        return True, f"全量回读一致 {human_bytes(total)}", ranges
     return True, f"比对 {len(ranges)} 段 / {human_bytes(total)}", ranges
 
 
@@ -1261,6 +1281,8 @@ class Renderer:
         self._last_emit = 0.0
         self._stage_at = time.monotonic()
         self._current = Stage(0, 0, "", OK)
+        self._read: tuple[int, int] | None = None
+        self._beat_at = 0
 
     def _write(self, text: str) -> None:
         # 心跳线程与主线程共用一条流，整行加锁避免交错。
@@ -1297,12 +1319,16 @@ class Renderer:
         self._stage_at = time.monotonic()
         self._last_bucket = -1
         self._last_emit = 0.0
+        self._read = None
+        self._beat_at = 0
 
     def _head(self, stage: Stage) -> str:
         return pad(_label(stage), self.NAME)
 
     def stage_progress(self, done: int, total: int, rate: float, eta: float) -> None:
         ratio = done / total if total else 1.0
+        self._read = (done, total)
+        self._beat_at = done
         head = self._head(self._current)
         if self.tty:
             self._write(self._tty_line(head, ratio, done, total, rate, eta))
@@ -1354,9 +1380,25 @@ class Renderer:
             f"已用 {human_duration(moment - self._stage_at)}\n"
         )
 
+    def _beat_facts(self) -> str:
+        """心跳的读数后缀：停在哪、距上次输出有没有动。
+
+        只有「已等待」时，页缓存吃满后的长阻塞与真挂死是同一种日志形状；
+        带上位置与本段增量，前者是「停在 2.43 GiB 不动」，后者是「位置在涨
+        但速率极低」，处置完全不同。
+        """
+        if self._read is None:
+            return ""
+        done, total = self._read
+        moved = done - self._beat_at
+        self._beat_at = done
+        return (f"  位置 {human_bytes(done)}/{human_bytes(total)}"
+                f"  期间 +{human_bytes(moved)}")
+
     def heartbeat(self, stage: Stage, seconds: float) -> None:
         """无进度的阻塞阶段也要让屏幕持续刷新，避免看起来像卡死。"""
-        line = f"  [ .. ] {self._head(stage)} 已等待 {human_duration(seconds)}"
+        line = (f"  [ .. ] {self._head(stage)}"
+                f" 已等待 {human_duration(seconds)}{self._beat_facts()}")
         if self.tty:
             self._write(f"\r{line}   ")
             self._bar_open = True
@@ -1451,17 +1493,27 @@ def _meter() -> Callable[[int, int], tuple[float, float]]:
     第一次上报前就在盘上，算进分母会得到「389 GiB/s」这种读数——数字是真的，
     但描述的不是本次传输。首报只立基线，之后的增量才进速率，ETA 也只覆盖
     还没取的部分。
+
+    基线只在真正算出速率时前移，不随每次回调重置：4 MiB 一块的哈希回调间隔
+    只有几毫秒，逐次重置窗口会让跨度永远达不到下限，读数恒为 0 B/s（0.0.4
+    实测校验镜像四行全是 0 B/s）。窗口不足就沿用上次读数，够了再整体结算。
     """
-    seen = [-1, 0.0]
+    MIN_SPAN = 0.05
+    base = [0, 0.0]
+    fresh = [True]
     last = [0.0, 0.0]
 
     def compute(done: int, total: int) -> tuple[float, float]:
         now = time.monotonic()
-        span = now - seen[1]
-        if seen[0] >= 0 and done > seen[0] and span >= 0.05:
-            rate = (done - seen[0]) / span
+        if fresh[0]:
+            fresh[0] = False
+            base[:] = (done, now)
+            return last[0], last[1]
+        span = now - base[1]
+        if done > base[0] and span >= MIN_SPAN:
+            rate = (done - base[0]) / span
             last[:] = (rate, (total - done) / rate)
-        seen[:] = (done, now)
+            base[:] = (done, now)
         return last[0], last[1]
 
     return compute
@@ -1662,12 +1714,14 @@ def _banner(
     )
     renderer.field("目标", str(device.path), _target_facts(device))
     # 分区清单是「这块盘上现在有什么」的唯一可见事实：写入连同分区表一起
-    # 覆盖，事后无法回溯，事前又只能从盘符反推。
+    # 覆盖，事后无法回溯，事前又只能从盘符反推。verify 不回写，措辞跟随模式，
+    # 免得把只读复核读成一次待执行的破坏操作。
     if device.parts:
+        fate = "本次只回读，不改动" if command == "verify" else "写入后不可恢复"
         renderer.field(
             "分区",
             f"已有 {len(device.parts)} 个 {_parts_line(device)}",
-            f"合计 {human_bytes(device.parts_bytes)}，写入后不可恢复",
+            f"合计 {human_bytes(device.parts_bytes)}，{fate}",
         )
     renderer.field("模式", MODES.get(command, command))
 

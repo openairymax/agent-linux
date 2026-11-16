@@ -914,6 +914,92 @@ def test_heartbeat_keeps_idle_stage_visible() -> None:
     assert "已等待" in stream.getvalue()
 
 
+def test_banner_words_partition_fate_by_mode(tmp_path: Path) -> None:
+    """verify 不回写，分区行不能写成「写入后不可恢复」。"""
+    image = af.ImageFacts(path=tmp_path / "x.iso", size=1 << 20)
+    device = af.DeviceFacts(
+        path=Path("/dev/sdb"), kind="block", size=1 << 32,
+        parts=("sdb1",), parts_bytes=1 << 20,
+    )
+    texts = {}
+    for command in ("write", "verify"):
+        stream = io.StringIO()
+        af._banner(image, device, command, af.Renderer(stream=stream, tty=False))
+        texts[command] = stream.getvalue()
+    assert "写入后不可恢复" in texts["write"]
+    assert "本次只回读" in texts["verify"]
+
+
+def test_heartbeat_reports_position_and_delta() -> None:
+    """心跳要说清停在哪、期间动没动：只有「已等待」时慢与死是同一种日志。"""
+    stream = io.StringIO()
+    renderer = af.Renderer(stream=stream, tty=False)
+    stage = af.Stage(2, 4, "写入设备", af.OK)
+    renderer.stage_start(stage)
+    renderer.stage_progress(512, 1024, 0.0, 0.0)
+    renderer.heartbeat(stage, 5.0)
+    renderer.heartbeat(stage, 10.0)
+
+    lines = [ln for ln in stream.getvalue().splitlines() if "已等待" in ln]
+    assert "位置 512 B/1.00 KiB" in lines[0]
+    assert "期间 +0 B" in lines[-1]
+
+
+def test_heartbeat_without_reading_stays_short() -> None:
+    """还没有任何进度读数时（fsync 前），心跳不编造位置字段。"""
+    stream = io.StringIO()
+    renderer = af.Renderer(stream=stream, tty=False)
+    stage = af.Stage(3, 4, "刷盘同步", af.OK)
+    renderer.stage_start(stage)
+    renderer.heartbeat(stage, 5.0)
+
+    line = stream.getvalue().strip()
+    assert line.endswith("已等待 5.0s")
+    assert "位置" not in line
+
+
+def test_readback_full_detail_says_whole_image(tmp_path: Path) -> None:
+    image = tmp_path / "x.iso"
+    image.write_bytes(b"0123456789" * 100)
+    target = tmp_path / "usb.img"
+    target.write_bytes(image.read_bytes())
+
+    same, detail, _ = af.readback(image, target, "full")
+    assert same is True
+    assert detail.startswith("全量回读一致")
+
+
+def test_write_hints_writeback_per_chunk(tmp_path: Path, monkeypatch) -> None:
+    """按块把窗口交给内核起刷：脏页攒满后单次 write 会静默阻塞数分钟。"""
+    image = tmp_path / "x.iso"
+    image.write_bytes(b"payload" * 1000)
+    target = make_target(tmp_path, 8192)
+    calls: list[tuple[int, int, int]] = []
+
+    def hint(_fd: int, start: int, length: int, flags: int) -> None:
+        calls.append((start, length, flags))
+
+    monkeypatch.setattr(af.os, "sync_file_range", hint, raising=False)
+    monkeypatch.setattr(af.os, "SYNC_FILE_RANGE_WRITE", 2, raising=False)
+    assert af.write_image(image, target, chunk=1024, file_target=True) == 7000
+    assert calls[0][:2] == (0, 1024)
+    assert calls[-1][0] + calls[-1][1] == 7000
+    assert {flags for _start, _len, flags in calls} == {2}
+
+
+def test_write_survives_writeback_hint_failure(tmp_path: Path, monkeypatch) -> None:
+    """回写提示只是优化，失败不得让正常写入失败。"""
+    image = tmp_path / "x.iso"
+    image.write_bytes(b"payload" * 100)
+    target = make_target(tmp_path, 8192)
+
+    def boom(_fd: int, _start: int, _length: int, _flags: int) -> None:
+        raise OSError(errno.EINVAL, "Invalid argument")
+
+    monkeypatch.setattr(af.os, "sync_file_range", boom, raising=False)
+    assert af.write_image(image, target, chunk=256, file_target=True) == 700
+
+
 # ─── 发布清单与取回 ─────────────────────────────────────────────────────────
 
 
@@ -1211,6 +1297,20 @@ def test_meter_skips_resume_baseline(monkeypatch: pytest.MonkeyPatch) -> None:
     rate, eta = meter(1100, 2000)
     assert rate == pytest.approx(100.0)
     assert eta == pytest.approx(9.0)
+
+
+def test_meter_accumulates_across_short_intervals(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """哈希回调间隔只有几毫秒：窗口须跨多次回调累计，否则读数恒为 0 B/s。"""
+    ticks = iter([0.0, 0.001, 0.060])
+    monkeypatch.setattr(af.time, "monotonic", lambda: next(ticks))
+    meter = af._meter()
+    assert meter(1024, 4096) == (0.0, 0.0)
+    assert meter(2048, 4096) == (0.0, 0.0)
+    rate, eta = meter(3072, 4096)
+    assert rate == pytest.approx(2048 / 0.060)
+    assert eta == pytest.approx(1024 / rate)
 
 
 def test_cli_fetch_keeps_complete_parts(
