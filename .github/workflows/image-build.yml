@@ -422,6 +422,12 @@ jobs:
     runs-on: ubuntu-24.04
     needs: assemble
     timeout-minutes: 360
+    # 写权限按 job 收口：只有本 job 需要写发布页（通道清单回写）与写 ghcr
+    # （ISO 载荷），assemble 保持顶层的只读，不必因为装配而放宽。
+    permissions:
+      contents: write
+      packages: write
+      actions: read
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
@@ -570,6 +576,19 @@ jobs:
         env:
           TAG: ${{ inputs.release_tag }}
         run: ci/ci.sh release-channel --out "$RUNNER_TEMP/image" --rpm-dir "$RUNNER_TEMP/relch" --version "${TAG#v}"
+
+      # 清单只有在发布页上才生效：客户端发现新版本读的是 releases/latest/
+      # download/channel.json。发布页与首份清单由 release.yml 建页时上传，
+      # 装配轮为同一 tag 重建 ISO 之后没有回写路径——0.0.4 收尾期的页面
+      # 仍是 build 19 / 内核 0.0.4-7，而线上 ISO 已是重建后的字节，两侧
+      # 各自都能自证，却没有一处把它们对起来。门禁写前按客户端解析器复验
+      # 版本同源，写后按资产 id 取回比对字节。
+      - name: Publish release channel manifest
+        if: success() && inputs.release_tag != '' && !inputs.acceptance
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.release_tag }}
+        run: ci/ci.sh channel-publish --tag "$TAG" --repo "$GITHUB_REPOSITORY" --dir "$RUNNER_TEMP/image"
 
       # 收集规则属于判据：写进 YAML 就只能在云端验一次、也只能在云端改。
       # 交给门禁后，同一段收集逻辑可以对着旧产物本地复算，缺项还被逐条
