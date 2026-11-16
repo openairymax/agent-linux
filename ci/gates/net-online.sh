@@ -37,8 +37,23 @@ readonly EINVAL=5
 readonly NMDIR=/etc/NetworkManager/conf.d
 readonly V4RE='([0-9]{1,3}\.){3}[0-9]{1,3}'
 
-# shellcheck source=../lib/log.sh
-. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/log.sh"
+LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" 2>/dev/null && pwd -P)"
+if [ -r "${LIB}/log.sh" ]; then
+    # shellcheck source=../lib/log.sh
+    . "${LIB}/log.sh"
+else
+    # 现场验收时本 gate 会被单独拷到目标机执行，那台机器上没有仓库，
+    # ../lib 自然不存在。此前读到的是 "log.sh: No such file" 加一串
+    # "say: command not found"，判定行（联机成立/超时原因）随之消失，
+    # 只剩退出码——而现场恰恰最需要那一行来说明卡在哪里。缺库只应
+    # 失去前缀装饰，不应失去判定输出，故在此给出同形的最小实现。
+    CI_NS=net-online
+    say() { printf '%s: %s\n' "${CI_NS}" "$*"; }
+    err() { printf 'error: %s\n' "$*" >&2; }
+    die() { err "$*"; exit 1; }
+    group() { printf '=== %s ===\n' "$*"; }
+    endgroup() { return 0; }
+fi
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 COMPS="${ROOT}/distro/comps/airymaxos-comps.xml"

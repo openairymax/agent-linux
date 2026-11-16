@@ -305,6 +305,17 @@ chmod +x "${tmp}/stub/ping"
 out="$(live "${tmp}/stub" --live --wait 0)"
 check "网关不可达判失败" 1 "$?" "${out}" "网关不可达: 192.168.3.1"
 
+# 现场验收会把本门禁单独拷到目标机执行，那台机器上没有 ci/lib。缺库时
+# 判定行必须照旧打出来——只剩退出码的验收没法告诉现场卡在哪一步。
+obs dhcp
+printf '#!/bin/sh\nexit 0\n' >"${tmp}/stub/ping"
+chmod +x "${tmp}/stub/ping"
+mkdir -p "${tmp}/solo/ci/gates"
+cp "${GATE}" "${tmp}/solo/ci/gates/net-online.sh"
+out="$(PATH="${tmp}/stub:${PATH}" bash "${tmp}/solo/ci/gates/net-online.sh" \
+    --live --wait 0 2>&1)"
+check "无日志库时联机判定仍出结论行" 0 "$?" "${out}" "联机成立"
+
 # 前置命令只校验存在性，因此在受控 PATH 里逐个藏起来即可覆盖两个分支；
 # 其余工具软链进同一目录，让门禁本身还能启动。
 lnk()
