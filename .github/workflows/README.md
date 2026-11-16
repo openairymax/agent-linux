@@ -246,6 +246,15 @@ L2/L3 都不改判据，只改「同一份物料要付几次成本」。任何�
 判据一条未减：内核包只构建一次，ISO 载荷与发行资产字节相同；重放不产生
 任何新字节，签名、摘要与对账照旧全量校验。
 
+同版本重建 ISO（`replace=true`）时多一条收口：发布页上的 `channel.json`
+必须跟着换。建页时上传的那一份只描述建页那一刻的字节，而装配轮可以在此
+之后重出 ISO；页面指着旧摘要、线上 ISO 已是新字节，两侧各自都能自证，却
+没有一处把它们对起来（0.0.4 收尾期的实际形态：页面是 build 19 / 内核
+`0.0.4-7`，线上已是重建后的字节）。`Publish release channel manifest`
+（`./ci/ci.sh channel-publish`）在清单生成后执行：写前用客户端解析器复验
+版本同源，同名旧件先删后传（Release 不接受同名覆盖），写后按资产 id 取回
+逐字节比对。写权限只给 `accept` job，`assemble` 保持只读。
+
 ## 6. 本地复跑
 
 每个门禁都是普通脚本，因此同一套断言可以在本地对遗留的构建目录执行：
@@ -288,7 +297,7 @@ PATH="$HOME/.local/bin:$PATH" ./ci/lint.sh
 | `os-chk-verify` | `lint` 在度量棘轮、workflow 规则或 distro 静态门禁处判红；工具链 pytest 失败 | `./ci/lint.sh`、`./ci/ci.sh python-verify --kind oschk` |
 | `kernel-verify` | 某一格配置构建失败、`W=2` 出现告警、checkpatch/sparse 报出问题 | `./ci/ci.sh kernel-build --config <cfg> --arch <arch> --compiler gcc`、`./ci/ci.sh kernel-analyze --kind sparse` |
 | `airy-verify` | Airymax CONFIG 缺失、BTF 未内嵌、`security/airy` 与其他子树符号冲突 | `./ci/ci.sh kernel-airy --kind assert --arch <arch>` |
-| `image-build` | 组装段看 `kern=` / `iso=` 分段行；装机段看 TAP 里第一条 `not ok` | `./ci/ci.sh image-verify --out <dir>`、`ACCEPTANCE=true ./ci/ci.sh tap-extract --dir <dir>` |
+| `image-build` | 组装段看 `kern=` / `iso=` 分段行；装机段看 TAP 里第一条 `not ok`；清单回写看 `channel-publish` 的复验/读回 | `./ci/ci.sh image-verify --out <dir>`、`ACCEPTANCE=true ./ci/ci.sh tap-extract --dir <dir>`、`./ci/ci.sh channel-publish --tag <tag> --repo <owner/name> --dir <dir> --dry-run` |
 | `release` | `release-sign probe` 的私钥自检；`channel-fetch` 取不到 `channel.json` | `./ci/ci.sh release-sign probe`、`./ci/ci.sh channel-fetch --tag <tag> --repo <owner/name> --dir <dir>` |
 | `nightly` | helper 未落地或清单契约漂移 | `python3 tools/nightly/nightly.py --check`、`./ci/ci.sh nightly-helpers <helper>` |
 | `payload-seed` | `probe` 输出的 `tag=` 为空（上游不可达）或 `missing=0`（层已存在），两者都不该让流水线红 | `./ci/ci.sh payload-seed probe --arch <arch>` |
