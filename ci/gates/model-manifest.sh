@@ -8,10 +8,11 @@
 #
 # 两段判定，缺一不可：
 #
-#   声明面：入口可执行、单元与 preset 指向同一条启动命令、配方确实把
-#   airy-model 与 airyllm 打进包里。这四项此前只在装机后才暴露——0.0.3
-#   的镜像里 preset 钉着 airy-llm.service，配方却没有交付该单元，启用
-#   时只得到「unit not found」。
+#   声明面：入口可执行、单元与 preset 指向同一条启动命令、运行根的属主
+#   与权限有唯一声明、配方确实建了服务账户并把 airy-model 与 airyllm 打进
+#   包里。前三项此前只在装机后才暴露——0.0.3 的镜像里 preset 钉着
+#   airy-llm.service，配方却没有交付该单元，启用时只得到「unit not found」；
+#   账户与权限的缺口更隐蔽，表现为装机全绿而桌面模型状态恒报 absent。
 #
 #   实物面：用临时离线包跑一遍 install → status → verify，按退出码与
 #   状态字段核对 0/10/1 契约与 degraded:<原因> token。资产通道的语义
@@ -30,6 +31,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 
 AIRY="${ROOT}/system/bin/airy-model"
 UNIT="${ROOT}/system/units/airy-llm.service"
+TMPF="${ROOT}/system/units/airymax-llm.conf"
 PRESET="${ROOT}/distro/presets/90-airymax.preset"
 SPEC="${ROOT}/distro/specs/airymaxos-system.spec"
 
@@ -62,7 +64,10 @@ check_unit()
     [ -f "${UNIT}" ] || die "缺少单元文件: ${UNIT#"${ROOT}/"}"
     for want in 'ExecStart=/usr/bin/airy-model serve' \
                 'User=airy' \
+                'Group=airy' \
+                'SupplementaryGroups=airy-cogn' \
                 'StateDirectory=airy-llm' \
+                'StateDirectoryMode=0755' \
                 'PartOf=agentrt.target' \
                 'ConditionPathExists=/var/lib/airy-llm/manifest.json'; do
         grep -qxF "${want}" "${UNIT}" ||
@@ -73,6 +78,17 @@ check_unit()
     say "单元启动面与 preset 一致"
 }
 
+# 运行根有三类主体：root 装机、airy 服务写状态、登录用户读面板。权限与
+# 属主只能由一条声明式条目收敛，缺了它 0750 会随 StateDirectory 复发，
+# 面板就恒报 absent——装机全绿而模型状态永远缺一项。
+check_tmpfile()
+{
+    [ -f "${TMPF}" ] || die "缺少 tmpfiles 片段: ${TMPF#"${ROOT}/"}"
+    grep -qxF 'd /var/lib/airy-llm 0755 airy airy -' "${TMPF}" ||
+        die "tmpfiles 条目未把运行根交给服务账户"
+    say "运行根属主与权限有唯一声明"
+}
+
 check_package()
 {
     local want
@@ -80,12 +96,17 @@ check_package()
     for want in 'source-bundle ../../system/services/airyllm' \
                 'airyllm-%{version}.tar.gz' \
                 'airy-llm.service' \
+                'airymax-llm.conf' \
+                '%{_tmpfilesdir}/airymax-llm.conf' \
                 '%{_bindir}/airy-model' \
-                '%{python3_sitelib}/airyllm'; do
+                '%{python3_sitelib}/airyllm' \
+                'groupadd -r airy' \
+                'groupadd -r airy-cogn' \
+                'useradd -r -g airy -G airy-cogn'; do
         grep -qF "${want}" "${SPEC}" ||
             die "配方未交付: ${want}"
     done
-    say "配方交付入口、单元与运行包"
+    say "配方交付入口、单元、服务账户与运行包"
 }
 
 no_weights()
@@ -207,6 +228,7 @@ main()
     group "模型资产通道: 声明面"
     check_entry
     check_unit
+    check_tmpfile
     check_package
     no_weights
     endgroup
