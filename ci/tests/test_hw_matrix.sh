@@ -149,7 +149,25 @@ reset
 put sys/class/backlight/amdgpu_bl0/max_brightness 0
 put sys/class/backlight/amdgpu_bl0/brightness 0
 out=$(run --class backlight); RC=$?
-want "${out}" 1 "背光不可用" "CLASS backlight FAIL backlight-unusable note=背光节点不可读写"
+want "${out}" 1 "背光不可用" "CLASS backlight FAIL backlight-unusable note=屏幕背光节点不可读写"
+
+# 只有键盘背光时必须报 n/a：285H 在 i915 未绑定 KMS 时正是这个形态，
+# 用键盘灯顶替屏幕背光会把它判成 pass，亮度键失效这件事就被藏起来了。
+reset
+put sys/class/leds/platform::kbd_backlight/max_brightness 2
+put sys/class/leds/platform::kbd_backlight/brightness 2
+out=$(run --class backlight); RC=$?
+want "${out}" 0 "仅键盘背光" \
+    "CLASS backlight N/A no-screen-backlight note=无屏幕背光节点（显示驱动未绑定 KMS），仅键盘背光可用" \
+    "HW-MATRIX pass=0 na=1 fail=0"
+
+# 屏幕背光可用时键盘背光只计数，不参与判定。
+reset
+put sys/class/backlight/intel_backlight/max_brightness 1200
+put sys/class/backlight/intel_backlight/brightness 600
+put sys/class/leds/platform::kbd_backlight/max_brightness 0
+out=$(run --class backlight); RC=$?
+want "${out}" 0 "屏幕背光可用" "CLASS backlight PASS node=intel_backlight,kbd=1"
 
 good
 out=$(run --json); RC=$?
