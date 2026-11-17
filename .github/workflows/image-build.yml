@@ -362,6 +362,12 @@ jobs:
       - name: Verify openEuler base selection
         run: ci/ci.sh base-eol --source .
 
+      # 语言政策是「新代码用 Rust、上游保持既有语言、C 例外必须登记」的
+      # 唯一判据源。尚无已落地 Rust 组件时以 --allow-pending 通过，但输出
+      # 必须显式打印未就绪，避免「零组件 = 通过」被误读为已完成。
+      - name: Verify language policy
+        run: ci/ci.sh lang-lock --source . --allow-pending
+
       # UKUI 包名与 NVRA 以台账为唯一事实源：基底不存在 ukui 元包，comps
       # 或冻结输入一旦再写出它，装机求解必然失败，而这一步只读台账与
       # 仓内文件，几毫秒即可给出结论。
