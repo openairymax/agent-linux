@@ -15,6 +15,7 @@ Version:
 from __future__ import annotations
 
 import hashlib
+import re
 from datetime import date
 
 import pytest
@@ -362,7 +363,8 @@ class TestReleaseNotes:
     def test_overview_carries_version_and_date(self):
         notes = rm.render_notes("0.0.3", NOTES_EMPTY)
         assert "- 版本号 v0.0.3" in notes
-        assert f"- 发布日期 {date.today():%Y%m}" in notes
+        assert f"- 发布日期 {date.today():%Y-%m-%d}" in notes
+        assert re.search(r"- 发布日期 \d{4}-\d{2}-\d{2}$", notes, re.M)
 
     def test_disclosures_rendered_as_bullets(self):
         notes = rm.render_notes("0.0.3", NOTES_SAMPLE)

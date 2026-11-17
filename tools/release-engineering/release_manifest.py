@@ -812,7 +812,7 @@ def _note_sections(version: str,
                    disclosures: Manifest) -> list[tuple[str, str]]:
     """概述 / 说明 / 其他三节。"""
     return [
-        ("概述", f"- 版本号 v{version}\n- 发布日期 {date.today():%Y%m}"),
+        ("概述", f"- 版本号 v{version}\n- 发布日期 {date.today():%Y-%m-%d}"),
         ("说明", _bullet_list(disclosures.get("summary") or [])),
         ("其他", _bullet_list(disclosures.get("remarks") or [])),
     ]
