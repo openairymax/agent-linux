@@ -51,6 +51,35 @@ case "${url}" in
     cp "${STUB_DIR}/rel.json" "${out}"
     printf '%s' "${STUB_CODE_TAG}"
     ;;
+*/releases?per_page=*)
+    cp "${STUB_DIR}/list.json" "${out}"
+    printf '%s' "${STUB_CODE_LIST}"
+    ;;
+*/releases/202)
+    cp "${STUB_DIR}/other.json" "${out}"
+    if [ "${method}" = PATCH ] && [ "${STUB_CODE_PATCH}" = 200 ]; then
+        cp "${body}" "${STUB_DIR}/patch-other.json"
+        python3 - "${STUB_DIR}" "${body}" <<'PY'
+import json
+import os
+import sys
+
+root, body_path = sys.argv[1], sys.argv[2]
+with open(os.path.join(root, "other.json"), encoding="utf-8") as fh:
+    rel = json.load(fh)
+with open(body_path, encoding="utf-8") as fh:
+    patch = json.load(fh)
+if "prerelease" in patch:
+    rel["prerelease"] = bool(patch["prerelease"])
+    with open(os.path.join(root, "other.json"), "w", encoding="utf-8") as fh:
+        json.dump(rel, fh)
+if str(patch.get("make_latest")) == "true":
+    with open(os.path.join(root, "latest.json"), "w", encoding="utf-8") as fh:
+        json.dump(rel, fh)
+PY
+    fi
+    printf '%s' "${STUB_CODE_PATCH}"
+    ;;
 */releases/[0-9]*)
     cp "${body}" "${STUB_DIR}/patch-body.json"
     if [ "${STUB_CODE_PATCH}" = 200 ]; then
@@ -68,16 +97,12 @@ if "prerelease" in patch:
     rel["prerelease"] = bool(patch["prerelease"])
     with open(os.path.join(root, "rel.json"), "w", encoding="utf-8") as fh:
         json.dump(rel, fh)
-# make_latest 是互斥指针：置 true 让本页成为 latest，置 false 则 latest 退回
-# 「无」。桩若不跟着改写 latest.json，门禁读回的永远是上一次的页面，
-# 「hold 之后是否真的退出了 latest」就永远测不出来。
-flag = str(patch.get("make_latest"))
-if flag == "true":
+# 与真实接口同判：make_latest=false 只影响建页，对已置 latest 的页面是空
+# 操作（2026-11-17 实测 70 秒后读回仍是本页）。桩若在这里把 latest 清空，
+# 「hold 靠什么退出 latest」就永远测不到真实语义。
+if str(patch.get("make_latest")) == "true":
     with open(os.path.join(root, "latest.json"), "w", encoding="utf-8") as fh:
         json.dump(rel, fh)
-elif flag == "false":
-    with open(os.path.join(root, "latest.json"), "w", encoding="utf-8") as fh:
-        json.dump({"tag_name": ""}, fh)
 PY
         cp "${STUB_DIR}/rel.json" "${out}"
     fi
@@ -95,6 +120,7 @@ export GITHUB_API_URL="https://api.example"
 export STUB_DIR="${DIR}" STUB_LOG="${tmp}/requests"
 export TOKEN="test-token"
 export STUB_CODE_TAG=200 STUB_CODE_LATEST=200 STUB_CODE_PATCH=200
+export STUB_CODE_LIST=200
 : >"${STUB_LOG}"
 
 TAG="v0.0.4"
@@ -112,13 +138,23 @@ latest()
     printf '{"tag_name":"%s"}\n' "$1" >"${DIR}/latest.json"
 }
 
+# 可承接 latest 的回退页：id 202。list.json 只列这一页，除非用例另外覆盖。
+back()
+{
+    printf '{"id":202,"prerelease":false,"draft":false,"tag_name":"%s","published_at":"%s"}\n' \
+        "$1" "$2" >"${DIR}/other.json"
+    printf '[%s]\n' "$(cat "${DIR}/other.json")" >"${DIR}/list.json"
+}
+
 reset()
 {
     : >"${STUB_LOG}"
-    rm -f "${DIR}/patch-body.json"
+    rm -f "${DIR}/patch-body.json" "${DIR}/patch-other.json"
     STUB_CODE_TAG=200
     STUB_CODE_LATEST=200
     STUB_CODE_PATCH=200
+    STUB_CODE_LIST=200
+    printf '[]\n' >"${DIR}/list.json"
     TOKEN="test-token"
 }
 
@@ -181,9 +217,11 @@ else
 fi
 
 # --- hold ----------------------------------------------------------------
-reset; page false false "${TAG}"; latest "${TAG}"
+# 已在 latest 的页面靠 make_latest=false 退不出去（真实接口实测），hold 必须
+# 把 latest 指给另一个稳定版；这一条同时钉住「退出」与「交给谁」两件事。
+reset; page false false "${TAG}"; latest "${TAG}"; back v0.0.3 2026-11-01T00:00:00Z
 run --tag "${TAG}" --repo o/r --stage hold
-check "hold 收回 make_latest" 0 "阶段=held"
+check "hold 把 latest 交给上一稳定版" 0 "latest 回退到 v0.0.3"
 if grep -q "PATCH https://api.example/repos/o/r/releases/101" "${STUB_LOG}"; then
     printf 'ok   hold 打到页面对象 101\n'
 else
@@ -196,6 +234,34 @@ else
     printf 'FAIL hold 请求体不符: %s\n' "$(cat "${DIR}/patch-body.json")"
     fails=$((fails + 1))
 fi
+if grep -q "PATCH https://api.example/repos/o/r/releases/202" "${STUB_LOG}" &&
+    grep -qF '{"make_latest":"true"}' "${DIR}/patch-other.json"; then
+    printf 'ok   hold 只改回退页的 latest 指针\n'
+else
+    printf 'FAIL hold 未正确改回退页: %s %s\n' \
+        "$(cat "${STUB_LOG}")" "$(cat "${DIR}/patch-other.json")"
+    fails=$((fails + 1))
+fi
+if grep -qF '"tag_name": "v0.0.3"' "${DIR}/latest.json"; then
+    printf 'ok   latest 已落到回退页\n'
+else
+    printf 'FAIL latest 未落到回退页: %s\n' "$(cat "${DIR}/latest.json")"
+    fails=$((fails + 1))
+fi
+
+reset; page false false "${TAG}"; latest "${TAG}"
+run --tag "${TAG}" --repo o/r --stage hold
+check "无其他稳定版可承接时 hold 判负" 1 "没有其他稳定版"
+
+# draft、prerelease 与本页都不能承接 latest，列表里只有它们时结果与空列表同。
+reset; page false false "${TAG}"; latest "${TAG}"
+printf '[{"id":101,"prerelease":false,"draft":false,"tag_name":"%s","published_at":"2026-11-17T00:00:00Z"},{"id":303,"prerelease":true,"draft":false,"tag_name":"v0.0.5-rc1","published_at":"2026-11-17T01:00:00Z"},{"id":404,"prerelease":false,"draft":true,"tag_name":"v0.0.6","published_at":"2026-11-17T02:00:00Z"}]\n' "${TAG}" >"${DIR}/list.json"
+run --tag "${TAG}" --repo o/r --stage hold
+check "draft 与 prerelease 不作回退目标" 1 "没有其他稳定版"
+
+reset; page false false "${TAG}"; latest "${TAG}"; STUB_CODE_LIST=500
+run --tag "${TAG}" --repo o/r --stage hold
+check "发布列表不可读时 hold 判负" 1 "读取发布列表失败"
 
 reset; page true false "${TAG}-rc1"; latest v0.0.3
 run --tag "${TAG}-rc1" --repo o/r --stage hold
