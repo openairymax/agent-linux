@@ -282,6 +282,19 @@ jobs:
           run-id: ${{ env.PUBLISH_RUN }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
+      # 通道清单只能来自装配出 ISO 的那一轮：它是客户端发现新版本的唯一入口
+      # （releases/latest/download/channel.json），在本机重新生成等于用当前源码
+      # 再推一份声明，与线上字节无关。取不到就不发版——发布页没有清单，装了
+      # 这套系统的人就永远收不到后续版本。预发布不进更新通道，也没有清单。
+      # 必须早于自证：channel.json 的 kernel.sha256 是内核包的对照锚，自证要
+      # 拿它比对 dist/rpm 里的同 NEVRA 包（0.0.4 两条构建路径各产一份，页面
+      # 上的包与 ISO 内字节不同而无人察觉）。
+      - name: Fetch release channel manifest
+        if: steps.meta.outputs.pre_rel == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ci/ci.sh channel-fetch --tag "${{ steps.meta.outputs.tag }}" --repo "${{ github.repository }}" --dir .
+
       # 发布前自证：签名发生在另一台 runner，落盘字节可能已被 artifact
       # 打包解包改写。摘要、署名与 notes 形态在这一步重算，失败即停止，
       # 不进入 registry 与 Release。
@@ -296,16 +309,6 @@ jobs:
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ci/ci.sh release-oci publish --tag "${{ steps.meta.outputs.tag }}"
-
-      # 通道清单只能来自装配出 ISO 的那一轮：它是客户端发现新版本的唯一入口
-      # （releases/latest/download/channel.json），在本机重新生成等于用当前源码
-      # 再推一份声明，与线上字节无关。取不到就不发版——发布页没有清单，装了
-      # 这套系统的人就永远收不到后续版本。预发布不进更新通道，也没有清单。
-      - name: Fetch release channel manifest
-        if: steps.meta.outputs.pre_rel == 'false'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ci/ci.sh channel-fetch --tag "${{ steps.meta.outputs.tag }}" --repo "${{ github.repository }}" --dir .
 
       # 同一个 tag 重发时，旧号 RPM（airymaxos-kernel-*-0.0.3-5.*）会与本次的
       # 新号包并排留在发布页上——glob 上传只增不删。写 Release 之前按摘要清单
