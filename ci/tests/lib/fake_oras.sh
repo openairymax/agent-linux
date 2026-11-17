@@ -90,6 +90,16 @@ $2"
             ;;
         esac
     done
+    for f in ${files}; do
+        src="${f%%:*}"
+        [ -f "${src}" ] || src="${f}"
+        case "${src}" in
+        /*)
+            echo "Error: absolute file path detected. If it's intentional, use --disable-path-validation flag to skip this check: ${src}" >&2
+            exit 1
+            ;;
+        esac
+    done
     mkdir -p "${store}/$(key "${ref}")" "${store}/.meta"
     for f in ${files}; do
         src="${f%%:*}"
