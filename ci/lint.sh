@@ -5,7 +5,7 @@
 #
 # 用法: ci/lint.sh [--no-distro]
 #
-# 检查十件事：
+# 检查十一件事：
 #   1. workflow 薄化与命名约束（ci/check-workflows.py）；
 #   2. ci/ 与 tools/ 下每个 shell 脚本可被 bash -n 解析；
 #   3. 函数名不超过 15 字节（ci/name_lint.py，N001，覆盖 shell 与 python）；
@@ -16,7 +16,8 @@
 #   7. ci/tests 下的门禁分支回归；
 #   8. 有 shellcheck 就用上，没有只告警——本地开发者不该被工具缺失拦住；
 #   9. distro 子仓静态门禁（ci/gates/distro-lint.sh，含其工具单测）；
-#  10. 基底耦合点两向对账（ci/gates/coupling-scan.sh，成册件 §10 主表）。
+#  10. 基底耦合点两向对账（ci/gates/coupling-scan.sh，成册件 §10 主表）；
+#  11. 模型资产通道门禁（ci/gates/model-manifest.sh，声明面与离线实物面）。
 #
 # 第 9 项此前只在流水线里跑，本地「两个入口都绿」靠人记：run 40938020614
 # 的 os-chk-verify 就红在 distro 的一条旧语义断言上，而提交前只跑过本文件。
@@ -28,6 +29,10 @@
 # 的 release-deps.sh 就是这样挂掉的）。只查 ci/gates 下的叶子脚本：这些
 # 文件不被 source，常量必须自用，判定无歧义；ci/lib 的常量供他人引用，
 # 不能按同一条规则判。
+#
+# 第 11 项与第 9 项同类：model-manifest 过去只在 os-chk-verify 里跑，配方
+# 把逐条建组收成循环后门禁仍按字面量断言，于是本地全绿而流水线红。判据已
+# 改为按清单断言，本文件同时把它纳入本地入口。
 #
 # 与 distro/ci/run-lint.sh 的分工：后者管 distro 子模块自己的单元测试与
 # 打包脚本，本文件覆盖仓库根这一层（门禁 + workflow），末段以门禁入口
@@ -189,6 +194,16 @@ if [ "${no_distro}" -eq 0 ]; then
 else
     warn "--no-distro: 跳过 distro 子仓静态门禁"
 fi
+
+group "模型资产通道"
+# 声明面与离线实物面都在本机可跑，不需要安装根，因此没有理由留给流水线。
+if bash "${ROOT}/ci/ci.sh" model-manifest; then
+    say "通过"
+else
+    err "模型资产通道未通过（ci/ci.sh model-manifest）"
+    rc=1
+fi
+endgroup
 
 if command -v shellcheck >/dev/null 2>&1; then
     group "shellcheck"
