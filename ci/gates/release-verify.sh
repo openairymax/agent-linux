@@ -18,6 +18,9 @@
 #     * 清单内每份署名非空，且其被签文件在物料里存在
 #     * 清单内的发行公钥非空（公钥块不带被签文件，不能按署名要求）
 #     * release notes 恰好三个 ## 小节，正文不超过 12 行
+#     * channel.json 的 kernel.sha256 与 x86_64 内核主包同字节：清单随 ISO
+#       在装配轮产出、是装机侧的校验凭证，页面另建一份同 NEVRA 的包，装机
+#       载荷就再也无法按发行清单核验
 #
 # 二、发行自证（--iso/--iso-dir + --payload + --kernel-rpms）
 #   回答「这张 ISO 里的内核，是不是本版 %release 构建出来的那一份」。0.0.3
@@ -175,6 +178,35 @@ note_stat()
     NOTES_LINES="${lines}"
 }
 
+# channel.json 的 kernel.sha256 是装机侧核验内核包的凭证，由装配轮的
+# --kernel-rpm 现算。发布侧若另建一份同 NEVRA 的包（0.0.4 实测：ISO 内
+# 1c337fbc、页面 86fe39），两者各成体系却无一处断言，装机后就对不上号。
+# 清单只在取到装配轮制品之后才在场，预发布没有清单，缺省即跳过。
+chan_pin()
+{
+    local chan hit want got
+
+    chan="$(walk -name 'channel.json' | head -n 1)"
+    [ -n "${chan}" ] || return 0
+    hit="$(walk -name "${KPKG}-[0-9]*.x86_64.rpm" | sort)"
+    [ -n "${hit}" ] || { err "有 channel.json 但缺 x86_64 内核主包"; return 1; }
+    [ "$(printf '%s\n' "${hit}" | wc -l)" -eq 1 ] ||
+        { err "x86_64 内核主包不唯一"; return 1; }
+    want="$(python3 - "${chan}" <<'PY'
+import json, sys
+try:
+    print(json.load(open(sys.argv[1], encoding="utf-8"))["kernel"]["sha256"])
+except Exception as exc:
+    print("channel.json 读不出 kernel.sha256: %s" % exc)
+    sys.exit(1)
+PY
+)" || { err "${want}"; return 1; }
+    got="$(sha256sum "${hit}" | cut -d' ' -f1)"
+    [ "${got}" = "${want}" ] ||
+        { err "内核包与 channel.json 分叉: ${hit##*/} ${got} != ${want}"; return 1; }
+    say "内核包与通道清单同字节: ${hit##*/}"
+}
+
 material()
 {
     local sum notes
@@ -189,6 +221,7 @@ material()
     [ "${SUM_SIGNS}" -gt 0 ] || die "清单内没有任何署名"
     need_sig "${sum}.asc" "${notes}.asc"
     note_stat "${notes}"
+    chan_pin || exit 1
 
     say "物料自证通过: ${SUM_COUNT} 项摘要, ${SUM_SIGNS} 份署名, ${SUM_KEYS} 份公钥, notes ${NOTES_LINES} 行"
 }

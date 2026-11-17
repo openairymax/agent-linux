@@ -156,6 +156,33 @@ mat()
     printf 'signature of notes\n' >"${MAT}/agent-linux-1.2.0-release-notes.md.asc"
 }
 
+# mat_kernel — 物料里放一份 x86_64 内核主包；名字不带版本号的包是发行自证
+# 夹具的产物，物料自证只看摘要清单列出的文件，多出来的件不算多余。
+mat_kernel()
+{
+    printf 'kernel rpm 0.0.4-13\n' >"${MAT}/airymaxos-kernel-0.0.4-13.x86_64.rpm"
+}
+
+# mat_chan [摘要] — 造 channel.json，摘要缺省取内核主包真值。
+mat_chan()
+{
+    local sum="${1:-}"
+
+    [ -n "${sum}" ] || sum="$(sum_of "${MAT}/airymaxos-kernel-0.0.4-13.x86_64.rpm")"
+    cat >"${MAT}/channel.json" <<EOF
+{
+  "schema_version": 1,
+  "channel": "stable",
+  "version": "0.0.4",
+  "build": 27,
+  "kernel": {
+    "nevra": "airymaxos-kernel-0.0.4-13.x86_64",
+    "sha256": "${sum}"
+  }
+}
+EOF
+}
+
 spec 0.0.4 2
 mkfix 0.0.4-2
 
@@ -276,6 +303,32 @@ case "${out}" in
 *"1 份公钥"*) ok "公钥计入物料自证" ;;
 *) bad "公钥计入物料自证"; printf '%s\n' "${out}" >&2 ;;
 esac
+
+# 通道清单的 kernel.sha256 与内核主包必须同字节：0.0.4 收尾时 ISO 内是
+# 1c337fbc、发布页是 86fe39，两条构建路径各建一份同 NEVRA 的包，任何一处
+# 断言都没有，装机载荷与清单就此对不上。
+mat 3
+mat_kernel
+mat_chan
+out="$(run --dir "${MAT}")"
+check "内核包与 channel.json 同字节通过" 0 "$?" "${out}" "内核包与通道清单同字节"
+
+mat 3
+mat_kernel
+mat_chan 0000000000000000000000000000000000000000000000000000000000000000
+out="$(run --dir "${MAT}")"
+check "内核包与 channel.json 分叉判失败" 1 "$?" "${out}" "内核包与 channel.json 分叉"
+
+mat 3
+mat_chan 1111111111111111111111111111111111111111111111111111111111111111
+out="$(run --dir "${MAT}")"
+check "有 channel.json 缺内核主包判失败" 1 "$?" "${out}" "缺 x86_64 内核主包"
+
+mat 3
+mat_kernel
+printf '{"schema_version": 1}\n' >"${MAT}/channel.json"
+out="$(run --dir "${MAT}")"
+check "channel.json 缺 kernel 判失败" 1 "$?" "${out}" "读不出 kernel.sha256"
 
 # 公钥与署名同后缀，门禁按首行内容区分：把公钥当署名会要求一份并不存在
 # 的被签文件，发行页上有公钥反而判负。
