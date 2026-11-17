@@ -19,9 +19,15 @@
 #   held        正式页，已创建但不是 latest（稳定版刚发布时的唯一合法态）
 #   latest      已由 promote 打开
 #
-# hold     幂等：只把 make_latest 收回 false，不动 prerelease 位；
+# hold     幂等：把 latest 移出本页，不动 prerelease 位；
 # promote  需要 --evidence，文件内必须出现 AIRYMAX-SMOKE-PASS；
 # check    只读；给 --expect 时按上面三个状态断言。
+#
+# 「收回 make_latest」不是 hold 的判据，而是它的手段之一：实测（2026-11-17，
+# 同一仓库两个正式页：把最新的置 latest，再 PATCH make_latest=false，70 秒后
+# 读回仍是该页）make_latest=false 只对建页生效，对已置 latest 的页面是空操作。
+# 要真的退出去，只能把 latest 指给另一个稳定版；没有可承接的页面时，hold
+# 必须判负而不是打印一个假的 held。
 #
 # 退出码: 0 断言成立；1 证据不足或读回不符；3 Release 不存在；5 参数/令牌。
 # ===========================================================================
@@ -202,17 +208,71 @@ set_stage()
     [ "${code}" = 200 ] || { err "更新 Release ${TAG} 阶段失败: HTTP ${code}"; return 1; }
 }
 
+# 只改另一页的 latest 指针，不碰它的 prerelease 位：那一页的发布状态不是
+# 本次发布可以代为决定的。
+set_last()
+{
+    local id="$1" body="${WORK}/patch-last.json" code
+    printf '{"make_latest":"true"}\n' >"${body}"
+    code="$(airy_assets_api PATCH \
+        "${AIRY_ASSETS_API}/repos/${REPO}/releases/${id}" \
+        "${WORK}/patched-last.json" "${body}")"
+    [ "${code}" = 200 ] || { err "把 latest 指给页面 ${id} 失败: HTTP ${code}"; return 1; }
+}
+
+# 可承接 latest 的页面：非 draft、非 prerelease、且不是本 tag，按发布时间
+# 新者在前。draft 与 prerelease 不能成为 latest，列进来只会让 PATCH 变成
+# 422；「新者在前」让回退落在最近一次正式发行上，而不是随意一个旧页。
+prev_stable()
+{
+    local code
+    code="$(airy_assets_api GET \
+        "${AIRY_ASSETS_API}/repos/${REPO}/releases?per_page=100" \
+        "${WORK}/list.json")"
+    [ "${code}" = 200 ] || { err "读取发布列表失败: HTTP ${code}"; return 1; }
+    python3 - "${WORK}/list.json" "${TAG}" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as fh:
+    rows = json.load(fh)
+own = sys.argv[2]
+rows = [r for r in rows
+        if not r.get("draft") and not r.get("prerelease")
+        and r.get("tag_name") and r.get("tag_name") != own]
+rows.sort(key=lambda r: r.get("published_at") or "", reverse=True)
+for r in rows:
+    print(r["id"], r["tag_name"])
+PY
+}
+
 do_hold()
 {
-    local stage
+    local stage id prev
     seek
     [ "${REL_DRAFT}" = true ] && { err "draft 页面不能定阶段: ${TAG}"; exit 1; }
     set_stage "${REL_PRE}" false "${REL_ID}" || exit 1
     seek
     stage="$(stage_of "${REL_PRE}" "${REL_DRAFT}")" || exit 1
     if [ "${stage}" = latest ]; then
-        err "hold 之后仍在 latest: ${TAG}"
-        exit 1
+        # make_latest=false 对已置 latest 的页面是空操作，退不出去。只能把
+        # latest 指给另一个稳定版——这不是兜底分支，而是 hold 的唯一实现。
+        prev="$(prev_stable)" || exit 1
+        prev="${prev%%$'\n'*}"
+        id="${prev%% *}"
+        if [ -z "${id}" ]; then
+            err "hold 无法移出 latest：仓库内没有其他稳定版可承接（${TAG}）"
+            exit 1
+        fi
+        set_last "${id}" || exit 1
+        seek
+        stage="$(stage_of "${REL_PRE}" "${REL_DRAFT}")" || exit 1
+        if [ "${stage}" = latest ]; then
+            err "hold 之后仍在 latest（latest 未能转给 ${prev#* }）: ${TAG}"
+            exit 1
+        fi
+        say "阶段=${stage}（latest 回退到 ${prev#* }）: ${TAG}"
+        return 0
     fi
     say "阶段=${stage}（未进 latest）: ${TAG}"
 }
