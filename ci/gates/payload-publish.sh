@@ -223,10 +223,15 @@ push()
     cp "${MANIFEST}" "${tmp}/payload-manifest.txt" ||
         die "无法复制清单: ${MANIFEST}"
 
-    if ! oras push --artifact-type "${TYPE_ARTIFACT}" "${REF}:${TAG}" \
+    # 层名用相对路径：oras 拒绝绝对路径（--disable-path-validation 只是把
+    # 风险关掉，不是修法），而制品内的布局也不该带本机临时目录。故切到暂存
+    # 目录再推，两个文件都用裸名。
+    if ! ( cd "${tmp}" && oras push --artifact-type "${TYPE_ARTIFACT}" \
+        "${REF}:${TAG}" \
         --annotation "${ANN_CREATED}=$(date -u +%FT%TZ)" \
-        "${tar_out}:${TYPE_TAR}" "${tmp}/payload-manifest.txt:${TYPE_MANIFEST}" \
-        >"${tmp}/push.log" 2>&1; then
+        "payload.tar:${TYPE_TAR}" \
+        "payload-manifest.txt:${TYPE_MANIFEST}" \
+        >"${tmp}/push.log" 2>&1 ); then
         cat "${tmp}/push.log" >&2
         die "oras 推送失败: ${REF}:${TAG}"
     fi
