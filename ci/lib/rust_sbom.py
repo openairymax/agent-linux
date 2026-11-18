@@ -163,14 +163,74 @@ def allow_list(tui):
     return list(doc.get("licenses", {}).get("allow", []))
 
 
-def alt_ok(alt, allow):
-    """AND 组内每项都要在允许集内。"""
-    return all(tok.strip() in allow for tok in alt.split(" AND "))
+def _tok(expr):
+    """切成括号、运算符与标识符；WITH 例外并入前一个标识符。
+
+    许可证表达式允许括号改变优先级，按空白切分会把「(MIT OR Apache-2.0)
+    AND Unicode-3.0」拆成非法片段，从而把合法依赖判成越界。
+    """
+    out, i, n = [], 0, len(expr)
+    while i < n:
+        char = expr[i]
+        if char in "()":
+            out.append(char)
+            i += 1
+        elif char.isspace():
+            i += 1
+        else:
+            j = i
+            while j < n and not expr[j].isspace() and expr[j] not in "()":
+                j += 1
+            word, i = expr[i:j], j
+            if word in ("AND", "OR"):
+                out.append(word)
+                continue
+            if word == "WITH":
+                j = i
+                while j < n and expr[j].isspace():
+                    j += 1
+                k = j
+                while k < n and not expr[k].isspace() and expr[k] not in "()":
+                    k += 1
+                word = out.pop() + " WITH " + expr[j:k]
+                i = k
+            out.append(word)
+    return out
+
+
+def _atom(toks, pos, allow):
+    """括号组或单个标识符；返回 (是否允许, 下一个位置)。"""
+    if pos < len(toks) and toks[pos] == "(":
+        ok, pos = _lic_or(toks, pos + 1, allow)
+        if pos >= len(toks) or toks[pos] != ")":
+            return False, len(toks)
+        return ok, pos + 1
+    return pos < len(toks) and toks[pos] in allow, pos + 1
+
+
+def _lic_and(toks, pos, allow):
+    """AND 组内每项都要落地。"""
+    ok, pos = _atom(toks, pos, allow)
+    while pos < len(toks) and toks[pos] == "AND":
+        rhs, pos = _atom(toks, pos + 1, allow)
+        ok = ok and rhs
+    return ok, pos
+
+
+def _lic_or(toks, pos, allow):
+    """OR 的任一分支成立即可：取件方可以选择被允许的那一支。"""
+    ok, pos = _lic_and(toks, pos, allow)
+    while pos < len(toks) and toks[pos] == "OR":
+        rhs, pos = _lic_and(toks, pos + 1, allow)
+        ok = ok or rhs
+    return ok, pos
 
 
 def lic_ok(expr, allow):
-    """OR 的任一分支成立即可：取件方可以选择被允许的那一支。"""
-    return any(alt_ok(alt, allow) for alt in expr.split(" OR "))
+    """整条表达式都要被读到：尾部残缺按越界处理。"""
+    toks = _tok(expr)
+    ok, pos = _lic_or(toks, 0, allow)
+    return ok and pos == len(toks)
 
 
 def _need_allow(doc):
