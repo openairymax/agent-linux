@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 # ===========================================================================
-# ci/name_lint.py — 函数名长度门禁（N001，覆盖 shell 与 python）
+# ci/name_lint.py — 函数名长度门禁（N001，覆盖 shell、python 与 rust）
 #
 # 0.0.4 收尾时全仓有 139 个函数名超过 15 字节，改完之后没有任何机制拦住
 # 回潮：下一个 helper 只要叫 airy_assets_wanted，规范就被重新拉开一档，而
@@ -19,8 +19,16 @@
 # python 文件解析不了按缺陷计（E001），不静默跳过：语法坏的 .py 只会出现在
 # 未提交完成的改动里，跳过等于给「门禁绿」开一个后门。
 #
+# rust 同样按定义行取值，但测试模块除外：`#[cfg(test)] mod tests` 里的用例名
+# 由被测语义决定，写成 rejects_unknown_channel 才是好名字。判定口径取「紧邻
+# 的 `#[cfg(test)]` + `mod …{` 起至文件末尾不再计入」，也就是把测试模块作为
+# 文件的最后一项——这条不是权宜：括号配平要正确处理 raw string 与嵌套注释，
+# 行级扫描做不到，与其在词法上猜，不如把结构约束写进编码规范并在此断言。
+#
 # 不扫 tests/ 与 fixture/：那里的函数名由被测语义决定（本门禁自己的回归就
 # 要故意造长名），按产品代码标准要求只会逼着人为了过门禁改写断言。
+# 不扫 vendor/ 与 target/：前者是第三方源码快照，规范只约束自有代码；后者是
+# 构建产物，扫它等于让一次成功构建把门禁拖红。
 # distro/ 由本门禁一并覆盖，其 run-lint.sh 不再放第二份实现：同一判据写两
 # 遍，改阈值时必然漏改一处。
 #
@@ -28,7 +36,7 @@
 # 退出码: 0 通过；1 有超长名或文件读不出来（解析失败按缺陷计，不静默跳过）。
 #
 # Author: Liren Wang <wangliren@spharx.cn>
-# Version: 0.0.4
+# Version: 0.0.5
 # ===========================================================================
 
 from __future__ import annotations
@@ -40,15 +48,27 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 LIMIT = 15
-SUFFIX = (".sh", ".py")
+SUFFIX = (".sh", ".py", ".rs")
 DEFAULT = ("ci", "tools", "distro", "system")
-SKIP = frozenset(("tests", "fixture", "__pycache__", ".git", "node_modules"))
+SKIP = frozenset(("tests", "fixture", "vendor", "target",
+                  "__pycache__", ".git", "node_modules"))
 
 SH_DEF = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*\)")
 # `function name {` 不带括号也是合法定名，两种写法都要认：漏掉这一种，门禁
 # 只需换成另一种写法就能绕过。
 SH_KW = re.compile(r"^\s*function\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:\(\s*\)|\{|$)")
 PY_DEF = (ast.FunctionDef, ast.AsyncFunctionDef)
+
+# `pub(crate) async unsafe extern "C" fn name` 的修饰词顺序有几种合法排列，
+# 逐个允许但整体锚在行首：缩进后的 `fn` 也可能是函数指针类型或 trait 方法
+# 声明，trait 方法同样算定义，一并计入。
+RS_DEF = re.compile(
+    r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?:default\s+)?(?:const\s+)?"
+    r"(?:async\s+)?(?:unsafe\s+)?(?:extern\s+\"[^\"]*\"\s+)?"
+    r"fn\s+([A-Za-z_][A-Za-z0-9_]*)")
+RS_TEST = re.compile(r"^\s*#\[cfg\(test\)\]")
+RS_MOD = re.compile(r"^\s*(?:pub\s+)?mod\s+[A-Za-z_][A-Za-z0-9_]*\s*\{")
+RS_GAP = 3
 
 
 def _sh(path: Path) -> list[tuple[int, str]]:
@@ -69,7 +89,30 @@ def _py(path: Path) -> list[tuple[int, str]]:
             if isinstance(node, PY_DEF)]
 
 
+def _rs(path: Path) -> list[tuple[int, str]]:
+    # 测试模块的起点取 `#[cfg(test)]` 与其后 RS_GAP 行内出现的 `mod …{`；
+    # 只找起点不配平：文件末尾才放测试模块是编码规范的一部分，这里断言它。
+    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    stop = len(lines)
+    for idx, raw in enumerate(lines):
+        hit = RS_TEST.match(raw)
+        if not hit:
+            continue
+        near = [raw[hit.end():], *lines[idx + 1: idx + RS_GAP]]
+        if any(RS_MOD.match(line) for line in near):
+            stop = idx
+            break
+    found = []
+    for lineno, raw in enumerate(lines[:stop], 1):
+        match = RS_DEF.match(raw)
+        if match:
+            found.append((lineno, match.group(1)))
+    return found
+
+
 def judge(path: Path) -> list[tuple[int, str]]:
+    if path.suffix == ".rs":
+        return _rs(path)
     return _py(path) if path.suffix == ".py" else _sh(path)
 
 
