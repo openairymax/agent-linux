@@ -132,6 +132,13 @@ jobs:
           SOURCE_DATE_EPOCH: ${{ steps.epoch.outputs.value }}
         run: ci/ci.sh release-sbom --ver "${{ steps.ver.outputs.ver }}"
 
+      # 两份清单回答不同问题：SPDX 那份说「8 个源码仓有哪些文件」，这份说
+      # 「镜像里的 Rust 依赖是哪些、凭什么被允许」。AC-S3 的判据在门禁里：
+      # 组件数与 Cargo.lock 条目一致，每条许可证都能落在 system/tui/deny.toml
+      # 的允许集内。产物随摘要清单一起签名并进入来源证明，故与凭据同 digest。
+      - name: Generate Rust dependency SBOM
+        run: ci/ci.sh rust-sbom generate --ver "${{ steps.ver.outputs.ver }}" --out .
+
       # 物料 6（09-release-process.md §3.5）：内核配置快照。只读源码、不编译，
       # 与 SDK 一样放在最便宜的一段——四架构片段缺一腿或选型配置被改坏，
       # 都该在几分钟内暴露，而不是等内核四腿跑完。
@@ -212,6 +219,7 @@ jobs:
             dist/rpm/**/*.rpm
             dist/rpm/**/*.rpm.asc
             sbom-agent-linux-${{ steps.ver.outputs.ver }}.spdx.json
+            sbom-agent-linux-${{ steps.ver.outputs.ver }}-rust.cdx.json
             agent-linux-sdk-${{ steps.ver.outputs.ver }}.tar.gz
             agent-linux-sdk-${{ steps.ver.outputs.ver }}.tar.gz.asc
             airy-flash-${{ steps.ver.outputs.ver }}.pyz
@@ -340,6 +348,7 @@ jobs:
             agent-linux-${{ steps.meta.outputs.ver }}-abi-report.md
             agent-linux-${{ steps.meta.outputs.ver }}-abi-report.md.asc
             sbom-agent-linux-*.spdx.json
+            sbom-agent-linux-*-rust.cdx.json
             agent-linux-*-gpg-key.asc
             channel.json
             agent-linux-*.sha256sum

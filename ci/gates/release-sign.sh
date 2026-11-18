@@ -109,6 +109,7 @@ manifest()
         find dist/rpm -type f \( -name '*.rpm' -o -name '*.rpm.asc' \) | sort
         printf '%s\n' \
             "sbom-agent-linux-${ver}.spdx.json" \
+            "sbom-agent-linux-${ver}-rust.cdx.json" \
             "agent-linux-sdk-${ver}.tar.gz" \
             "agent-linux-sdk-${ver}.tar.gz.asc" \
             "airy-flash-${ver}.pyz" \
