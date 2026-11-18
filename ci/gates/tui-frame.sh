@@ -20,13 +20,10 @@
 set -uo pipefail
 
 readonly EINVAL=5
-readonly TUI=system/tui
-readonly PIN=1.90.0
 # shellcheck source=../lib/log.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/log.sh"
-
-ROOT=""
-TUIDIR=""
+# shellcheck source=../lib/tui-gate.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/tui-gate.sh"
 
 usage()
 {
@@ -35,39 +32,15 @@ usage()
 EOF
 }
 
-pin_check()
-{
-    local got
-
-    need_cmd cargo rustc awk
-    got="$(cd "${TUIDIR}" && rustc --version 2>/dev/null | awk '{print $2}')"
-    [ "${got}" = "${PIN}" ] ||
-        die "编译器 ${got:-未知} 与钉版 ${PIN} 不一致（见 ${TUI}/rust-toolchain.toml）"
-}
-
-# 产物落在 TMPDIR 下的独立目标目录，不在源码树里留 target/。
-cargo_run()
-{
-    local tgt="${TMPDIR:-/tmp}/airy-tui-target"
-
-    ( cd "${TUIDIR}" && CARGO_TARGET_DIR="${tgt}" cargo "$@" )
-}
-
 while [ "$#" -gt 0 ]; do
     case "$1" in
-        --root) need_dir "$1" "${2:-}"; ROOT="$2"; shift 2 ;;
+        --root) tui_root "$1" "${2:-}"; shift 2 ;;
         -h|--help) usage; exit 0 ;;
         *) err "未知参数: $1"; exit "${EINVAL}" ;;
     esac
 done
 
-[ -n "${ROOT}" ] ||
-    ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
-TUIDIR="${ROOT}/${TUI}"
-need_dir "${TUI}" "${TUIDIR}"
-[ -f "${TUIDIR}/Cargo.lock" ] || die "缺少 ${TUI}/Cargo.lock"
-
-pin_check
+tui_setup "${BASH_SOURCE[0]}"
 
 group "tui: frame"
 if ! cargo_run test --offline --locked -p boot-tui --test frame_budget; then
