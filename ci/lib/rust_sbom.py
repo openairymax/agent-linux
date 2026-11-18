@@ -200,7 +200,24 @@ def _tok(expr):
                 tail, i = _word(expr, _skip(expr, i))
                 out[-1] = out[-1] + " WITH " + tail
             else:
-                out.append(word)
+                out.extend(_atoms(word))
+    return out
+
+
+def _atoms(word):
+    """拆开旧式斜杠写法。
+
+    SPDX 2.x 起用 OR 取代「A/B」，但早期 crate 的 license 字段仍留着斜杠；
+    不认它就会把 MIT/Apache-2.0 的依赖判成越界。语义与 OR 相同，按 OR 展开。
+    """
+    parts = [part for part in word.split("/") if part]
+    if not parts:
+        return [word]
+    out = []
+    for part in parts:
+        if out:
+            out.append("OR")
+        out.append(part)
     return out
 
 
