@@ -21,6 +21,7 @@ on:
       - 'ci/lib/**'
       - 'ci/gates/tui-check.sh'
       - 'ci/gates/rust-vendor.sh'
+      - 'ci/gates/rust-sbom.sh'
       - 'ci/gates/lang-lock.sh'
       - 'ci/gates/submodules.sh'
       - 'ci/container/build-packages.txt'
@@ -34,6 +35,7 @@ on:
       - 'ci/lib/**'
       - 'ci/gates/tui-check.sh'
       - 'ci/gates/rust-vendor.sh'
+      - 'ci/gates/rust-sbom.sh'
       - 'ci/gates/lang-lock.sh'
       - 'ci/gates/submodules.sh'
       - 'ci/container/build-packages.txt'
@@ -69,6 +71,11 @@ jobs:
       - name: Assert Cargo.lock, vendor/ and the ledger agree
         run: ci/ci.sh rust-vendor verify
 
+      # 准入声明自身的结构判据：许可证允许集、多版本与通配禁令、来源白名单。
+      # 不需要 Rust 工具链，故留在这一层；清单与声明是否一致由 build 判。
+      - name: Assert the dependency admission policy
+        run: ci/ci.sh rust-sbom policy
+
   # ─── Job 2: 宿主判据 ──────────────────────────────────────────────
   # 格式、静态检查、单元测试共用一次检出与一份目标目录，避免三份重复
   # 预热；先格式后静态再测试，最便宜的判据最先失败。
@@ -92,6 +99,11 @@ jobs:
 
       - name: Unit tests
         run: ci/ci.sh tui-check --kind test
+
+      # 物料清单的判据：组件数与锁一致、许可证逐条落地、两次生成字节相同、
+      # 产物不含本机路径。放在最后，前面任一判据红了就不必再跑一次元数据。
+      - name: Dependency inventory
+        run: ci/ci.sh rust-sbom verify
 
   # ─── Job 3: 跨架构类型检查 ────────────────────────────────────────
   # 两种目标架构各自独立：一种失败不掩盖另一种的结论。
