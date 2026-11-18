@@ -15,6 +15,22 @@
 
 readonly TUI=system/tui
 readonly PIN=1.90.0
+readonly TUI_EINVAL=5
+
+# tui_cli USAGE_FN ARGS... —— 解析门禁共用的 `--root DIR` 与 `-h|--help`。
+# usage 文案与门禁同名，由调用方提供；参数不合法时以 5 退出。
+tui_cli()
+{
+    local usage="$1"
+    shift
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --root) tui_root "$1" "${2:-}"; shift 2 ;;
+            -h|--help) "${usage}"; exit 0 ;;
+            *) err "未知参数: $1"; exit "${TUI_EINVAL}" ;;
+        esac
+    done
+}
 
 # 钉版校验：rustup 读到工作区里的 rust-toolchain.toml 后自行取版本并装
 # components，本函数只断言「实际生效的」编译器就是钉住的那个。
