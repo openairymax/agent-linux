@@ -5,11 +5,11 @@
 #
 # 用法: ci/lint.sh [--no-distro]
 #
-# 检查十二件事：
+# 检查十四件事：
 #   1. workflow 薄化与命名约束（ci/check-workflows.py）；
 #   2. ci/ 与 tools/ 下每个 shell 脚本可被 bash -n 解析；
 #   3. 函数名不超过 15 字节（ci/name_lint.py，N001，覆盖 shell 与 python）；
-#   4. 代码度量棘轮（ci/quality_metrics.py，QG-01/QG-02：新增超标函数与
+#   4. 代码度量棘轮（ci/quality_metrics.py：新增超标函数与
 #      新增重复片段判红，存量按基线只减不增）；
 #   5. 验收剖面归一化的行为（ci/lib/profile.sh）；
 #   6. 门禁脚本里「声明后从未使用」的 readonly 常量（无外部依赖）；
@@ -18,7 +18,14 @@
 #   9. distro 子仓静态门禁（ci/gates/distro-lint.sh，含其工具单测）；
 #  10. 基底耦合点两向对账（ci/gates/coupling-scan.sh，成册件 §10 主表）；
 #  11. 模型资产通道门禁（ci/gates/model-manifest.sh，声明面与离线实物面）；
-#  12. 功能归属册三态对账（ci/gates/completeness.sh，docs-linux 功能面逐条归账）。
+#  12. 功能归属册三态对账（ci/gates/completeness.sh，docs-linux 功能面逐条归账）；
+#  13. 零桩扫描（ci/gates/no-stub.sh，QG-02）；
+#  14. 死代码扫描（ci/gates/dead-code.sh，QG-03）。
+#
+# 第 13、14 项把「禁桩」从文字变成判据：todo!/unimplemented!、产品代码里的
+# unreachable!、恒 Ok(()) 与 unsafe 逐条判负，allow(dead_code) 必须写理由，
+# 无引用的 pub 项进人工复核清单。真实树零命中只说明今天干净，判据本身由
+# ci/tests/test_no_stub.sh 与 test_dead_code.sh 用夹具覆盖，第 7 项会跑它们。
 #
 # 第 9 项此前只在流水线里跑，本地「两个入口都绿」靠人记：run 40938020614
 # 的 os-chk-verify 就红在 distro 的一条旧语义断言上，而提交前只跑过本文件。
@@ -217,6 +224,29 @@ if bash "${ROOT}/ci/ci.sh" model-manifest; then
     say "通过"
 else
     err "模型资产通道未通过（ci/ci.sh model-manifest）"
+    rc=1
+fi
+endgroup
+
+group "零桩扫描"
+# QG-02 的判据此前只写在方案里，真实树全绿也证明不了判据有效；正反例由
+# ci/tests/test_no_stub.sh 用夹具覆盖。目录传绝对路径，本文件不依赖调用者
+# 的当前目录。
+if bash "${ROOT}/ci/ci.sh" no-stub "${ROOT}/system/tui"; then
+    say "通过"
+else
+    err "零桩扫描未通过（ci/ci.sh no-stub system/tui）"
+    rc=1
+fi
+endgroup
+
+group "死代码扫描"
+# 与上一项同批：allow(dead_code) 无理由判负，无引用的 pub 项进复核清单。
+# 复核清单不改变退出码，因此这里绿不代表 pub 面已清理干净，清单要看。
+if bash "${ROOT}/ci/ci.sh" dead-code "${ROOT}/system/tui"; then
+    say "通过"
+else
+    err "死代码扫描未通过（ci/ci.sh dead-code system/tui）"
     rc=1
 fi
 endgroup

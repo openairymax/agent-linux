@@ -49,18 +49,13 @@ from pathlib import Path
 
 # 定义行与测试模块边界与 name_lint.py 共用一份（ci/lib/rs_src.py）：两份实现
 # 必然在某个边界上分叉，而两道门禁都绿时没人会发现。
-sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
-
-import rs_src  # noqa: E402
+from lib import rs_src, scan_src
 
 LIMIT_CC = 10
 WINDOW = 6
 TARGET_CC = 2.5
 TARGET_DUP = 0.03
 DEFAULT = ("ci", "tools", "distro", "system")
-SKIP = frozenset(("tests", "fixture", "vendor", "target",
-                  "__pycache__", ".git", "node_modules"))
-SUFFIX = (".sh", ".py", ".rs")
 PY_DEF = (ast.FunctionDef, ast.AsyncFunctionDef)
 # 可携带文档字符串的节点：模块、类、函数。
 DOC_NODES = PY_DEF + (ast.Module, ast.ClassDef)
@@ -77,19 +72,6 @@ RS_STEP = re.compile(
     r"|=>|&&|\|\||(?<=[\w)\]])[?]")
 RS_MARKS = ("//",)
 RS_PAD = SCAFFOLD | frozenset(("};",))
-
-
-def sources(base):
-    """遍历待度量源码，跳过 tests/fixture 等负例目录。"""
-    stack = [Path(base)]
-    while stack:
-        cur = stack.pop()
-        for ent in cur.iterdir():
-            if ent.is_dir():
-                if ent.name not in SKIP:
-                    stack.append(ent)
-            elif ent.suffix in SUFFIX and ent.is_file():
-                yield ent
 
 
 def py_cc(node):
@@ -283,7 +265,7 @@ def scan(roots):
     """返回 (函数清单, 重复窗口计数, 有效行数, 缺陷)。"""
     funcs, dup, lines, bad = [], Counter(), 0, 0
     for base in roots:
-        for path in sources(base):
+        for path in scan_src.sources(base):
             try:
                 if path.suffix == ".py":
                     got, rows = py_scan(path)
