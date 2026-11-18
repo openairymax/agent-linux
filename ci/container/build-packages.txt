@@ -23,6 +23,11 @@
 #          airymax-os.repo 补齐仓库表。
 #          改动重建配方的 BR 必须同步本清单：两份不同步的唯一后果是装配段
 #          构建失败，而失败信息指向配方，不指向这份清单。
+#   TUI 侧  rust cargo clippy rustfmt —— system/tui 工作区的编译器与门禁工具。
+#          openEuler 24.03 LTS SP3 在 update 仓提供 1.90.0，与
+#          distro/lockfile/lang-policy.yaml 的 toolchain 同版本；rustfmt 与
+#          clippy 是 cargo fmt / cargo clippy 门禁的运行时依赖，缺它们门禁
+#          会以「命令不存在」失败，而不是以「格式/规则不符」失败。
 rpm-build
 lorax
 createrepo_c
@@ -92,3 +97,7 @@ cups-devel
 ukui-interface
 libddcutil-devel
 libkylin-chkname-devel
+rust
+cargo
+clippy
+rustfmt
