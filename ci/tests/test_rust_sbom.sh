@@ -126,8 +126,20 @@ check "准入声明自检" 0 "通过" -- policy
 meta "GPL-3.0-only" "MIT OR Apache-2.0"
 check "许可证越界" 1 "不在允许集内" -- verify
 
+# SPDX 表达式允许括号改变优先级；把「(MIT OR Apache-2.0) AND Unicode-3.0」
+# 按空白切分会拆成非法片段，合法依赖因此被误判。两侧各取一例钉住语义：
+# AND 组内每项都要落地，OR 组内任一支落地即可。
+cp "${TUI}/deny.toml" "${tmp}/deny.bak"
+sed -i 's/"Apache-2.0",/"Apache-2.0", "Unicode-3.0",/' "${TUI}/deny.toml"
+meta "AGPL-3.0-or-later OR Apache-2.0" "(MIT OR Apache-2.0) AND Unicode-3.0"
+check "括号 AND 落地" 0 "components=2" -- verify
+sed -i 's/ "Unicode-3.0",//' "${TUI}/deny.toml"
+check "括号 AND 越界" 1 "不在允许集内" -- verify
+cp "${tmp}/deny.bak" "${TUI}/deny.toml"
+
 # 锁与元数据同时被写成带本机路径的包名：许可证仍合法、数量仍相等，判据
 # 只能靠「产物无绝对路径」拦住。这类外泄在评审里看不出来，只有断言能拦。
+meta "AGPL-3.0-or-later OR Apache-2.0" "MIT OR Apache-2.0"
 cp "${TUI}/Cargo.lock" "${tmp}/lock.bak"
 python3 - "${tmp}/meta.json" "${TUI}/Cargo.lock" "${TUI}" <<'PY'
 import json
@@ -170,7 +182,7 @@ check "生成" 0 "rust.cdx.json" -- generate --ver 9.9.9 --out "${tmp}/out"
     fail "生成: 文件名不符合发版约定" "$(ls "${tmp}/out")"
 
 if [ "${fails}" -eq 0 ]; then
-    echo "test_rust_sbom: 11 项通过"
+    echo "test_rust_sbom: 12 项通过"
     exit 0
 fi
 exit 1
