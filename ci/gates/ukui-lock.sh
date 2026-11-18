@@ -46,17 +46,9 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 
-[ -n "${SOURCE}" ] ||
-    SOURCE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
-[ -f "${SOURCE}/${CHECK}" ] || {
-    err "缺少校验器: ${SOURCE}/${CHECK}"
-    exit "${EINVAL}"
-}
-need_cmd python3
-
-args=(verify --root "${SOURCE}")
+args=()
 [ -z "${DOCS}" ] || args+=(--docs "${DOCS}")
 
-python3 "${SOURCE}/${CHECK}" "${args[@]}" || exit 1
+py_verify "${BASH_SOURCE[0]}" "${CHECK}" "${SOURCE}" "${args[@]}" || exit 1
 say "UKUI 台账同源通过"
 exit 0

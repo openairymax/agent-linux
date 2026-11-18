@@ -100,6 +100,35 @@ need_dir()
     [ -d "$2" ] || { err "$1 目录不存在: $2"; exit "${CI_EINVAL}"; }
 }
 
+# need_file PATH WHAT —— 断言门禁依赖的产物存在（校验器、政策文件），缺则退 5。
+#
+# 五个门禁曾各自抄一份「校验器不存在就退 EINVAL」的四行块，其中三份逐字相同；
+# 复制出来的判据不会同步演化：有人改了措辞或改判退出码，另一份仍按旧约定走，
+# 编排层于是看到同一类失败退出两种码。判定只有一份，落点也只能有一处。
+need_file()
+{
+    [ -f "$1" ] || { err "缺少${2}: $1"; exit "${CI_EINVAL}"; }
+}
+
+# py_verify SCRIPT CHECK SRC [ARG...] —— 调校验器的 verify 子命令，回传退出码。
+#
+# «仓库根缺省为本脚本上两级、校验器必须存在、python3 必须可用、以
+# verify --root SRC 调用» 这四步在 base-eol／ukui-lock／lang-lock 三个门禁里
+# 逐字相同。抄一份的代价不是多几行，而是某天有人只改一处：同一份判据于是
+# 有了两种退出码，编排层看不出差别。
+#
+# SRC 由调用方显式传入（空串表示取缺省），不替调用方回填变量：跨函数改调用
+# 方的变量既读不出依赖，也会让静态检查报「赋值后未使用」。
+py_verify()
+{
+    local script="$1" check="$2" src="$3"
+    shift 3
+    [ -n "${src}" ] || src="$(cd "$(dirname "${script}")/../.." && pwd -P)"
+    need_file "${src}/${check}" 校验器
+    need_cmd python3
+    python3 "${src}/${check}" verify --root "${src}" "$@"
+}
+
 # env_set KEY VALUE —— 写入 GitHub Actions 的环境文件；本地运行时只打印，
 # 由调用方自行 export。统一入口避免每个 gate 重复判断 $GITHUB_ENV。
 env_set()

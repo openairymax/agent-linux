@@ -19,14 +19,19 @@
 # 不会因为「没判据」而悄悄回到原点。
 #
 # 口径与边界：
-#   · 只量 shell 与 python——与 ci/name_lint.py 同一交付面（ci tools distro
-#     system），kernel 是上游树、不参与本仓度量（ALK-01 亦要求内核侧零改动）；
-#   · tests/fixture 不量：那里的重复与分支是刻意构造的负例；
-#   · 注释不算代码：shell 的整行 `#` 与 python 的文档字符串都剔除。规范要求
-#     每个文件带中文文件头，若把它计进重复率，压低数字的唯一办法就是删掉
-#     规范要求的文件头——度量不该逼人违规；
+#   · 只量 shell、python 与 rust——与 ci/name_lint.py 同一交付面（ci tools
+#     distro system），kernel 是上游树、不参与本仓度量（ALK-01 亦要求内核侧
+#     零改动）；
+#   · tests/fixture 不量：那里的重复与分支是刻意构造的负例；vendor/target
+#     不量：第三方快照不是自有代码，构建产物把门禁拖红没有意义；
+#   · 注释不算代码：shell 的整行 `#`、python 的文档字符串、rust 的 `//` 与
+#     `/* */` 都剔除。规范要求每个文件带中文文件头，若把它计进重复率，压低
+#     数字的唯一办法就是删掉规范要求的文件头——度量不该逼人违规；
 #   · 圈复杂度是判定点计数（McCabe）：python 走 AST（if/for/while/except/
-#     ifexp/assert/comprehension/bool 运算），shell 走行内关键字与 &&/||；
+#     ifexp/assert/comprehension/bool 运算），shell 走行内关键字与 &&/||，
+#     rust 走 if/for/while/loop、match 臂、&&/|| 与后缀 `?`；rust 先剥掉
+#     注释与字符串字面量再计数，函数体按缩进分段（定义行至同缩进的 `}`），
+#     文件末尾的 `#[cfg(test)]` 模块与 name_lint 同一口径排除；
 #     嵌套定义的判定点只计入它自己，不摊给外层；
 #   · 重复窗口按内容登记：改名会让旧窗口退役、新窗口登记，因此 --update
 #     只比总量——数量不增即可换登记，数量增加即判红。
@@ -42,13 +47,20 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+# 定义行与测试模块边界与 name_lint.py 共用一份（ci/lib/rs_src.py）：两份实现
+# 必然在某个边界上分叉，而两道门禁都绿时没人会发现。
+sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
+
+import rs_src  # noqa: E402
+
 LIMIT_CC = 10
 WINDOW = 6
 TARGET_CC = 2.5
 TARGET_DUP = 0.03
 DEFAULT = ("ci", "tools", "distro", "system")
-SKIP = frozenset(("tests", "fixture", "__pycache__", ".git", "node_modules"))
-SUFFIX = (".sh", ".py")
+SKIP = frozenset(("tests", "fixture", "vendor", "target",
+                  "__pycache__", ".git", "node_modules"))
+SUFFIX = (".sh", ".py", ".rs")
 PY_DEF = (ast.FunctionDef, ast.AsyncFunctionDef)
 # 可携带文档字符串的节点：模块、类、函数。
 DOC_NODES = PY_DEF + (ast.Module, ast.ClassDef)
@@ -57,6 +69,14 @@ PY_STEP = (ast.If, ast.For, ast.AsyncFor, ast.While, ast.IfExp,
 SH_DEF = re.compile(r"^\s*(?:function\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*\)")
 SH_STEP = re.compile(r"(?<![\w-])(?:if|elif|for|while|until|case)(?![\w-])|&&|\|\|")
 SCAFFOLD = frozenset(("fi", "done", "then", "else", "esac", "do", "{", "}"))
+
+# 判定点：if/for/while/loop 按词边界；match 臂按 `=>`；布尔运算按出现次数；
+# 后缀 `?` 只认紧跟标识符或右括号的写法，避免把 `?Sized` 这类约束边界算进来。
+RS_STEP = re.compile(
+    r"(?<![\w.])(?:if|for|while|loop)(?![\w])"
+    r"|=>|&&|\|\||(?<=[\w)\]])[?]")
+RS_MARKS = ("//",)
+RS_PAD = SCAFFOLD | frozenset(("};",))
 
 
 def sources(base):
@@ -143,14 +163,18 @@ def sh_funcs(path):
     return out
 
 
-def norm(rows, skip=()):
-    """规范化：去空白、整行注释与脚手架行；skip 是剔掉的行号（文档字符串）。"""
+def norm(rows, skip=(), marks=("#",), pad=SCAFFOLD):
+    """规范化：去空白、整行注释与脚手架行；skip 是剔掉的行号（文档字符串）。
+
+    marks 与 pad 按语言给：shell/python 的注释符是 `#`，rust 是 `//`；
+    rust 另把 `};` 视作脚手架，单行块尾不该凑满一个重复窗口。
+    """
     out = []
     for no, raw in enumerate(rows, 1):
         line = raw.strip()
         if no in skip:
             continue
-        if line and not line.startswith("#") and line not in SCAFFOLD:
+        if line and not line.startswith(marks) and line not in pad:
             out.append(line)
     return out
 
@@ -158,6 +182,94 @@ def norm(rows, skip=()):
 def code_lines(path):
     """shell 侧的有效行；python 的文档字符串处理见 py_scan。"""
     return norm(path.read_text(encoding="utf-8", errors="replace").splitlines())
+
+
+def rs_lit(raw, i):
+    """跳过字符串字面量，返回其后下标；转义吞掉下一个字符。"""
+    i += 1
+    while i < len(raw):
+        if raw[i] == "\\":
+            i += 2
+            continue
+        if raw[i] == '"':
+            return i + 1
+        i += 1
+    return i
+
+
+def rs_strip(lines):
+    """剥掉注释与字符串字面量，保留行结构；块注释的嵌套深度跨行传递。
+
+    字符串里的 `if` 或 `||` 不是判定点，注释里的更是；不剥会按正文行数虚增
+    复杂度。行结构必须保留：函数体的缩进分段依赖行首空白。
+    """
+    out, deep = [], 0
+    for raw in lines:
+        buf, i = [], 0
+        while i < len(raw):
+            if deep:
+                end = raw.find("*/", i)
+                if end < 0:
+                    break
+                deep -= 1
+                i = end + 2
+            elif raw.startswith("//", i):
+                break
+            elif raw.startswith("/*", i):
+                deep += 1
+                i += 2
+            elif raw[i] == '"':
+                i = rs_lit(raw, i)
+            else:
+                buf.append(raw[i])
+                i += 1
+        out.append("".join(buf))
+    return out
+
+
+def rs_close(raw, indent):
+    """同缩进的 `}` 收束函数体；更深的 `}` 属于内层块。"""
+    return (len(raw) - len(raw.lstrip()) <= indent
+            and raw.lstrip().startswith("}"))
+
+
+def rs_funcs(lines):
+    """按缩进分段取函数圈复杂度；无体的声明行（`;` 结尾）不计。
+
+    单行函数 `fn f() {}` 的定义行同时是出口，就地结算；多行签名（`where`
+    换行）不影响分段，因为出口判据是缩进而不是括号配平。
+    """
+    out, name, indent, cc = [], None, 0, 1
+    for raw in lines:
+        hit = rs_src.RS_DEF.match(raw)
+        if hit:
+            if name:
+                out.append((name, cc))
+            name, indent, cc = hit.group(2), len(hit.group(1)), 1
+            body = raw[hit.end():]
+            if body.strip().endswith(";"):
+                name, cc = None, 1
+            elif "{" in body and "}" in body:
+                out.append((name, 1 + len(RS_STEP.findall(body))))
+                name, cc = None, 1
+            continue
+        if name is None:
+            continue
+        if rs_close(raw, indent):
+            out.append((name, cc))
+            name, cc = None, 1
+            continue
+        cc += len(RS_STEP.findall(raw))
+    if name:
+        out.append((name, cc))
+    return out
+
+
+def rs_scan(path):
+    """一次读盘产出 (函数清单, 规范化行)；口径见文件头。"""
+    text = path.read_text(encoding="utf-8", errors="replace")
+    plain = rs_strip(rs_src.split_tests(text.splitlines()))
+    return rs_funcs(plain), norm(plain, marks=RS_MARKS, pad=RS_PAD)
 
 
 def windows(lines):
@@ -175,6 +287,8 @@ def scan(roots):
             try:
                 if path.suffix == ".py":
                     got, rows = py_scan(path)
+                elif path.suffix == ".rs":
+                    got, rows = rs_scan(path)
                 else:
                     got, rows = sh_funcs(path), code_lines(path)
             except SyntaxError as exc:
