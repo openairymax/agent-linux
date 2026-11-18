@@ -24,6 +24,7 @@
 # 的 `#[cfg(test)]` + `mod …{` 起至文件末尾不再计入」，也就是把测试模块作为
 # 文件的最后一项——这条不是权宜：括号配平要正确处理 raw string 与嵌套注释，
 # 行级扫描做不到，与其在词法上猜，不如把结构约束写进编码规范并在此断言。
+# 该判据与 quality_metrics.py 共用 ci/lib/rs_src.py 一份实现。
 #
 # 不扫 tests/ 与 fixture/：那里的函数名由被测语义决定（本门禁自己的回归就
 # 要故意造长名），按产品代码标准要求只会逼着人为了过门禁改写断言。
@@ -46,6 +47,12 @@ import re
 import sys
 from pathlib import Path
 
+# 定义行与测试模块边界的判据与 quality_metrics.py 共用一份（ci/lib/rs_src.py）：
+# 两份实现必然在某个边界上分叉，而两道门禁都绿时没人会发现。
+sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
+
+import rs_src  # noqa: E402
+
 ROOT = Path(__file__).resolve().parent.parent
 LIMIT = 15
 SUFFIX = (".sh", ".py", ".rs")
@@ -58,17 +65,6 @@ SH_DEF = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*\)")
 # 只需换成另一种写法就能绕过。
 SH_KW = re.compile(r"^\s*function\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:\(\s*\)|\{|$)")
 PY_DEF = (ast.FunctionDef, ast.AsyncFunctionDef)
-
-# `pub(crate) async unsafe extern "C" fn name` 的修饰词顺序有几种合法排列，
-# 逐个允许但整体锚在行首：缩进后的 `fn` 也可能是函数指针类型或 trait 方法
-# 声明，trait 方法同样算定义，一并计入。
-RS_DEF = re.compile(
-    r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?:default\s+)?(?:const\s+)?"
-    r"(?:async\s+)?(?:unsafe\s+)?(?:extern\s+\"[^\"]*\"\s+)?"
-    r"fn\s+([A-Za-z_][A-Za-z0-9_]*)")
-RS_TEST = re.compile(r"^\s*#\[cfg\(test\)\]")
-RS_MOD = re.compile(r"^\s*(?:pub\s+)?mod\s+[A-Za-z_][A-Za-z0-9_]*\s*\{")
-RS_GAP = 3
 
 
 def _sh(path: Path) -> list[tuple[int, str]]:
@@ -90,24 +86,8 @@ def _py(path: Path) -> list[tuple[int, str]]:
 
 
 def _rs(path: Path) -> list[tuple[int, str]]:
-    # 测试模块的起点取 `#[cfg(test)]` 与其后 RS_GAP 行内出现的 `mod …{`；
-    # 只找起点不配平：文件末尾才放测试模块是编码规范的一部分，这里断言它。
     lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
-    stop = len(lines)
-    for idx, raw in enumerate(lines):
-        hit = RS_TEST.match(raw)
-        if not hit:
-            continue
-        near = [raw[hit.end():], *lines[idx + 1: idx + RS_GAP]]
-        if any(RS_MOD.match(line) for line in near):
-            stop = idx
-            break
-    found = []
-    for lineno, raw in enumerate(lines[:stop], 1):
-        match = RS_DEF.match(raw)
-        if match:
-            found.append((lineno, match.group(1)))
-    return found
+    return rs_src.defs(rs_src.split_tests(lines))
 
 
 def judge(path: Path) -> list[tuple[int, str]]:

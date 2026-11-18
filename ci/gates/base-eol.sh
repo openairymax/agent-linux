@@ -41,14 +41,6 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 
-[ -n "${SOURCE}" ] ||
-    SOURCE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
-[ -f "${SOURCE}/${CHECK}" ] || {
-    err "缺少校验器: ${SOURCE}/${CHECK}"
-    exit "${EINVAL}"
-}
-need_cmd python3
-
-python3 "${SOURCE}/${CHECK}" verify --root "${SOURCE}" || exit 1
+py_verify "${BASH_SOURCE[0]}" "${CHECK}" "${SOURCE}" || exit 1
 say "openEuler 基底选型同源通过"
 exit 0

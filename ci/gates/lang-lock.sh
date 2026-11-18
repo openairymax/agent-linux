@@ -46,18 +46,10 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 
-[ -n "${SOURCE}" ] ||
-    SOURCE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
-[ -f "${SOURCE}/${CHECK}" ] || {
-    err "缺少校验器: ${SOURCE}/${CHECK}"
-    exit "${EINVAL}"
-}
-need_cmd python3
-
-args=(verify --root "${SOURCE}")
+args=()
 [ "${PENDING}" -eq 1 ] && args+=(--allow-pending)
 
-python3 "${SOURCE}/${CHECK}" "${args[@]}"
+py_verify "${BASH_SOURCE[0]}" "${CHECK}" "${SOURCE}" "${args[@]}"
 rc=$?
 case "${rc}" in
     0) say "语言政策同源通过" ;;

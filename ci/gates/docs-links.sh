@@ -63,10 +63,7 @@ if [ -z "${SOURCE}" ]; then
     fi
 fi
 
-[ -f "${ROOT}/${CHECK}" ] || {
-    err "缺少检查器: ${ROOT}/${CHECK}"
-    exit "${EINVAL}"
-}
+need_file "${ROOT}/${CHECK}" 检查器
 need_cmd python3
 
 python3 "${ROOT}/${CHECK}" --source "${SOURCE}" --exclude "${EXCLUDE}" ||

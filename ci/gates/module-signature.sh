@@ -74,10 +74,7 @@ done
 
 [ -n "${ROOT}" ] || { err "--root 必填"; exit "${EINVAL}"; }
 SOURCE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
-[ -f "${SOURCE}/${CHECK}" ] || {
-    err "缺少校验器: ${SOURCE}/${CHECK}"
-    exit "${EINVAL}"
-}
+need_file "${SOURCE}/${CHECK}" 校验器
 need_cmd python3
 
 args=(verify --kind "${KIND}" --root "${ROOT}")
