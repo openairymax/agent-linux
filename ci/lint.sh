@@ -5,7 +5,7 @@
 #
 # 用法: ci/lint.sh [--no-distro]
 #
-# 检查十一件事：
+# 检查十二件事：
 #   1. workflow 薄化与命名约束（ci/check-workflows.py）；
 #   2. ci/ 与 tools/ 下每个 shell 脚本可被 bash -n 解析；
 #   3. 函数名不超过 15 字节（ci/name_lint.py，N001，覆盖 shell 与 python）；
@@ -17,7 +17,8 @@
 #   8. 有 shellcheck 就用上，没有只告警——本地开发者不该被工具缺失拦住；
 #   9. distro 子仓静态门禁（ci/gates/distro-lint.sh，含其工具单测）；
 #  10. 基底耦合点两向对账（ci/gates/coupling-scan.sh，成册件 §10 主表）；
-#  11. 模型资产通道门禁（ci/gates/model-manifest.sh，声明面与离线实物面）。
+#  11. 模型资产通道门禁（ci/gates/model-manifest.sh，声明面与离线实物面）；
+#  12. 功能归属册三态对账（ci/gates/completeness.sh，docs-linux 功能面逐条归账）。
 #
 # 第 9 项此前只在流水线里跑，本地「两个入口都绿」靠人记：run 40938020614
 # 的 os-chk-verify 就红在 distro 的一条旧语义断言上，而提交前只跑过本文件。
@@ -33,6 +34,10 @@
 # 第 11 项与第 9 项同类：model-manifest 过去只在 os-chk-verify 里跑，配方
 # 把逐条建组收成循环后门禁仍按字面量断言，于是本地全绿而流水线红。判据已
 # 改为按清单断言，本文件同时把它纳入本地入口。
+#
+# 第 12 项把「docs-linux 的功能面归账」变成可执行判据。归属册在 docs-closed，
+# 单仓检出看不到它，门禁自身退 0 并打印不适用；开发机上则逐条核对三态、
+# 统计与证据路径。判据本身由 ci/tests/test_completeness.sh 用夹具覆盖。
 #
 # 与 distro/ci/run-lint.sh 的分工：后者管 distro 子模块自己的单元测试与
 # 打包脚本，本文件覆盖仓库根这一层（门禁 + workflow），末段以门禁入口
@@ -176,6 +181,17 @@ if bash "${ROOT}/ci/ci.sh" coupling-scan; then
     say "通过"
 else
     err "基底耦合点对账未通过（ci/ci.sh coupling-scan）"
+    rc=1
+fi
+endgroup
+
+group "功能归属册对账"
+# docs-linux 的每一块功能面都必须在归属册上占一行三态。册子在 docs-closed，
+# 只在开发机上存在；未检出时门禁自身退 0 并打印不适用，与上一项同口径。
+if bash "${ROOT}/ci/ci.sh" completeness; then
+    say "通过"
+else
+    err "功能归属册对账未通过（ci/ci.sh completeness）"
     rc=1
 fi
 endgroup
