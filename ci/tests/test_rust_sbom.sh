@@ -137,6 +137,14 @@ sed -i 's/ "Unicode-3.0",//' "${TUI}/deny.toml"
 check "括号 AND 越界" 1 "不在允许集内" -- verify
 cp "${tmp}/deny.bak" "${TUI}/deny.toml"
 
+# 旧式斜杠写法在 SPDX 2.x 已废弃，语义为 OR；早期 crate 仍在使用。不认它
+# 会把 MIT/Apache-2.0 的依赖判成越界，认错方向则会把 GPL 也放进来。
+meta "AGPL-3.0-or-later OR Apache-2.0" "Apache-2.0/MIT"
+check "斜杠旧式或" 0 "components=2" -- verify
+meta "AGPL-3.0-or-later OR Apache-2.0" "GPL-3.0-only/Unicode-3.0"
+check "斜杠各支皆越界" 1 "不在允许集内" -- verify
+meta "AGPL-3.0-or-later OR Apache-2.0" "MIT OR Apache-2.0"
+
 # 锁与元数据同时被写成带本机路径的包名：许可证仍合法、数量仍相等，判据
 # 只能靠「产物无绝对路径」拦住。这类外泄在评审里看不出来，只有断言能拦。
 meta "AGPL-3.0-or-later OR Apache-2.0" "MIT OR Apache-2.0"
@@ -182,7 +190,7 @@ check "生成" 0 "rust.cdx.json" -- generate --ver 9.9.9 --out "${tmp}/out"
     fail "生成: 文件名不符合发版约定" "$(ls "${tmp}/out")"
 
 if [ "${fails}" -eq 0 ]; then
-    echo "test_rust_sbom: 12 项通过"
+    echo "test_rust_sbom: 14 项通过"
     exit 0
 fi
 exit 1
