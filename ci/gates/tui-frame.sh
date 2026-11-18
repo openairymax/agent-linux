@@ -19,7 +19,6 @@
 # ===========================================================================
 set -uo pipefail
 
-readonly EINVAL=5
 # shellcheck source=../lib/log.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/log.sh"
 # shellcheck source=../lib/tui-gate.sh
@@ -32,13 +31,7 @@ usage()
 EOF
 }
 
-while [ "$#" -gt 0 ]; do
-    case "$1" in
-        --root) tui_root "$1" "${2:-}"; shift 2 ;;
-        -h|--help) usage; exit 0 ;;
-        *) err "未知参数: $1"; exit "${EINVAL}" ;;
-    esac
-done
+tui_cli usage "$@"
 
 tui_setup "${BASH_SOURCE[0]}"
 
