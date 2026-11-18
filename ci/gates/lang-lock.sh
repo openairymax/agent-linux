@@ -15,6 +15,9 @@
 #   4. legacy 与 exception 必须带复查/过期版本；
 #   5. 有 present 组件时，构建依赖清单必须含 rust 与 cargo。
 #
+# 用法:
+#   ci/gates/lang-lock.sh [--source DIR] [--allow-pending]
+#
 #   --source DIR       仓库根，须含 distro/lockfile；默认取本脚本上两级
 #   --allow-pending    尚无 present 组件时按通过处理（退出 0 而非 3）
 #

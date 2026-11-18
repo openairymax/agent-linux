@@ -20,6 +20,12 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "${tmp}"' EXIT
 fails=0
 
+# 宿主把 libselinux 目录挂在 LD_LIBRARY_PATH 上时，每个进程启动都往 stderr
+# 打一行版本告警。它由本进程继承，`env -u` 摘掉的只是子进程的那一份，env
+# 自己启动时照样要打——噪声于是混进被捕获的输出，「健康启动不出注解」这条
+# 断言在宿主上假红。这里一次摘净，所有子进程与断言都回到干净环境。
+unset LD_LIBRARY_PATH
+
 FX="${tmp}/fx"
 LOG="${FX}/out/run-bios-1/boot.log"
 mkdir -p "${FX}/ci/gates" "${FX}/ci/lib" "${FX}/distro/scripts/lib" \
@@ -28,11 +34,10 @@ cp "${ROOT}/ci/gates/boot-annotate.sh" "${FX}/ci/gates/"
 cp "${ROOT}/ci/lib/log.sh" "${FX}/ci/lib/"
 cp "${ROOT}/distro/scripts/lib/verdict.env" "${FX}/distro/scripts/lib/"
 
-# 判定只由 verdict.env 的 BOOT_FAIL 决定；这里摘掉宿主注入的 LD_LIBRARY_PATH，
-# 否则每条外部命令都会把 libselinux 的版本告警打到 stderr，混进被捕获的输出。
+# 判定只由 verdict.env 的 BOOT_FAIL 决定。
 run()
 {
-    env -u GITHUB_ACTIONS -u LD_LIBRARY_PATH \
+    env -u GITHUB_ACTIONS \
         bash "${FX}/ci/gates/boot-annotate.sh" --dir "${FX}/out" 2>&1
 }
 

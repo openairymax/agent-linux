@@ -22,8 +22,11 @@ trap 'rm -rf "${tmp}"' EXIT
 fails=0
 
 FX="${tmp}/fx"
-mkdir -p "${FX}/ci" "${FX}/tools/pkg/tests"
+mkdir -p "${FX}/ci/lib" "${FX}/tools/pkg/tests"
 cp "${ROOT}/ci/name_lint.py" "${FX}/ci/name_lint.py"
+# 判定器与 quality_metrics 共用定义行与测试模块边界的解析，缺了它门禁连
+# 导入都过不去——夹具必须带上同一份实现，否则测的是另一套判据。
+cp "${ROOT}/ci/lib/rs_src.py" "${FX}/ci/lib/rs_src.py"
 
 ok()
 {
@@ -161,7 +164,7 @@ check "python 语法错误按缺陷计" 1 "$?" "${out}" "E001"
 tree
 printf 'ok_name() { :; }\n' >"${FX}/ci/a.sh"
 out="$(run)"
-check "缺省根扫描 ci 与 tools" 0 "$?" "${out}" "name: 3 file(s)"
+check "缺省根扫描 ci 与 tools" 0 "$?" "${out}" "name: 4 file(s)"
 
 if [ "${fails}" -ne 0 ]; then
     printf 'test_name_lint: %d 项失败\n' "${fails}"

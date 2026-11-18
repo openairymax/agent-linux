@@ -37,11 +37,12 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 ├── os-chk-verify.yml      # OS-CHK 统一门禁编排（P0/P1 阻断）
 ├── payload-seed.yml       # 定时把闭包池推成按输入指纹命名的 seed 层
 ├── release.yml            # 构建 + SBOM + 签名 + 发布
-└── ssot-verify.yml        # SSoT 语法与交叉引用校验
+├── ssot-verify.yml        # SSoT 语法与交叉引用校验
+└── tui-verify.yml         # TUI 工作区：依赖源 + 格式/静态/单测 + 跨架构类型检查
 ```
 
-九个流水线，每个最多两个作业（`os-chk-verify` 为一个）。作业数上限登记在
-`ci/workflow-budgets.txt`，只许下调。
+十个流水线，每个最多三个作业（`os-chk-verify` 一个、`tui-verify` 三个）。
+作业数上限登记在 `ci/workflow-budgets.txt`，只许下调。
 
 ## 3. 流水线清单
 
@@ -56,6 +57,7 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 | `payload-seed.yml` | `probe`、`warm` | cron `17 19 * * *`（北京时间 03:17）与手动 | `probe` 对实时上游取五段仓库元数据，算出 `seed-<arch>-<key16>`；`warm` 恢复上一轮构建留下的闭包池，仅当池的输入标签与该指纹一致时把它推成 seed 层，上游不可达或指纹已变则退 0 并说明原因。预热只搬运已有字节，不下载任何 RPM，因此也不得成为构建的先决条件；同一作业尾部回收陈旧 seed 层（每架构按创建时间留最近 4 个，`build-` 一律不动） |
 | `release.yml` | `build-and-sign`、`publish-release` | 标签 `v*`、`v*-rc*` 与手动 | 源码 tarball（超项目 + 逐子仓按 gitlink 导出）、`airy_defconfig` 四架构快照、syscall ABI 报告、逐子模块 SBOM 合并、内核 RPM、GPG 与 cosign 签名、SDK 压缩包；第二作业校验已签名产物、推送 OCI 镜像到 ghcr、清理过期资产、创建 GitHub Release（正式版一律 `make_latest: false`，创建后由 `release-stage hold` 读回断言页面停在 held，只有发布机在 B 轮 `AIRYMAX-SMOKE-PASS` 之后执行的 `release-stage promote` 才能把它推进 `releases/latest`），并在对账后为整套发布资产出具 in-toto/SLSA 证明（`attest-<tag>`，指纹取 run id 与检出提交） |
 | `ssot-verify.yml` | `ssot-syntax-and-rules`、`doc-links` | 文档、`ssot-registry.yaml`、`tools/repo/validate-ssot.py` 的 PR 与 `main` 的 push | PyYAML 语法、规则 ID 计数与唯一性、`validate-ssot.py` 交叉引用；相对路径链接完整性 |
+| `tui-verify.yml` | `policy`、`build`、`cross` | `system`、`distro` gitlink、`ci/ci.sh`、`ci/lib/**`、`ci/gates/{tui-check,rust-vendor,lang-lock,submodules}.sh`、`ci/container/build-packages.txt` 的 PR 与 `main` 的 push | `policy` 断言语言政策（四组件 present、工具链钉版）与 `Cargo.lock`、`vendor/`、台账三者同源，不需要编译器；`build` 依次跑 `fmt --check`、`clippy -D warnings`、`cargo test`，全部 `--offline --locked`；`cross` 在 aarch64 与 riscv64gc 上做类型检查，两种目标互不掩盖。编译器版本只由 `system/tui/rust-toolchain.toml` 决定，`tui-check` 断言实际生效者与钉版一致 |
 
 `nightly.yml` 与 `release.yml`、`image-build.yml`、`payload-seed.yml` 暴露
 `workflow_dispatch`。
@@ -153,7 +155,7 @@ lint 中执行。下表是规则本身，不是建议。
 | L1 | 派发时带 `release_tag`，让 ISO 复用已签名的发行内核包 | 每轮省 73 min | 已实现（`Fetch release kernel RPMs`），靠派发纪律兑现 |
 | L2 | 以内容键缓存已组装的 ISO，重跑只做装机验收 | 每次重试省 80 min | 待实施（键须含内核包摘要与 distro gitlink） |
 | L3 | 四架构内核腿引入 ccache | 每腿省 40–60% | 待验证（键须含编译器版本、配置摘要与源码提交，键错则结论作废） |
-| L4 | 装机三腿并行 | 省约 15 min | 不采用：管理仓 2 job 铁律，单 job 内并行会与其他门禁争 runner |
+| L4 | 装机三腿并行 | 不采用：作业数按 `ci/workflow-budgets.txt` 记账，单 job 内并行只是把三条腿的墙钟时间藏进一个作业，失败归因反而更难 |
 
 L2/L3 都不改判据，只改「同一份物料要付几次成本」。任何一条上线前必须能在
 本地用同一门禁对缓存产物复跑，否则只是把不确定性搬进了流水线。
@@ -204,6 +206,7 @@ L2/L3 都不改判据，只改「同一份物料要付几次成本」。任何�
 | `nightly.yml` | `tools/nightly/nightly.py --check`、`ci/gates/nightly-helpers.sh` | 全量套件，单 job 上限 360 min | 无 |
 | `payload-seed.yml` | `ci/gates/payload-seed.sh`（`probe` / `warm`） | 只搬缓存池字节，不下载；层已存在时为零 | actions 缓存（闭包池） |
 | `mgmt-verify.yml`、`ssot-verify.yml` | `ci/gates/repo-*.sh`、`tools/repo/validate-ssot.py` | 约 3 min | 无 |
+| `tui-verify.yml` | `ci/gates/tui-check.sh`、`ci/gates/rust-vendor.sh`、`ci/gates/lang-lock.sh` | 一次子模块检出 + 六个 crate 的编译，无注册表访问 | 无（vendor 离线源代替包缓存） |
 
 ## 5.5 变更纪律
 

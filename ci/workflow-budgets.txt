@@ -32,3 +32,4 @@ os-chk-verify.yml                 0     1
 payload-seed.yml                  0     2
 release.yml                       0     2
 ssot-verify.yml                   0     2
+tui-verify.yml                    0     3
