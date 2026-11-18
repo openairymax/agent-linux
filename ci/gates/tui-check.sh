@@ -27,42 +27,20 @@
 set -uo pipefail
 
 readonly EINVAL=5
-readonly TUI=system/tui
-readonly PIN=1.90.0
 readonly KINDS="fmt clippy test cross"
 # shellcheck source=../lib/log.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/log.sh"
+# shellcheck source=../lib/tui-gate.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/tui-gate.sh"
 
 KIND=""
-ROOT=""
 TARGET=""
-TUIDIR=""
 
 usage()
 {
     cat <<'EOF'
 用法: ci/gates/tui-check.sh --kind fmt|clippy|test|cross [--target TRIPLE]
 EOF
-}
-
-# 钉版校验：rustup 读到工作区里的 rust-toolchain.toml 后自行取版本并装
-# components，本函数只断言「实际生效的」编译器就是钉住的那个。
-pin_check()
-{
-    local got
-
-    need_cmd cargo rustc awk
-    got="$(cd "${TUIDIR}" && rustc --version 2>/dev/null | awk '{print $2}')"
-    [ "${got}" = "${PIN}" ] ||
-        die "编译器 ${got:-未知} 与钉版 ${PIN} 不一致（见 ${TUI}/rust-toolchain.toml）"
-}
-
-# 目标目录与源码树分离：同一棵树被四条判据依次读，产物却互不污染。
-cargo_run()
-{
-    local tgt="${TMPDIR:-/tmp}/airy-tui-target"
-
-    ( cd "${TUIDIR}" && CARGO_TARGET_DIR="${tgt}" cargo "$@" )
 }
 
 stage_fmt()
@@ -102,7 +80,7 @@ while [ "$#" -gt 0 ]; do
     case "$1" in
         --kind) KIND="${2:-}"; shift 2 ;;
         --target) TARGET="${2:-}"; shift 2 ;;
-        --root) need_dir "$1" "${2:-}"; ROOT="$2"; shift 2 ;;
+        --root) tui_root "$1" "${2:-}"; shift 2 ;;
         -h|--help) usage; exit 0 ;;
         *) err "未知参数: $1"; exit "${EINVAL}" ;;
     esac
@@ -118,13 +96,7 @@ if [ "${KIND}" = cross ] && [ -z "${TARGET}" ]; then
     exit "${EINVAL}"
 fi
 
-[ -n "${ROOT}" ] ||
-    ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
-TUIDIR="${ROOT}/${TUI}"
-need_dir "${TUI}" "${TUIDIR}"
-[ -f "${TUIDIR}/Cargo.lock" ] || die "缺少 ${TUI}/Cargo.lock"
-
-pin_check
+tui_setup "${BASH_SOURCE[0]}"
 
 group "tui: ${KIND}${TARGET:+ ${TARGET}}"
 if ! run_kind; then
