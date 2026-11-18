@@ -49,16 +49,11 @@ from pathlib import Path
 
 # 定义行与测试模块边界的判据与 quality_metrics.py 共用一份（ci/lib/rs_src.py）：
 # 两份实现必然在某个边界上分叉，而两道门禁都绿时没人会发现。
-sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
-
-import rs_src  # noqa: E402
+from lib import rs_src, scan_src
 
 ROOT = Path(__file__).resolve().parent.parent
 LIMIT = 15
-SUFFIX = (".sh", ".py", ".rs")
 DEFAULT = ("ci", "tools", "distro", "system")
-SKIP = frozenset(("tests", "fixture", "vendor", "target",
-                  "__pycache__", ".git", "node_modules"))
 
 SH_DEF = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*\)")
 # `function name {` 不带括号也是合法定名，两种写法都要认：漏掉这一种，门禁
@@ -96,25 +91,10 @@ def judge(path: Path) -> list[tuple[int, str]]:
     return _py(path) if path.suffix == ".py" else _sh(path)
 
 
-def sources(base: Path) -> list[Path]:
-    # 先剪枝再收集：distro 与 system 子仓里各有一条 tests 目录，先 rglob 再
-    # 过滤会白走一遍它们的整棵子树。
-    files: list[Path] = []
-    stack = [base]
-    while stack:
-        for child in sorted(stack.pop().iterdir()):
-            if child.is_dir():
-                if child.name not in SKIP:
-                    stack.append(child)
-            elif child.suffix in SUFFIX:
-                files.append(child)
-    return files
-
-
 def scan_base(base: Path) -> tuple[int, int]:
     files = 0
     total = 0
-    for path in sources(base):
+    for path in scan_src.sources(base):
         files += 1
         try:
             found = judge(path)
