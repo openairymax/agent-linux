@@ -292,6 +292,11 @@ PATH="$HOME/.local/bin:$PATH" ./ci/lint.sh
 - 父仓的 `kernel`、`system`、`distro` 等以 gitlink 固定 SHA。CI 检出的是该
   SHA 的内容，因此未推到远端的本地提交会让 checkout 失败（远端报
   `upload-pack: not our ref`），这不是权限问题，是对象不在远端。
+- 叶仓要推到 CI 实际读取的那个远端。`.gitmodules` 用相对地址，流水线在
+  GitHub 上解析为 GitHub 镜像；只推到另一个远端时，父仓 gitlink 指向的提交
+  在镜像上不存在，checkout 在拉子模块这一步就红（`tui-verify`、`kernel-verify`、
+  `mgmt-verify`、`os-chk-verify` 同源失败即此故）。叶仓的 `origin` 配两个
+  `pushurl`（两个远端各一），`git push origin <branch>` 一次推齐，不靠记忆。
 
 按流水线对照「最先红在哪、本地怎么复跑」：
 
