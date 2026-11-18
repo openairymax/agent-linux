@@ -24,6 +24,7 @@ on:
       - 'ci/gates/rust-sbom.sh'
       - 'ci/gates/lang-lock.sh'
       - 'ci/gates/submodules.sh'
+      - 'ci/gates/width-unify.sh'
       - 'ci/container/build-packages.txt'
       - 'system'
       - 'distro'
@@ -38,6 +39,7 @@ on:
       - 'ci/gates/rust-sbom.sh'
       - 'ci/gates/lang-lock.sh'
       - 'ci/gates/submodules.sh'
+      - 'ci/gates/width-unify.sh'
       - 'ci/container/build-packages.txt'
       - 'system'
       - 'distro'
@@ -75,6 +77,10 @@ jobs:
       # 不需要 Rust 工具链，故留在这一层；清单与声明是否一致由 build 判。
       - name: Assert the dependency admission policy
         run: ci/ci.sh rust-sbom policy
+
+      # 列宽口径的唯一性不需要编译器：命中绕过写法即判负。
+      - name: Assert the single column-width entry
+        run: ci/ci.sh width-unify
 
   # ─── Job 2: 宿主判据 ──────────────────────────────────────────────
   # 格式、静态检查、单元测试共用一次检出与一份目标目录，避免三份重复
