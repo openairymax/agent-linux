@@ -163,14 +163,29 @@ def allow_list(tui):
     return list(doc.get("licenses", {}).get("allow", []))
 
 
+def _word(expr, i):
+    """从 i 读一个不含空白与括号的词，返回 (词, 下一位置)。"""
+    j = i
+    while j < len(expr) and not expr[j].isspace() and expr[j] not in "()":
+        j += 1
+    return expr[i:j], j
+
+
+def _skip(expr, i):
+    """跳过空白，返回首个非空白位置。"""
+    while i < len(expr) and expr[i].isspace():
+        i += 1
+    return i
+
+
 def _tok(expr):
     """切成括号、运算符与标识符；WITH 例外并入前一个标识符。
 
     许可证表达式允许括号改变优先级，按空白切分会把「(MIT OR Apache-2.0)
     AND Unicode-3.0」拆成非法片段，从而把合法依赖判成越界。
     """
-    out, i, n = [], 0, len(expr)
-    while i < n:
+    out, i = [], 0
+    while i < len(expr):
         char = expr[i]
         if char in "()":
             out.append(char)
@@ -178,23 +193,14 @@ def _tok(expr):
         elif char.isspace():
             i += 1
         else:
-            j = i
-            while j < n and not expr[j].isspace() and expr[j] not in "()":
-                j += 1
-            word, i = expr[i:j], j
+            word, i = _word(expr, i)
             if word in ("AND", "OR"):
                 out.append(word)
-                continue
-            if word == "WITH":
-                j = i
-                while j < n and expr[j].isspace():
-                    j += 1
-                k = j
-                while k < n and not expr[k].isspace() and expr[k] not in "()":
-                    k += 1
-                word = out.pop() + " WITH " + expr[j:k]
-                i = k
-            out.append(word)
+            elif word == "WITH":
+                tail, i = _word(expr, _skip(expr, i))
+                out[-1] = out[-1] + " WITH " + tail
+            else:
+                out.append(word)
     return out
 
 
