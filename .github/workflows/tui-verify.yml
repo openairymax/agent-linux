@@ -1,0 +1,117 @@
+# ===========================================================================
+# agent-linux (AirymaxOS) CI Pipeline
+# TUI 工作区流水线（3 jobs：依赖源对账 + 宿主判据 + 跨架构类型检查）
+# ===========================================================================
+# Authority: docs/docs-linux/70-build-system/03-ci-cd-pipeline.md
+# 判据全部在 ci/gates/tui-check.sh 与 ci/gates/rust-vendor.sh：YAML 只做
+# 检出、子模块取用与门禁调用，任何编译参数都不在这里出现。
+#
+# 文件名词族：阻断型门禁一律取 `*-verify` 并由 pull_request 触发
+# （ci/check-workflows.py 规则 14），故本文件是 tui-verify 而非 tui。
+#
+# 顺序即成本：policy 只读工作树、最先失败；build 与 cross 共享同一份
+# 已对账的依赖源。跨架构只做类型检查，真机行为由装机验收承担。
+# ===========================================================================
+
+name: tui-verify
+on:
+  pull_request:
+    paths:
+      - 'ci/ci.sh'
+      - 'ci/lib/**'
+      - 'ci/gates/tui-check.sh'
+      - 'ci/gates/rust-vendor.sh'
+      - 'ci/gates/lang-lock.sh'
+      - 'ci/gates/submodules.sh'
+      - 'ci/container/build-packages.txt'
+      - 'system'
+      - 'distro'
+      - '.github/workflows/tui-verify.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'ci/ci.sh'
+      - 'ci/lib/**'
+      - 'ci/gates/tui-check.sh'
+      - 'ci/gates/rust-vendor.sh'
+      - 'ci/gates/lang-lock.sh'
+      - 'ci/gates/submodules.sh'
+      - 'ci/container/build-packages.txt'
+      - 'system'
+      - 'distro'
+      - '.github/workflows/tui-verify.yml'
+
+# 最小权限：本流水线只读源码与依赖源，不产出制品。
+permissions:
+  contents: read
+
+concurrency:
+  group: tui-verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ─── Job 1: 依赖源与语言政策 ──────────────────────────────────────
+  # 不需要编译器：台账、Cargo.lock 与 vendor/ 三者同源即可判定。
+  policy:
+    name: Language Policy & Vendored Sources
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { submodules: false }
+
+      - name: Fetch the submodules these gates read
+        run: ci/ci.sh submodules
+
+      - name: Assert the Rust component policy
+        run: ci/ci.sh lang-lock
+
+      - name: Assert Cargo.lock, vendor/ and the ledger agree
+        run: ci/ci.sh rust-vendor verify
+
+  # ─── Job 2: 宿主判据 ──────────────────────────────────────────────
+  # 格式、静态检查、单元测试共用一次检出与一份目标目录，避免三份重复
+  # 预热；先格式后静态再测试，最便宜的判据最先失败。
+  build:
+    name: Format, Lints & Unit Tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    needs: policy
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { submodules: false }
+
+      - name: Fetch the TUI workspace
+        run: ci/ci.sh submodules
+
+      - name: Formatting
+        run: ci/ci.sh tui-check --kind fmt
+
+      - name: Lints
+        run: ci/ci.sh tui-check --kind clippy
+
+      - name: Unit tests
+        run: ci/ci.sh tui-check --kind test
+
+  # ─── Job 3: 跨架构类型检查 ────────────────────────────────────────
+  # 两种目标架构各自独立：一种失败不掩盖另一种的结论。
+  cross:
+    name: Cross-Architecture Type Check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    needs: policy
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - aarch64-unknown-linux-gnu
+          - riscv64gc-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { submodules: false }
+
+      - name: Fetch the TUI workspace
+        run: ci/ci.sh submodules
+
+      - name: Type-check against the target
+        run: ci/ci.sh tui-check --kind cross --target ${{ matrix.target }}

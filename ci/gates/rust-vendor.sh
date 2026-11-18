@@ -11,8 +11,12 @@
 # 目录取 --versioned-dirs 布局（<name>-<version>），与锁条目一一对应；
 # cargo 的默认布局在同名多版本时产生 name-1/name-2 后缀，无法与锁对账。
 #
-#   verify [--root DIR] [--build]   校验；--build 追加 cargo 端到端
-#   ledger [--root DIR]             重算台账（依赖变更后人工执行并审查）
+# 用法:
+#   ci/gates/rust-vendor.sh verify [--root DIR] [--build]
+#   ci/gates/rust-vendor.sh ledger [--root DIR]
+#
+# verify 的 --build 追加一次 cargo 端到端；ledger 会重写台账，依赖变更后
+# 人工执行并审查 diff，不交给流水线自动改写。
 #
 # 退出码: 0 通过；1 判定失败；5 参数不满足。
 # ===========================================================================
