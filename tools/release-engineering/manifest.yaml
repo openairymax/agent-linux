@@ -132,16 +132,21 @@ materials:
   # 注：§3.1/§3.4 记作 CycloneDX 1.5 JSON，而 SBOM 格式的权威出处
   #     06-sbom-generation.md §2 与实际实现均为 SPDX 2.3 JSON；此处以权威
   #     出处为准，格式漂移已记录待 docs SSoT 委员会裁定（文档冲突，非本表缺陷）。
+  # 两份清单同属物料 5：合并 SPDX 覆盖 C 与打包面，Rust 依赖闭包另出
+  # CycloneDX——syft 读不出 Cargo.lock 里的完整 crate 集合，而 AC-S3 要求
+  # 组件数与锁条目逐条相等。两份都进签名摘要清单，故登记在同一物料下。
   - id: sbom
     name: SBOM
-    format: SPDX 2.3 JSON
+    format: SPDX 2.3 JSON（合并）+ CycloneDX 1.5 JSON（Rust 依赖闭包）
     signature: gpg
     authority: docs/docs-linux/190-distribution/06-sbom-generation.md §2
     delivery: active
     evidence:
       - sbom-agent-linux-*.spdx.json
+      - sbom-agent-linux-*-rust.cdx.json
     produce:
       - ["ci/ci.sh", "release-sbom", "--ver", "${version}"]
+      - ["ci/ci.sh", "rust-sbom", "generate", "--ver", "${version}"]
 
   # ── §3.1 物料 6：airy_defconfig 快照 ──────────────────────────────────
   # §3.5 的选型清单一列 CONFIG_SECURITY_AIRY_LSM 与 CONFIG_SCHED_EXT：前者在
