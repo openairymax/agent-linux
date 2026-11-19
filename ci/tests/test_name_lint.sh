@@ -26,10 +26,9 @@ FX="${tmp}/fx"
 mkdir -p "${FX}/ci/lib" "${FX}/tools/pkg/tests"
 cp "${ROOT}/ci/name_lint.py" "${FX}/ci/name_lint.py"
 # 判定器与 quality_metrics 共用定义行与测试模块边界的解析，缺了它门禁连
-# 导入都过不去——夹具必须带上同一份实现，否则测的是另一套判据。
-cp "${ROOT}/ci/lib/__init__.py" "${FX}/ci/lib/__init__.py"
-cp "${ROOT}/ci/lib/rs_src.py" "${FX}/ci/lib/rs_src.py"
-cp "${ROOT}/ci/lib/scan_src.py" "${FX}/ci/lib/scan_src.py"
+# 导入都过不去——夹具必须带上同一份实现，否则测的是另一套判据。整目录复制：
+# 点名清单会与判定器的 import 图分叉，多引一个模块就变成 ImportError 假红。
+cp "${ROOT}/ci/lib/"*.py "${FX}/ci/lib/"
 
 ok()
 {
@@ -167,7 +166,17 @@ check "python 语法错误按缺陷计" 1 "$?" "${out}" "E001"
 tree
 printf 'ok_name() { :; }\n' >"${FX}/ci/a.sh"
 out="$(run)"
-check "缺省根扫描 ci 与 tools" 0 "$?" "${out}" "name: 6 file(s)"
+rc=$?
+# 缺省根必须真的扫到文件，否则「0 issue(s)」只是空扫描的假绿。夹具里
+# ci/lib 的模块数会随判定器的依赖增长，钉死总数等于每加一个模块就要改
+# 一次断言；这里只要求扫到的文件数为正。
+n="$(printf '%s\n' "${out}" | awk '/^name: / { print $2 + 0; exit }')"
+if [ "${rc}" -eq 0 ] && [ "${n:-0}" -gt 0 ]; then
+    ok "缺省根扫描 ci 与 tools"
+else
+    bad "缺省根扫描 ci 与 tools（rc=${rc}，扫到 ${n:-0} 个文件）"
+    printf '%s\n' "${out}" >&2
+fi
 
 if [ "${fails}" -ne 0 ]; then
     printf 'test_name_lint: %d 项失败\n' "${fails}"
