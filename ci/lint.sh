@@ -6,7 +6,7 @@
 #
 # 用法: ci/lint.sh [--no-distro]
 #
-# 检查十五件事：
+# 检查十六件事：
 #   1. workflow 薄化与命名约束（ci/check-workflows.py）；
 #   2. ci/ 与 tools/ 下每个 shell 脚本可被 bash -n 解析；
 #   3. 函数名不超过 15 字节（ci/name_lint.py，N001，覆盖 shell 与 python）；
@@ -22,7 +22,8 @@
 #  12. 功能归属册三态对账（ci/gates/completeness.sh，docs-linux 功能面逐条归账）；
 #  13. 零桩扫描（ci/gates/no-stub.sh，QG-02）；
 #  14. 死代码扫描（ci/gates/dead-code.sh，QG-03）；
-#  15. 文件头许可证与版权行（ci/header_lint.py，H001/H002）。
+#  15. 文件头许可证与版权行（ci/header_lint.py，H001/H002）；
+#  16. docs-linux 文档树的悬空相对链接（ci/gates/docs-links.sh，DOC-02）。
 #
 # 第 13、14 项把「禁桩」从文字变成判据：todo!/unimplemented!、产品代码里的
 # unreachable!、恒 Ok(()) 与 unsafe 逐条判负，allow(dead_code) 必须写理由，
@@ -204,6 +205,19 @@ if bash "${ROOT}/ci/ci.sh" completeness; then
     say "通过"
 else
     err "功能归属册对账未通过（ci/ci.sh completeness）"
+    rc=1
+fi
+endgroup
+
+group "文档悬空链接"
+# 目录编号重组过两轮，正文里的相对链接按旧布局写，读者点到 404 才发现。
+# 门禁是 DOC-02 的唯一执行者，而它此前没有执行者；判据本身由
+# ci/tests/test_docs_links.sh 用夹具覆盖，这里跑真实树。单仓检出无文档树时
+# 门禁自身退 0 并打印不适用，与上一项同口径。
+if bash "${ROOT}/ci/ci.sh" docs-links; then
+    say "通过"
+else
+    err "文档悬空链接未通过（ci/ci.sh docs-links）"
     rc=1
 fi
 endgroup
