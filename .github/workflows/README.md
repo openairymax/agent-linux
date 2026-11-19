@@ -245,7 +245,10 @@ L2/L3 都不改判据，只改「同一份物料要付几次成本」。任何�
    `!inputs.acceptance`）。装机的 BIOS/UEFI 冷启动断言在两条剖面里都会跑，
    区别只在会话内冒烟的期望标记。此刻发布页尚未建（建页在第 3 步），
    `channel-publish` 对「页面不存在」按无操作放行——清单已随制品上传，
-   由第 3 步的 `channel-fetch` 取用；判成失败会让引导链在第 2 步断掉。
+   由第 3 步的 `channel-fetch` 取用（它读的是成功轮的制品，不是页面资产）；
+   判成失败会让引导链在第 2 步断掉。若 tag 树早于这条放行规则（旧门禁对
+   缺页退 3），先用接口为该 tag 建页外壳并停在 held：装配轮只要求「页面
+   存在」，正文与资产在第 3 步整体换掉。
 3. **只重放、不重编。** `workflow_dispatch release.yml`：`tag=v<ver>`，
    `publish_run=<第 1 步 run id>`。`build-and-sign` 跳过，`publish-release`
    从该 run 重放制品；此时 `channel-fetch` 能取到第 2 步的 `channel.json`，
