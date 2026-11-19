@@ -247,11 +247,14 @@ chan 0.0.4
 out="$(run --tag v0.0.4 --repo o/r --dir "${OUT}")"
 check "上传失败判失败" 1 "$?" "${out}" "上传 channel.json 失败"
 
+# 首版引导：建页在 release.yml 的第 3 步，装配轮先于它运行。此时没有可回写
+# 的对象，门禁必须放行；清单随 airymaxos-acceptance 交由建页轮取用。
 mkfix
 chan 0.0.4
 : >"${FAKE}/no-release"
 out="$(run --tag v0.0.4 --repo o/r --dir "${OUT}")"
-check "发布页不存在退 3" 3 "$?" "${out}" "发布页不存在"
+check "发布页尚未建时跳过回写" 0 "$?" "${out}" "跳过回写"
+[ "$(count)" -eq 0 ] && ok "无页面时未凭空上传" || bad "无页面仍上传"
 
 mkfix
 chan 0.0.4
