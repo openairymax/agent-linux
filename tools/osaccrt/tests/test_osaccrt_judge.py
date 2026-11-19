@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """osaccrt_judge 单元测试：四态判定状态机与逐阈值对账。
 
 覆盖证据缺失、阈值无产物、判定声明与证据不符、WAIVED 双签门禁、

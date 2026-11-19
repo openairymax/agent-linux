@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """tools/repo-scaffold 单元测试：清单 schema / 子仓登记 / 检出 / 公共骨架 /
 许可证标识 / 构建入口 / 可编译入口（CMake、Kbuild、Linux 原生）/ 报告与
 CLI / 真实仓库端到端。

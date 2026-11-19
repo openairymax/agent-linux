@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 # ===========================================================================
 # ci/tests/test_boot_annotate.sh — 启动失败注解的回归
 #

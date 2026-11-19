@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 # ===========================================================================
 # ci/lib/log.sh — 统一日志、注解与前置校验原语
 #

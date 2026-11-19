@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """cap_gen — AirymaxOS capability ID 契约代码生成器。
 
 解析 security/include/airy_cap_ids.def 契约源（Capability ID SSoT），生成：

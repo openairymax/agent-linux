@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """ipc_gen 单元测试 — A-IPC 布局校验、多语言渲染辅助与产物校验。
 
 覆盖 tools/codegen/ipc_gen.py：contracts.md §2 期望布局逐位校验、Badge 位

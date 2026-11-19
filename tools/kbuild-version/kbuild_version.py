@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """AirymaxOS Kbuild 版本注入一致性检查器。
 
 以 tools/kbuild-version/manifest.yaml 为唯一事实源（SSoT），静态校验

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """syscall_gen — AirymaxOS syscall 契约代码生成器。
 
 解析 syscall.xml 契约源（R-01 SSoT），生成：

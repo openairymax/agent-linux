@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """dsl_parser — AirymaxOS 策略 DSL（.adl）递归下降语法分析器。
 
 把 dsl_lexer 产出的 Token 序列构造为 dsl_types.Program 语法树。文法：

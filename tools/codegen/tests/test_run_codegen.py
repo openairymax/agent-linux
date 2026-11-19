@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """run_codegen 单元测试：管道编排、依赖序、入口调用与短路行为。
 
 设计依据: docs-linux/30-interfaces/06-codegen-pipeline.md §6.3 / §9.3

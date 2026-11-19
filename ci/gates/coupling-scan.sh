@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 # ===========================================================================
 # ci/gates/coupling-scan.sh — 基底耦合点两向对账（L-50 / B-02）
 #

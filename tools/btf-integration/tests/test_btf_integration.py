@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """tools/btf-integration 单元测试：清单 schema / 受检片段存在性 / eBPF 基线 /
 BTF 基线 / tracing 链路 / CI 供给 / build_checks 编排 / CLI 与真实仓库端到端。
 

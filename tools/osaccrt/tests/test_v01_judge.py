@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """OS-ACC-RT 全链验收测试：六步规程串起四态判定。
 
 本测试只走真实组件——`Store` 落盘、`Runner` 主循环、`PackJudge` 裁决、

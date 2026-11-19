@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """osaccrt_img — 镜像清单解析与制品摘要校验。
 
 镜像的构建与装机由 distro 的 ``scripts/install-test.sh`` 承担（唯一事实

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """dsl_lexer 单元测试 — .adl 契约源词法切分。
 
 覆盖 tools/dsl/dsl_lexer.py：关键字/标识符、十进制与十六进制整数、

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """ci/lib/completeness.py —— 功能归属册的三态对账
 
 由 ci/gates/completeness.sh 调用，也可被回归脚本直接执行。

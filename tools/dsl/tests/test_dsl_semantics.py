@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """dsl_semantics 单元测试 — .adl 语义校验与 IR 构造。
 
 覆盖 tools/dsl/dsl_semantics.py：版本一致性、表名/字段/规则编号唯一性、

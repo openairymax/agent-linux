@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """codegen_io 单元测试 — 渲染环境、产物写入、零漂移校验与 CLI 入口。
 
 覆盖 tools/codegen/codegen_io.py 的全部公共契约，验证各生成器共享的

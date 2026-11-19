@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """ci/lib/rust_sbom.py —— TUI 工作区的 CycloneDX 物料清单
 
 由 ci/gates/rust-sbom.sh 调用，也可被回归脚本 import。

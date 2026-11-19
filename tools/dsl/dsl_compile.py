@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """dsl_compile — AirymaxOS 策略 DSL（.adl）编译编排与零漂移 CLI。
 
 把 .adl 契约源编译为纯 C 决策表头：读源 → dsl_parser 解析 → dsl_semantics

@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """osaccrt_img 单元测试：清单文法、逐固件结论与制品摘要。"""
 
 from __future__ import annotations

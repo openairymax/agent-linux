@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """osaccrt_store 单元测试：append-only 落盘、封口冻结与跨包链校验。"""
 
 from __future__ import annotations

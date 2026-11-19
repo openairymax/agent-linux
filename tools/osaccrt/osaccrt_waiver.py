@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """osaccrt_waiver — FAIL 经双签转为 WAIVED 的复核工作流。
 
 WAIVED 是判定状态机中最容易被滥用的出口：它把一次未达标的实验记为

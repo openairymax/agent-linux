@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """llm_contract.py — 离线自检的三份对外契约比对
 
 自检门禁钉住的不是「模型答得对不对」，而是「判定长什么样」：JSON 判定的

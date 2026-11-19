@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """osaccrt_smoke — 冷启动冒烟判定（NFR-P-005）。
 
 把镜像清单的逐固件结论与串口会话的冒烟上报、桌面就绪时刻、负向证据行

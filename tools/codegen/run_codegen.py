@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """run_codegen — AirymaxOS 契约代码生成管道统一入口。
 
 按依赖顺序编排 tools/codegen 下的 4 个契约生成器，将 R-01 SSoT 契约源

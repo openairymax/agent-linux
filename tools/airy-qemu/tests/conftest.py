@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """airy-qemu 单元测试共享夹具。
 
 把 tools/airy-qemu 注入 sys.path，使测试以 `import farm_types` 绝对导入

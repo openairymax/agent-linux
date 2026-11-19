@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """osaccrt_boot — image-smoke 串口启动日志解析。
 
 本模块把 QEMU 串口日志转换为结构化的启动事实，是 V-02 执行器的取证

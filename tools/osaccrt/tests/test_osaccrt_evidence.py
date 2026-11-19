@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """osaccrt_evidence 单元测试：清单序列化、步骤落位与 sha256 链封口。"""
 
 from __future__ import annotations

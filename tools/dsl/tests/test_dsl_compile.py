@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """dsl_compile 单元测试 — 端到端编译编排、零漂移校验与生成头可用性。
 
 覆盖 tools/dsl/dsl_compile.py：契约登记、render_outputs 目标映射与确定性、

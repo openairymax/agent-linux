@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """attest_check.py — 校验 in-toto / SLSA v1 构建证明
 
 为什么单独成文件：校验器同时服务三处——生成后自检、发布前复核、装机侧

@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 # ===========================================================================
 # ci/lint.sh — 仓库级 CI 层自检
 #
 # 用法: ci/lint.sh [--no-distro]
 #
-# 检查十四件事：
+# 检查十五件事：
 #   1. workflow 薄化与命名约束（ci/check-workflows.py）；
 #   2. ci/ 与 tools/ 下每个 shell 脚本可被 bash -n 解析；
 #   3. 函数名不超过 15 字节（ci/name_lint.py，N001，覆盖 shell 与 python）；
@@ -20,7 +21,8 @@
 #  11. 模型资产通道门禁（ci/gates/model-manifest.sh，声明面与离线实物面）；
 #  12. 功能归属册三态对账（ci/gates/completeness.sh，docs-linux 功能面逐条归账）；
 #  13. 零桩扫描（ci/gates/no-stub.sh，QG-02）；
-#  14. 死代码扫描（ci/gates/dead-code.sh，QG-03）。
+#  14. 死代码扫描（ci/gates/dead-code.sh，QG-03）；
+#  15. 文件头许可证与版权行（ci/header_lint.py，H001/H002）。
 #
 # 第 13、14 项把「禁桩」从文字变成判据：todo!/unimplemented!、产品代码里的
 # unreachable!、恒 Ok(()) 与 unsafe 逐条判负，allow(dead_code) 必须写理由，
@@ -247,6 +249,19 @@ if bash "${ROOT}/ci/ci.sh" dead-code "${ROOT}/system/tui"; then
     say "通过"
 else
     err "死代码扫描未通过（ci/ci.sh dead-code system/tui）"
+    rc=1
+fi
+endgroup
+
+group "文件头许可证与版权"
+# 编码规范要求每个源文件头部带 SPDX 许可证与版权行，此前没有执行者：720
+# 个自有源文件只有许可证行，tools/repo 下还有一个连许可证都没有。判据与
+# 归一化同批落地，否则下一个新文件照样能只写许可证。sdk/ 是生成产物，已带
+# 传统版权行，纳入判据防止生成器倒退。
+if python3 "${ROOT}/ci/header_lint.py" "${roots[@]}" sdk; then
+    say "通过"
+else
+    err "ci/header_lint.py 未通过（文件头缺许可证或版权行）"
     rc=1
 fi
 endgroup

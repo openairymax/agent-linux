@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """farm_preflight — QEMU 测试农场的执行前预检。
 
 在把作业交给运行器之前，本模块对宿主侧输入做一次完整、可重复的校验：

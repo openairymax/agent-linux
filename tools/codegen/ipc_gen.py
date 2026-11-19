@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """ipc_gen — AirymaxOS A-IPC 消息头多语言绑定生成器。
 
 以 R-02 位域契约源 structures_64.bf 的 ipc_msg_hdr / cap_badge 块为布局

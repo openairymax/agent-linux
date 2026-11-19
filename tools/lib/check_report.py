@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """check_report — 契约检查工具的共享结果类型与报告输出。
 
 六个契约检查工具（btf-integration、kbuild-version、ci-matrix、

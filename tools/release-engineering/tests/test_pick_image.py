@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """pick_image.py 单元测试。
 
 覆盖：三条认领判据的正负用例（制品名、过期状态、提交 SHA）、同提交多命中的

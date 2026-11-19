@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """farm_verdict 单元测试：终态判定、证据缺失与门禁汇总。"""
 
 from __future__ import annotations

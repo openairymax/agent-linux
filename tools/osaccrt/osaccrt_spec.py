@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """osaccrt_spec — NFR/OS-ACC 阈值表加载与校验。
 
 阈值表以 TOML 随源码发布，运行时不做 Markdown 解析：NFR 原文数值在

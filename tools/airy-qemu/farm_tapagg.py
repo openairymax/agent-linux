@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """farm_tapagg — QEMU 测试农场的 TAP 聚合。
 
 运行器把 kselftest 的 TAP 流落盘后，本模块负责把原始文本聚合成可判定的

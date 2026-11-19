@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """dsl_types — AirymaxOS 策略 DSL 编译器共享类型与常量。
 
 集中声明 .adl（Airymax Decision Language）契约源的词法/语法/语义层数据

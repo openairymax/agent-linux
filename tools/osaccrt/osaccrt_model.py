@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """osaccrt_model — OS-ACC-RT 验收规程的数据模型与判定接口。
 
 本模块是 OS-ACC-RT 的唯一事实源：判定四态、证据包六步、量化阈值、

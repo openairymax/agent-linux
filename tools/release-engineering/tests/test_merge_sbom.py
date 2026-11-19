@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """merge_sbom.py 单元测试。
 
 覆盖：分片合并（包/文件/关系/外部引用/许可信息并集）、去重与冲突判定、

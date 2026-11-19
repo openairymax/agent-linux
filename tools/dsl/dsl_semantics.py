@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """dsl_semantics — AirymaxOS 策略 DSL 语义校验与 IR 构造。
 
 在 dsl_parser 产出的 Program 语法树上执行跨节点语义校验，并降为可直接

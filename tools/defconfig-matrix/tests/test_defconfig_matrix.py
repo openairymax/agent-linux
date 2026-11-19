@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """tools/defconfig-matrix 单元测试：清单 schema / 清单↔文件系统一致性 /
 defconfig 格式 / 必备 CONFIG / LSM 入口 / CI 矩阵与必备清单同步 /
 Kconfig 声明闭合 / CLI 与真实仓库端到端。

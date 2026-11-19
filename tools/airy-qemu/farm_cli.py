@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """farm_cli — QEMU 测试农场的命令行入口。
 
 把清单加载、目标解析、预检、并发调度、执行取证、TAP 判定与报告输出

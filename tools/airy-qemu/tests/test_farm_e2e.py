@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """airy-qemu 端到端测试：从命令行到门禁报告的完整链路。
 
 真实 QEMU 与 virtme-ng 由假执行器替代，测试聚焦于流水线的可观测契约：

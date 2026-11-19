@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """farm_runner — QEMU 测试农场的作业执行与原始取证。
 
 本模块把已通过预检的作业交给 virtme-ng 执行，并完整保留原始证据：
