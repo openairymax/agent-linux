@@ -20,6 +20,8 @@ on:
       - 'ci/ci.sh'
       - 'ci/lib/**'
       - 'ci/gates/tui-check.sh'
+      - 'ci/gates/tui-field.sh'
+      - 'ci/tools/tui-field-collect.sh'
       - 'ci/gates/rust-vendor.sh'
       - 'ci/gates/rust-sbom.sh'
       - 'ci/gates/lang-lock.sh'
@@ -37,6 +39,8 @@ on:
       - 'ci/ci.sh'
       - 'ci/lib/**'
       - 'ci/gates/tui-check.sh'
+      - 'ci/gates/tui-field.sh'
+      - 'ci/tools/tui-field-collect.sh'
       - 'ci/gates/rust-vendor.sh'
       - 'ci/gates/rust-sbom.sh'
       - 'ci/gates/lang-lock.sh'
@@ -114,6 +118,11 @@ jobs:
 
       - name: Unit tests
         run: ci/ci.sh tui-check --kind test
+
+      # 取证格式与实机覆盖共用一份判定实现。CI 没有目标机，只跑夹具与格式
+      # 自检；发版时由 release 流程以 --input 提供实机取证包。
+      - name: Field evidence format
+        run: ci/ci.sh tui-field
 
       # 物料清单的判据：组件数与锁一致、许可证逐条落地、两次生成字节相同、
       # 产物不含本机路径。放在最后，前面任一判据红了就不必再跑一次元数据。
