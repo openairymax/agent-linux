@@ -12,12 +12,19 @@
 #
 #   · 未登记的函数，单函数圈复杂度不得超过 LIMIT_CC（10，Sonar 默认上限）；
 #   · 未登记的重复片段（连续 WINDOW 行规范化窗口）一律判红；
-#   · 存量超标函数与重复窗口按基线登记，只减不增：--update 拒绝抬高数量。
+#   · 存量超标函数与重复窗口按基线登记，只减不增：--update 拒绝抬高数量；
+#   · 均值按判定点总数与函数数登记，同样只降不升。只登记数量会漏掉最要紧的
+#     一类恶化：把一个 cc=9 的函数写到 cc=10、再多写几个 cc=6 的函数，数量与
+#     单函数上限都不变，均值却一路走高。均值按整数比判定（总量 × 基线函数数
+#     对基线总量 × 当前函数数），不经过浮点；
+#   · 均值判定留一个例外：判定点总量下降时允许均值上升。删掉一批 cc=1 的
+#     薄封装会让均值上升，但那正是该做的清理，用均值把它拦下等于逼人保留
+#     冗余代码。
 #
 # 为什么不直接按 2.5 判全树：本仓自有代码实测圈复杂度均值 3.70、超 10 的函数
 # 116 个，一次压到 2.5 只能靠机械拆函数，与「边开发边测试、稳定性优先」相冲突。
 # 棘轮让新增代码不再恶化，存量靠后续重构消化，且差额每次运行都打印出来，
-# 不会因为「没判据」而悄悄回到原点。
+# 不会因为「没判据」而悄悄回到原点。0.0.5 起均值单调下降，目标 2.5。
 #
 # 口径与边界：
 #   · 只量 shell、python 与 rust——与 ci/name_lint.py 同一交付面（ci tools
@@ -294,10 +301,30 @@ def dup_hashes(dup):
     return {h for h, n in dup.items() if n > 1}
 
 
+def ratio(funcs):
+    """判定点总量与函数数；空树按 (0, 1)，避免除零把门禁变成崩溃。"""
+    return sum(cc for _, _, cc in funcs), max(1, len(funcs))
+
+
+def mean_rise(funcs, base):
+    """均值抬高且总量未下降时返回四元组，否则 None。
+
+    整数交叉相乘判比例，不经浮点：两侧都是计数，浮点比较在 4 位小数上
+    的抖动足以让同一次重构在本地与 CI 得到相反结论。
+    """
+    cur, n = ratio(funcs)
+    old, m = base.get("cc_sum"), base.get("cc_funcs")
+    if old is None or m is None or cur <= old:
+        return None
+    if cur * m <= old * n:
+        return None
+    return cur, n, float(old) / m, float(cur) / n
+
+
 def report(funcs, dup, lines, base):
     """打印度量、目标差额与最差点位。"""
-    total_cc = sum(cc for _, _, cc in funcs) or 1
-    mean = float(total_cc) / max(1, len(funcs))
+    total_cc, nfunc = ratio(funcs)
+    mean = float(total_cc) / nfunc
     dupl = sum(n - 1 for n in dup.values()) * WINDOW
     rate = float(dupl) / max(1, lines)
     print("度量: 函数 %d 个，有效行 %d 行" % (len(funcs), lines))
@@ -335,6 +362,11 @@ def check(funcs, dup, base):
     for hit in sorted(dup_hashes(dup) - known_dup):
         fails += 1
         print("quality/dup: 新的重复片段 %s（窗口 %d 行）" % (hit[:12], WINDOW))
+    rise = mean_rise(funcs, base)
+    if rise:
+        fails += 1
+        print("quality/mean: 圈复杂度均值 %.2f -> %.2f（目标 < %.1f，判定点总量未减少）"
+              % (rise[2], rise[3], TARGET_CC))
     return fails
 
 
@@ -351,13 +383,20 @@ def update(funcs, dup, base, path, fresh):
         fails += 1
         print("quality/dup: 重复窗口 %d -> %d，基线只降不升"
               % (len(base["dup"]), len(hashes)))
+    rise = mean_rise(funcs, base)
+    if not fresh and rise:
+        fails += 1
+        print("quality/mean: 均值 %.2f -> %.2f，基线只降不升"
+              % (rise[2], rise[3]))
     if fails:
         return fails
     for name in sorted(set(over) - set(base["over"])):
         print("登记超标函数: %s" % name)
     for name in sorted(set(base["over"]) - set(over)):
         print("退役超标函数: %s" % name)
+    cc_sum, cc_funcs = ratio(funcs)
     data = {"version": 1, "window": WINDOW, "limit_cc": LIMIT_CC,
+            "cc_sum": cc_sum, "cc_funcs": cc_funcs,
             "over": over, "dup": hashes}
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n",
                     encoding="utf-8")
