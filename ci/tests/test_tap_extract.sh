@@ -97,6 +97,22 @@ printf 'health: ok\n' >"${tmp}/out/leg4/run-uefi-1/boot.log"
 check "冒烟未执行判负" 1 "smoke TAP 未能从串口还原" \
     --dir "${tmp}/out/leg4" --require
 
+# 验收镜像的 journald 把单元 stdout 转发到同一台串口，reporter 又按原文写了
+# 一次：每行在日志里成对出现。还原结果只能留一份，否则计划行重复会让下游
+# 严格解析器把整份证据判成非法 TAP。
+mkdir -p "${tmp}/out/leg5/run-uefi-1"
+{
+    printf '[  12.3] airymax-smoke-report.sh[1842]: AIRYMAX-TAP|TAP version 14\n'
+    printf 'AIRYMAX-TAP|TAP version 14\n'
+    printf '[  12.4] airymax-smoke-report.sh[1842]: AIRYMAX-TAP|1..31\n'
+    printf 'AIRYMAX-TAP|1..31\n'
+    printf '[  12.5] airymax-smoke-report.sh[1842]: AIRYMAX-TAP|ok 1 - T1\n'
+    printf 'AIRYMAX-TAP|ok 1 - T1\n'
+} >"${tmp}/out/leg5/run-uefi-1/boot.log"
+check "转发回显只留一份" 0 "smoke-uefi-1.tap (3 行)" --dir "${tmp}/out/leg5"
+[ "$(grep -c '^1\.\.31$' "${tmp}/out/leg5/smoke-uefi-1.tap")" -eq 1 ] || \
+    fail "计划行重复" "$(cat "${tmp}/out/leg5/smoke-uefi-1.tap")"
+
 if [ "${fails}" -ne 0 ]; then
     printf '%d 条断言失败\n' "${fails}"
     exit 1
