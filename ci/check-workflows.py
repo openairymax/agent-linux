@@ -160,8 +160,11 @@ RUNNER_TAG = re.compile(r"^[a-z]+-\d{2}\.\d{2}(?:-arm)?$")
 # 矩阵取值由 strategy.matrix.include 承载，登记判据在 wf_label_rule 里补判。
 MATRIX_RUNNER = re.compile(r"^\$\{\{\s*matrix\.runner\s*\}\}$")
 
-# 运行器版本的唯一事实源：nightly 契约清单的 runner.label。
+# 运行器版本的唯一事实源：nightly 契约清单的 runner.label / runner.labels。
 NIGHTLY = ROOT / "tools" / "nightly" / "manifest.yaml"
+RUNNER_ONE = re.compile(r"^  label:\s*(\S+)\s*$")
+RUNNER_MANY = re.compile(r"^  labels:\s*$")
+RUNNER_ITEM = re.compile(r"^    -\s*(\S+)\s*$")
 
 # 多远程同 sha 门禁的调用点：命名空间（heads/tags）只能由调用方给出。
 REMOTE_SYNC = "ci/ci.sh remote-sync"
@@ -493,33 +496,41 @@ def check_pins(name: str, text: str) -> list[str]:
     return errors
 
 
+def runs_on_tags(text: str) -> list[tuple[int, str]]:
+    """每一处 ``runs-on`` 的字面量取值；矩阵表达式另由 matrix_runner_refs 取。"""
+    return [(no, m.group(1))
+            for no, s in enumerate(text.splitlines(), 1)
+            for m in (RUNS_ON.match(s),)
+            if m is not None and not MATRIX_RUNNER.match(m.group(1))]
+
+
+def uses_matrix(text: str) -> bool:
+    """``runs-on`` 是否引用 matrix.runner（取值因此搬到 include 里）。"""
+    tags = (m.group(1) for m in (RUNS_ON.match(s) for s in text.splitlines()) if m)
+    return any(MATRIX_RUNNER.match(tag) for tag in tags)
+
+
+def matrix_pin_errors(name: str, text: str) -> list[str]:
+    """矩阵 runner 取值同样是运行器的版本事实，须与字面量套同一判据。"""
+    return [
+        f"{name}:{no}: 矩阵 runner: {tag} 未钉版（须为 <发行版>-<YY.MM>，"
+        "矩阵取值同样是运行器的版本事实）"
+        for no, tag in matrix_runner_refs(text) if not RUNNER_TAG.match(tag)
+    ]
+
+
 def check_runner(name: str, text: str) -> list[str]:
     """运行器必须钉版：浮动标签会在两次运行之间换掉整条工具链。
 
     矩阵表达式不在这一步判格式：它把取值搬到同文件的 ``matrix.include``，
     那里同样套用钉版判据，登记判据在 wf_label_rule 里补判。
     """
-    errors: list[str] = []
-    uses_matrix = False
-    for no, s in enumerate(text.splitlines(), 1):
-        m = RUNS_ON.match(s)
-        if m is None:
-            continue
-        tag = m.group(1)
-        if MATRIX_RUNNER.match(tag):
-            uses_matrix = True
-            continue
-        if not RUNNER_TAG.match(tag):
-            errors.append(
-                f"{name}:{no}: runs-on: {tag} 未钉版（须为 <发行版>-<YY.MM>，"
-                "浮动标签会换掉编译器与 shellcheck 版本）")
-    if uses_matrix:
-        for no, tag in matrix_runner_refs(text):
-            if not RUNNER_TAG.match(tag):
-                errors.append(
-                    f"{name}:{no}: 矩阵 runner: {tag} 未钉版（须为 <发行版>-<YY.MM>，"
-                    "矩阵取值同样是运行器的版本事实）")
-    return errors
+    errors = [
+        f"{name}:{no}: runs-on: {tag} 未钉版（须为 <发行版>-<YY.MM>，"
+        "浮动标签会换掉编译器与 shellcheck 版本）"
+        for no, tag in runs_on_tags(text) if not RUNNER_TAG.match(tag)
+    ]
+    return errors + matrix_pin_errors(name, text)
 
 
 def runner_labels() -> set[str]:
@@ -530,28 +541,41 @@ def runner_labels() -> set[str]:
     """
     if not NIGHTLY.exists():
         return set()
-    labels: set[str] = set()
-    in_runner = in_labels = False
-    for s in NIGHTLY.read_text().splitlines():
+    return set(label_tokens(runner_block(NIGHTLY.read_text())))
+
+
+def runner_block(text: str) -> list[str]:
+    """清单 ``runner:`` 块的正文行；遇到顶格的下一个键即结束。"""
+    block: list[str] = []
+    inside = False
+    for s in text.splitlines():
         if re.match(r"^runner:\s*$", s):
-            in_runner = True
+            inside = True
+        elif not inside:
             continue
-        if not in_runner:
-            continue
-        if s.strip() and not s.startswith(" "):
+        elif s.strip() and not s.startswith(" "):
             break
-        m = re.match(r"^  label:\s*(\S+)\s*$", s)
-        if m is not None:
-            labels.add(m.group(1))
+        else:
+            block.append(s)
+    return block
+
+
+def label_tokens(lines: list[str]) -> list[str]:
+    """块内 ``label:`` 的单值与 ``labels:`` 列表项。"""
+    out: list[str] = []
+    in_list = False
+    for s in lines:
+        one = RUNNER_ONE.match(s)
+        if one is not None:
+            out.append(one.group(1))
             continue
-        if re.match(r"^  labels:\s*$", s):
-            in_labels = True
+        if RUNNER_MANY.match(s):
+            in_list = True
             continue
-        if in_labels:
-            m = re.match(r"^    -\s*(\S+)\s*$", s)
-            if m is not None:
-                labels.add(m.group(1))
-    return labels
+        item = RUNNER_ITEM.match(s) if in_list else None
+        if item is not None:
+            out.append(item.group(1))
+    return out
 
 
 def matrix_runner_refs(text: str) -> list[tuple[int, str]]:
@@ -589,33 +613,21 @@ def _label_text(labels: set[str]) -> str:
 
 def wf_label_rule(name: str, text: str, labels: set[str]) -> list[str]:
     """runs-on 的取值必须落在清单登记集合内：同一事实只能有一个取值。"""
-    errors: list[str] = []
-    uses_matrix = False
-    for no, s in enumerate(text.splitlines(), 1):
-        m = RUNS_ON.match(s)
-        if m is None:
-            continue
-        tag = m.group(1)
-        if MATRIX_RUNNER.match(tag):
-            uses_matrix = True
-            continue
-        if tag in labels:
-            continue
+    errors = [
+        f"{name}:{no}: runs-on: {tag} 与 tools/nightly/manifest.yaml 的 "
+        f"{_label_text(labels)} 不一致（两处各自演化，改一侧不会带出另一侧）"
+        for no, tag in runs_on_tags(text) if tag not in labels
+    ]
+    refs = matrix_runner_refs(text)
+    if not refs and uses_matrix(text):
         errors.append(
-            f"{name}:{no}: runs-on: {tag} 与 tools/nightly/manifest.yaml 的 "
-            f"{_label_text(labels)} 不一致（两处各自演化，改一侧不会带出另一侧）")
-    if uses_matrix:
-        refs = matrix_runner_refs(text)
-        if not refs:
-            errors.append(
-                f"{name}: runs-on 用 matrix.runner 表达式，但矩阵 include 里没有 "
-                "runner 取值（表达式只会把未登记的值藏进另一处）")
-        for no, tag in refs:
-            if tag in labels:
-                continue
-            errors.append(
-                f"{name}:{no}: 矩阵 runner: {tag} 与 tools/nightly/manifest.yaml 的 "
-                f"{_label_text(labels)} 不一致（矩阵取值同样是运行器事实源）")
+            f"{name}: runs-on 用 matrix.runner 表达式，但矩阵 include 里没有 "
+            "runner 取值（表达式只会把未登记的值藏进另一处）")
+    errors += [
+        f"{name}:{no}: 矩阵 runner: {tag} 与 tools/nightly/manifest.yaml 的 "
+        f"{_label_text(labels)} 不一致（矩阵取值同样是运行器事实源）"
+        for no, tag in refs if tag not in labels
+    ]
     return errors
 
 
