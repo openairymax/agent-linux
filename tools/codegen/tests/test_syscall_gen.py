@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """syscall_gen 单元测试：契约解析、类型词汇表、多语言绑定辅助、渲染与校验。
 
 设计依据: docs-linux/30-interfaces/06-codegen-pipeline.md §2 / §8 / §9.3

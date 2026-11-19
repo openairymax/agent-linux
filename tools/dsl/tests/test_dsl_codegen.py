@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """dsl_codegen 单元测试 — IR 到纯 C 决策表的渲染上下文与产物。
 
 覆盖 tools/dsl/dsl_codegen.py：模板上下文构造（生成器标识、按源文件名

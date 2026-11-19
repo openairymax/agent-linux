@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """osaccrt_judge — OS-ACC-RT 判定状态机。
 
 判定器只读实验结果对象，按证据包推导 PASS/FAIL/WAIVED/BLOCKED 四态：

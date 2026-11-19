@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """sc_tri_compile 单元测试 — 五路编译、类型大小、结构体布局与 syscall ABI。
 
 覆盖 tools/sc-tri-compile/sc_tri_compile.py：常量矩阵（常规三路 + [DSL]

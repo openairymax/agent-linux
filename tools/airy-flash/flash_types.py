@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """tools/airy-flash 的数据类型、退出码与错误类型。
 
 把「值对象」与「IO/渲染」分开，使预检、写入、回读三条路径都能在无 root、

@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """tools/kbuild-version 单元测试：清单 schema / 版本文件存在性 / 四元组一致 /
 OS-STD-049 / include 指令 / filechk 宏注入 / 契约快照 / 真实 version.h /
 build_checks 编排 / CLI 与真实仓库端到端。

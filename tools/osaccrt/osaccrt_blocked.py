@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """osaccrt_blocked — 实机缺失的诚实降级（BLOCKED）登记与核对。
 
 BLOCKED 既不是失败也不是豁免：它把「环境不具备、实验无法执行」如实

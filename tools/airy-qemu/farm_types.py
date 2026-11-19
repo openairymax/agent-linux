@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """farm_types — QEMU 测试农场共享类型与常量。
 
 集中声明 QEMU 测试农场（L-19）在目标解析、作业调度、执行、TAP 聚合与

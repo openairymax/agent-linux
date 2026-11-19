@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """osaccrt_spec 单元测试：阈值表加载、结构与原文一致性。
 
 默认表逐条对照 NFR 原文数值；构造用例覆盖 schema 版本、字段集合、

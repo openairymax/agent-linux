@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """farm_cli 单元测试：参数解析、流水线编排与退出码。
 
 真实 QEMU 由假执行器替代：测试只验证 CLI 如何把清单、预检、调度、

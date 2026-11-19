@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """bitfield_gen 单元测试 — .bf 契约解析、状态机校验与布局一致性。
 
 覆盖 tools/codegen/bitfield_gen.py：DSL 行解析、逐块状态机错误路径、

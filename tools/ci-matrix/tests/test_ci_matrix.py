@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """tools/ci-matrix 单元测试：清单 schema / 架构源解析 / 矩阵 job 与维度 /
 格数 / exclude / 调度策略 / 超时预算 / job 约束 / 门禁语义 / 结果归因 /
 CLI 与真实仓库端到端。

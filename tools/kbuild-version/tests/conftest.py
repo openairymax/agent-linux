@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """kbuild-version 单元测试共享夹具。
 
 把 tools/kbuild-version 注入 sys.path，使测试可 `import kbuild_version`

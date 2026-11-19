@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """osaccrt_store — append-only 证据库存储引擎。
 
 证据目录是 OS-ACC-RT 的唯一裁决输入，必须同时满足两条硬约束：写入

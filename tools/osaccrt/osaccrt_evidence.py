@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """osaccrt_evidence — 证据包清单与 sha256 链封口。
 
 证据包是 OS-ACC-RT 唯一的裁决输入：每次实验在

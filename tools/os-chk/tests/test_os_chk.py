@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """tools/os-chk 单元测试：注册表解析 / schema 校验 / 门禁调度 / 门禁判定 /
 报告格式 / CLI / 真实仓库端到端。
 

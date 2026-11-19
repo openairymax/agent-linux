@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """osaccrt_boot 单元测试：标记文法、三种结论态与负向证据复用。"""
 
 from __future__ import annotations

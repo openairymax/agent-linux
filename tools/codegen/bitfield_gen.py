@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """bitfield_gen — AirymaxOS 位域契约代码生成器。
 
 解析 .bf 位域契约源（R-02 SSoT），生成 [SC] 位域访问层头文件：

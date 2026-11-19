@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """farm_sched — QEMU 测试农场的并发与资源调度。
 
 农场需要在有限的 CPU 与内存预算内并行执行多个作业。单纯按作业数限制

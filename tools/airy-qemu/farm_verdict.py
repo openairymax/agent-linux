@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """farm_verdict — QEMU 测试农场的结果判定与门禁。
 
 运行器只负责执行与取证，聚合层只负责计数；本模块把两者转化为可阻断

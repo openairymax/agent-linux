@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """osaccrt_repro — 已封口证据包的复现脚本生成器。
 
 归档步要求第三方仅凭证据包即可重放同一实验。本模块把清单中的

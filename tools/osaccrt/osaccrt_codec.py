@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """osaccrt_codec — 证据记录 JSON 编解码原语。
 
 六步规程中所有落盘的 JSON 记录都受同一组形状约束：可解码为 UTF-8

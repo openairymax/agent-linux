@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """dsl_codegen — 将策略 DSL 语义 IR 渲染为纯 C 决策表头文件。
 
 把 dsl_semantics 产出的 ProgramIR 展开为 Jinja2 上下文，复用 tools/codegen

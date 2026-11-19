@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """codegen_types — agent-linux 代码生成管道共享接口与类型。
 
 集中声明契约版本常量、命名空间前缀、槽位与布局常量、生成器入口契约、

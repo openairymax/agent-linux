@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """btf-integration 单元测试共享夹具。
 
 把 tools/btf-integration 注入 sys.path，使测试可 `import btf_integration`

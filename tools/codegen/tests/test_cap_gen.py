@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """cap_gen 单元测试 — capability ID 契约解析、跨契约校验与渲染。
 
 覆盖 tools/codegen/cap_gen.py：X-macro 行解析、AIRY_ 前缀转换、重复符号

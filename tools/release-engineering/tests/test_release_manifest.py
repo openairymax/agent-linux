@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """release_manifest 单元测试。
 
 覆盖四块能力：清单 schema 门禁、清单 ↔ 发布流水线双向一致、生成命令记录

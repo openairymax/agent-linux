@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """osaccrt_waiver 单元测试：双签豁免、复核记录与清单互证。"""
 
 from __future__ import annotations

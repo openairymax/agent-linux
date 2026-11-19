@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """farm_report — QEMU 测试农场的报告输出。
 
 门禁结论需要同时服务两类消费者：CI 流水线要机器可读的归档证据，

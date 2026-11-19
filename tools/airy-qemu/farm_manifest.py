@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """farm_manifest — QEMU 测试农场清单的严格加载器。
 
 读取 tools/airy-qemu/manifest.yaml，按固定 schema 构造 FarmManifest。

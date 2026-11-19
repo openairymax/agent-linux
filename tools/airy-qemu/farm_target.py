@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """farm_target — QEMU 农场目标解析与加速器选择。
 
 把命令行给出的架构集合解析为农场清单中的真实机器定义，并按宿主能力

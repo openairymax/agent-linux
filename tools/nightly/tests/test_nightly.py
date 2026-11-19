@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """tools/nightly 单元测试：清单 schema / 触发条件 / 单实例并发 / 最小权限 /
 job 拓扑 / runner / 超时预算 / shell 变量 / helper 登记与契约 / CI 预算 /
 CLI 与真实仓库端到端。

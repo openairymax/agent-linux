@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """farm_sched 单元测试：资源预算、派发顺序、结果定序与错误降级。"""
 
 from __future__ import annotations

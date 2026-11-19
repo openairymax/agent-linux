@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """codegen_types 数据模型与常量单元测试。
 
 覆盖契约版本常量、命名空间前缀、槽位/布局常量、生成器入口契约、异常层级，

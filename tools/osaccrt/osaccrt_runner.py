@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """osaccrt_runner — 实验执行器主循环与断点续跑。
 
 执行器把"准备、执行、取证"三步串成单一主循环：每步产物由步骤函数返回，

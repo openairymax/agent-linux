@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """osaccrt_bootchain — systemd 冷启动关键链解析（NFR-P-005）。
 
 桌面就绪探针在 guest 侧把 ``systemd-analyze critical-chain --no-pager``

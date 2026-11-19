@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """farm_target 单元测试：宿主探测、KVM 判定与目标解析。"""
 
 from __future__ import annotations

@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """farm_cmdline — QEMU 测试农场的运行器命令行构造。
 
 按已解析目标与作业生成 virtme-ng 的确定性 argv，由运行器直接交给

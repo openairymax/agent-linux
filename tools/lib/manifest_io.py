@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
+# SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """manifest_io — 契约检查工具的清单读取与 CLI 前置。
 
 六个契约检查工具在 ``main()`` 开头做同一段前置：探测仓库根、确认
