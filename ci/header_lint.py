@@ -33,7 +33,7 @@ import re
 import sys
 from pathlib import Path
 
-from lib import scan_src
+from lib import lint_drive, scan_src
 
 ROOT = Path(__file__).resolve().parent.parent
 HEAD = 10
@@ -78,20 +78,7 @@ def scan_base(base: Path) -> tuple[int, int]:
 
 
 def main(argv: list[str]) -> int:
-    files = 0
-    total = 0
-    for name in argv or list(DEFAULT):
-        base = Path(name)
-        if not base.is_absolute():
-            base = ROOT / name
-        if not base.is_dir():
-            print(f"skip: {name} 不存在", file=sys.stderr)
-            continue
-        got_files, got_total = scan_base(base)
-        files += got_files
-        total += got_total
-    print(f"header: {files} file(s), {total} issue(s)")
-    return 1 if total else 0
+    return lint_drive.run("header", argv or list(DEFAULT), scan_base, ROOT)
 
 
 if __name__ == "__main__":
