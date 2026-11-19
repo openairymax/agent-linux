@@ -243,7 +243,9 @@ L2/L3 都不改判据，只改「同一份物料要付几次成本」。任何�
    `acceptance` 必须保持 `false`：验收剖面是自动登录的 B 轮字节，既不产
    `channel.json`，也不允许占用发行 tag（`iso-publish` 与清单生成都带
    `!inputs.acceptance`）。装机的 BIOS/UEFI 冷启动断言在两条剖面里都会跑，
-   区别只在会话内冒烟的期望标记。
+   区别只在会话内冒烟的期望标记。此刻发布页尚未建（建页在第 3 步），
+   `channel-publish` 对「页面不存在」按无操作放行——清单已随制品上传，
+   由第 3 步的 `channel-fetch` 取用；判成失败会让引导链在第 2 步断掉。
 3. **只重放、不重编。** `workflow_dispatch release.yml`：`tag=v<ver>`，
    `publish_run=<第 1 步 run id>`。`build-and-sign` 跳过，`publish-release`
    从该 run 重放制品；此时 `channel-fetch` 能取到第 2 步的 `channel.json`，
