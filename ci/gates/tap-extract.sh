@@ -73,11 +73,20 @@ if [ "${#logs[@]}" -eq 0 ]; then
     exit 0
 fi
 
+# 同一行在串口上出现两次：验收镜像为取证打开 journald 的 ForwardToConsole，
+# 单元 stdout 被转发到同一台 ttyS0，而 reporter 又按原文写了一次串口（con_serial
+# 是产品镜像上唯一可靠的通道，两条都不能删）。还原时按「与上一行相同即丢弃」
+# 折叠，只去重不去内容：重复的计划行会让严格解析器把证据判成非法 TAP。
 for log in "${logs[@]}"; do
     dir="$(basename "$(dirname "${log}")")"
     out="${DIR}/smoke-${dir#run-}.tap"
-    awk -v t="${TOKEN}" 'i = index($0, t) { print substr($0, i + length(t)) }' \
-        "${log}" >"${out}"
+    awk -v t="${TOKEN}" '
+        i = index($0, t) {
+            line = substr($0, i + length(t))
+            if (line == prev) next
+            print line
+            prev = line
+        }' "${log}" >"${out}"
     lines="$(wc -l <"${out}")"
     say "${log} → ${out} (${lines} 行)"
 done
