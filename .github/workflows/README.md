@@ -61,7 +61,7 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 | `release.yml` | `build-and-sign`、`publish-release` | 标签 `v*`、`v*-rc*` 与手动 | 源码 tarball（超项目 + 逐子仓按 gitlink 导出）、`airy_defconfig` 四架构快照、syscall ABI 报告、逐子模块 SBOM 合并、内核 RPM、GPG 与 cosign 签名、SDK 压缩包；第二作业校验已签名产物、推送 OCI 镜像到 ghcr、清理过期资产、创建 GitHub Release（正式版一律 `make_latest: false`，创建后由 `release-stage hold` 读回断言页面停在 held，只有发布机在 B 轮 `AIRYMAX-SMOKE-PASS` 之后执行的 `release-stage promote` 才能把它推进 `releases/latest`），并在对账后为整套发布资产出具 in-toto/SLSA 证明（`attest-<tag>`，指纹取 run id 与检出提交） |
 | `ssot-verify.yml` | `ssot-syntax-and-rules`、`doc-links` | 文档、`ssot-registry.yaml`、`tools/repo/validate-ssot.py` 的 PR 与 `main` 的 push | PyYAML 语法、规则 ID 计数与唯一性、`validate-ssot.py` 交叉引用；相对路径链接完整性 |
 | `sdk-verify.yml` | `go`、`python`、`rust`、`ts` | `sdk/**`、`ci/gates/sdk-verify.sh`、`ci/lib/**` 的 PR 与 `main` 的 push | 四份语言绑定各自过编译器：go 走临时模块 `go vet`+`go build`，python 走 `py_compile`（字节码缓存重定向出源码区），rust 逐文件 `rustc --emit=metadata`，ts 走钉版 `tsc --strict --noEmit`。绑定由生成器产出，生成一致不代表能编译，这一层补的就是编译器视角 |
-| `tui-verify.yml` | `policy`、`build`、`cross` | `system`、`distro` gitlink、`ci/ci.sh`、`ci/lib/**`、`ci/gates/{tui-check,rust-vendor,lang-lock,submodules}.sh`、`ci/container/build-packages.txt` 的 PR 与 `main` 的 push | `policy` 断言语言政策（四组件 present、工具链钉版）与 `Cargo.lock`、`vendor/`、台账三者同源，不需要编译器；`build` 依次跑 `fmt --check`、`clippy -D warnings`、`cargo test`，全部 `--offline --locked`；`cross` 在 aarch64 与 riscv64gc 上做类型检查，两种目标互不掩盖。编译器版本只由 `system/tui/rust-toolchain.toml` 决定，`tui-check` 断言实际生效者与钉版一致 |
+| `tui-verify.yml` | `policy`、`build`、`cross` | `system`、`distro` gitlink、`ci/ci.sh`、`ci/lib/**`、`ci/gates/{tui-check,tui-frame,rust-vendor,lang-lock,submodules}.sh`、`ci/container/build-packages.txt` 的 PR 与 `main` 的 push | `policy` 断言语言政策（四组件 present、工具链钉版）与 `Cargo.lock`、`vendor/`、台账三者同源，不需要编译器；`build` 依次跑 `fmt --check`、`clippy -D warnings`、`cargo test`，全部 `--offline --locked`，最后以 `tui-frame` 收尾——85×24 整屏重绘 p99 ≤ 33 ms、常驻堆 ≤ 64 KiB（与单测共用一次检出与目标目录，红了不再花第二次基准编译）；`cross` 在 aarch64 与 riscv64gc 上做类型检查，两种目标互不掩盖。编译器版本只由 `system/tui/rust-toolchain.toml` 决定，`tui-check` 断言实际生效者与钉版一致 |
 
 `nightly.yml` 与 `release.yml`、`image-build.yml`、`payload-seed.yml` 暴露
 `workflow_dispatch`。
@@ -261,6 +261,22 @@ L2/L3 都不改判据，只改「同一份物料要付几次成本」。任何�
 （`./ci/ci.sh channel-publish`）在清单生成后执行：写前用客户端解析器复验
 版本同源，同名旧件先删后传（Release 不接受同名覆盖），写后按资产 id 取回
 逐字节比对。写权限只给 `accept` job，`assemble` 保持只读。
+
+## 5.7 粒度、作业数与模块归属
+
+判据是「流水线跟随可交付制品与独立验证轴」，不是「一个子仓一条流水线」。
+9 个子仓各建一条，会把检出、子模块与工具链预热的固定成本重复九遍；作业数
+也不以多为胜：本仓 13 条流水线当前为 1–4 个作业，预算在
+`ci/workflow-budgets.txt` 登记且只许下调。取舍口径、模块归属表，以及
+security / memory / cognition 三仓不设流水线的证据（x86 / arm64 / riscv /
+loongarch 的 `airy_defconfig` 均 `# CONFIG_MODULES is not set`，实现内建于
+`kernel/security/airy/` 与 `kernel/kernel/syscalls/airy_clt.c`），见
+`docs/docs-linux/70-build-system/03-ci-cd-pipeline.md` §2.6。
+
+两条 0.0.5 的接线变化：`tui-frame`（QG-08 帧预算）并入 `tui-verify` 的
+`build` 作业，不再是无执行者的孤儿门禁；`quality-metrics` 的
+`--check` / `--update` 政策只由 `ci/gates/quality-metrics.sh` 一处实现，
+`ci/lint.sh` 也经它转调，避免两个入口对「基线只减不增」给出不同结论。
 
 ## 6. 本地复跑
 

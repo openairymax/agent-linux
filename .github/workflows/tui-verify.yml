@@ -20,6 +20,7 @@ on:
       - 'ci/ci.sh'
       - 'ci/lib/**'
       - 'ci/gates/tui-check.sh'
+      - 'ci/gates/tui-frame.sh'
       - 'ci/gates/tui-field.sh'
       - 'ci/tools/tui-field-collect.sh'
       - 'ci/gates/rust-vendor.sh'
@@ -39,6 +40,7 @@ on:
       - 'ci/ci.sh'
       - 'ci/lib/**'
       - 'ci/gates/tui-check.sh'
+      - 'ci/gates/tui-frame.sh'
       - 'ci/gates/tui-field.sh'
       - 'ci/tools/tui-field-collect.sh'
       - 'ci/gates/rust-vendor.sh'
@@ -118,6 +120,13 @@ jobs:
 
       - name: Unit tests
         run: ci/ci.sh tui-check --kind test
+
+      # QG-08 帧预算：85×24 整屏重绘 p99 ≤ 33 ms、常驻堆 ≤ 64 KiB。判据在
+      # ci/gates/tui-frame.sh（tests/frame_budget.rs + benches/frame.rs），此前
+      # 没有任何执行者。与单元测试共用一次检出与目标目录，故并入本作业；
+      # 排在其后，单元测试红了就不必再花一次基准编译。
+      - name: Frame budget
+        run: ci/ci.sh tui-frame
 
       # 取证格式与实机覆盖共用一份判定实现。CI 没有目标机，只跑夹具与格式
       # 自检；发版时由 release 流程以 --input 提供实机取证包。
