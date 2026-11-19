@@ -215,15 +215,15 @@ supply_check()
 # 不在发行包内，推导时排除。取不到任何条目说明单元树缺失，判负而不是跳过。
 unit_bins()
 {
-    local dir unit
-    for dir in "${ROOT}/system/units"; do
-        [ -d "${dir}" ] || continue
-        while IFS= read -r unit; do
-            sed -n -E \
-                's/^[[:space:]]*Exec[A-Za-z]*[[:space:]]*=[[:space:]]*[-@+!:]*(.*)$/\1/p' \
-                "${unit}"
-        done < <(find "${dir}" -maxdepth 1 -type f -name '*.service' | sort)
-    done | awk 'NF { print $1 }' |
+    local dir="${ROOT}/system/units" unit
+
+    [ -d "${dir}" ] || return 0
+    while IFS= read -r unit; do
+        sed -n -E \
+            's/^[[:space:]]*Exec[A-Za-z]*[[:space:]]*=[[:space:]]*[-@+!:]*(.*)$/\1/p' \
+            "${unit}"
+    done < <(find "${dir}" -maxdepth 1 -type f -name '*.service' | sort) |
+        awk 'NF { print $1 }' |
         awk '$0 ~ /^\/usr\/bin\// && $0 != "/usr/bin/systemctl"' | sort -u
 }
 
