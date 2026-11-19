@@ -40,10 +40,11 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 ├── release.yml            # 构建 + SBOM + 签名 + 发布
 ├── sdk-verify.yml         # 用户态 SDK：go / python / rust / ts 编译
 ├── ssot-verify.yml        # SSoT 语法与交叉引用校验
+├── tui-input-verify.yml   # TUI 输入面：四通道矩阵 + 中文语料 / 会话切换
 └── tui-verify.yml         # TUI 工作区：依赖源 + 格式/静态/单测 + 跨架构类型检查
 ```
 
-十二个流水线，作业数 1~4（`os-chk-verify` 一个、`sdk-verify` 四个）。
+十三个流水线，作业数 1~4（`os-chk-verify` 一个、`sdk-verify` 四个）。
 作业数上限登记在 `ci/workflow-budgets.txt`，只许下调。
 
 ## 3. 流水线清单
@@ -62,6 +63,7 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 | `ssot-verify.yml` | `ssot-syntax-and-rules`、`doc-links` | 文档、`ssot-registry.yaml`、`tools/repo/validate-ssot.py` 的 PR 与 `main` 的 push | PyYAML 语法、规则 ID 计数与唯一性、`validate-ssot.py` 交叉引用；相对路径链接完整性 |
 | `sdk-verify.yml` | `go`、`python`、`rust`、`ts` | `sdk/**`、`ci/gates/sdk-verify.sh`、`ci/lib/**` 的 PR 与 `main` 的 push | 四份语言绑定各自过编译器：go 走临时模块 `go vet`+`go build`，python 走 `py_compile`（字节码缓存重定向出源码区），rust 逐文件 `rustc --emit=metadata`，ts 走钉版 `tsc --strict --noEmit`。绑定由生成器产出，生成一致不代表能编译，这一层补的就是编译器视角 |
 | `tui-verify.yml` | `policy`、`build`、`cross` | `system`、`distro` gitlink、`ci/ci.sh`、`ci/lib/**`、`ci/gates/{tui-check,tui-frame,rust-vendor,lang-lock,submodules}.sh`、`ci/container/build-packages.txt` 的 PR 与 `main` 的 push | `policy` 断言语言政策（四组件 present、工具链钉版）与 `Cargo.lock`、`vendor/`、台账三者同源，不需要编译器；`build` 依次跑 `fmt --check`、`clippy -D warnings`、`cargo test`，全部 `--offline --locked`，最后以 `tui-frame` 收尾——85×24 整屏重绘 p99 ≤ 33 ms、常驻堆 ≤ 64 KiB（与单测共用一次检出与目标目录，红了不再花第二次基准编译）；`cross` 在 aarch64 与 riscv64gc 上做类型检查，两种目标互不掩盖。编译器版本只由 `system/tui/rust-toolchain.toml` 决定，`tui-check` 断言实际生效者与钉版一致 |
+| `tui-input-verify.yml` | `channels`、`sessions` | `ci/ci.sh`、`ci/lib/**`、`ci/gates/{input-matrix,ime-corpus,tui-e2e}.sh`、`system` gitlink 的 PR 与 `main` 的 push | `channels` 用真实二进制跑四通道输入矩阵与中文语料，逐通道断言事件序与坐标；`sessions` 跑中文会话切换的端到端用例。两条判据合计约四十分钟，与 `tui-verify` 的格式/静态/单测分列：并入会让改一行注释也排队等完整集成，而 `paths` 已经保证只在输入面变更时才触发 |
 
 `nightly.yml` 与 `release.yml`、`image-build.yml`、`payload-seed.yml` 暴露
 `workflow_dispatch`。
