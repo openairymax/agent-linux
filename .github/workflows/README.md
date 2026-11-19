@@ -30,6 +30,7 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 .github/workflows/
 ├── README.md              # 本文件
 ├── airy-verify.yml        # Airymax 内核扩展：四架构构建 + 静态检查
+├── c-verify.yml           # 用户态 C 组件：cloudnative / services 构建与冒烟
 ├── image-build.yml        # 桌面 ISO 组装 + 装机冷启动验收
 ├── kernel-verify.yml      # 内核构建矩阵 + 静态分析 + 测试
 ├── mgmt-verify.yml        # 治理文件完整性 + 叶仓 CI 汇总
@@ -41,7 +42,7 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 └── tui-verify.yml         # TUI 工作区：依赖源 + 格式/静态/单测 + 跨架构类型检查
 ```
 
-十个流水线，每个最多三个作业（`os-chk-verify` 一个、`tui-verify` 三个）。
+十一个流水线，每个最多三个作业（`os-chk-verify` 一个、`tui-verify` 三个）。
 作业数上限登记在 `ci/workflow-budgets.txt`，只许下调。
 
 ## 3. 流水线清单
@@ -51,6 +52,7 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 | `kernel-verify.yml` | `kernel-build`、`kernel-verify` | `kernel` gitlink、`ci/gates/kernel-*.sh`、`ci/lib/**` 的 PR 与 push | 构建矩阵为 4 配置 × 4 架构 × 2 编译器减 4 个排除格，共 28 格，`max-parallel: 8`；`W=2` 零告警。第二作业跑 checkpatch `--strict`、sparse `C=2`、Coccinelle、UML 上的 KUnit 与 QEMU 上的 kselftest |
 | `airy-verify.yml` | `airy-build`、`airy-static` | `kernel` gitlink、`ci/gates/kernel-*.sh`、`ci/lib/**` 的 PR 与 push | `airy_defconfig` 在 x86_64/aarch64/riscv64/loongarch64 上构建；断言 Airymax CONFIG、BTF 内嵌、六个 `built-in.a` 产物、`security/airy/` 与 `kernel/superv/` 的符号不冲突。`airy-static` 只审 SPDX 标识 |
 | `os-chk-verify.yml` | `os-chk-verify` | `tools/**`、`sdk/**`、`ci/**` 与四个受审 gitlink 的 PR 与 push | 解析 `gates.yaml`，分派已登记的 OS-CHK 执行器，汇总报告并阻断 P0/P1 级结论。同时承载整套 Python 工具链（abi-check、codegen、dsl、farm、flash、rollback 等）：一次依赖安装、一次 pytest，工具改动不再排队四轮 |
+| `c-verify.yml` | `cloudnative`、`services` | `cloudnative`、`services`、`kernel` gitlink 与 `ci/gates/c-verify.sh`、`ci/lib/**` 的 PR 与 `main` 的 push | 两个用户态 C 模块各自出树 `cmake --build`（源码区不编译，`-Werror` 零告警），`cloudnative` 另跑 `agentctl` 核对 A-IPC magic 与 `[SC] ipc.h` 一致，`services` 另跑 CTest（`dmn_test`） |
 | `mgmt-verify.yml` | `file-integrity`、`orchestrate-leaf-ci` | 文档、`.gitmodules`、`ssot-registry.yaml`、`MAINTAINERS`、`CODEOWNERS`、`tools/**`、`.github/**`、`kernel` 的 PR，以及 `main` 的 push | 校验由 `.gitmodules` 推导的子模块目录、12 份 `[SC]` 共享头、`ipc.h` 的物理唯一副本、12 份治理文件、不得出现 `airymaxos-` 前缀；第二作业汇总叶仓 CI、跑 markdownlint 与版权头检查 |
 | `image-build.yml` | `assemble`、`accept` | 仅 `workflow_dispatch`（发行门禁，不参与 PR） | `assemble` 先把构建工具链预热成可离线自证的 dnf 缓存树，再在特权官方容器内以钉版的 openEuler netinst 为基底组装桌面 ISO，校验装配清单与 ISO 校验和；`accept` 在 QEMU 下分别以 BIOS 与 UEFI 安装，冷启动到 `AIRYMAX-DESKTOP-READY`（`acceptance=true` 时为 `AIRYMAX-SMOKE-PASS`），发布 TAP 与串口日志；`release_tag` 非空且非验收剖面时，另为 ISO 出具 in-toto/SLSA 构建来源证明，以 `attest-<tag>` 推入同一制品仓库并回读摘要、`buildId` 与字节 |
 | `nightly.yml` | `nightly-test-suite`、`nightly-revert-or-budget` | cron `0 2 * * *` 与手动 | 形式化验证、72 小时浸泡、混沌注入（CPU 热插拔、内存热移除、I/O 错误、网络分区）；第二作业在回归时经 `auto-bisect` 自动回退，或做 CI 预算检查（稳态 60 分钟，内核冷缓存 90 分钟） |

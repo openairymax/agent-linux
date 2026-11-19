@@ -1,0 +1,59 @@
+# ===========================================================================
+# agent-linux (AirymaxOS) CI Pipeline
+# 用户态 C 组件 CI（2 jobs：cloudnative + services，各自独立）
+# ===========================================================================
+# Authority: docs/docs-linux/70-build-system/03-ci-cd-pipeline.md
+# Design: 一个构建面一条流水线，模块各占一个作业，互不掩盖失败结论
+# ===========================================================================
+
+name: c-verify
+on:
+  pull_request:
+    paths:
+      - 'cloudnative'
+      - 'services'
+      # [SC] 头文件随 kernel gitlink 升级；用户态 C 组件按 UAPI 编译，
+      # 契约头变化必须重编，否则只有装机后才发现不兼容。
+      - 'kernel'
+      - 'ci/gates/c-verify.sh'
+      - 'ci/lib/**'
+      - '.github/workflows/c-verify.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'cloudnative'
+      - 'services'
+      - 'kernel'
+      - 'ci/gates/c-verify.sh'
+      - 'ci/lib/**'
+      - '.github/workflows/c-verify.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: c-verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ─── Job 1: cloudnative（agentctl + 契约冒烟） ────────────────────────
+  cloudnative:
+    name: cloudnative build & contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { submodules: recursive }
+      - name: Build cloudnative
+        run: ci/ci.sh c-verify --module cloudnative
+
+  # ─── Job 2: services（daemon 框架 + CTest） ──────────────────────────
+  services:
+    name: services build & ctest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { submodules: recursive }
+      - name: Build services
+        run: ci/ci.sh c-verify --module services
