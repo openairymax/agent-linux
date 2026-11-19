@@ -16,7 +16,20 @@
 # 的 GPT 条目、gummiboot/grub EFI 装载）。一条全绿却从未验证 UEFI 的
 # 门禁比失败更危险，所以这里缺固件就补装，补不上直接判负。
 #
-# 退出码: 0 就绪；1 缺 qemu 或 UEFI 固件且装不上；5 参数不满足。
+# 装完必须复判，不能把 apt 的退出码当成结论：0.0.5 的验收镜像里 qemu 装了
+# 三轮，三轮都败在 security.ubuntu.com 上 ipxe-qemu 的 503，而本门禁既没
+# 看返回值也没再验一次命令在不在，继续打印「UEFI 固件就绪 / KVM 可用」并以
+# 0 退出。三条装机腿随后在 0.03 秒内以 rc=77 跳过，失败点被推迟到 20 分钟
+# 之后，看起来还像 guest 的问题。现在的契约相反：每一轮之后都按「命令在
+# 不在 PATH 上」复判，复判不过就判负并指名缺哪一条；成功路径上，装机段要
+# 用的两条命令一定可用。装机入口因此不该再走到它的 SKIP 分支。
+#
+# 失败先换索引再试一轮，而不是把同一基址重试第四次：托管镜像的 503 是单台
+# 基站的问题，上例里紧接着为 ovmf 重取的索引就换到了可用源，同一轮次内装
+# 好了。apt.sh 的重试只续传同一个基址，换源要靠这里重新 apt_sync。
+#
+# 退出码: 0 就绪（两条命令均已复判可用）；1 缺 qemu 或 UEFI 固件且装不上；
+#         5 参数不满足。
 # ===========================================================================
 set -uo pipefail
 
@@ -41,6 +54,9 @@ done
 case "${FIRMWARE}" in both|bios) ;; *)
     err "--firmware 只接受 both|bios"; exit "${EINVAL}" ;; esac
 
+readonly QEMU_PKGS=(qemu-system-x86 qemu-utils)
+readonly QEMU_BINS=(qemu-system-x86_64 qemu-img)
+
 # 固件枚举只在 ci/lib/host.sh，本门禁不另立一份：装机段对同一组模式下判据，
 # 两边一旦分叉就会出现「这里说已就绪、装机段却降级成 BIOS」。
 fw_present()
@@ -48,20 +64,48 @@ fw_present()
     uefi_fw_code >/dev/null
 }
 
-have_qemu=0
-for c in qemu-system-x86_64 qemu-img; do
-    command -v "${c}" >/dev/null 2>&1 || have_qemu=1
-done
+qemu_ready()
+{
+    local c
 
-if [ "${have_qemu}" -eq 0 ]; then
-    say "qemu 已就绪: $(qemu-system-x86_64 --version | head -n 1)"
-else
-    need_cmd apt-get
-    group "apt-get install qemu"
+    for c in "${QEMU_BINS[@]}"; do
+        command -v "${c}" >/dev/null 2>&1 || return 1
+    done
+}
+
+qemu_missing()
+{
+    local c out=""
+
+    for c in "${QEMU_BINS[@]}"; do
+        command -v "${c}" >/dev/null 2>&1 || out="${out}${out:+ }${c}"
+    done
+    printf '%s' "${out}"
+}
+
+apt_qemu()
+{
+    group "apt-get install qemu（第 $1 轮）"
     apt_sync
-    apt_install_min qemu-system-x86 qemu-utils
+    apt_install_min "${QEMU_PKGS[@]}"
     endgroup
+}
+
+if ! qemu_ready; then
+    need_cmd apt-get
+    apt_qemu 1
+    qemu_ready || {
+        warn "qemu 仍不可用（缺: $(qemu_missing)），换索引后再试一轮"
+        apt_qemu 2
+    }
 fi
+
+qemu_ready || {
+    err "qemu 工具链装不上，缺: $(qemu_missing)"
+    err "装机段缺这两条命令时只会以 rc=77 跳过全部装机腿，故在此判负"
+    exit 1
+}
+say "qemu 已就绪: $(qemu-system-x86_64 --version | head -n 1)"
 
 if [ "${FIRMWARE}" = both ]; then
     if ! fw_present; then
