@@ -10,8 +10,8 @@
 #   1. workflow 薄化与命名约束（ci/check-workflows.py）；
 #   2. ci/ 与 tools/ 下每个 shell 脚本可被 bash -n 解析；
 #   3. 函数名不超过 15 字节（ci/name_lint.py，N001，覆盖 shell 与 python）；
-#   4. 代码度量棘轮（ci/quality_metrics.py：新增超标函数与
-#      新增重复片段判红，存量按基线只减不增）；
+#   4. 代码度量棘轮（ci/gates/quality-metrics.sh → ci/quality_metrics.py：新增
+#      超标函数与新增重复片段判红，存量按基线只减不增）；
 #   5. 验收剖面归一化的行为（ci/lib/profile.sh）；
 #   6. 门禁脚本里「声明后从未使用」的 readonly 常量（无外部依赖）；
 #   7. ci/tests 下的门禁分支回归；
@@ -114,16 +114,19 @@ endgroup
 group "代码度量棘轮"
 # QG-01/QG-02 的「重复率 <3%、圈复杂度 <2.5」此前只有文字没有判据，存量
 # 因此停在均值 3.70、重复率 6.17% 也没人看见。基线按现状登记、只减不增：
-# 新增超标函数与新增重复片段当场判红，差额每轮打印。distro 随上面的口径
-# 一并跳过或纳入，不另设开关。
-dirs=()
-for d in "${roots[@]}"; do
-    dirs+=(--dir "${ROOT}/${d}")
-done
-if python3 "${ROOT}/ci/quality_metrics.py" --check "${dirs[@]}"; then
+# 新增超标函数与新增重复片段当场判红，差额每轮打印。
+# 转调门禁入口而不是直连 ci/quality_metrics.py：`--update` 的「只减不增」
+# 政策只在 ci/gates/quality-metrics.sh 一处实现，两个入口各写一份迟早出现
+# 一条路能抬高基线而另一条不认。缺省根由门禁按实装位置取，`--no-distro`
+# 时只把子集目录透传过去。
+qm=()
+if [ "${no_distro}" -eq 1 ]; then
+    qm=(--dir "${ROOT}/ci" --dir "${ROOT}/tools" --dir "${ROOT}/system")
+fi
+if bash "${ROOT}/ci/ci.sh" quality-metrics --check "${qm[@]}"; then
     say "通过"
 else
-    err "ci/quality_metrics.py 未通过（新增超标函数或新增重复片段）"
+    err "代码度量棘轮未通过（ci/ci.sh quality-metrics：新增超标函数或新增重复片段）"
     rc=1
 fi
 endgroup
