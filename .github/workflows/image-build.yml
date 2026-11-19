@@ -11,7 +11,11 @@
 #
 # 约束：
 #   * 仅 workflow_dispatch：不进入 PR 门禁，不阻断日常提交（§3.6）。
-#   * 本流水线固定 assemble + accept 两个 job（上限 2，与 docs 一致）。
+#   * 本流水线固定 assemble + accept 两个 job（上限 2，与 docs 一致）。两个
+#     job 各自按 x86_64 / aarch64 展开成矩阵：0.0.5 的发行判据要求两种架构
+#     各有一次实机通过，单架构的绿不能推出另一架构可用。aarch64 腿跑在原生
+#     arm64 托管运行器上（ubuntu-24.04-arm），容器镜像、内核与 RPM 全在本
+#     架构构建，不引入交叉工具链这一层额外变量。
 #   * 60 分钟预算（OS-STD-TEST-011）只约束 PR 门禁；本流水线按 release.yml
 #     先例申请发布级例外，两个 job 分别为 300 / 360 分钟。
 #     assemble 内部按职责分三步：工具链预热（受网络支配，75 分钟）、ISO
@@ -25,20 +29,23 @@
 #     否则强制取消态下 log-dump 与产物上传都不会执行。
 #     内核模块数两千余（openeuler_defconfig），在 4 核 runner 上明显长于
 #     x86_64_defconfig（run 40025896195 的 12.2 分钟不再可比）。
-#   * accept 的时限不是拍定值，而由装机腿数推导：U 盘一条腿、CD-ROM 两条
-#     固件腿，三条腿各自成步且各带 80 分钟 step 时限（> 装机 3600 秒 +
-#     冷启动 900 秒），累计 240 分钟仍小于 job 的 360 分钟。分步的用意是
-#     归因：合成一步时只有总耗时，卡在 BIOS 装机还是 UEFI 冷启动无从区分。
-#     主机没有对应固件时该腿直接跳过。托管 runner 实测提供 /dev/kvm
-#     （run 39371790961 记录的加速器为 kvm），预算仍按 TCG 最坏情况保留，
-#     避免 runner 形态变化导致 job 被中途取消。
+#   * accept 的时限不是拍定值，而由装机腿数与模拟器形态推导：x86_64 有 U 盘
+#     一条腿、CD-ROM 两条固件腿，各腿 80 分钟（> 装机 3600 秒 + 冷启动
+#     900 秒），累计 240 分钟仍小于 job 的 360 分钟；aarch64 没有 legacy
+#     BIOS，只有 UEFI 两条腿，KVM 缺席时回落 TCG，指令级模拟下装机与冷启动
+#     都成倍变慢，故每腿 150 分钟、装机 7200 秒、冷启动 1800 秒，累计 300
+#     分钟仍小于 360。分步的用意是归因：合成一步时只有总耗时，卡在 BIOS
+#     装机还是 UEFI 冷启动无从区分。主机没有对应固件时该腿直接跳过。托管
+#     runner 实测提供 /dev/kvm（run 39371790961 记录的加速器为 kvm），预算仍
+#     按 TCG 最坏情况保留，避免 runner 形态变化导致 job 被中途取消。
 #   * 源码以只读方式挂载进构建容器，产物只落 $RUNNER_TEMP/out，不违反
 #     「严禁在 airymaxhub 源码区内构建」。
 #   * 子模块由 ci/gates/submodules.sh 按需取：distro 与 system 是组装链的
 #     全部读点，kernel 只在复用 Release 内核包以外的路径上读。递归 checkout
 #     会多拉七棵树（kernel 1.5G），它们不进产物，只抬固定开销（W-1）。
 #   * ISO 基线固定为 openEuler 24.03-LTS-SP3 netinst，容器镜像取官方
-#     docker_img tar；URL 与 sha256 同时写死，禁止浮动 latest。
+#     docker_img tar；两条腿各取本架构官方件，文件名、URL 与 sha256 同时
+#     写死在矩阵项里，禁止浮动 latest。
 #   * 官方源是跨洋链路，实测单件 ISO 需 43 分钟。介质目录按摘要键缓存，
 #     命中即跳过下载；未命中时总预算 5400 秒、每项保底 900 秒，避免先下
 #     的大件把后一项挤成零头（run 40485745100）。
@@ -55,7 +62,9 @@
 #     .sha256sum）而不是就地构建：ISO 载荷与发行资产的内核只能有一次
 #     构建，否则同名包哈希分叉，装机载荷无法用发行校验和核验。
 #   * ISO 发布挂在 accept 之后并排除验收剖面：只有双固件装机与冷启动
-#     通过的字节才配占用发行 tag。
+#     通过的字节才配占用发行 tag。发布动作只由 x86_64 腿执行：ghcr 的 ISO
+#     包与 channel.json 目前都是单镜像契约，aarch64 的发行位随「按架构的
+#     通道清单」落地，在那之前它的镜像与验收证据走 Actions 制品。
 # ===========================================================================
 
 name: image-build
@@ -92,21 +101,36 @@ permissions:
   # ISO 经 ghcr 的 blob 通道交付（Release 单资产上限 2 GiB），需要写包权限。
   packages: write
 
-env:
-  OE_ISO_NAME: openEuler-24.03-LTS-SP3-netinst-x86_64-dvd.iso
-  OE_ISO_SHA256: 808aa41bb0b25bb56768c550625bec9e4982094b8d4024be64fa0c6517e22900
-  OE_IMG_NAME: openEuler-docker.x86_64.tar.xz
-  OE_IMG_SHA256: 0d3075e9d9f996726b9a7936593b2e00c96fd916aac3609f867342911664f1c5
-  # 镜像只按 sha256 认定，源可替换：官方源跨洋链路曾整段停滞（run
-  # 39543892713 在 Fetch 卡满 55 分钟），国内镜像作等价回退，摘要不符即弃。
-  # 镜像根的唯一声明处是 distro/repo/mirrors.list，media-fetch.sh 与闭包
-  # 收割都读它，此处不再复制一份（此前 OE_MIRRORS 无消费者，已删除）。
-
+# 基础介质与容器镜像按架构取本架构官方件，四条常量随矩阵项走（见各 job
+# 的 strategy.matrix.include）。镜像只按 sha256 认定，源可替换：官方源跨洋
+# 链路曾整段停滞（run 39543892713 在 Fetch 卡满 55 分钟），国内镜像作等价
+# 回退，摘要不符即弃。镜像根的唯一声明处是 distro/repo/mirrors.list，
+# media-fetch.sh 与闭包收割都读它，此处不再复制一份（此前 OE_MIRRORS 无
+# 消费者，已删除）。
 jobs:
   # ─── Job 1: RPM + 内核 + ISO 组装（源码只读，产物出源码区） ─────────────
   assemble:
-    name: Assemble ISO (L1)
-    runs-on: ubuntu-24.04
+    name: Assemble ISO ${{ matrix.arch }} (L1)
+    # aarch64 腿跑在原生 arm64 托管运行器上：容器镜像、内核与 RPM 全部原生
+    # 构建，不引入交叉工具链这一层额外变量；验收腿的模拟器也因此在同一
+    # 指令集上跑，KVM 缺席时才回落 TCG。
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+            iso_name: openEuler-24.03-LTS-SP3-netinst-x86_64-dvd.iso
+            iso_sha256: '808aa41bb0b25bb56768c550625bec9e4982094b8d4024be64fa0c6517e22900'
+            img_name: openEuler-docker.x86_64.tar.xz
+            img_sha256: '0d3075e9d9f996726b9a7936593b2e00c96fd916aac3609f867342911664f1c5'
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+            iso_name: openEuler-24.03-LTS-SP3-netinst-aarch64-dvd.iso
+            iso_sha256: '1af4688214c578877ad0b2927a91f851c28c2ae4401de94b1cc27b8152b3ca30'
+            img_name: openEuler-docker.aarch64.tar.xz
+            img_sha256: 'a050f3dd9015badab7bc6802076b6331fd606cc0c7459363f01a7a389d744dae'
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 300
     steps:
       # 子模块按需取：递归 checkout 要把九棵树全拉下来，其中 kernel 1.5G，
@@ -162,27 +186,28 @@ jobs:
       # 分叉，装机介质也就无法用发行校验和核验。
       # 位置在整条链路的最前：tag 写错、资产缺失、摘要不符都只花一分钟，
       # 而它排在工具链预热之后时，同样的错误要等 75 分钟才暴露。
-      # 按四个架构各取一份：制品本来就是整包下载，多架构只多几次校验，却让
-      # 后面的固件预演能同时看到每个架构的模块树——riscv64 没有实机兜底，
-      # ARM 的板载无线在 QEMU 里不出现，这条判据只能在这里成立。
+      # 四架构只让 x86_64 腿取：固件预演要同时看到每个架构的模块树
+      # （riscv64 没有实机兜底，ARM 的板载无线在 QEMU 里不出现），这条判据
+      # 与目标架构无关；两条腿各取一遍不会多出结论，只多付一次整包下载。
+      # aarch64 腿只取本架构载荷，那是它 ISO 的内核来源。
       - name: Fetch release kernel RPMs
         if: inputs.release_tag != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ inputs.release_tag }}
-        run: ci/ci.sh release-rpms --tag "$TAG" --repo "$GITHUB_REPOSITORY" --arch x86_64 --arch aarch64 --arch riscv64 --arch loongarch64 --dir "$RUNNER_TEMP/rel-rpms" ${{ inputs.rpms_run != '' && format('--run-id {0}', inputs.rpms_run) || '' }}
+        run: ci/ci.sh release-rpms --tag "$TAG" --repo "$GITHUB_REPOSITORY" --arch "${{ matrix.arch }}" ${{ matrix.arch == 'x86_64' && '--arch aarch64 --arch riscv64 --arch loongarch64' || '' }} --dir "$RUNNER_TEMP/rel-rpms" ${{ inputs.rpms_run != '' && format('--run-id {0}', inputs.rpms_run) || '' }}
 
       # 介质由 sha256 固定、跨轮不变：整目录以摘要为键缓存。命中时 3.2 GiB
       # 下载（run 40485745100 的 ISO 单件就占 43 分钟）退化为本地解包，
-      # 重复轮次不再受跨洋链路速率左右。
+      # 重复轮次不再受跨洋链路速率左右。键含架构：两套介质互不覆盖。
       - name: Restore openEuler media
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ runner.temp }}/media
-          key: oe-media-${{ env.OE_ISO_SHA256 }}-${{ env.OE_IMG_SHA256 }}
+          key: oe-media-${{ matrix.arch }}-${{ matrix.iso_sha256 }}-${{ matrix.img_sha256 }}
 
       - name: Fetch fixed openEuler media
-        run: ci/ci.sh media-fetch --dir "$RUNNER_TEMP/media" --budget 5400 --floor 900 "$OE_ISO_NAME" ISO/x86_64 "$OE_ISO_SHA256" "$OE_IMG_NAME" docker_img/x86_64 "$OE_IMG_SHA256"
+        run: ci/ci.sh media-fetch --dir "$RUNNER_TEMP/media" --budget 5400 --floor 900 "${{ matrix.iso_name }}" ISO/${{ matrix.arch }} "${{ matrix.iso_sha256 }}" "${{ matrix.img_name }}" docker_img/${{ matrix.arch }} "${{ matrix.img_sha256 }}"
 
       # 工具链 34 个直接依赖会解析出 1273 个包，全部跨公网取。这一步的耗时
       # 由镜像站状态决定而非代码决定：同一棵树在 run 40818193756 是 14 分钟，
@@ -198,11 +223,13 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ runner.temp }}/dnf-cache
-          key: dnf-${{ hashFiles('ci/container/build-packages.txt') }}
-          restore-keys: dnf-
+          # 包集合与架构绑定：aarch64 容器里装的是 aarch64 包，键不含架构会
+          # 让两条腿共用一份装不进去的缓存，warm 自证每轮都失败。
+          key: dnf-${{ matrix.arch }}-${{ hashFiles('ci/container/build-packages.txt') }}
+          restore-keys: dnf-${{ matrix.arch }}-
 
       - name: Load build container image
-        run: ci/ci.sh container-load --file "$RUNNER_TEMP/media/$OE_IMG_NAME"
+        run: ci/ci.sh container-load --file "$RUNNER_TEMP/media/${{ matrix.img_name }}"
 
       # 工具链获取与 ISO 组装拆成两步：前者受网络支配、后者受 CPU/IO 支配，
       # 混在一步时 Actions 只报一个总耗时，排障看不出瓶颈在哪。warm 收尾会
@@ -225,7 +252,7 @@ jobs:
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ runner.temp }}/dnf-cache
-          key: ${{ steps.warm.outcome == 'success' && format('dnf-{0}', hashFiles('ci/container/build-packages.txt')) || format('dnf-{0}-partial-{1}', hashFiles('ci/container/build-packages.txt'), github.run_id) }}
+          key: ${{ steps.warm.outcome == 'success' && format('dnf-{0}-{1}', matrix.arch, hashFiles('ci/container/build-packages.txt')) || format('dnf-{0}-{1}-partial-{2}', matrix.arch, hashFiles('ci/container/build-packages.txt'), github.run_id) }}
 
       # 键分两段：前缀是闭包定义的摘要（镜像根表 + 配方），后缀是池内容的
       # 摘要。前者让「闭包定义没变」的轮次优先命中同一代，后者让同一份池
@@ -235,10 +262,12 @@ jobs:
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ runner.temp }}/closure-cache
-          key: closure-${{ hashFiles('distro/repo/mirrors.list', 'distro/kickstart/airymaxos-workstation.ks') }}-${{ github.run_id }}
+          # 闭包里的 RPM 是架构绑定的字节：键不含架构时，aarch64 腿会命中
+          # x86_64 的池，收割段拿到的包一个都装不进去。
+          key: closure-${{ matrix.arch }}-${{ hashFiles('distro/repo/mirrors.list', 'distro/kickstart/airymaxos-workstation.ks') }}-${{ github.run_id }}
           restore-keys: |
-            closure-${{ hashFiles('distro/repo/mirrors.list', 'distro/kickstart/airymaxos-workstation.ks') }}-
-            closure-
+            closure-${{ matrix.arch }}-${{ hashFiles('distro/repo/mirrors.list', 'distro/kickstart/airymaxos-workstation.ks') }}-
+            closure-${{ matrix.arch }}-
 
       # 播种把「跨境取 2.5 GB」换成「取回一份已在快机器上收好的池」：
       # 托管 runner 到国内镜像实测 16–22 KiB/s，180 分钟收不完；国内验证机
@@ -258,12 +287,12 @@ jobs:
       - name: Seed closure RPM pool by input key
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ci/ci.sh payload-seed fetch --dir "$RUNNER_TEMP/closure-cache" --arch x86_64 --token "$GHCR_TOKEN"
+        run: ci/ci.sh payload-seed fetch --dir "$RUNNER_TEMP/closure-cache" --arch "${{ matrix.arch }}" --token "$GHCR_TOKEN"
 
       - name: Seed closure RPM pool
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ci/ci.sh pool-seed --dir "$RUNNER_TEMP/closure-cache" --token "$GHCR_TOKEN"
+        run: ci/ci.sh pool-seed --dir "$RUNNER_TEMP/closure-cache" --arch "${{ matrix.arch }}" --token "$GHCR_TOKEN"
 
       # 固件预演：判据的两半只有这一刻同时在场——固件名字集在闭包池里
       # （linux-firmware 是 noarch，四个架构共用一份），模块树的请求名在
@@ -276,7 +305,7 @@ jobs:
       # 只有 x86_64」给发行页路径留了单架构分支，前提是错的，后果是那条路
       # 上的 riscv64 无人判——而它没有实机兜底，这里漏掉就再没别处能拦。
       - name: Preflight firmware layout per architecture
-        if: inputs.release_tag != ''
+        if: inputs.release_tag != '' && matrix.arch == 'x86_64'
         run: ci/ci.sh fw-preflight --image "$AIRYMAX_BUILD_IMAGE" --pool "$RUNNER_TEMP/closure-cache" --rpms "$RUNNER_TEMP/rel-rpms" --dnf-cache "$RUNNER_TEMP/dnf-cache" --arch x86_64 --arch aarch64 --arch riscv64 --arch loongarch64
 
       # step 级时限必须小于 job 时限（300）：job 超时是强制取消，取消态下
@@ -294,7 +323,7 @@ jobs:
           # 不同镜像，没有这组锚点时装机现场只能回看流水线日志猜是哪一轮。
           AIRYMAX_RUN_ID: ${{ github.run_id }}
           AIRYMAX_COMMIT: ${{ github.sha }}
-        run: ci/ci.sh assemble --image "$AIRYMAX_BUILD_IMAGE" --src "$GITHUB_WORKSPACE" --out "$RUNNER_TEMP/out" --media "$RUNNER_TEMP/media" --iso-base "$OE_ISO_NAME" --dnf-cache "$RUNNER_TEMP/dnf-cache" --closure-cache "$RUNNER_TEMP/closure-cache"
+        run: ci/ci.sh assemble --image "$AIRYMAX_BUILD_IMAGE" --src "$GITHUB_WORKSPACE" --out "$RUNNER_TEMP/out" --media "$RUNNER_TEMP/media" --iso-base "${{ matrix.iso_name }}" --arch "${{ matrix.arch }}" --dnf-cache "$RUNNER_TEMP/dnf-cache" --closure-cache "$RUNNER_TEMP/closure-cache"
 
       # 段耗时入账：同一棵树曾一次 16.5 分钟、一次 45 分钟还没跑完，而
       # 页面上只有一个 step 总耗时，看不出慢在取包、编内核还是组 ISO。
@@ -386,10 +415,10 @@ jobs:
         if: success() && inputs.release_tag != '' && !inputs.acceptance
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: airymaxos-release-rpms
+          name: airymaxos-release-rpms-${{ matrix.arch }}
           path: |
             ${{ runner.temp }}/out/rpms/RPMS/*/airymaxos-release-*.noarch.rpm
-            ${{ runner.temp }}/rel-rpms/**/airymaxos-kernel*.x86_64.rpm
+            ${{ runner.temp }}/rel-rpms/**/airymaxos-kernel*.${{ matrix.arch }}.rpm
           retention-days: 7
           if-no-files-found: error
 
@@ -397,7 +426,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: airymaxos-image
+          # 名称带架构：矩阵两腿各自上传，同名制品会 409 且下载侧无从区分。
+          name: airymaxos-image-${{ matrix.arch }}
           path: |
             ${{ runner.temp }}/out/desktop/iso/*.iso
             ${{ runner.temp }}/out/desktop/iso/*.sha256
@@ -424,9 +454,36 @@ jobs:
 
   # ─── Job 2: 装机 + BIOS/UEFI 冷启动 + 桌面就绪断言 ─────────────────────
   accept:
-    name: Install + Cold Boot (L2/L3)
-    runs-on: ubuntu-24.04
+    name: Install + Cold Boot ${{ matrix.arch }} (L2/L3)
+    # 矩阵两腿各自独立：一条腿失败不该删掉另一条腿的证据，也不该让另一条
+    # 已开跑的装机被取消。
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 时限不是拍定值，而是装机腿数与模拟器形态推导出来的：
+          #   x86_64  —— U 盘一条腿、CD-ROM 两条固件腿，各腿 80 分钟
+          #              （> 装机 3600 s + 冷启动 900 s）；
+          #   aarch64 —— 没有 legacy BIOS，只剩 UEFI 两条腿；KVM 缺席时
+          #              回落 TCG，指令级模拟下装机与冷启动都成倍变慢，
+          #              故装机 7200 s、冷启动 1800 s、单腿 150 分钟。
+          - arch: x86_64
+            runner: ubuntu-24.04
+            leg_timeout: 80
+            install_timeout: 3600
+            boot_timeout: 900
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+            leg_timeout: 150
+            install_timeout: 7200
+            boot_timeout: 1800
+    runs-on: ${{ matrix.runner }}
     needs: assemble
+    # 默认的隐式 success() 会让另一条腿的组装失败把本 leg 整个跳过：双架构
+    # 矩阵下一次失败就丢掉了另一架构的全部装机证据，只能再付一整轮重跑。
+    # !cancelled() 只排除用户中断/超时；缺少本 leg 镜像时仍在下载制品处
+    # 判负，失败点是真实的、不是被跳过。
+    if: ${{ !cancelled() }}
     timeout-minutes: 360
     # 写权限按 job 收口：只有本 job 需要写发布页（通道清单回写）与写 ghcr
     # （ISO 载荷），assemble 保持顶层的只读，不必因为装配而放宽。
@@ -452,12 +509,12 @@ jobs:
       # qemu 与 /dev/kvm 权限同属装机前置：分开两步只会让缺权限在装机跑了
       # 半小时后以超时形式暴露。
       - name: Install QEMU, UEFI firmware, enable KVM
-        run: ci/ci.sh qemu-setup --firmware both
+        run: ci/ci.sh qemu-setup --firmware both --arch "${{ matrix.arch }}"
 
       - name: Download image artifact
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: airymaxos-image
+          name: airymaxos-image-${{ matrix.arch }}
           path: ${{ runner.temp }}/image
 
       - name: Verify ISO checksum
@@ -467,10 +524,10 @@ jobs:
       # 通路完全无关。0.0.3 的实机装机失败正是前者错位、后者照常通过。这条
       # 腿放在双固件全量之前，介质布局缺陷在此就地暴露，不必等两个固件都跑完。
       - name: Install and cold boot (UEFI, USB media)
-        timeout-minutes: 80
+        timeout-minutes: ${{ matrix.leg_timeout }}
         env:
           ACCEPTANCE: ${{ inputs.acceptance }}
-        run: ci/ci.sh accept --iso "$AIRYMAX_ISO" --out "$RUNNER_TEMP/install-usb" --firmware uefi --media usb --runs 1 --install-timeout 3600 --boot-timeout 900
+        run: ci/ci.sh accept --iso "$AIRYMAX_ISO" --out "$RUNNER_TEMP/install-usb" --arch "${{ matrix.arch }}" --firmware uefi --media usb --runs 1 --install-timeout ${{ matrix.install_timeout }} --boot-timeout ${{ matrix.boot_timeout }}
 
       # 两条固件腿各自成步。合为一步时 Actions 只报一个总耗时，BIOS 装机
       # 卡住与 UEFI 冷启动失败在界面上是同一行，只能靠事后翻 TAP 才分得清
@@ -489,26 +546,28 @@ jobs:
       # UEFI-CD 腿被跳过，证据包因此缺 install-uefi 四件套）。三条腿本就
       # 是三个独立判据：一条腿的失败不该删掉另外两条的证据。job 最终仍按
       # 任一步失败判负，取消（用户中断或超时）时才整体停下。
+      # aarch64 没有 legacy BIOS 固件，BIOS 腿只在 x86_64 腿存在：这条腿在
+      # 另一条矩阵腿上不是「跳过了一次检查」，而是该架构根本不存在这条通路。
       - name: Install and cold boot (BIOS, CD-ROM)
-        if: ${{ !cancelled() }}
-        timeout-minutes: 80
+        if: ${{ !cancelled() && matrix.arch == 'x86_64' }}
+        timeout-minutes: ${{ matrix.leg_timeout }}
         env:
           ACCEPTANCE: ${{ inputs.acceptance }}
-        run: ci/ci.sh accept --iso "$AIRYMAX_ISO" --out "$RUNNER_TEMP/install-bios" --firmware bios --media cdrom --runs 1 --install-timeout 3600 --boot-timeout 900
+        run: ci/ci.sh accept --iso "$AIRYMAX_ISO" --out "$RUNNER_TEMP/install-bios" --arch "${{ matrix.arch }}" --firmware bios --media cdrom --runs 1 --install-timeout ${{ matrix.install_timeout }} --boot-timeout ${{ matrix.boot_timeout }}
 
       - name: Install and cold boot (UEFI, CD-ROM)
         if: ${{ !cancelled() }}
-        timeout-minutes: 80
+        timeout-minutes: ${{ matrix.leg_timeout }}
         env:
           ACCEPTANCE: ${{ inputs.acceptance }}
-        run: ci/ci.sh accept --iso "$AIRYMAX_ISO" --out "$RUNNER_TEMP/install-uefi" --firmware uefi --media cdrom --runs 1 --install-timeout 3600 --boot-timeout 900
+        run: ci/ci.sh accept --iso "$AIRYMAX_ISO" --out "$RUNNER_TEMP/install-uefi" --arch "${{ matrix.arch }}" --firmware uefi --media cdrom --runs 1 --install-timeout ${{ matrix.install_timeout }} --boot-timeout ${{ matrix.boot_timeout }}
 
       - name: Annotate boot failures (USB)
         if: failure()
         run: ci/ci.sh boot-annotate --dir "$RUNNER_TEMP/install-usb"
 
       - name: Annotate boot failures (BIOS)
-        if: failure()
+        if: failure() && matrix.arch == 'x86_64'
         run: ci/ci.sh boot-annotate --dir "$RUNNER_TEMP/install-bios"
 
       - name: Annotate boot failures (UEFI)
@@ -522,7 +581,7 @@ jobs:
         run: ci/ci.sh tap-extract --dir "$RUNNER_TEMP/install-usb"
 
       - name: Extract smoke TAP (BIOS)
-        if: always()
+        if: always() && matrix.arch == 'x86_64'
         env:
           ACCEPTANCE: ${{ inputs.acceptance }}
         run: ci/ci.sh tap-extract --dir "$RUNNER_TEMP/install-bios"
@@ -540,13 +599,20 @@ jobs:
       # 不同，占用发行 tag 会让两边都无法用 .sha256 自证。
       # 条件里显式写 success()：一旦给出 if 表达式，Actions 就不再套用默认的
       # success()，装机失败时发布步骤反而会被放行。
+      #
+      # 发布只由 x86_64 腿执行：ghcr 的 ISO 包与 channel.json 目前都是单镜像
+      # 契约（release-channel 要求目录内唯一 *.iso，清单无架构字段）。两条腿
+      # 同时发布会在同一 tag 上撞车，而给 aarch64 编一个清单里没有的 tag，
+      # 客户端也发现不了。aarch64 的发行位随「按架构的通道清单」一并落地，
+      # 在那之前它的镜像与验收证据走 Actions 制品（airymaxos-image-aarch64 /
+      # airymaxos-acceptance-aarch64），不占用发行 tag。
       - uses: oras-project/setup-oras@22ce207df3b08e061f537244349aac6ae1d214f6 # v1
-        if: success() && inputs.release_tag != '' && !inputs.acceptance
+        if: success() && inputs.release_tag != '' && !inputs.acceptance && matrix.arch == 'x86_64'
 
       # 幂等判据是「同 tag 同摘要」，重建同版本发行物必然摘要不同，故覆盖只
       # 能由输入显式开启：默认仍拒绝替换，避免把一次误触当成发行。
       - name: Publish ISO to ghcr.io
-        if: success() && inputs.release_tag != '' && !inputs.acceptance
+        if: success() && inputs.release_tag != '' && !inputs.acceptance && matrix.arch == 'x86_64'
         env:
           GHCR_USER: ${{ github.actor }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -558,7 +624,7 @@ jobs:
       # 自镜像自带的 image-ci-manifest.txt（随制品一起下载），因此证明里的值
       # 与装机后 /etc/airymaxos-build 逐字相同——这是「装机可反查」的全部依据。
       - name: Build ISO provenance attestation
-        if: success() && inputs.release_tag != '' && !inputs.acceptance
+        if: success() && inputs.release_tag != '' && !inputs.acceptance && matrix.arch == 'x86_64'
         env:
           TAG: ${{ inputs.release_tag }}
         run: ci/ci.sh attest build --out "$RUNNER_TEMP/image" --tag "$TAG"
@@ -566,7 +632,7 @@ jobs:
       # 推后回读比对摘要、buildId 与字节，任一处不符即红：证明本身也要能被
       # 验证，否则它只是另一段自述。
       - name: Publish ISO provenance attestation
-        if: success() && inputs.release_tag != '' && !inputs.acceptance
+        if: success() && inputs.release_tag != '' && !inputs.acceptance && matrix.arch == 'x86_64'
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ inputs.release_tag }}
@@ -576,15 +642,15 @@ jobs:
       # 不等即不产出（生成器退 1，本步红）。放在发布之后是因为账本由
       # iso-publish 写出——提前生成等于给未经账本自证的字节发摘要。
       - name: Download release rpms
-        if: success() && inputs.release_tag != '' && !inputs.acceptance
+        if: success() && inputs.release_tag != '' && !inputs.acceptance && matrix.arch == 'x86_64'
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: airymaxos-release-rpms
+          name: airymaxos-release-rpms-${{ matrix.arch }}
           path: ${{ runner.temp }}/relch
           merge-multiple: true
 
       - name: Generate release channel manifest
-        if: success() && inputs.release_tag != '' && !inputs.acceptance
+        if: success() && inputs.release_tag != '' && !inputs.acceptance && matrix.arch == 'x86_64'
         env:
           TAG: ${{ inputs.release_tag }}
         run: ci/ci.sh release-channel --out "$RUNNER_TEMP/image" --rpm-dir "$RUNNER_TEMP/relch" --version "${TAG#v}"
@@ -596,7 +662,7 @@ jobs:
       # 各自都能自证，却没有一处把它们对起来。门禁写前按客户端解析器复验
       # 版本同源，写后按资产 id 取回比对字节。
       - name: Publish release channel manifest
-        if: success() && inputs.release_tag != '' && !inputs.acceptance
+        if: success() && inputs.release_tag != '' && !inputs.acceptance && matrix.arch == 'x86_64'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ inputs.release_tag }}
@@ -613,11 +679,13 @@ jobs:
           ACCEPTANCE: ${{ inputs.acceptance }}
         run: ci/ci.sh evidence --out "$RUNNER_TEMP/evidence" --dir "$RUNNER_TEMP/install-usb" --dir "$RUNNER_TEMP/install-bios" --dir "$RUNNER_TEMP/install-uefi" --extra "$RUNNER_TEMP/image/desktop/iso/iso-oci.txt" --extra "$RUNNER_TEMP/image/channel.json"
 
+      # 证据制品按架构分名：两条腿同名上传会在合并阶段 409，先完成的那条
+      # 腿拿到的名字反过来决定另一条腿能否写进去。
       - name: Upload acceptance evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: airymaxos-acceptance
+          name: airymaxos-acceptance-${{ matrix.arch }}
           path: ${{ runner.temp }}/evidence
           retention-days: 7
           if-no-files-found: warn

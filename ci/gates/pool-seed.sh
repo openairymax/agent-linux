@@ -4,7 +4,7 @@
 # ===========================================================================
 # ci/gates/pool-seed.sh — CI 侧注入跨机收割的安装闭包池
 #
-# 用法: ci/gates/pool-seed.sh --dir DIR [--ref REF] [--token TOKEN]
+# 用法: ci/gates/pool-seed.sh --dir DIR [--arch ARCH] [--ref REF] [--token TOKEN]
 #
 # 为什么跨机播种：安装闭包约 2.5 GB，GitHub 托管的 runner（Azure 出口）
 # 到国内镜像实测只有 16–22 KiB/s，180 分钟的组装预算下不完，image-build
@@ -39,6 +39,8 @@
 #            pool-24.03.tar pool-manifest.txt
 #      清单每行「<sha256>  <文件名>」，与 sha256sum -c 兼容；tar 内 RPM
 #      必须平铺在顶层（上面的 -C 隐式成立），路径与清单文件名一致。
+#      播种端按架构各推一份制品：池里的 RPM 是架构相关的，aarch64 容器装
+#      不进 x86_64 的包，反之亦然；tag 的架构后缀与 --arch 一一对应。
 #   3) 播种端不得写闭包清单：CLOSURE_LOCK_WRITE 保持 0（closure-pool 已
 #      强制），清单仍只在 CI 或显式要求时由一次完整事务写出。
 #
@@ -51,7 +53,8 @@
 set -uo pipefail
 
 readonly EINVAL=5
-readonly REF_DEFAULT="ghcr.io/openairymax/airymaxos-closure:24.03-x86_64"
+# 架构后缀决定制品 tag：闭包内的 RPM 是架构相关的，两种架构不能共用一个池。
+readonly REF_BASE="ghcr.io/openairymax/airymaxos-closure:24.03"
 readonly MANIFEST="pool-manifest.txt"
 # 完成标记随池一起进缓存：它存在就代表整份清单已在本机校验通过。
 readonly MARK=".seed-complete"
@@ -60,20 +63,30 @@ LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)"
 . "${LIB}/log.sh"
 
 DIR=""
-REF="${REF_DEFAULT}"
+ARCH="x86_64"
+REF=""
 TOKEN=""
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --dir)   DIR="${2:-}"; shift 2 ;;
+        --arch)  ARCH="${2:-}"; shift 2 ;;
         --ref)   REF="${2:-}"; shift 2 ;;
         --token) TOKEN="${2:-}"; shift 2 ;;
         -h|--help)
-            echo "用法: ci/gates/pool-seed.sh --dir DIR [--ref REF] [--token TOKEN]"
+            echo "用法: ci/gates/pool-seed.sh --dir DIR [--arch ARCH] [--ref REF] [--token TOKEN]"
             exit 0 ;;
         *) die "未知参数: $1" ;;
     esac
 done
+
+# 只认会真的有制品推送的两个架构：拼错的架构后缀取不到制品，会被当成
+# 「尚未发布」静默回落在在线求解，看上去像播种成功。
+case "${ARCH}" in
+    x86_64|aarch64) ;;
+    *) err "--arch 只支持 x86_64/aarch64: ${ARCH}"; exit "${EINVAL}" ;;
+esac
+[ -n "${REF}" ] || REF="${REF_BASE}-${ARCH}"
 
 [ -n "${DIR}" ] || { err "--dir 必填"; exit "${EINVAL}"; }
 # 缓存未命中时 restore 步不会建目录；播种自己建，调用方就不必再写一行

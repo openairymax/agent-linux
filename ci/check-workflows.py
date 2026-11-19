@@ -41,7 +41,9 @@
 13. 每个 ``runs-on:`` 必须钉成 ``<发行版>-<YY.MM>`` 的镜像标签，不得用
    ``-latest``。浮动标签会在不改变本仓任何一行的情况下换掉编译器、
    shellcheck 与 Python 版本，于是「门禁结论取决于跑的那一天」：0.0.3
-   的 SC2034 就是这样在本地与 runner 上分别成立与不成立的。
+   的 SC2034 就是这样在本地与 runner 上分别成立与不成立的。托管运行器
+   按架构分标签（``ubuntu-24.04`` / ``ubuntu-24.04-arm``），两者都钉到
+   同一发行版的小版本，架构后缀只区分指令集，不引入浮动。
 14. 文件名分两族，语义即用法：``*-verify`` 是阻断型门禁，必须由
    ``pull_request`` 触发（否则它的结论不进入合并判断，等于没拦住）；
    其余只能是生命周期名 ``image-build`` / ``nightly`` / ``release`` /
@@ -59,11 +61,14 @@
    提交，``# v4`` 只是给人读的溯源标签。本地 action（``./…``）与
    ``docker://`` 镜像不受此约束——前者随本仓检出一同变化，后者由摘要
    另行约束。
-17. 每个 ``runs-on:`` 必须与 ``tools/nightly/manifest.yaml`` 的
-   ``runner.label`` 逐字相等。运行器版本此前散落在两处：``ceeea8e`` 把
+17. 每个 ``runs-on:`` 必须落在 ``tools/nightly/manifest.yaml`` 的
+   ``runner.labels`` 集合内。运行器版本此前散落在两处：``ceeea8e`` 把
    workflow 全部钉到 ``ubuntu-24.04``，而 nightly 契约清单仍写浮动标签，
    靠 run 40864072696 失败之后人工对齐。同一个事实只允许一个取值，改一侧
    就必须同时改另一侧，否则本地一秒即可发现，而不是等云端预热完再报。
+   多架构矩阵的 job 写成 ``runs-on: ${{ matrix.runner }}``，此时矩阵
+   ``include`` 里每一项的 ``runner`` 取值都必须已登记——表达式只是把
+   取值搬到同一文件的另一处，登记判据不因此放宽。
 18. 门禁、库、工具与 workflow 都不得由名称形状推语义：不得把「标签以
    ``-latest`` 结尾」当成「托管运行器」，也不得在比较、``case`` 匹配或
    GitHub 表达式里写 ``*-latest``。托管运行器的两种合法写法（``ubuntu-24.04``
@@ -149,8 +154,11 @@ PINNED = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*@[0-9a-f]{40}$")
 
 # 运行器：只认钉版镜像标签（ubuntu-24.04）。浮动标签会在本仓一行未改的
 # 情况下换掉编译器、shellcheck 与 Python 版本，门禁结论就取决于跑的那天。
-RUNS_ON = re.compile(r"^\s*runs-on:\s*(\S+)\s*$", re.MULTILINE)
-RUNNER_TAG = re.compile(r"^[a-z]+-\d{2}\.\d{2}$")
+RUNS_ON = re.compile(r"^\s*runs-on:\s*(.+?)\s*$", re.MULTILINE)
+# 架构限定的托管标签与基标签同属钉版：后缀只区分指令集。
+RUNNER_TAG = re.compile(r"^[a-z]+-\d{2}\.\d{2}(?:-arm)?$")
+# 矩阵取值由 strategy.matrix.include 承载，登记判据在 wf_label_rule 里补判。
+MATRIX_RUNNER = re.compile(r"^\$\{\{\s*matrix\.runner\s*\}\}$")
 
 # 运行器版本的唯一事实源：nightly 契约清单的 runner.label。
 NIGHTLY = ROOT / "tools" / "nightly" / "manifest.yaml"
@@ -486,25 +494,44 @@ def check_pins(name: str, text: str) -> list[str]:
 
 
 def check_runner(name: str, text: str) -> list[str]:
-    """运行器必须钉版：浮动标签会在两次运行之间换掉整条工具链。"""
+    """运行器必须钉版：浮动标签会在两次运行之间换掉整条工具链。
+
+    矩阵表达式不在这一步判格式：它把取值搬到同文件的 ``matrix.include``，
+    那里同样套用钉版判据，登记判据在 wf_label_rule 里补判。
+    """
     errors: list[str] = []
+    uses_matrix = False
     for no, s in enumerate(text.splitlines(), 1):
         m = RUNS_ON.match(s)
         if m is None:
             continue
         tag = m.group(1)
+        if MATRIX_RUNNER.match(tag):
+            uses_matrix = True
+            continue
         if not RUNNER_TAG.match(tag):
             errors.append(
                 f"{name}:{no}: runs-on: {tag} 未钉版（须为 <发行版>-<YY.MM>，"
                 "浮动标签会换掉编译器与 shellcheck 版本）")
+    if uses_matrix:
+        for no, tag in matrix_runner_refs(text):
+            if not RUNNER_TAG.match(tag):
+                errors.append(
+                    f"{name}:{no}: 矩阵 runner: {tag} 未钉版（须为 <发行版>-<YY.MM>，"
+                    "矩阵取值同样是运行器的版本事实）")
     return errors
 
 
-def runner_label() -> str | None:
-    """nightly 契约清单里 ``runner.label`` 的取值；清单缺失或无此键返回 None。"""
+def runner_labels() -> set[str]:
+    """nightly 契约清单登记的运行器标签集合；清单缺失或无登记返回空集。
+
+    ``runner.label`` 是单架构时期的写法，``runner.labels`` 是它的超集；
+    两者并存时按并集处理，读旧清单的行为不变。
+    """
     if not NIGHTLY.exists():
-        return None
-    in_runner = False
+        return set()
+    labels: set[str] = set()
+    in_runner = in_labels = False
     for s in NIGHTLY.read_text().splitlines():
         if re.match(r"^runner:\s*$", s):
             in_runner = True
@@ -515,20 +542,80 @@ def runner_label() -> str | None:
             break
         m = re.match(r"^  label:\s*(\S+)\s*$", s)
         if m is not None:
-            return m.group(1)
-    return None
+            labels.add(m.group(1))
+            continue
+        if re.match(r"^  labels:\s*$", s):
+            in_labels = True
+            continue
+        if in_labels:
+            m = re.match(r"^    -\s*(\S+)\s*$", s)
+            if m is not None:
+                labels.add(m.group(1))
+    return labels
 
 
-def wf_label_rule(name: str, text: str, label: str) -> list[str]:
-    """runs-on 必须与清单的 runner.label 逐字相等：同一事实只能有一个取值。"""
+def matrix_runner_refs(text: str) -> list[tuple[int, str]]:
+    """``strategy.matrix.include`` 里 ``runner`` 键的 (行号, 取值)。
+
+    workflow 不解析 YAML（本仓只有标准库可依赖），按 ``include:`` 段的
+    缩进块取键值；块外的 ``runner:`` 不属于矩阵，扫描不到。
+    """
+    out: list[tuple[int, str]] = []
+    base: int | None = None
+    for no, s in enumerate(text.splitlines(), 1):
+        if base is None:
+            if re.match(r"^\s*include:\s*$", s):
+                base = len(s) - len(s.lstrip(" "))
+            continue
+        if s.strip():
+            indent = len(s) - len(s.lstrip(" "))
+            if indent <= base:
+                base = None
+                if re.match(r"^\s*include:\s*$", s):
+                    base = indent
+                continue
+        m = re.match(r"^\s*(?:-\s*)?runner:\s*(\S+)\s*$", s)
+        if m is not None:
+            out.append((no, m.group(1)))
+    return out
+
+
+def _label_text(labels: set[str]) -> str:
+    """错误信息里的登记集合：单标签沿用 ``runner.label=X`` 的旧写法。"""
+    if len(labels) == 1:
+        return f"runner.label={next(iter(labels))}"
+    return "runner.labels=[" + ", ".join(sorted(labels)) + "]"
+
+
+def wf_label_rule(name: str, text: str, labels: set[str]) -> list[str]:
+    """runs-on 的取值必须落在清单登记集合内：同一事实只能有一个取值。"""
     errors: list[str] = []
+    uses_matrix = False
     for no, s in enumerate(text.splitlines(), 1):
         m = RUNS_ON.match(s)
-        if m is None or m.group(1) == label:
+        if m is None:
+            continue
+        tag = m.group(1)
+        if MATRIX_RUNNER.match(tag):
+            uses_matrix = True
+            continue
+        if tag in labels:
             continue
         errors.append(
-            f"{name}:{no}: runs-on: {m.group(1)} 与 tools/nightly/manifest.yaml 的 "
-            f"runner.label={label} 不一致（两处各自演化，改一侧不会带出另一侧）")
+            f"{name}:{no}: runs-on: {tag} 与 tools/nightly/manifest.yaml 的 "
+            f"{_label_text(labels)} 不一致（两处各自演化，改一侧不会带出另一侧）")
+    if uses_matrix:
+        refs = matrix_runner_refs(text)
+        if not refs:
+            errors.append(
+                f"{name}: runs-on 用 matrix.runner 表达式，但矩阵 include 里没有 "
+                "runner 取值（表达式只会把未登记的值藏进另一处）")
+        for no, tag in refs:
+            if tag in labels:
+                continue
+            errors.append(
+                f"{name}:{no}: 矩阵 runner: {tag} 与 tools/nightly/manifest.yaml 的 "
+                f"{_label_text(labels)} 不一致（矩阵取值同样是运行器事实源）")
     return errors
 
 
@@ -679,13 +766,13 @@ def wf_ban(name: str, text: str, max_inline: int) -> list[str]:
     return errors + hits(name, text, ALWAYS_FORBIDDEN, "直接调用 apt-get，应走 {entry}")
 
 
-def wf_checks(name: str, text: str, label: str | None) -> list[str]:
+def wf_checks(name: str, text: str, labels: set[str]) -> list[str]:
     """单个 workflow 的静态判据（规模与回流禁令由 wf_size/wf_ban 负责）。"""
     errors = check_name(name, text)
     errors += check_family(name, text)
     errors += check_runner(name, text)
-    if label is not None:
-        errors += wf_label_rule(name, text, label)
+    if labels:
+        errors += wf_label_rule(name, text, labels)
     errors += check_policy(name, text)
     errors += check_triggers(name, text)
     errors += check_gate_refs(name, text)
@@ -694,10 +781,10 @@ def wf_checks(name: str, text: str, label: str | None) -> list[str]:
 
 
 def wf_file(name: str, text: str, budgets: dict[str, tuple[int, int]],
-            label: str | None) -> tuple[list[str], int]:
+            labels: set[str]) -> tuple[list[str], int]:
     """一个文件的完整判定；未登记预算时只做静态判据（登记本身另判）。"""
     inline = count_inline(text)
-    errors = wf_checks(name, text, label)
+    errors = wf_checks(name, text, labels)
     if name not in budgets:
         return errors, inline
     budget = budgets[name]
@@ -713,8 +800,8 @@ def scan_workflows(files: list[str],
     顺序即错误报告顺序：跨文件问题只出现一次，排在单文件问题之前。
     """
     errors = check_gate_libs() + check_doc()
-    label = runner_label()
-    if label is None:
+    labels = runner_labels()
+    if not labels:
         errors.append(
             "tools/nightly/manifest.yaml: 未登记 runner.label，runs-on 无对照基准")
     for path in shape_sites():
@@ -723,7 +810,7 @@ def scan_workflows(files: list[str],
     errors += check_registry(budgets, files)
     total = 0
     for name in files:
-        got, inline = wf_file(name, (WORKFLOWS / name).read_text(), budgets, label)
+        got, inline = wf_file(name, (WORKFLOWS / name).read_text(), budgets, labels)
         errors += got
         total += inline
     return errors, total

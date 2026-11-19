@@ -176,6 +176,56 @@ flow demo-verify.yml ubuntu-24.04 "actions/checkout@${SHA}" " # v4" pr
 out=$(run)
 check "规则 17：两侧一致时通过" 0 "$?" "${out}" "检查通过"
 
+# 多架构矩阵：runs-on 指向 matrix.runner 时，登记判据落到 include 的取值上。
+# 集合登记在 manifest 的 runner.labels（label 是它的单架构子集）。
+matrix_labels()
+{
+    printf 'runner:\n  label: ubuntu-24.04\n  labels:\n    - ubuntu-24.04\n    - ubuntu-24.04-arm\n  hosted_ceiling_minutes: 360\n' \
+        >"${FX}/tools/nightly/manifest.yaml"
+}
+
+# flowm <文件> <矩阵 runner 取值> — 一个两腿矩阵 job，其余字段合规。
+flowm()
+{
+    local file="$1" runner="$2"
+
+    {
+        printf 'name: %s\n' "${file%.yml}"
+        printf 'on:\n  push:\n    paths:\n      - %s\n' "'ci/**'"
+        printf '  pull_request:\n    paths:\n      - %s\n' "'ci/**'"
+        printf 'permissions:\n  contents: read\n'
+        printf 'concurrency:\n  group: ci\n  cancel-in-progress: true\n'
+        printf 'jobs:\n  gate:\n    strategy:\n      matrix:\n        include:\n'
+        printf '          - arch: x86_64\n            runner: ubuntu-24.04\n'
+        printf '          - arch: aarch64\n            runner: %s\n' "${runner}"
+        printf '    runs-on: ${{ matrix.runner }}\n'
+        printf '    timeout-minutes: 30\n    steps:\n'
+        printf '      - uses: actions/checkout@%s # v4\n' "${SHA}"
+    } >"${FX}/.github/workflows/${file}"
+    printf '%s 0 1\n' "${file}" >"${FX}/ci/workflow-budgets.txt"
+}
+
+reset
+doc
+matrix_labels
+flowm demo-verify.yml ubuntu-24.04-arm
+out=$(run)
+check "规则 17：矩阵取值全部已登记时通过" 0 "$?" "${out}" "检查通过"
+
+reset
+doc
+matrix_labels
+flowm demo-verify.yml ubuntu-22.04-arm
+out=$(run)
+check "规则 17：矩阵取值为未登记架构标签" 1 "$?" "${out}" "矩阵 runner: ubuntu-22.04-arm"
+
+reset
+doc
+matrix_labels
+flowm demo-verify.yml ubuntu-latest
+out=$(run)
+check "规则 13：矩阵取值为浮动标签" 1 "$?" "${out}" "未钉版"
+
 reset
 doc
 mkdir -p "${FX}/tools"
