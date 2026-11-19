@@ -21,9 +21,12 @@
 #   供应链四件套：工具链钉版与 rust-toolchain.toml 一致、工作区唯一
 #     Cargo.lock、vendor/ 与 .cargo/config.toml 齐备、给 --sbom 时组件数与
 #     Cargo.lock 条目相等。
-#   打包清单：给 --rpm 时用 rpm -qlpv 逐条断言 §14.16 的目标路径。六个 TUI
-#     入口是真实二进制（要求 -rwx），不能是软链——软链会让 %{_bindir} 出现
-#     「同一条目两种形态」，%check 的 test -L 断言随之误判。
+#   打包清单：给 --rpm 时用 rpm -qlpv 逐条断言 §14.16 的目标路径。入口二进制
+#     不在脚本里另抄一份文件名表：清单从 system/units 的 ExecStart 推导，
+#     单元引用的 /usr/bin 路径缺一个就是开机降级（0.0.5 的 session-choice
+#     以 203/EXEC 失败即此）。入口必须是真实二进制（-rwx），不能是软链——
+#     软链会让 %{_bindir} 出现「同一条目两种形态」，%check 的 test -L 断言
+#     随之误判。systemctl 由 systemd 提供，不在发行包内，推导时排除。
 #   门禁全集：默认（发版口径）按 §10「发版只跑既有门禁的全集并归档输出」
 #     逐个执行 ci/ci.sh，日志落 --out；tui-field 用 --evidence 指向的实机
 #     读数，夹具不计入。--static 只核对仓库事实，明确不构成发版结论。
@@ -39,9 +42,6 @@ set -uo pipefail
 readonly BASE=0.0.5
 readonly GATES=(no-stub dead-code lang-lock coupling-scan tui-frame
                 ime-corpus input-matrix tui-e2e)
-readonly BINS=(/usr/bin/boot-tui /usr/bin/boot-ime /usr/bin/asr-gateway
-               /usr/bin/airy-tui-exec /usr/bin/airy-session-pick
-               /usr/bin/airy-session-mode)
 readonly UNITS=(/usr/lib/systemd/system/boot-tui.service
                 /usr/lib/systemd/system/airy-session-choice.service
                 /usr/lib/systemd/system/airy-session-switch@.service
@@ -209,6 +209,24 @@ supply_check()
     endgroup
 }
 
+# unit_bins —— 入口二进制清单从单元推导，不另抄文件名表。单元 Exec* 的首
+# token 落在 /usr/bin 的，发行包就必须交付该路径：0.0.5 的 session-choice
+# 以 203/EXEC 降级，正是单元先于二进制进镜像。systemctl 由 systemd 提供，
+# 不在发行包内，推导时排除。取不到任何条目说明单元树缺失，判负而不是跳过。
+unit_bins()
+{
+    local dir unit
+    for dir in "${ROOT}/system/units"; do
+        [ -d "${dir}" ] || continue
+        while IFS= read -r unit; do
+            sed -n -E \
+                's/^[[:space:]]*Exec[A-Za-z]*[[:space:]]*=[[:space:]]*[-@+!:]*(.*)$/\1/p' \
+                "${unit}"
+        done < <(find "${dir}" -maxdepth 1 -type f -name '*.service' | sort)
+    done | awk 'NF { print $1 }' |
+        awk '$0 ~ /^\/usr\/bin\// && $0 != "/usr/bin/systemctl"' | sort -u
+}
+
 # rpm_list —— 合并发行包与系统包的文件清单，供逐条断言。
 rpm_list()
 {
@@ -227,7 +245,7 @@ rpm_find()
 
 rpm_check()
 {
-    local list p mode themes
+    local list p mode themes bins
 
     [ -n "${RPMDIR}" ] || return 0
     need_cmd rpm
@@ -235,14 +253,19 @@ rpm_check()
     list="$(rpm_list)"
     [ -n "${list}" ] || { fail "${RPMDIR} 内无发行包（airymaxos-release/system）"; endgroup; return 0; }
 
-    for p in "${BINS[@]}"; do
-        mode="$(rpm_find "${list}" "${p}")"
-        case "${mode}" in
-            '') fail "发行包缺 ${p}" ;;
-            -rwx*) ;;
-            *) fail "${p} 不是可执行文件（${mode}）" ;;
-        esac
-    done
+    bins="$(unit_bins)"
+    if [ -z "${bins}" ]; then
+        fail "无法从 system/units 推导入口二进制"
+    else
+        while IFS= read -r p; do
+            mode="$(rpm_find "${list}" "${p}")"
+            case "${mode}" in
+                '') fail "发行包缺 ${p}" ;;
+                -rwx*) ;;
+                *) fail "${p} 不是可执行文件（${mode}）" ;;
+            esac
+        done <<<"${bins}"
+    fi
     for p in "${UNITS[@]}" "${FILES[@]}"; do
         [ -n "$(rpm_find "${list}" "${p}")" ] || fail "发行包缺 ${p}"
     done

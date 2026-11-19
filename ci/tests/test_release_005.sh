@@ -63,7 +63,7 @@ tree()
     rm -rf "${FX}" "${tmp}/rpm"
     mkdir -p "${FX}/ci/gates" "${FX}/ci/lib" "${FX}/distro/release" \
         "${FX}/distro/specs" "${FX}/system/tui/.cargo" "${FX}/system/tui/vendor" \
-        "${tmp}/bin" "${tmp}/rpm"
+        "${FX}/system/units" "${tmp}/bin" "${tmp}/rpm"
     cp "${ROOT}/ci/gates/release-005.sh" "${FX}/ci/gates/release-005.sh"
     cp "${ROOT}/ci/lib/log.sh" "${FX}/ci/lib/log.sh"
     printf 'readonly PIN=1.90.0\n' >"${FX}/ci/lib/tui-gate.sh"
@@ -75,6 +75,12 @@ tree()
     printf '[source.vendored-sources]\ndirectory = "vendor"\n' \
         >"${FX}/system/tui/.cargo/config.toml"
     : >"${FX}/system/tui/vendor.ledger"
+    printf '[Service]\nExecStart=/usr/bin/boot-tui\n' \
+        >"${FX}/system/units/boot-tui.service"
+    printf '[Service]\nExecStart=/usr/bin/airy-session-pick --timeout 120\n' \
+        >"${FX}/system/units/airy-session-choice.service"
+    printf '[Service]\nExecStart=/usr/bin/airy-session-mode --switch %%i\n' \
+        >"${FX}/system/units/airy-session-switch@.service"
     local g
     for g in no-stub dead-code lang-lock coupling-scan tui-frame \
              ime-corpus input-matrix tui-e2e tui-field; do
@@ -94,9 +100,6 @@ rpm_ok()
 {
     cat >"${tmp}/rpm.list" <<'EOF'
 -rwxr-xr-x    1 root    root    100 Jan  1 2026 /usr/bin/boot-tui
--rwxr-xr-x    1 root    root    100 Jan  1 2026 /usr/bin/boot-ime
--rwxr-xr-x    1 root    root    100 Jan  1 2026 /usr/bin/asr-gateway
--rwxr-xr-x    1 root    root    100 Jan  1 2026 /usr/bin/airy-tui-exec
 -rwxr-xr-x    1 root    root    100 Jan  1 2026 /usr/bin/airy-session-pick
 -rwxr-xr-x    1 root    root    100 Jan  1 2026 /usr/bin/airy-session-mode
 -rw-r--r--    1 root    root    100 Jan  1 2026 /usr/lib/systemd/system/boot-tui.service
@@ -162,10 +165,15 @@ out="$(run --static --rpm "${tmp}/rpm")"
 check "打包清单齐备判通过" 0 "$?" "${out}" "static 模式"
 
 tree
-sed -i 's|^-rwxr-xr-x    1 root    root    100 Jan  1 2026 /usr/bin/boot-ime|lrwxrwxrwx    1 root    root     20 Jan  1 2026 /usr/bin/boot-ime|' \
+sed -i 's|^-rwxr-xr-x    1 root    root    100 Jan  1 2026 /usr/bin/boot-tui|lrwxrwxrwx    1 root    root     20 Jan  1 2026 /usr/bin/boot-tui|' \
     "${tmp}/rpm.list"
 out="$(run --static --rpm "${tmp}/rpm")"
 check "入口是软链判拒绝" 1 "$?" "${out}" "不是可执行文件"
+
+tree
+sed -i '/^.*\/usr\/bin\/airy-session-pick$/d' "${tmp}/rpm.list"
+out="$(run --static --rpm "${tmp}/rpm")"
+check "缺会话入口判拒绝" 1 "$?" "${out}" "发行包缺 /usr/bin/airy-session-pick"
 
 tree
 sed -i '/boot-tui.service/d' "${tmp}/rpm.list"
