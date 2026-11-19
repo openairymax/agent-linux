@@ -97,6 +97,12 @@ jobs:
         id: ver
         run: ci/ci.sh release-version --tag "${RELEASE_TAG}"
 
+      # 发版自证的静态部分：树内版本、release.spec 与 tag 三者同源。signature
+      # 与产物核对在 publish-release 里由 release-verify 做；此处只读源码，
+      # 秒级完成，故排在任何长步骤之前。
+      - name: Release self-evidence (static)
+        run: ci/ci.sh release-005 --static --tag "${RELEASE_TAG}"
+
       - name: Import GPG signing key
         uses: crazy-max/ghaction-import-gpg@e89d40939c28e39f97cf32126055eeae86ba74ec # v6
         with:
