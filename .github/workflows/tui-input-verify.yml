@@ -1,0 +1,85 @@
+# ===========================================================================
+# agent-linux (AirymaxOS) CI Pipeline
+# 输入面流水线（2 jobs：四通道矩阵 + 中文语料 / 会话切换端到端）
+# ===========================================================================
+# Authority: docs/docs-linux/70-build-system/03-ci-cd-pipeline.md
+# 判据本体在 system/tui 的集成测试里，本文件只做检出、子模块取用与门禁调用。
+#
+# 为什么单列一条而不是并进 tui-verify：三条判据都是真实二进制与真实词表
+# 驱动的集成测试（合计约 40 分钟），与「格式 + clippy + 单测」的成本量级
+# 不同。并进去会让每次改一行注释都要排队等完整集成；单列后由 paths 决定
+# 是否触发，宿主判据仍是快速回路。
+#
+# 文件名词族：阻断型门禁一律取 `*-verify` 并由 pull_request 触发
+# （ci/check-workflows.py 规则 14）。
+# ===========================================================================
+
+name: tui-input-verify
+on:
+  pull_request:
+    paths:
+      - 'ci/ci.sh'
+      - 'ci/lib/**'
+      - 'ci/gates/input-matrix.sh'
+      - 'ci/gates/ime-corpus.sh'
+      - 'ci/gates/tui-e2e.sh'
+      - 'system'
+      - '.github/workflows/tui-input-verify.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'ci/ci.sh'
+      - 'ci/lib/**'
+      - 'ci/gates/input-matrix.sh'
+      - 'ci/gates/ime-corpus.sh'
+      - 'ci/gates/tui-e2e.sh'
+      - 'system'
+      - '.github/workflows/tui-input-verify.yml'
+
+# 最小权限：只读源码，不产出制品，不写 issue。
+permissions:
+  contents: read
+
+concurrency:
+  group: tui-input-verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ─── Job 1: 输入通道 ──────────────────────────────────────────────
+  # 矩阵与语料同属 boot-tui/boot-ime 的测试目标，共用一个 target 目录：
+  # 第二次编译只增量链接，比拆成两个作业各编译一遍更省时间。
+  channels:
+    name: Input Matrix & IME Corpus
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { submodules: false }
+
+      - name: Fetch the TUI workspace
+        run: ci/ci.sh submodules
+
+      # 键盘（含中文）、语音、外接 API、批处理四条通道各一成功一失败。
+      - name: Four-channel input matrix
+        run: ci/ci.sh input-matrix
+
+      # 3,000 句冻结语料的逐词首选：准确率、会话拒绝数、按键 p99 三条判据。
+      - name: Chinese input corpus
+        run: ci/ci.sh ime-corpus
+
+  # ─── Job 2: 会话切换 ──────────────────────────────────────────────
+  # 切换次序本身就是被测对象，必须驱动真实二进制；与输入通道无共享状态，
+  # 因此独立成作业，任一失败不掩盖另一侧结论。
+  sessions:
+    name: Session Switch End to End
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { submodules: false }
+
+      - name: Fetch the TUI workspace
+        run: ci/ci.sh submodules
+
+      - name: Session choice and runtime switch
+        run: ci/ci.sh tui-e2e

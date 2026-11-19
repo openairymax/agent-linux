@@ -34,4 +34,5 @@ payload-seed.yml                  0     2
 release.yml                       0     2
 sdk-verify.yml                    0     4
 ssot-verify.yml                   0     2
+tui-input-verify.yml              0     2
 tui-verify.yml                    0     3
