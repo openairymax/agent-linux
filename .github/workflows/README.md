@@ -103,11 +103,11 @@ lint 中执行。下表是规则本身，不是建议。
 | 10 | `pull_request` 的 paths 必须是 `push` 的 paths 子集 | PR 独有的路径意味着该文件合并后不再被校验 |
 | 11 | paths 只写 gitlink 目录（`kernel`），不写 `kernel/**` | 父仓 diff 里子模块只有目录一项，内部 glob 永不命中，是死判据 |
 | 12 | 每个 `ci/ci.sh <gate>` 必须有同名 `ci/gates/<gate>.sh`，且该脚本自带 `# 用法:` 头 | 名字写错要到 checkout 与工具链预热之后才以 exit 2 暴露 |
-| 13 | 每个 `runs-on:` 必须钉成 `<发行版>-<YY.MM>`（如 `ubuntu-24.04`），不得用 `-latest` | 浮动标签会悄悄换掉编译器、shellcheck 与 Python 版本，门禁结论就取决于跑的那一天 |
+| 13 | 每个 `runs-on:` 必须钉成 `<发行版>-<YY.MM>`（如 `ubuntu-24.04`；架构限定的 `ubuntu-24.04-arm` 同属钉版），不得用 `-latest` | 浮动标签会悄悄换掉编译器、shellcheck 与 Python 版本，门禁结论就取决于跑的那一天 |
 | 14 | 文件名分两族：`*-verify` 必须由 `pull_request` 触发（阻断型门禁）；其余只能是 `image-build` / `nightly` / `release` / `payload-seed` | 读名字就知道违规会红，也读得出它何时跑 |
 | 15 | 本节表格的规则号必须与脚本的规则号一一对应：漏登、多登、重号均判红 | 文档一旦能单独演化，读者就会按错版本执行，新增规则则无人知晓 |
 | 16 | 每个 `uses:` 一律钉 40 位提交 SHA，并带 `# vN` 溯源注释（`./…` 与 `docker://` 豁免） | 浮动 tag 可被上游重新指向：代码在两次运行之间被换掉而日志无迹 |
-| 17 | 每个 `runs-on:` 必须与 `tools/nightly/manifest.yaml` 的 `runner.label` 逐字相等 | 运行器版本散在两处时，改 workflow 不会带出清单，只能等云端跑红后人工对齐 |
+| 17 | 每个 `runs-on:` 必须落在 `tools/nightly/manifest.yaml` 的 `runner.label`/`runner.labels` 登记集合内；`runs-on: ${{ matrix.runner }}` 时矩阵 `include` 的每个 `runner` 取值同样要已登记 | 运行器版本散在两处时，改 workflow 不会带出清单，只能等云端跑红后人工对齐 |
 | 18 | 门禁、库、工具与 workflow 都禁止由名称形状推语义：不得以「标签以 `-latest` 结尾」判定托管，也不得写 `*-latest` 做比较、`case` 匹配或表达式判断 | 托管运行器的两种写法都表示托管，自托管标签任意命名；形状与语义之间没有蕴含关系，`run 40864072696` 就是这样误判 |
 | 19 | 调用 `ci/ci.sh remote-sync` 必须显式给出 `--kind` | 门禁缺省查 `refs/heads/<ref>`，而 `github.ref_name` 已剥掉 `refs/` 前缀：标签派发时它去查不存在的同名分支，判负成「无此分支」（`run 42335415156` 整轮组装在第一步落空） |
 

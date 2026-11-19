@@ -91,15 +91,27 @@ free_disk()
 #   * Debian 的 ovmf 另给合并镜像 /usr/share/ovmf/OVMF.fd（无 VARS 分离）；
 #   * Fedora 系在 /usr/share/edk2/ovmf，qemu 自带一份在 /usr/share/qemu。
 # 用 glob 而不是枚举文件名：固件命名还会随 edk2 版本增删，判据只关心「有没有
-# 一份可读的 x86 UEFI code 镜像」。distro/scripts/install-test.sh 的装机段用
+# 一份可读的 UEFI code 镜像」。distro/scripts/install-test.sh 的装机段用
 # 同一组模式做探测，两处必须一致，否则这里判就绪而装机段仍降级。
+# aarch64 的固件是 AAVMF（包 qemu-efi-aarch64），落点与 x86 的 ovmf 不同；
+# 架构缺省 x86_64，跨架构装机必须显式传入，否则会用 x86 固件去开 ARM 机器。
 uefi_fw_paths()
 {
-    printf '%s\n' \
-        /usr/share/OVMF/OVMF_CODE*.fd \
-        /usr/share/ovmf/OVMF.fd \
-        /usr/share/edk2/ovmf/OVMF_CODE*.fd \
-        /usr/share/qemu/OVMF.fd
+    case "${1:-x86_64}" in
+    aarch64)
+        printf '%s\n' \
+            /usr/share/AAVMF/AAVMF_CODE*.fd \
+            /usr/share/edk2/aarch64/QEMU_EFI*.fd \
+            /usr/share/qemu-efi-aarch64/QEMU_EFI.fd
+        ;;
+    *)
+        printf '%s\n' \
+            /usr/share/OVMF/OVMF_CODE*.fd \
+            /usr/share/ovmf/OVMF.fd \
+            /usr/share/edk2/ovmf/OVMF_CODE*.fd \
+            /usr/share/qemu/OVMF.fd
+        ;;
+    esac
 }
 
 # 输出第一份可读固件的路径；都没有返回 1。未命中的 glob 保持字面量，
@@ -112,7 +124,7 @@ uefi_fw_code()
         [ -r "${p}" ] || continue
         printf '%s\n' "${p}"
         return 0
-    done < <(uefi_fw_paths)
+    done < <(uefi_fw_paths "${1:-x86_64}")
     return 1
 }
 
@@ -121,6 +133,13 @@ uefi_fw_code()
 # TCG，只是耗时上升。
 enable_kvm()
 {
+    # 跨架构没有可用的 KVM：x86 宿主上的 aarch64 只能走 TCG。先判这一条，
+    # 免得日志同时打印「KVM 可用」与装机段的 TCG 回落，让排障人员以为加速
+    # 生效而只怀疑超时。
+    if [ "${1:-}" != "" ] && [ "$1" != "$(uname -m)" ]; then
+        say "目标架构 $1 与宿主 $(uname -m) 不同，加速器固定为 TCG"
+        return 0
+    fi
     if [ ! -e /dev/kvm ]; then
         warn "/dev/kvm 不可用，回退 TCG（耗时显著上升）"
         return 0

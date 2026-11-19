@@ -73,7 +73,7 @@ MANIFEST_KEYS = frozenset({
 })
 TRIGGER_KEYS = frozenset({"cron", "workflow_dispatch", "forbidden"})
 FLIGHT_KEYS = frozenset({"group", "cancel_in_progress"})
-RUNNER_KEYS = frozenset({"label", "hosted_ceiling_minutes"})
+RUNNER_KEYS = frozenset({"label", "labels", "hosted_ceiling_minutes"})
 JOB_KEYS = frozenset({"name", "timeout_minutes", "needs", "helpers"})
 HELPER_KEYS = frozenset({"path", "status", "argv"})
 BUDGET_KEYS = frozenset({"max_minutes", "helper", "argv"})
@@ -265,11 +265,28 @@ def _ceiling_probs(value: Mapping[str, Any]) -> list[str]:
         "runner.hosted_ceiling_minutes 必须是正整数"]
 
 
+def _labels_probs(value: Mapping[str, Any]) -> list[str]:
+    """labels 可选；出现即须为非空字符串列表且包含 label。
+
+    多架构 workflow 用 ``runs-on: ${{ matrix.runner }}`` 选标签，登记集合
+    是唯一事实源；集合里少了 label 本身，单架构的对照基准就会缺席。
+    """
+    if "labels" not in value:
+        return []
+    labels = value.get("labels")
+    if not _is_str_list(labels) or not labels:
+        return ["runner.labels 必须是非空字符串列表"]
+    label = value.get("label")
+    if isinstance(label, str) and label not in labels:
+        return [f"runner.labels 必须包含 runner.label={label}"]
+    return []
+
+
 def _schema_runner(value: Any) -> list[str]:
     if not isinstance(value, dict):
         return ["runner 必须是映射"]
     return (_need(value, RUNNER_KEYS, "runner.")
-            + _label_probs(value) + _ceiling_probs(value))
+            + _label_probs(value) + _labels_probs(value) + _ceiling_probs(value))
 
 
 def _schema_jobs(value: Any) -> list[str]:

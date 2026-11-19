@@ -5,9 +5,14 @@
 # ci/gates/accept.sh — 装机 + 冷启动验收（L2/L3）
 #
 # 用法: ci/gates/accept.sh --iso FILE --out DIR [--acceptance]
+#                          [--arch x86_64|aarch64]
 #                          [--firmware both|bios] [--runs N]
 #                          [--media cdrom|usb]
 #                          [--install-timeout SECS] [--boot-timeout SECS]
+#
+# --arch 决定宿主上的模拟器与固件（qemu-system-<arch>、OVMF/AAVMF），缺省
+# x86_64。跨架构没有 KVM，装机入口会自动回落到 TCG；调用方要相应放宽
+# --install-timeout 与步骤时限。
 #
 # 判定权在 distro/scripts/install-test.sh（判负集 verdict.env），本 gate 只
 # 负责两件事：按剖面选期望标记、把 TAP 同时留在文件里供归档。
@@ -47,6 +52,7 @@ MEDIA="cdrom"
 RUNS=1
 INSTALL_TIMEOUT=3600
 BOOT_TIMEOUT=900
+ARCH="x86_64"
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -56,6 +62,7 @@ while [ "$#" -gt 0 ]; do
         --firmware)        FIRMWARE="${2:-}"; shift 2 ;;
         --media)           MEDIA="${2:-}"; shift 2 ;;
         --runs)            RUNS="${2:-}"; shift 2 ;;
+        --arch)            ARCH="${2:-}"; shift 2 ;;
         --install-timeout) INSTALL_TIMEOUT="${2:-}"; shift 2 ;;
         --boot-timeout)    BOOT_TIMEOUT="${2:-}"; shift 2 ;;
         -h|--help)
@@ -84,7 +91,7 @@ set -o pipefail
 # 输出能说明它在装机、冷启动还是已经挂死。心跳以产物目录里的日志为准。
 progress_start "${OUT}"
 trap progress_stop EXIT
-"${RUNNER}" --iso "${ISO}" --out "${OUT}" \
+"${RUNNER}" --iso "${ISO}" --out "${OUT}" --arch "${ARCH}" \
     --runs "${RUNS}" --firmware "${FIRMWARE}" --media "${MEDIA}" \
     "${marker_args[@]}" \
     --install-timeout "${INSTALL_TIMEOUT}" --boot-timeout "${BOOT_TIMEOUT}" \

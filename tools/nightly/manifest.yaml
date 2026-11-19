@@ -56,6 +56,11 @@ permissions:
 
 runner:
   label: ubuntu-24.04
+  # 托管运行器按架构分标签，同一发行版小版本：镜像组装与验收按目标架构
+  # 矩阵选标签，aarch64 腿因此原生构建与原生模拟，无需交叉工具链。
+  labels:
+    - ubuntu-24.04
+    - ubuntu-24.04-arm
   hosted_ceiling_minutes: 360
 
 jobs:

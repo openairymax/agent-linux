@@ -4,7 +4,7 @@
 # ===========================================================================
 # ci/gates/qemu-setup.sh — 装机段的宿主依赖
 #
-# 用法: ci/gates/qemu-setup.sh [--firmware both|bios]
+# 用法: ci/gates/qemu-setup.sh [--firmware both|bios] [--arch ARCH]
 #
 # 已在宿主装齐就跳过，不做无条件 apt-get update：离线环境里不希望一次
 # 门禁触发整轮源同步。
@@ -42,11 +42,15 @@ readonly EINVAL=5
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/apt.sh"
 
 FIRMWARE="both"
+ARCH="x86_64"
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --firmware) FIRMWARE="${2:-}"; shift 2 ;;
-        -h|--help) echo "用法: ci/gates/qemu-setup.sh [--firmware both|bios]"; exit 0 ;;
+        --arch) ARCH="${2:-}"; shift 2 ;;
+        -h|--help)
+            echo "用法: ci/gates/qemu-setup.sh [--firmware both|bios] [--arch ARCH]"
+            exit 0 ;;
         *) die "未知参数: $1" ;;
     esac
 done
@@ -54,14 +58,33 @@ done
 case "${FIRMWARE}" in both|bios) ;; *)
     err "--firmware 只接受 both|bios"; exit "${EINVAL}" ;; esac
 
-readonly QEMU_PKGS=(qemu-system-x86 qemu-utils)
-readonly QEMU_BINS=(qemu-system-x86_64 qemu-img)
+# 每个架构一套宿主依赖：模拟器包、模拟器二进制、UEFI 固件包各不同。
+# aarch64 只有 UEFI（AAVMF），没有 BIOS 腿，因此 --firmware bios 在这里
+# 是自相矛盾的参数，直接判负而不是静默改成 both。
+case "${ARCH}" in
+x86_64)
+    QEMU_PKGS=(qemu-system-x86 qemu-utils)
+    QEMU_BINS=(qemu-system-x86_64 qemu-img)
+    FW_PKG=ovmf
+    ;;
+aarch64)
+    [ "${FIRMWARE}" != bios ] || {
+        err "aarch64 没有 BIOS 固件腿，--firmware bios 无效"
+        exit "${EINVAL}"
+    }
+    QEMU_PKGS=(qemu-system-arm qemu-utils)
+    QEMU_BINS=(qemu-system-aarch64 qemu-img)
+    FW_PKG=qemu-efi-aarch64
+    ;;
+*)
+    err "不支持的架构: ${ARCH}"; exit "${EINVAL}" ;;
+esac
 
 # 固件枚举只在 ci/lib/host.sh，本门禁不另立一份：装机段对同一组模式下判据，
 # 两边一旦分叉就会出现「这里说已就绪、装机段却降级成 BIOS」。
 fw_present()
 {
-    uefi_fw_code >/dev/null
+    uefi_fw_code "${ARCH}" >/dev/null
 }
 
 qemu_ready()
@@ -105,24 +128,24 @@ qemu_ready || {
     err "装机段缺这两条命令时只会以 rc=77 跳过全部装机腿，故在此判负"
     exit 1
 }
-say "qemu 已就绪: $(qemu-system-x86_64 --version | head -n 1)"
+say "qemu 已就绪: $("${QEMU_BINS[0]}" --version | head -n 1)"
 
 if [ "${FIRMWARE}" = both ]; then
     if ! fw_present; then
         need_cmd apt-get
-        group "apt-get install ovmf"
+        group "apt-get install ${FW_PKG}"
         apt_sync
-        apt_install_min ovmf
+        apt_install_min "${FW_PKG}"
         endgroup
     fi
     fw_present || {
-        err "缺少 UEFI 固件（ovmf）：装机段会降级成只跑 BIOS 腿，拒绝放行"
-        err "已探测: $(uefi_fw_paths | tr '\n' ' ')"
+        err "缺少 UEFI 固件（${FW_PKG}/${ARCH}）：装机段会降级，拒绝放行"
+        err "已探测: $(uefi_fw_paths "${ARCH}" | tr '\n' ' ')"
         exit 1
     }
-    say "UEFI 固件就绪: $(uefi_fw_code)"
+    say "UEFI 固件就绪（${ARCH}）: $(uefi_fw_code "${ARCH}")"
 fi
 
 # 加速器与固件同在装机段的前置：分开成两步只会让「qemu 装了但没权限」在
 # 装机跑了半小时之后才以超时的形式暴露。
-enable_kvm
+enable_kvm "${ARCH}"
