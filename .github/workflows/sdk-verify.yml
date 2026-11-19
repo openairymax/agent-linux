@@ -1,0 +1,71 @@
+# ===========================================================================
+# agent-linux (AirymaxOS) CI Pipeline
+# 用户态 SDK CI（4 jobs：go / python / rust / ts 各占一个）
+# ===========================================================================
+# Authority: docs/docs-linux/70-build-system/03-ci-cd-pipeline.md
+# Design: 一门语言一个作业，编译失败只落在该语言上，互不掩盖
+# ===========================================================================
+
+name: sdk-verify
+on:
+  pull_request:
+    paths:
+      - 'sdk/**'
+      - 'ci/gates/sdk-verify.sh'
+      - 'ci/lib/**'
+      - '.github/workflows/sdk-verify.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'sdk/**'
+      - 'ci/gates/sdk-verify.sh'
+      - 'ci/lib/**'
+      - '.github/workflows/sdk-verify.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sdk-verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: sdk go
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Build go binding
+        run: ci/ci.sh sdk-verify --lang go
+
+  python:
+    name: sdk python
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Compile python binding
+        run: ci/ci.sh sdk-verify --lang python
+
+  rust:
+    name: sdk rust
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Compile rust binding
+        run: ci/ci.sh sdk-verify --lang rust
+
+  ts:
+    name: sdk ts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      # 绑定没有 package.json，tsc 只能由作业显式提供；版本钉住，避免
+      # 「今天能编、明天不能编」由编译器的漂移造成。
+      - name: Install typescript
+        run: npm install --global typescript@5.6.3
+      - name: Compile ts binding
+        run: ci/ci.sh sdk-verify --lang ts
