@@ -41,9 +41,7 @@ from pathlib import Path
 
 # 判定器位于 ci/checks/：同层的 `no_stub` 随 sys.path[0] 取到，共用库 `lib`
 # 在上一级，故显式补一次路径；夹具树保持同一布局。
-_CI = Path(__file__).resolve().parent.parent
-if str(_CI) not in sys.path:
-    sys.path.insert(0, str(_CI))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import no_stub
 from lib import rs_src, scan_src

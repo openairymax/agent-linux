@@ -35,9 +35,7 @@ from pathlib import Path
 
 # 判定器位于 ci/checks/，把上级 ci/ 加入 sys.path：共用库 `lib` 与同层
 # 的 `no_stub` 都按包名导入，夹具树也保持同一布局。
-_CI = Path(__file__).resolve().parent.parent
-if str(_CI) not in sys.path:
-    sys.path.insert(0, str(_CI))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from lib import lint_drive, scan_src
 
