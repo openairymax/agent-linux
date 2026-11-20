@@ -84,6 +84,8 @@ def shape(p_type):
     return p_type == PT_GNU_STACK
 
 
+# 声明面按形状校验已登记放行开关存在，桩按同一形状承接，行为仍由退出码决定。
+expect = "--expect-allow" in sys.argv
 tag = {0: "AIRY-WX-PASS", 1: "AIRY-WX-FAIL", 4: "AIRY-WX-WAIVED"}.get($1, "AIRY-WX-ODD")
 if "--scan" in sys.argv:
     print("RWE  桩  RWE" if $1 == 1 else "SCAN 桩 rwe=0")
