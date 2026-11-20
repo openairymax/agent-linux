@@ -31,13 +31,20 @@
 #     x86_64_defconfig（run 40025896195 的 12.2 分钟不再可比）。
 #   * accept 的时限不是拍定值，而由装机腿数与模拟器形态推导：x86_64 有 U 盘
 #     一条腿、CD-ROM 两条固件腿，各腿 80 分钟（> 装机 3600 秒 + 冷启动
-#     900 秒），累计 240 分钟仍小于 job 的 360 分钟；aarch64 没有 legacy
-#     BIOS，只有 UEFI 两条腿，KVM 缺席时回落 TCG，指令级模拟下装机与冷启动
-#     都成倍变慢，故每腿 150 分钟、装机 7200 秒、冷启动 1800 秒，累计 300
-#     分钟仍小于 360。分步的用意是归因：合成一步时只有总耗时，卡在 BIOS
-#     装机还是 UEFI 冷启动无从区分。主机没有对应固件时该腿直接跳过。托管
-#     runner 实测提供 /dev/kvm（run 39371790961 记录的加速器为 kvm），预算仍
-#     按 TCG 最坏情况保留，避免 runner 形态变化导致 job 被中途取消。
+#     900 秒），累计 240 分钟仍小于 job 的 360 分钟，三条腿因此同在一个
+#     job 实例里串行——ISO 发布必须等三条腿全绿，同实例内先后执行是唯一
+#     不引入第三个 job 的排序手段。
+#     aarch64 没有 legacy BIOS，只有 UEFI 两条腿；KVM 缺席时回落 TCG，
+#     指令级模拟下装机实测 7150 秒（run 44726376164），已达 7200 秒上限的
+#     99.3%。两条腿串行时单腿 step 只剩 150 分钟，连装机上限都覆盖不了，
+#     更留不出冷启动。故 aarch64 按介质拆成两个矩阵项，各自独立 job 实例
+#     与独立 360 分钟预算：装机 9000 秒、冷启动 2400 秒、单腿 step 240
+#     分钟，余下 50 分钟给 qemu 前置与产物整理。拆分只增加矩阵项，job
+#     定义仍是 assemble 与 accept 两个。
+#     分步的用意是归因：合成一步时只有总耗时，卡在 BIOS 装机还是 UEFI
+#     冷启动无从区分。主机没有对应固件时该腿直接跳过。托管 runner 实测
+#     提供 /dev/kvm（run 39371790961 记录的加速器为 kvm），预算仍按 TCG
+#     最坏情况保留，避免 runner 形态变化导致 job 被中途取消。
 #   * 源码以只读方式挂载进构建容器，产物只落 $RUNNER_TEMP/out，不违反
 #     「严禁在 airymaxhub 源码区内构建」。
 #   * 子模块由 ci/gates/submodules.sh 按需取：distro 与 system 是组装链的
@@ -454,29 +461,41 @@ jobs:
 
   # ─── Job 2: 装机 + BIOS/UEFI 冷启动 + 桌面就绪断言 ─────────────────────
   accept:
-    name: Install + Cold Boot ${{ matrix.arch }} (L2/L3)
-    # 矩阵两腿各自独立：一条腿失败不该删掉另一条腿的证据，也不该让另一条
-    # 已开跑的装机被取消。
+    name: Install + Cold Boot ${{ matrix.arch }} (${{ matrix.legs }}) (L2/L3)
+    # 矩阵项各自独立：一项失败不该删掉另一项的证据，也不该让另一项已开跑的
+    # 装机被取消。
     strategy:
       fail-fast: false
       matrix:
         include:
-          # 时限不是拍定值，而是装机腿数与模拟器形态推导出来的：
-          #   x86_64  —— U 盘一条腿、CD-ROM 两条固件腿，各腿 80 分钟
-          #              （> 装机 3600 s + 冷启动 900 s）；
-          #   aarch64 —— 没有 legacy BIOS，只剩 UEFI 两条腿；KVM 缺席时
-          #              回落 TCG，指令级模拟下装机与冷启动都成倍变慢，
-          #              故装机 7200 s、冷启动 1800 s、单腿 150 分钟。
+          # legs 是该项承载的装机腿：all 表示 x86_64 的三条腿串行后再发布，
+          # 其余取值只跑对应介质的一条腿。时限不是拍定值，而是装机腿数与
+          # 模拟器形态推导出来的（推导见文件头 accept 段）。
           - arch: x86_64
             runner: ubuntu-24.04
+            legs: all
             leg_timeout: 80
             install_timeout: 3600
             boot_timeout: 900
+          # aarch64 的两条腿各自成项：TCG 下一条腿的装机实测就要 7150 秒
+          # （run 44726376164），两项串行会同时挤爆单腿 step 与 job 上限。
+          # 装机 9000 秒是实测值的 1.26 倍，冷启动 2400 秒覆盖纯软件模拟
+          # 下的桌面会话拉起；两者之和 190 分钟仍小于 leg_timeout，超限时
+          # 由装机入口先给结论，而不是被 Actions 强制取消。
           - arch: aarch64
             runner: ubuntu-24.04-arm
-            leg_timeout: 150
-            install_timeout: 7200
-            boot_timeout: 1800
+            legs: usb
+            leg_dir: install-usb
+            leg_timeout: 240
+            install_timeout: 9000
+            boot_timeout: 2400
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+            legs: cdrom
+            leg_dir: install-uefi
+            leg_timeout: 240
+            install_timeout: 9000
+            boot_timeout: 2400
     runs-on: ${{ matrix.runner }}
     needs: assemble
     # 默认的隐式 success() 会让另一条腿的组装失败把本 leg 整个跳过：双架构
@@ -524,6 +543,7 @@ jobs:
       # 通路完全无关。0.0.3 的实机装机失败正是前者错位、后者照常通过。这条
       # 腿放在双固件全量之前，介质布局缺陷在此就地暴露，不必等两个固件都跑完。
       - name: Install and cold boot (UEFI, USB media)
+        if: ${{ !cancelled() && (matrix.legs == 'all' || matrix.legs == 'usb') }}
         timeout-minutes: ${{ matrix.leg_timeout }}
         env:
           ACCEPTANCE: ${{ inputs.acceptance }}
@@ -549,45 +569,45 @@ jobs:
       # aarch64 没有 legacy BIOS 固件，BIOS 腿只在 x86_64 腿存在：这条腿在
       # 另一条矩阵腿上不是「跳过了一次检查」，而是该架构根本不存在这条通路。
       - name: Install and cold boot (BIOS, CD-ROM)
-        if: ${{ !cancelled() && matrix.arch == 'x86_64' }}
+        if: ${{ !cancelled() && matrix.legs == 'all' }}
         timeout-minutes: ${{ matrix.leg_timeout }}
         env:
           ACCEPTANCE: ${{ inputs.acceptance }}
         run: ci/ci.sh accept --iso "$AIRYMAX_ISO" --out "$RUNNER_TEMP/install-bios" --arch "${{ matrix.arch }}" --firmware bios --media cdrom --runs 1 --install-timeout ${{ matrix.install_timeout }} --boot-timeout ${{ matrix.boot_timeout }}
 
       - name: Install and cold boot (UEFI, CD-ROM)
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && (matrix.legs == 'all' || matrix.legs == 'cdrom') }}
         timeout-minutes: ${{ matrix.leg_timeout }}
         env:
           ACCEPTANCE: ${{ inputs.acceptance }}
         run: ci/ci.sh accept --iso "$AIRYMAX_ISO" --out "$RUNNER_TEMP/install-uefi" --arch "${{ matrix.arch }}" --firmware uefi --media cdrom --runs 1 --install-timeout ${{ matrix.install_timeout }} --boot-timeout ${{ matrix.boot_timeout }}
 
       - name: Annotate boot failures (USB)
-        if: failure()
+        if: failure() && (matrix.legs == 'all' || matrix.legs == 'usb')
         run: ci/ci.sh boot-annotate --dir "$RUNNER_TEMP/install-usb"
 
       - name: Annotate boot failures (BIOS)
-        if: failure() && matrix.arch == 'x86_64'
+        if: failure() && matrix.legs == 'all'
         run: ci/ci.sh boot-annotate --dir "$RUNNER_TEMP/install-bios"
 
       - name: Annotate boot failures (UEFI)
-        if: failure()
+        if: failure() && (matrix.legs == 'all' || matrix.legs == 'cdrom')
         run: ci/ci.sh boot-annotate --dir "$RUNNER_TEMP/install-uefi"
 
       - name: Extract smoke TAP (USB)
-        if: always()
+        if: always() && (matrix.legs == 'all' || matrix.legs == 'usb')
         env:
           ACCEPTANCE: ${{ inputs.acceptance }}
         run: ci/ci.sh tap-extract --dir "$RUNNER_TEMP/install-usb"
 
       - name: Extract smoke TAP (BIOS)
-        if: always() && matrix.arch == 'x86_64'
+        if: always() && matrix.legs == 'all'
         env:
           ACCEPTANCE: ${{ inputs.acceptance }}
         run: ci/ci.sh tap-extract --dir "$RUNNER_TEMP/install-bios"
 
       - name: Extract smoke TAP (UEFI)
-        if: always()
+        if: always() && (matrix.legs == 'all' || matrix.legs == 'cdrom')
         env:
           ACCEPTANCE: ${{ inputs.acceptance }}
         run: ci/ci.sh tap-extract --dir "$RUNNER_TEMP/install-uefi"
@@ -605,7 +625,7 @@ jobs:
       # 同时发布会在同一 tag 上撞车，而给 aarch64 编一个清单里没有的 tag，
       # 客户端也发现不了。aarch64 的发行位随「按架构的通道清单」一并落地，
       # 在那之前它的镜像与验收证据走 Actions 制品（airymaxos-image-aarch64 /
-      # airymaxos-acceptance-aarch64），不占用发行 tag。
+      # airymaxos-acceptance-aarch64-usb / -cdrom），不占用发行 tag。
       - uses: oras-project/setup-oras@22ce207df3b08e061f537244349aac6ae1d214f6 # v1
         if: success() && inputs.release_tag != '' && !inputs.acceptance && matrix.arch == 'x86_64'
 
@@ -674,18 +694,26 @@ jobs:
       # 三条腿各给一个 --dir：腿目录缺失（前腿失败、后续腿被跳过）本身
       # 就是证据的一部分，按四件套全缺登记，不影响其余腿入包。
       - name: Collect acceptance evidence
-        if: always()
+        if: always() && matrix.legs == 'all'
         env:
           ACCEPTANCE: ${{ inputs.acceptance }}
         run: ci/ci.sh evidence --out "$RUNNER_TEMP/evidence" --dir "$RUNNER_TEMP/install-usb" --dir "$RUNNER_TEMP/install-bios" --dir "$RUNNER_TEMP/install-uefi" --extra "$RUNNER_TEMP/image/desktop/iso/iso-oci.txt" --extra "$RUNNER_TEMP/image/channel.json"
 
-      # 证据制品按架构分名：两条腿同名上传会在合并阶段 409，先完成的那条
-      # 腿拿到的名字反过来决定另一条腿能否写进去。
+      # 单腿实例只收自己那条腿：另外两条腿在本实例里根本没有跑，按「整腿
+      # 全缺」登记会让验收剖面把没跑的腿误判成缺件。
+      - name: Collect acceptance evidence (single leg)
+        if: always() && matrix.legs != 'all'
+        env:
+          ACCEPTANCE: ${{ inputs.acceptance }}
+        run: ci/ci.sh evidence --out "$RUNNER_TEMP/evidence" --dir "$RUNNER_TEMP/${{ matrix.leg_dir }}" --extra "$RUNNER_TEMP/image/desktop/iso/iso-oci.txt" --extra "$RUNNER_TEMP/image/channel.json"
+
+      # 证据制品按矩阵项分名：同名上传会在合并阶段 409，先完成的那项拿到
+      # 的名字反过来决定另一项能否写进去。三腿同实例的一项保持原名。
       - name: Upload acceptance evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: airymaxos-acceptance-${{ matrix.arch }}
+          name: airymaxos-acceptance-${{ matrix.arch }}${{ matrix.legs != 'all' && format('-{0}', matrix.legs) || '' }}
           path: ${{ runner.temp }}/evidence
           retention-days: 7
           if-no-files-found: warn
