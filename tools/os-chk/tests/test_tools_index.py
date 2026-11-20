@@ -15,6 +15,10 @@
 都必须在那张表里有命令名，否则「有工具但叫不出命令」；表里每条路径也
 必须真实存在，否则分发器指向死文件。二者同样双向校验。
 
+「目录形态」一节定义了五种形态与四条约束，它同样是判据：每个工具目录
+必须被归类、目录名必须是 kebab-case、根级文件不得超出四项。形态表若只
+写在文档里而没有执行者，它就不是约定。
+
 Author:
     SPHARX Ltd. - Airymax Team
 
@@ -35,6 +39,11 @@ AIRY = TOOLS / "airy"
 
 CATALOG_HEAD = "### Implemented"
 CATALOG_TAIL = "### CI-Referenced Helper Surface"
+FORM_HEAD = "## 目录形态"
+
+# 根级只允许命令面与引导四项；其余脚本一律入工具目录。
+ROOT_FILES = {"README.md", "airy", "commands.tsv", "venv-bootstrap.sh"}
+DIR_NAME = re.compile(r"[a-z][a-z0-9-]*")
 
 # 工具表行形如 `| \`codegen/run_codegen.py\` | ... |`。
 ROW = re.compile(r"^\|\s*`([A-Za-z0-9_./-]+)`\s*\|", re.MULTILINE)
@@ -62,6 +71,14 @@ def catalog() -> str:
     return text[start:text.index(CATALOG_TAIL, start)]
 
 
+def forms() -> str:
+    """README 的「目录形态」一节，到下一条二级标题为止。"""
+    text = README.read_text(encoding="utf-8")
+    start = text.index(FORM_HEAD)
+    end = text.find("\n## ", start + len(FORM_HEAD))
+    return text[start:end if end != -1 else len(text)]
+
+
 class TestToolsIndex:
     def test_readme_exists(self) -> None:
         assert README.is_file()
@@ -70,6 +87,30 @@ class TestToolsIndex:
         text = README.read_text(encoding="utf-8")
         missing = [name for name in tool_dirs() if f"{name}/" not in text]
         assert not missing, f"tools/README.md 未登记工具目录：{missing}"
+
+    def test_every_tool_dir_is_classified(self) -> None:
+        """目录形态表必须覆盖磁盘上的每个工具目录。
+
+        形态表是「新工具该长成什么样」的判据；漏登一个目录，下一个人就会
+        照着它再抄一个未分类的平级目录，形态约束从此失效。
+        """
+        body = forms()
+        missing = [name for name in tool_dirs() if f"`{name}/`" not in body]
+        assert not missing, f"「目录形态」未归类工具目录：{missing}"
+
+    def test_tool_dir_names_follow_convention(self) -> None:
+        bad = [name for name in tool_dirs() if not DIR_NAME.fullmatch(name)]
+        assert not bad, f"工具目录名须为 kebab-case：{bad}"
+
+    def test_root_files_are_limited(self) -> None:
+        """根级散落脚本会让「按目录找工具」失效，只留命令面与引导。"""
+        extra = sorted(
+            path.name for path in TOOLS.iterdir()
+            if path.is_file()
+            and not path.name.startswith((".", "_"))
+            and path.name not in ROOT_FILES
+        )
+        assert not extra, f"tools/ 根级出现未登记文件：{extra}"
 
     def test_every_catalog_path_exists(self) -> None:
         missing = [
