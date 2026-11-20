@@ -6,7 +6,7 @@
 #
 # 用法: ci/lint.sh [--no-distro]
 #
-# 检查十六件事：
+# 检查十七件事：
 #   1. workflow 薄化与命名约束（ci/checks/check-workflows.py）；
 #   2. ci/ 与 tools/ 下每个 shell 脚本可被 bash -n 解析；
 #   3. 函数名不超过 15 字节（ci/checks/name_lint.py，N001，覆盖 shell 与 python）；
@@ -15,37 +15,42 @@
 #   5. 验收剖面归一化的行为（ci/lib/profile.sh）；
 #   6. 门禁脚本里「声明后从未使用」的 readonly 常量（无外部依赖）；
 #   7. ci/tests 下的门禁分支回归；
-#   8. 有 shellcheck 就用上，没有只告警——本地开发者不该被工具缺失拦住；
-#   9. distro 子仓静态门禁（ci/gates/distro-lint.sh，含其工具单测）；
-#  10. 基底耦合点两向对账（ci/gates/coupling-scan.sh，成册件 §10 主表）；
-#  11. 模型资产通道门禁（ci/gates/model-manifest.sh，声明面与离线实物面）；
-#  12. 功能归属册三态对账（ci/gates/completeness.sh，docs-linux 功能面逐条归账）；
-#  13. 零桩扫描（ci/gates/no-stub.sh，QG-02）；
-#  14. 死代码扫描（ci/gates/dead-code.sh，QG-03）；
-#  15. 文件头许可证与版权行（ci/checks/header_lint.py，H001/H002）；
-#  16. docs-linux 文档树的悬空相对链接（ci/gates/docs-links.sh，DOC-02）。
+#   8. 门禁自身的退出码协议（ci/gates/tri-state.sh，0/1/3/5 四态与头部声明）；
+#   9. 有 shellcheck 就用上，没有只告警——本地开发者不该被工具缺失拦住；
+#  10. distro 子仓静态门禁（ci/gates/distro-lint.sh，含其工具单测）；
+#  11. 基底耦合点两向对账（ci/gates/coupling-scan.sh，成册件 §10 主表）；
+#  12. 模型资产通道门禁（ci/gates/model-manifest.sh，声明面与离线实物面）；
+#  13. 功能归属册三态对账（ci/gates/completeness.sh，docs-linux 功能面逐条归账）；
+#  14. 零桩扫描（ci/gates/no-stub.sh，QG-02）；
+#  15. 死代码扫描（ci/gates/dead-code.sh，QG-03）；
+#  16. 文件头许可证与版权行（ci/checks/header_lint.py，H001/H002）；
+#  17. docs-linux 文档树的悬空相对链接（ci/gates/docs-links.sh，DOC-02）。
 #
-# 第 13、14 项把「禁桩」从文字变成判据：todo!/unimplemented!、产品代码里的
+# 第 14、15 项把「禁桩」从文字变成判据：todo!/unimplemented!、产品代码里的
 # unreachable!、恒 Ok(()) 与 unsafe 逐条判负，allow(dead_code) 必须写理由，
 # 无引用的 pub 项进人工复核清单。真实树零命中只说明今天干净，判据本身由
 # ci/tests/test_no_stub.sh 与 test_dead_code.sh 用夹具覆盖，第 7 项会跑它们。
 #
-# 第 9 项此前只在流水线里跑，本地「两个入口都绿」靠人记：run 40938020614
+# 第 8 项把三态协议变成可执行判据：头部的退出码段、命令位的字面退出码、
+# EINVAL 取值与语法，四处任一漂移都会让编排层把「跳过」读成「通过」。
+# 判据本身由 ci/tests/test_tri_state.sh 用夹具覆盖。
+#
+# 第 10 项此前只在流水线里跑，本地「两个入口都绿」靠人记：run 40938020614
 # 的 os-chk-verify 就红在 distro 的一条旧语义断言上，而提交前只跑过本文件。
 # 现在一条命令覆盖两侧口径。CI 里 os-chk-verify 不再单列 distro-lint 步骤
 # ——同一份工作跑两遍只会加长每轮耗时。`--no-distro` 留给快速迭代。
 #
-# 第 6 项是第 8 项的兜底：本地没有 shellcheck 时 SC2034 不会报，CI 的
+# 第 6 项是第 9 项的兜底：本地没有 shellcheck 时 SC2034 不会报，CI 的
 # 24.04 自带 shellcheck 会报，于是出现「本地全绿、CI 红」（0.0.3
 # 的 release-deps.sh 就是这样挂掉的）。只查 ci/gates 下的叶子脚本：这些
 # 文件不被 source，常量必须自用，判定无歧义；ci/lib 的常量供他人引用，
 # 不能按同一条规则判。
 #
-# 第 11 项与第 9 项同类：model-manifest 过去只在 os-chk-verify 里跑，配方
+# 第 12 项与第 10 项同类：model-manifest 过去只在 os-chk-verify 里跑，配方
 # 把逐条建组收成循环后门禁仍按字面量断言，于是本地全绿而流水线红。判据已
 # 改为按清单断言，本文件同时把它纳入本地入口。
 #
-# 第 12 项把「docs-linux 的功能面归账」变成可执行判据。归属册在 docs-closed，
+# 第 13 项把「docs-linux 的功能面归账」变成可执行判据。归属册在 docs-closed，
 # 单仓检出看不到它，门禁自身退 0 并打印不适用；开发机上则逐条核对三态、
 # 统计与证据路径。判据本身由 ci/tests/test_completeness.sh 用夹具覆盖。
 #
@@ -184,6 +189,18 @@ while IFS= read -r f; do
     bash "${f}" || { err "回归失败: ${f#"${ROOT}/"}"; rc=1; }
 done < <(find "${ROOT}/ci/tests" -type f -name 'test_*.sh' | sort)
 say "已运行 ${n} 个回归脚本"
+endgroup
+
+group "门禁三态协议"
+# 三态（0 通过／1 判负／3 不适用）的作用范围是编排层：只有每条门禁都只
+# 说这几种结论，跳过才不会被读成通过。判据本体在 ci/gates/tri-state.sh，
+# 负例由 test_tri_state.sh 覆盖并随上面的回归组一起跑。
+if bash "${ROOT}/ci/ci.sh" tri-state; then
+    say "通过"
+else
+    err "门禁三态协议未通过（ci/ci.sh tri-state）"
+    rc=1
+fi
 endgroup
 
 group "基底耦合点对账"
