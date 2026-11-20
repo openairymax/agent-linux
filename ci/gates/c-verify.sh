@@ -2,21 +2,23 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 # SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 # ===========================================================================
-# ci/gates/c-verify.sh — 用户态 C 组件（cloudnative / services）的构建与冒烟门禁
+# ci/gates/c-verify.sh — 用户态 C 组件的构建与冒烟门禁
 #
 # 用法:
-#   ci/gates/c-verify.sh --module cloudnative|services
+#   ci/gates/c-verify.sh --module cloudnative|services|system|tests-linux
 #
-# 两个模块长期没有进入任何流水线：services 只在本地被手工 `cmake --build`
+# 这些模块长期没有进入任何流水线：services 只在本地被手工 `cmake --build`
 # 过，cloudnative 则因为 include 根把内核内部头排在 libc 之前而一直编不过
 # （`blkcnt_t` 冲突），却在 OS-CHK 的静态检查里显示全绿。构建面的失真比
 # 静态检查漏报更危险——它让「能跑」失去判据，因此这里用真实编译补上。
+# system 与 tests-linux 同理：CMake 入口与 CTest 用例早已写好，但仓库内
+# 没有任何作业执行过它们，等于断言从未生效。
 #
 # 判据分两步，缺一不可：
 #   1. 出树构建：源码在 ${module}/，构建目录在源码树之外（铁律：源码区
 #      不做编译）。构建成功即证明头引用、警告策略与链接面成立。
 #   2. 冒烟运行：cloudnative 跑 agentctl 并核对 A-IPC magic 与头文件契约
-#      一致；services 跑 CTest（dmn_test）证明 daemon 框架的单元判据成立。
+#      一致；其余模块跑 CTest，把已登记的单元判据真正执行一遍。
 #
 # 只编一个模块时不碰另一个：流水线按模块拆成独立作业，一个模块失败不应
 # 掩盖另一个模块的结论，也不该让两者的编译时间串行叠加。
@@ -32,7 +34,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 usage()
 {
     cat <<'EOF'
-用法: ci/gates/c-verify.sh --module cloudnative|services
+用法: ci/gates/c-verify.sh --module cloudnative|services|system|tests-linux
 EOF
 }
 
@@ -46,9 +48,10 @@ while [ "$#" -gt 0 ]; do
 done
 
 case "${MODULE}" in
-    cloudnative|services) ;;
+    cloudnative|services|system|tests-linux) ;;
     '') err "--module 必填"; usage >&2; exit "${CI_EINVAL}" ;;
-    *) err "--module 只接受 cloudnative|services"; exit "${CI_EINVAL}" ;;
+    *) err "--module 只接受 cloudnative|services|system|tests-linux"
+       exit "${CI_EINVAL}" ;;
 esac
 
 [ -d "${ROOT}/${MODULE}" ] || die "模块目录不存在: ${MODULE}"
@@ -97,13 +100,13 @@ case "${MODULE}" in
         endgroup
         say "agentctl 运行通过：A-IPC magic 与 [SC] 契约一致"
         ;;
-    services)
-        group "services: CTest"
+    *)
+        group "${MODULE}: CTest"
         ctest --test-dir "${BUILD}" --output-on-failure || {
             endgroup
-            die "services 单元用例未通过"
+            die "${MODULE} 单元用例未通过"
         }
         endgroup
-        say "services 用例通过"
+        say "${MODULE} 用例通过"
         ;;
 esac
