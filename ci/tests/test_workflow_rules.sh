@@ -217,7 +217,7 @@ doc
 matrix_labels
 flowm demo-verify.yml ubuntu-22.04-arm
 out=$(run)
-check "规则 17：矩阵取值为未登记架构标签" 1 "$?" "${out}" "矩阵 runner: ubuntu-22.04-arm"
+check "规则 17：矩阵取值为未登记架构标签" 1 "$?" "${out}" "运行器 ubuntu-22.04-arm"
 
 reset
 doc

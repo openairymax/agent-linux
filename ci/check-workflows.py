@@ -163,8 +163,10 @@ MATRIX_RUNNER = re.compile(r"^\$\{\{\s*matrix\.runner\s*\}\}$")
 # 运行器版本的唯一事实源：nightly 契约清单的 runner.label / runner.labels。
 NIGHTLY = ROOT / "tools" / "nightly" / "manifest.yaml"
 RUNNER_ONE = re.compile(r"^  label:\s*(\S+)\s*$")
-RUNNER_MANY = re.compile(r"^  labels:\s*$")
 RUNNER_ITEM = re.compile(r"^    -\s*(\S+)\s*$")
+# 矩阵 include 条目里的 runner 键：既可写成 ``- runner: X``，也可与其它键
+# 并列写在条目内。
+INCLUDE_RUNNER = re.compile(r"^\s*(?:-\s*)?runner:\s*(\S+)\s*$")
 
 # 多远程同 sha 门禁的调用点：命名空间（heads/tags）只能由调用方给出。
 REMOTE_SYNC = "ci/ci.sh remote-sync"
@@ -209,37 +211,15 @@ def count_inline(text: str) -> int:
     return n
 
 
-def jobs_key(lines: list[str]) -> int | None:
-    """``jobs:`` 顶格键的行号；不存在时为 None（无 job 的判据在 wf_size）。"""
-    return next((i for i, s in enumerate(lines) if s.rstrip() == "jobs:"), None)
-
-
-def job_rows(lines: list[str], start: int) -> list[tuple[int, str]]:
-    """``jobs:`` 段内的正文行及其原行号。
-
-    空行不携带缩进信息，跳过而不是当作段尾；顶格键是 ``jobs:`` 的兄弟键，
-    其后内容不属于任何 job，到此为止。
-    """
-    out: list[tuple[int, str]] = []
-    for i in range(start + 1, len(lines)):
-        s = lines[i]
-        if not s.strip():
-            continue
-        if not s.startswith(" "):
-            break
-        out.append((i + 1, s))
-    return out
-
-
 def job_blocks(text: str) -> list[tuple[str, int, list[str]]]:
-    """按 ``jobs:`` 解析一级 job：返回 (job 名, 行号, 该 job 的正文行)。"""
-    lines = text.splitlines()
-    start = jobs_key(lines)
-    if start is None:
-        return []
+    """按 ``jobs:`` 解析一级 job：返回 (job 名, 行号, 该 job 的正文行)。
+
+    ``jobs:`` 的段切分与触发器、矩阵共用 block_at：三处都是「首个键到下一个
+    同/浅缩进键为止」，各写一份会把空行与顶格注释的处理方式拖成三套。
+    """
     out: list[tuple[str, int, list[str]]] = []
     cur: tuple[str, int, list[str]] | None = None
-    for no, s in job_rows(lines, start):
+    for no, s in block_at(text, "jobs"):
         m = JOB_HEAD.match(s)
         if m is not None:
             if cur is not None:
@@ -327,35 +307,11 @@ def trigger_paths(text: str, key: str) -> list[str]:
     """取出某个触发器下 ``paths:`` 的条目。
 
     只认同级缩进的键切换，不引入 YAML 解析器：workflow 的实际形态是手写的
-    四空格缩进，PyYAML 会把 ``on`` 读成布尔真值，反而多一层歧义。
+    四空格缩进，PyYAML 会把 ``on`` 读成布尔真值，反而多一层歧义。段的切分
+    与 ``matrix.include`` 共用 block_at：两处都是「首个 ``key:`` 到下一个
+    同/浅缩进键为止」，各写一份会把注释与空行的处理方式再度拉开。
     """
-    return path_items(trigger_block(text.splitlines(), key))
-
-
-def trigger_block(lines: list[str], key: str) -> list[str]:
-    """触发器键之下、属于该触发器的正文行；键不存在时为空。
-
-    空行与整行注释不结束本段：它们不携带缩进信息，按顶格处理会把一份
-    带注释的触发器读成没有判据，于是「PR 判据必须是 push 判据的子集」
-    这条规则静默失效。
-    """
-    pat = re.compile(rf"^  {key}:\s*$")
-    start = next((i for i, s in enumerate(lines) if pat.match(s)), None)
-    if start is None:
-        return []
-    block: list[str] = []
-    for s in lines[start + 1:]:
-        if not s.strip() or s.lstrip().startswith("#"):
-            continue
-        if not in_block(s):
-            break
-        block.append(s)
-    return block
-
-
-def in_block(s: str) -> bool:
-    """这一行是否仍属于触发器段：缩进两格以上，且不是新的同/上级键。"""
-    return s.startswith("  ") and not re.match(r"^  \S", s)
+    return path_items([s for _, s in block_at(text, key)])
 
 
 def path_items(block: list[str]) -> list[str]:
@@ -496,41 +452,36 @@ def check_pins(name: str, text: str) -> list[str]:
     return errors
 
 
-def runs_on_tags(text: str) -> list[tuple[int, str]]:
-    """每一处 ``runs-on`` 的字面量取值；矩阵表达式另由 matrix_runner_refs 取。"""
+def runs_on_all(text: str) -> list[tuple[int, str]]:
+    """每一处 ``runs-on`` 的 (行号, 取值)；矩阵表达式也在内。"""
     return [(no, m.group(1))
             for no, s in enumerate(text.splitlines(), 1)
-            for m in (RUNS_ON.match(s),)
-            if m is not None and not MATRIX_RUNNER.match(m.group(1))]
+            for m in [RUNS_ON.match(s)] if m]
+
+
+def runs_on_tags(text: str) -> list[tuple[int, str]]:
+    """字面量 ``runs-on`` 取值；``matrix.runner`` 由 runner_refs 单独取。"""
+    return [(no, tag) for no, tag in runs_on_all(text)
+            if not MATRIX_RUNNER.match(tag)]
 
 
 def uses_matrix(text: str) -> bool:
     """``runs-on`` 是否引用 matrix.runner（取值因此搬到 include 里）。"""
-    tags = (m.group(1) for m in (RUNS_ON.match(s) for s in text.splitlines()) if m)
-    return any(MATRIX_RUNNER.match(tag) for tag in tags)
-
-
-def matrix_pin_errors(name: str, text: str) -> list[str]:
-    """矩阵 runner 取值同样是运行器的版本事实，须与字面量套同一判据。"""
-    return [
-        f"{name}:{no}: 矩阵 runner: {tag} 未钉版（须为 <发行版>-<YY.MM>，"
-        "矩阵取值同样是运行器的版本事实）"
-        for no, tag in matrix_runner_refs(text) if not RUNNER_TAG.match(tag)
-    ]
+    return any(MATRIX_RUNNER.match(tag) for _, tag in runs_on_all(text))
 
 
 def check_runner(name: str, text: str) -> list[str]:
     """运行器必须钉版：浮动标签会在两次运行之间换掉整条工具链。
 
-    矩阵表达式不在这一步判格式：它把取值搬到同文件的 ``matrix.include``，
-    那里同样套用钉版判据，登记判据在 wf_label_rule 里补判。
+    矩阵表达式不单独放行：它的取值搬到同文件的 ``matrix.include`` 后，
+    由 runner_refs 取出来套同一条判据；登记集合另由 wf_label_rule 判。
     """
-    errors = [
+    pairs = runs_on_tags(text) + runner_refs(text)
+    return [
         f"{name}:{no}: runs-on: {tag} 未钉版（须为 <发行版>-<YY.MM>，"
         "浮动标签会换掉编译器与 shellcheck 版本）"
-        for no, tag in runs_on_tags(text) if not RUNNER_TAG.match(tag)
+        for no, tag in pairs if not RUNNER_TAG.match(tag)
     ]
-    return errors + matrix_pin_errors(name, text)
 
 
 def runner_labels() -> set[str]:
@@ -541,67 +492,44 @@ def runner_labels() -> set[str]:
     """
     if not NIGHTLY.exists():
         return set()
-    return set(label_tokens(runner_block(NIGHTLY.read_text())))
+    return set(runner_tags(block_at(NIGHTLY.read_text(), "runner")))
 
 
-def runner_block(text: str) -> list[str]:
-    """清单 ``runner:`` 块的正文行；遇到顶格的下一个键即结束。"""
-    block: list[str] = []
-    inside = False
-    for s in text.splitlines():
-        if re.match(r"^runner:\s*$", s):
-            inside = True
-        elif not inside:
-            continue
-        elif s.strip() and not s.startswith(" "):
-            break
-        else:
-            block.append(s)
-    return block
+def block_at(text: str, key: str) -> list[tuple[int, str]]:
+    """首个 ``key:`` 段的 (行号, 正文行)；同缩进或更浅的键即段尾。
+
+    workflow 与清单都不交给 YAML 解析器：本仓只依赖标准库，而 ``on`` 这类
+    键会被安全解析器读成布尔真值。缩进分段对这两处的一层嵌套已经足够。
+    """
+    hit = re.search(rf"^([ ]*){key}:[ ]*$", text, re.M)
+    if hit is None:
+        return []
+    tail = text[hit.end() + 1:]
+    stop = re.search(rf"^[ ]{{0,{len(hit.group(1))}}}\S", tail, re.M)
+    body = tail[:stop.start()] if stop is not None else tail
+    first = text.count("\n", 0, hit.end()) + 2
+    return list(enumerate(body.splitlines(), first))
 
 
-def label_tokens(lines: list[str]) -> list[str]:
-    """块内 ``label:`` 的单值与 ``labels:`` 列表项。"""
+def runner_tags(rows: list[tuple[int, str]]) -> list[str]:
+    """runner 段内 ``label:`` 的单值与 ``labels:`` 的列表项。"""
     out: list[str] = []
-    in_list = False
-    for s in lines:
-        one = RUNNER_ONE.match(s)
-        if one is not None:
-            out.append(one.group(1))
-            continue
-        if RUNNER_MANY.match(s):
-            in_list = True
-            continue
-        item = RUNNER_ITEM.match(s) if in_list else None
-        if item is not None:
-            out.append(item.group(1))
+    for _, s in rows:
+        m = RUNNER_ONE.match(s) or RUNNER_ITEM.match(s)
+        if m is not None:
+            out.append(m.group(1))
     return out
 
 
-def matrix_runner_refs(text: str) -> list[tuple[int, str]]:
+def runner_refs(text: str) -> list[tuple[int, str]]:
     """``strategy.matrix.include`` 里 ``runner`` 键的 (行号, 取值)。
 
-    workflow 不解析 YAML（本仓只有标准库可依赖），按 ``include:`` 段的
-    缩进块取键值；块外的 ``runner:`` 不属于矩阵，扫描不到。
+    按 ``include:`` 段的缩进块取键值；块外的 ``runner:`` 不属于矩阵，
+    扫描不到。
     """
-    out: list[tuple[int, str]] = []
-    base: int | None = None
-    for no, s in enumerate(text.splitlines(), 1):
-        if base is None:
-            if re.match(r"^\s*include:\s*$", s):
-                base = len(s) - len(s.lstrip(" "))
-            continue
-        if s.strip():
-            indent = len(s) - len(s.lstrip(" "))
-            if indent <= base:
-                base = None
-                if re.match(r"^\s*include:\s*$", s):
-                    base = indent
-                continue
-        m = re.match(r"^\s*(?:-\s*)?runner:\s*(\S+)\s*$", s)
-        if m is not None:
-            out.append((no, m.group(1)))
-    return out
+    return [(no, m.group(1))
+            for no, s in block_at(text, "include")
+            for m in [INCLUDE_RUNNER.match(s)] if m]
 
 
 def _label_text(labels: set[str]) -> str:
@@ -612,22 +540,20 @@ def _label_text(labels: set[str]) -> str:
 
 
 def wf_label_rule(name: str, text: str, labels: set[str]) -> list[str]:
-    """runs-on 的取值必须落在清单登记集合内：同一事实只能有一个取值。"""
+    """runs-on 的取值必须落在清单登记集合内：同一事实只能有一个取值。
+
+    ``matrix.include`` 里的取值由 runner_refs 取出，与字面量套同一条判据：
+    表达式只是把取值搬到同文件的另一处，登记义务不因此消失。表达式存在却
+    取不到任何取值，说明 include 被写坏，这与「取值未登记」是两回事。
+    """
     errors = [
-        f"{name}:{no}: runs-on: {tag} 与 tools/nightly/manifest.yaml 的 "
+        f"{name}:{no}: 运行器 {tag} 与 tools/nightly/manifest.yaml 的 "
         f"{_label_text(labels)} 不一致（两处各自演化，改一侧不会带出另一侧）"
-        for no, tag in runs_on_tags(text) if tag not in labels
+        for no, tag in runs_on_tags(text) + runner_refs(text) if tag not in labels
     ]
-    refs = matrix_runner_refs(text)
-    if not refs and uses_matrix(text):
-        errors.append(
-            f"{name}: runs-on 用 matrix.runner 表达式，但矩阵 include 里没有 "
-            "runner 取值（表达式只会把未登记的值藏进另一处）")
-    errors += [
-        f"{name}:{no}: 矩阵 runner: {tag} 与 tools/nightly/manifest.yaml 的 "
-        f"{_label_text(labels)} 不一致（矩阵取值同样是运行器事实源）"
-        for no, tag in refs if tag not in labels
-    ]
+    if uses_matrix(text) and not runner_refs(text):
+        return errors + [f"{name}: runs-on 用 matrix.runner 表达式，但矩阵 "
+                         "include 里没有 runner 取值（表达式不能凭空取值）"]
     return errors
 
 
