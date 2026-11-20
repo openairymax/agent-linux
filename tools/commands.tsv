@@ -15,10 +15,10 @@
 # ===========================================================================
 
 # -- 仓库治理（只读工作树状态，不读构建产物） -----------------------------
-ssot	repo/validate-ssot.py	SSoT 规则 ID 与注册表一致性校验
-owners	repo/codeowners.py	MAINTAINERS → CODEOWNERS 投影与漂移检查
-copyright	repo/check-copyright.py	仓库文件版权头检查
-leaf-ci	repo/aggregate-subrepo-ci.py	聚合各子仓 CI 状态
+ssot	governance/validate-ssot.py	SSoT 规则 ID 与注册表一致性校验
+owners	governance/codeowners.py	MAINTAINERS → CODEOWNERS 投影与漂移检查
+copyright	governance/check-copyright.py	仓库文件版权头检查
+leaf-ci	governance/aggregate-subrepo-ci.py	聚合各子仓 CI 状态
 
 # -- 测试证据（TAP / KTAP） ----------------------------------------------
 tap	tap/parse-tap.py	kselftest TAP 解析，not ok 即失败

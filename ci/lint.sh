@@ -335,7 +335,7 @@ endgroup
 
 group "文件头许可证与版权"
 # 编码规范要求每个源文件头部带 SPDX 许可证与版权行，此前没有执行者：720
-# 个自有源文件只有许可证行，tools/repo 下还有一个连许可证都没有。判据与
+# 个自有源文件只有许可证行，tools/governance 下还有一个连许可证都没有。判据与
 # 归一化同批落地，否则下一个新文件照样能只写许可证。sdk/ 是生成产物，已带
 # 传统版权行，纳入判据防止生成器倒退。
 if python3 "${ROOT}/ci/checks/header_lint.py" "${roots[@]}" sdk; then

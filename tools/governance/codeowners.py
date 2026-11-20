@@ -10,9 +10,9 @@
 # 不再生成一份语法合法却无人认领的文件。
 #
 # 用法:
-#     python3 tools/repo/codeowners.py           打印投影到标准输出
-#     python3 tools/repo/codeowners.py --check   与仓库内 CODEOWNERS 比对
-#     python3 tools/repo/codeowners.py --maintainers X --codeowners Y
+#     python3 tools/governance/codeowners.py           打印投影到标准输出
+#     python3 tools/governance/codeowners.py --check   与仓库内 CODEOWNERS 比对
+#     python3 tools/governance/codeowners.py --maintainers X --codeowners Y
 #
 # 退出码:
 #     0 — 已打印投影，或 --check 判定无漂移

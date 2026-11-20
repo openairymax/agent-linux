@@ -1,8 +1,8 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0 -->
 
-# tools/repo — 仓库级治理 CLI
+# tools/governance — 仓库级治理 CLI
 
-`repo/` 收纳只读「已入库状态」的治理工具：它们不碰构建产物、不启容器、不联网，
+`governance/` 收纳只读「已入库状态」的治理工具：它们不碰构建产物、不启容器、不联网，
 输入永远是工作树里的文件，输出只有退出码与一份可供人读的差异。这类判据必须能
 在开发者本机与 CI 上给出同一结论，因此不做任何环境探测。
 

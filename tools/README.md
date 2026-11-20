@@ -23,7 +23,7 @@ tools/
 ├── lib/                         # Cross-tool shared layer (not a CLI tool)
 │   ├── check_report.py          # Contract-check result type + report contract
 │   └── README.md                # Tool-group documentation
-├── repo/                        # Repository-governance CLIs (no build inputs, only worktree state)
+├── governance/                  # Repository-governance CLIs (no build inputs, only worktree state)
 │   ├── validate-ssot.py         # SSoT rule-ID consistency validator
 │   ├── aggregate-subrepo-ci.py  # Leaf-repo CI status aggregator
 │   ├── check-copyright.py       # Copyright/SPDX header gate
@@ -182,10 +182,10 @@ tools/
 
 | Tool | Description | Used by |
 |------|-------------|---------|
-| `repo/validate-ssot.py` | SSoT rule-ID consistency validator — checks that every `OS-*-NNN` (agent-linux) and `*-NNN` (agentrt) rule ID referenced in documentation is registered in `ssot-registry.yaml`. Authority: OS-IRON-015. | `ssot-verify.yml` (`ssot-syntax-and-rules`), local contributor runs |
-| `repo/codeowners.py` | GitHub CODEOWNERS projection of `MAINTAINERS` — the owner paths come from `F:` and the owners from `O:` (mail addresses in `M:`/`R:` are not valid CODEOWNERS owners, so a block with `F:` but no `O:` is rejected instead of emitting an unowned file); `--check` compares the working tree against the projection and prints a unified diff on drift. Authority: OS-STD-GOV-004. | `make codeowners-sync` / `make codeowners-check`, `ci/gates/mgmt-files.sh` |
-| `repo/aggregate-subrepo-ci.py` | Aggregate the CI status of all leaf repositories, deriving the list from `.gitmodules` (`--fail-on-red`) | `ci/gates/mgmt-leaves.sh`（`mgmt-verify.yml` 触发） |
-| `repo/check-copyright.py` | Verify that repository-owned `.md` files carry a `Copyright`/`SPDX-License-Identifier` on line 1 (`--root .`) | `ci/gates/mgmt-leaves.sh`（`mgmt-verify.yml` 触发） |
+| `governance/validate-ssot.py` | SSoT rule-ID consistency validator — checks that every `OS-*-NNN` (agent-linux) and `*-NNN` (agentrt) rule ID referenced in documentation is registered in `ssot-registry.yaml`. Authority: OS-IRON-015. | `ssot-verify.yml` (`ssot-syntax-and-rules`), local contributor runs |
+| `governance/codeowners.py` | GitHub CODEOWNERS projection of `MAINTAINERS` — the owner paths come from `F:` and the owners from `O:` (mail addresses in `M:`/`R:` are not valid CODEOWNERS owners, so a block with `F:` but no `O:` is rejected instead of emitting an unowned file); `--check` compares the working tree against the projection and prints a unified diff on drift. Authority: OS-STD-GOV-004. | `make codeowners-sync` / `make codeowners-check`, `ci/gates/mgmt-files.sh` |
+| `governance/aggregate-subrepo-ci.py` | Aggregate the CI status of all leaf repositories, deriving the list from `.gitmodules` (`--fail-on-red`) | `ci/gates/mgmt-leaves.sh`（`mgmt-verify.yml` 触发） |
+| `governance/check-copyright.py` | Verify that repository-owned `.md` files carry a `Copyright`/`SPDX-License-Identifier` on line 1 (`--root .`) | `ci/gates/mgmt-leaves.sh`（`mgmt-verify.yml` 触发） |
 | `tap/kunit-tap-diff.py` | KUnit KTAP case-count monotonicity gate — parses nested KTAP (`--raw_output=kunit`) and fails when the leaf-case total regresses, a baseline suite disappears, or a new `not ok` appears; the ratchet lives in `kunit-tap-baseline.tap` and is updated explicitly with `--update` (OS-TEST-012) | `ci/gates/kernel-kunit.sh`（`kernel-verify.yml` 触发） |
 | `tap/parse-tap.py` | Parse kselftest TAP output and fail on `not ok` | `ci/gates/kernel-kselftest.sh`（`kernel-verify.yml` 触发） |
 | `os-chk/os_chk.py` | Unified gate orchestrator — reads `gates.yaml` (the only source of truth for gate id/severity/executor argv) and performs registry parse → schedule → summarise → P0/P1/P2 verdict; the orchestrator implements no check of its own, so a rule lives in exactly one executor and cannot drift across two copies (OS-CHK numbering, §5.3 report format); `--check` is the CI gate | `os-chk-verify.yml` (`os-chk-verify`) |
@@ -226,7 +226,7 @@ corresponding subsystem matures:
 
 ## 统一命令入口（tools/airy）
 
-各工具此前按文件名调用：`repo/` 下用 kebab-case（`validate-ssot.py`），
+各工具此前按文件名调用：`governance/` 下用 kebab-case（`validate-ssot.py`），
 其余沿用模块名（`os_chk.py`、`farm_cli.py`、`dsl_compile.py`）。同一个
 命令面因此有三种写法，脚本一挪位置，文档、工作流与排障记录就一起失效。
 现在对外只有一个入口，命令名与存放位置解耦：
@@ -248,7 +248,7 @@ gate 按绝对路径调用，`tools/airy` 的引入不改变任何既有调用�
 `os-chk/tests/test_tools_index.py` 会双向校验二者与磁盘的一致性。
 `osaccrt/` 是验收执行器的模块集合，没有单一命令行入口，故不在表中。
 
-目录保持一层（`repo/`、`tap/` 是已有的分组例外）：分组若靠目录层级表达，
+目录保持一层（`governance/`、`tap/` 是已有的分组例外）：分组若靠目录层级表达，
 `import` 路径、gate 里的绝对路径、工作流里的脚本路径要同时改，一次搬迁
 牵动四条链路，而收益只是少看几行 `ls`。归类由下表、工具表与命令表承担——
 这三种视图可以在不移动任何文件的前提下重排。
@@ -261,7 +261,7 @@ gate 按绝对路径调用，`tools/airy` 的引入不改变任何既有调用�
 | 形态 | 判定条件 | 成员 | 命名 |
 |------|----------|------|------|
 | 共享层 | 被其他工具 `import`，自身不是命令 | `lib/` | 固定名 |
-| 分组 | 三条以上单一职责 CLI 共享同一主题，各自有 README 与独立触发面 | `repo/`、`tap/`、`release-engineering/` | 主题名 |
+| 分组 | 三条以上单一职责 CLI 共享同一主题，各自有 README 与独立触发面 | `governance/`、`tap/`、`release-engineering/` | 主题名 |
 | 单工具 | 一个入口脚本 + 私有模块 + `tests/` + `README.md` | `os-chk/`、`codegen/`、`dsl/`、`abi-check/`、`sc-tri-compile/`、`airy-checkpatch/`、`defconfig-matrix/`、`ci-matrix/`、`btf-integration/`、`kbuild-version/`、`nightly/`、`repo-scaffold/`、`airy-rollback/`、`airy-flash/`、`airy-qemu/` | 主题的 kebab-case |
 | 套件 | 多个协作模块，无单一 CLI 入口 | `osaccrt/` | 主题名 |
 | 根级文件 | 命令面与引导，仅此四项 | `airy`、`commands.tsv`、`venv-bootstrap.sh`、`README.md` | 固定名 |

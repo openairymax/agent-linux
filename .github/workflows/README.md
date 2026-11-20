@@ -60,7 +60,7 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 | `nightly.yml` | `nightly-test-suite`、`nightly-revert-or-budget` | cron `0 2 * * *` 与手动 | 形式化验证、72 小时浸泡、混沌注入（CPU 热插拔、内存热移除、I/O 错误、网络分区）；第二作业在回归时经 `auto-bisect` 自动回退，或做 CI 预算检查（稳态 60 分钟，内核冷缓存 90 分钟） |
 | `payload-seed.yml` | `probe`、`warm` | cron `17 19 * * *`（北京时间 03:17）与手动 | `probe` 对实时上游取五段仓库元数据，算出 `seed-<arch>-<key16>`；`warm` 恢复上一轮构建留下的闭包池，仅当池的输入标签与该指纹一致时把它推成 seed 层，上游不可达或指纹已变则退 0 并说明原因。预热只搬运已有字节，不下载任何 RPM，因此也不得成为构建的先决条件；同一作业尾部回收陈旧 seed 层（每架构按创建时间留最近 4 个，`build-` 一律不动） |
 | `release.yml` | `build-and-sign`、`publish-release` | 标签 `v*`、`v*-rc*` 与手动 | 源码 tarball（超项目 + 逐子仓按 gitlink 导出）、`airy_defconfig` 四架构快照、syscall ABI 报告、逐子模块 SBOM 合并、内核 RPM、GPG 与 cosign 签名、SDK 压缩包；第二作业校验已签名产物、推送 OCI 镜像到 ghcr、清理过期资产、创建 GitHub Release（正式版一律 `make_latest: false`，创建后由 `release-stage hold` 读回断言页面停在 held，只有发布机在 B 轮 `AIRYMAX-SMOKE-PASS` 之后执行的 `release-stage promote` 才能把它推进 `releases/latest`），并在对账后为整套发布资产出具 in-toto/SLSA 证明（`attest-<tag>`，指纹取 run id 与检出提交） |
-| `ssot-verify.yml` | `ssot-syntax-and-rules`、`doc-links` | 文档、`ssot-registry.yaml`、`tools/repo/validate-ssot.py` 的 PR 与 `main` 的 push | PyYAML 语法、规则 ID 计数与唯一性、`validate-ssot.py` 交叉引用；相对路径链接完整性 |
+| `ssot-verify.yml` | `ssot-syntax-and-rules`、`doc-links` | 文档、`ssot-registry.yaml`、`tools/governance/validate-ssot.py` 的 PR 与 `main` 的 push | PyYAML 语法、规则 ID 计数与唯一性、`validate-ssot.py` 交叉引用；相对路径链接完整性 |
 | `sdk-verify.yml` | `go`、`python`、`rust`、`ts` | `sdk/**`、`ci/gates/sdk-verify.sh`、`ci/lib/**` 的 PR 与 `main` 的 push | 四份语言绑定各自过编译器：go 走临时模块 `go vet`+`go build`，python 走 `py_compile`（字节码缓存重定向出源码区），rust 逐文件 `rustc --emit=metadata`，ts 走钉版 `tsc --strict --noEmit`。绑定由生成器产出，生成一致不代表能编译，这一层补的就是编译器视角 |
 | `tui-verify.yml` | `policy`、`build`、`cross` | `system`、`distro` gitlink、`ci/ci.sh`、`ci/lib/**`、`ci/gates/{tui-check,tui-frame,rust-vendor,lang-lock,submodules}.sh`、`ci/container/build-packages.txt` 的 PR 与 `main` 的 push | `policy` 断言语言政策（四组件 present、工具链钉版）与 `Cargo.lock`、`vendor/`、台账三者同源，不需要编译器；`build` 依次跑 `fmt --check`、`clippy -D warnings`、`cargo test`，全部 `--offline --locked`，最后以 `tui-frame` 收尾——85×24 整屏重绘 p99 ≤ 33 ms、常驻堆 ≤ 64 KiB（与单测共用一次检出与目标目录，红了不再花第二次基准编译）；`cross` 在 aarch64 与 riscv64gc 上做类型检查，两种目标互不掩盖。编译器版本只由 `system/tui/rust-toolchain.toml` 决定，`tui-check` 断言实际生效者与钉版一致 |
 | `tui-input-verify.yml` | `channels`、`sessions` | `ci/ci.sh`、`ci/lib/**`、`ci/gates/{input-matrix,ime-corpus,tui-e2e}.sh`、`system` gitlink 的 PR 与 `main` 的 push | `channels` 用真实二进制跑四通道输入矩阵与中文语料，逐通道断言事件序与坐标；`sessions` 跑中文会话切换的端到端用例。两条判据合计约四十分钟，与 `tui-verify` 的格式/静态/单测分列：并入会让改一行注释也排队等完整集成，而 `paths` 已经保证只在输入面变更时才触发 |
@@ -211,7 +211,7 @@ L2/L3 都不改判据，只改「同一份物料要付几次成本」。任何�
 | `os-chk-verify.yml` | `ci/gates/lint.sh`（含 QG-01/QG-02 度量棘轮）与各 OS-CHK 门禁、pytest | 约 5 min | apt/pip 由 setup 动作自管 |
 | `nightly.yml` | `tools/nightly/nightly.py --check`、`ci/gates/nightly-helpers.sh` | 全量套件，单 job 上限 360 min | 无 |
 | `payload-seed.yml` | `ci/gates/payload-seed.sh`（`probe` / `warm`） | 只搬缓存池字节，不下载；层已存在时为零 | actions 缓存（闭包池） |
-| `mgmt-verify.yml`、`ssot-verify.yml` | `ci/gates/repo-*.sh`、`tools/repo/validate-ssot.py` | 约 3 min | 无 |
+| `mgmt-verify.yml`、`ssot-verify.yml` | `ci/gates/repo-*.sh`、`tools/governance/validate-ssot.py` | 约 3 min | 无 |
 | `tui-verify.yml` | `ci/gates/tui-check.sh`、`ci/gates/rust-vendor.sh`、`ci/gates/lang-lock.sh` | 一次子模块检出 + 六个 crate 的编译，无注册表访问 | 无（vendor 离线源代替包缓存） |
 
 ## 5.5 变更纪律
@@ -324,7 +324,7 @@ L2/L3 都不改判据，只改「同一份物料要付几次成本」。任何�
 ACCEPTANCE=true ./ci/ci.sh tap-extract --dir <dir>
 ./ci/lint.sh                            # 工作流规则 + 门禁 + distro 子仓静态门禁
 ./ci/lint.sh --no-distro                # 同上，跳过 distro 单测（快速迭代）
-python3 tools/repo/validate-ssot.py . ssot-registry.yaml
+python3 tools/governance/validate-ssot.py . ssot-registry.yaml
 ```
 
 `ci/lint.sh` 在找不到 shellcheck 时只告警跳过，而 runner 上有——于是
