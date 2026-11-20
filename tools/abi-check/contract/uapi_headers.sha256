@@ -1,0 +1,25 @@
+# AirymaxOS [SC] UAPI 头文件字节级快照（K-03）
+#
+# 受检目录: kernel/include/uapi/linux/airymax
+# 刷新命令: python3 ci/gates/abi-snapshot.py --update
+# 每行格式: <sha256>  <相对仓库根的路径>
+#
+# 受检目录下的 .h 全部登记：新增、删除、改名与任何字节改动都会让
+# ci/gates/abi-snapshot.py --check 判负。改动 UAPI 头文件是允许的，
+# 但必须显式重跑 --update 并把快照一并提交，让改动进入评审视野。
+
+22ad4d9cc36ce5cf8c41b2ae8f0d74bb8d5ce669bae98be2cb97061d18d2d6cb  kernel/include/uapi/linux/airymax/bpf_struct_ops.h
+6696e44f66e3214cf736ed9f68235b179031da185fd00da0008cefdc4ef82fc9  kernel/include/uapi/linux/airymax/cognition_types.h
+679c78f9301fbc223957ce336b2ea931aac83bd9ebb8c9d974e9fb40df9316e0  kernel/include/uapi/linux/airymax/error.h
+238db4ac3b16e7557e6a12ae8912eb08a05f2e9cbbd08396dbe5dc1b9a5deea0  kernel/include/uapi/linux/airymax/ipc.h
+99d3c3a843be94b622faaa2ad74bdebd4de213e68d36eeb5bc3d0814d6e49c54  kernel/include/uapi/linux/airymax/log_types.h
+6a4f88cb014e3e6e6a4bbb38eeb94d2795d80daa5b20571bfc2707ae55b5b629  kernel/include/uapi/linux/airymax/lsm_types.h
+c686e03d12fc8fd9817a456d4af430fbfc90dac1226c1916472a844cea3e5f50  kernel/include/uapi/linux/airymax/memory_types.h
+70dd8f721a5e9f32d1490d3e93a4bf1c6b189e8e2e930b6cc3e4909f5412823b  kernel/include/uapi/linux/airymax/sched.h
+fe90f9e6921d6f023d30886f8d7dd98a986a3a272062a99fa672e7ecb7e5fba9  kernel/include/uapi/linux/airymax/security_types.h
+99c6d46213de1db24d284f6a2760564d6c923884ce8f5f2bcdb8ad2b1d8201b6  kernel/include/uapi/linux/airymax/structures_32_gen.h
+873a1259e6bbf09bc00ca9577d66f943a011a2b2a46deca0709c8b4fbc515e36  kernel/include/uapi/linux/airymax/structures_64_gen.h
+d3b23f34f2deaa4884ba8d3c7576215e64cfdffab7c8e5675f896eac93f81533  kernel/include/uapi/linux/airymax/superv.h
+7080681b55d46c6949bd79b1dafd41d7dc8a35ddff8e46b96555cb67c7eafe73  kernel/include/uapi/linux/airymax/syscall_gen.h
+1e20fc5146ed4b44b84c9991453190ca11306e59d0ee73dda4cd59a214d067a4  kernel/include/uapi/linux/airymax/syscalls.h
+8bce79a8f3652a04d70123575431ad4245d71e43faaca8550cd2f0e5f14c36da  kernel/include/uapi/linux/airymax/uapi_compat.h

@@ -23,6 +23,7 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 | 通用表接线 | `arch/{riscv,loongarch}` UAPI include + 表展开形式 | asm-generic 继承校验 |
 | [SC] 契约头 | `kernel/include/uapi/linux/airymax/syscalls.h` | 共享契约宏定义 |
 | 派生契约快照 | `tools/abi-check/contract/syscall_registry.snapshot.json` | SSoT 缺失时的只读回退源 |
+| UAPI 字节冻结清单 | `tools/abi-check/contract/uapi_headers.sha256` | [SC] 头文件集合与 sha256，供 `ci/gates/abi-snapshot.py` 判定 |
 
 SSoT 文档是唯一权威。派生契约快照由 SSoT 确定性导出（含源仓 commit
 与 sha256 溯源），**不是第二权威**；当权威 SSoT 可得时，工具会以快照
@@ -37,7 +38,8 @@ tools/abi-check/
 ├── abi_baseline.json     # ABI 基线快照（v1.0.1 权威定义）
 ├── requirements-dev.txt  # 测试依赖（pytest）
 ├── contract/
-│   └── syscall_registry.snapshot.json  # 派生契约快照（SSoT 导出）
+│   ├── syscall_registry.snapshot.json  # 派生契约快照（SSoT 导出）
+│   └── uapi_headers.sha256  # [SC] 头文件字节冻结清单（K-03）
 ├── tests/
 │   ├── conftest.py       # 测试夹具（注入 sys.path）
 │   └── test_abi_check.py # 单元测试
