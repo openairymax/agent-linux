@@ -222,6 +222,19 @@ else
 fi
 endgroup
 
+group "文档契约一致性"
+# 十九个模块的入口映射在册子（modmap.toml）与投影（modmap.rs）各存一份：
+# 评审读册子，编译读投影。两份都在本仓，单仓检出即可判，因此不设跳过分
+# 支。判据本体在 ci/checks/modmap_conform.py，负例由 test_doc_contract.sh
+# 覆盖并随上面的回归组一起跑。
+if bash "${ROOT}/ci/ci.sh" doc-contract; then
+    say "通过"
+else
+    err "文档契约一致性未通过（ci/ci.sh doc-contract）"
+    rc=1
+fi
+endgroup
+
 if [ "${no_distro}" -eq 0 ]; then
     group "distro 子仓静态门禁"
     # 转调门禁入口而不是直连 distro/ci/run-lint.sh：参数语义、group 头与
