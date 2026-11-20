@@ -272,13 +272,42 @@ L2/L3 都不改判据，只改「同一份物料要付几次成本」。任何�
 ## 5.7 粒度、作业数与模块归属
 
 判据是「流水线跟随可交付制品与独立验证轴」，不是「一个子仓一条流水线」。
-9 个子仓各建一条，会把检出、子模块与工具链预热的固定成本重复九遍；作业数
-也不以多为胜：本仓 13 条流水线当前为 1–4 个作业，预算在
-`ci/baseline/workflow-budgets.txt` 登记且只许下调。取舍口径、模块归属表，以及
-security / memory / cognition 三仓不设流水线的证据（x86 / arm64 / riscv /
-loongarch 的 `airy_defconfig` 均 `# CONFIG_MODULES is not set`，实现内建于
-`kernel/security/airy/` 与 `kernel/kernel/syscalls/airy_clt.c`），见
-`docs/docs-linux/70-build-system/03-ci-cd-pipeline.md` §2.6。
+9 个子仓各建一条，会把检出、子模块与工具链预热的固定成本重复九遍，而并发
+额度按账号共享——九条短流水线更容易互相挤占，排障还要在九份日志里拼一个
+结论。
+
+**作业数**：GitHub 的单 workflow 256 个作业、单作业 6 小时是上限，不是目标。
+工程通行区间是每条 3–8 个作业：少于 3 个说明判据没有分层，一处红要等全部
+步骤跑完；多于 8–10 个则固定成本超过判据本身的耗时，部分失败的组合数随之
+上升。本仓十三条流水线当前为 1–4 个作业，新增或拆分后的上限是 5，登记在
+`ci/baseline/workflow-budgets.txt` 且只许下调。
+
+| 模块 | 归属 | 依据 |
+|------|------|------|
+| kernel | `kernel-verify`、`airy-verify`、`os-chk-verify` | 上游基线与自研目录分开审：前者查整棵内核树，后者只查 `security/airy` 等自研代码 |
+| system | `tui-verify`、`tui-input-verify` | 帧预算/跨架构与输入契约是两条独立验证轴，合并会让改一行注释也排队等完整集成 |
+| distro | `os-chk-verify`、`image-build`、`payload-seed` | 静态规则随 PR，镜像组装属发行前，载荷预热按周期，三者触发时机不同 |
+| services、cloudnative | `c-verify`（各 1 个作业） | 同一构建面，作业分开保证失败结论互不掩盖 |
+| sdk | `sdk-verify`（一语言一作业） | 生成一致不代表能编译，四个编译器视角互不替代 |
+| security、memory、cognition | 无独立流水线 | 外部模块原型，四架构 `airy_defconfig` 均 `# CONFIG_MODULES is not set`，实现内建于 `kernel/security/airy/` 与 `kernel/kernel/syscalls/airy_clt.c`，由 `kernel-verify`／`airy-verify` 覆盖 |
+| tests-linux | 无独立流水线 | 单元测试由该叶仓自身 CI 承担，父仓只做 gitlink 完整性与 SBOM 归集 |
+| tools、ci | 无独立流水线 | `os-chk-verify` 的一次依赖安装与一次 pytest 已覆盖，拆开只会让一次工具改动排队多轮 |
+| docs | `mgmt-verify`、`ssot-verify` | 文档完整性与 SSoT 交叉引用是两件事，但都廉价，各一条流水线已足够 |
+
+**何时才拆新流水线**——三条同时满足才拆，缺一条就用作业或条件触发解决：
+
+1. 有独立的可交付制品或独立的验证轴，而不只是「目录不同」；
+2. 触发时机不同（PR／定时／tag／派发），合在一起会让无关改动排队；
+3. 拆分后每条仍不超过 5 个作业，且固定成本占比可接受。
+
+只满足第 1 条 → 加作业，不拆文件；只满足第 2 条 → 用 paths／cron 分担，
+文件仍可共用。**不采纳的拆法**：9 子仓各一条（固定成本乘九、并发互挤）；
+`image-build` 装机三腿拆三个作业（§5 的 L4 否决——单 job 内并行不改变墙钟，
+只是把失败归因藏进一个作业）。
+
+三仓（security / memory / cognition）不设流水线的完整证据链见
+`docs/docs-linux/70-build-system/03-ci-cd-pipeline.md` §2.6；本表只登记结论，
+避免同一份证据在两处维护。
 
 两条 0.0.5 的接线变化：`tui-frame`（QG-08 帧预算）并入 `tui-verify` 的
 `build` 作业，不再是无执行者的孤儿门禁；`quality-metrics` 的
