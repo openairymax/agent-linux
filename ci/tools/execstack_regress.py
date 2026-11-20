@@ -7,6 +7,7 @@
 # 用法:
 #   python3 ci/tools/execstack_regress.py [--scan DIR]... [--keep DIR] [--quiet]
 #   python3 ci/tools/execstack_regress.py --scan DIR --no-probe
+#   python3 ci/tools/execstack_regress.py --expect-allow
 #
 # --no-probe 只做 ELF 扫描，给不接触内核的门禁声明面用。AIRY_WX_FS 可把
 # 「本机是否 AirymaxOS 内核」指到夹具目录，除此之外没有行为开关。
@@ -17,17 +18,21 @@
 # PT_GNU_STACK 执行位」取证，那只是取证手段：写进发行版等于要求用户改厂商库，
 # 且下次升级即失效，属于把缺陷转嫁给用户。
 #
+# 0.0.5 起内核具备受理面：file_mprotect 钩子只对 W→X 转移求值，裁决来自
+# distro/lockfile/wx-exceptions.toml 编译进内核的例外表，未登记即拒绝。
+# 因此本工具在「例外面」上多一条判据：例外表登记了测试进程的 agent_id 时，
+# 同一 W→X 调用必须成功。该判据依赖该进程真的以被登记的 agent_id 运行，
+# 只有目标内核上才能成立，故由 --expect-allow 显式开启；默认仍按「未登记」
+# 判拒绝，标准 CI 主机跑的就是这一面。
+#
 # 本工具只做三件可证伪的事，不模拟、不假设：
 #   ① 现场合成一对共享库（同一份源码，只差 -z execstack），用 ctypes 真实
 #      dlopen。普通库必须能加载——否则拒绝来自环境而不是 W^X，结论无意义。
 #      这条阴性对照是判据①可用的前提：没有它的「被拒」不值得相信。
 #   ② 未授权的 W→X mprotect 必须仍被拒；一次性 mmap(W|X) 必须仍放行。后者是
 #      JIT 与图形栈的既存依赖，误伤它和放过前者一样是缺陷。
-#   ③ --scan 下每个 ELF 读出 PT_GNU_STACK 的 X 位，逐条列出装机后会撞墙的库。
-#      这是**例外清单**，不是白名单：白名单要求内核能受理规则并据此放行，而
-#      0.0.4 的 airy LSM 没有 file_mprotect 钩子、policy 接口只读，故白名单
-#      顺延（见 0.0.4 方案 §2.3）；清单仍要出，它决定顺延期间有多少软件会
-#      在加载阶段失败。
+#   ③ --scan 下每个 ELF 读出 PT_GNU_STACK 的 X 位，逐条列出装机后会撞墙的库，
+#      作为例外清单的输入面；例外表为空时，这份清单就是拒绝面。
 #
 # 结论三态，末行是固定标记，便于门禁解析：
 #   AIRY-WX-PASS     判据全部成立
@@ -186,8 +191,8 @@ def mmap_wx() -> tuple[bool, str]:
     return True, ""
 
 
-def mprot_wx() -> tuple[bool, str]:
-    """W→X 提权：必须被拒。放行说明 W^X 已被关闭（判据②失守）。"""
+def mprot_wx(allow: bool) -> tuple[bool, str]:
+    """W→X 提权：未登记时必须被拒，登记后必须放行。"""
     lib = libc_call()
     addr = lib.mmap(None, PAGE, PROT_READ | PROT_WRITE,
                     MAP_PRIVATE | MAP_ANON, -1, 0)
@@ -196,6 +201,10 @@ def mprot_wx() -> tuple[bool, str]:
     rc = lib.mprotect(ctypes.c_void_p(addr), PAGE, PROT_READ | PROT_EXEC)
     err = ctypes.get_errno()
     lib.munmap(ctypes.c_void_p(addr), PAGE)
+    if allow:
+        if rc == 0:
+            return True, "放行 errno=0"
+        return False, f"已登记的 W→X 被拒: errno={err}"
     if rc == 0:
         return False, "mprotect(W→X) 被放行"
     if err in (13, 1):  # EACCES / EPERM
@@ -237,15 +246,20 @@ def prepare(tmp: str) -> str | None:
     return None
 
 
-def judge(why: str, loaded: bool) -> None:
-    """本机是 AirymaxOS 内核时的判据①②。"""
-    if loaded:
+def judge(why: str, loaded: bool, allow: bool) -> None:
+    """本机是 AirymaxOS 内核时的判据①②（含例外面）。"""
+    if allow:
+        if loaded:
+            say("已登记的可执行栈库放行")
+        else:
+            fail(f"已登记的可执行栈库仍被拒: {why.splitlines()[0]}")
+    elif loaded:
         fail("带可执行栈的库被放行，W^X 已失效")
     elif not any(s in why for s in ENFORCED):
         fail(f"库被拒但语义不是权限拒绝，判据不可信: {why}")
     else:
         say(f"可执行栈库被拒: {why.splitlines()[0]}")
-    ok, why = mprot_wx()
+    ok, why = mprot_wx(allow)
     if ok:
         say(f"mprotect(W→X) {why}")
     else:
@@ -257,8 +271,8 @@ def judge(why: str, loaded: bool) -> None:
         fail(why)
 
 
-def probe(tmp: str) -> int:
-    """判据①②：先立阴性对照，再判拒绝与放行。"""
+def probe(tmp: str, allow: bool) -> int:
+    """判据①②：先立阴性对照，再判拒绝（或登记后的放行）与 mmap 放行。"""
     bad = prepare(tmp)
     if bad:
         fail(bad)
@@ -267,10 +281,10 @@ def probe(tmp: str) -> int:
     if not os.path.isdir(airy_dir()):
         note("WAIVE 本机无 airy LSM，以下为观测值、不作判据")
         note(f"OBS xstack={'loaded' if loaded else why.splitlines()[0]}")
-        note(f"OBS mprotect={mprot_wx()[1]}")
+        note(f"OBS mprotect={mprot_wx(allow)[1]}")
         note(f"OBS mmap={mmap_wx()[1] or '放行'}")
         return EXIT_NA
-    judge(why, loaded)
+    judge(why, loaded, allow)
     return EXIT_FAIL if FAILS else EXIT_OK
 
 
@@ -283,6 +297,8 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--keep", metavar="DIR", help="保留合成库到 DIR 以便复查")
     ap.add_argument("--no-probe", action="store_true",
                     help="只做 --scan 的 ELF 扫描，不触碰内核判据")
+    ap.add_argument("--expect-allow", action="store_true",
+                    help="判例外表已登记本进程时的放行（目标内核验收用）")
     ap.add_argument("--quiet", action="store_true", help="只输出结论行")
     args = ap.parse_args(argv)
     QUIET = args.quiet
@@ -296,7 +312,7 @@ def main(argv: list[str]) -> int:
 
     tmp = args.keep or tempfile.mkdtemp(prefix="airy-wx-")
     os.makedirs(tmp, exist_ok=True)
-    rc = EXIT_OK if args.no_probe else probe(tmp)
+    rc = EXIT_OK if args.no_probe else probe(tmp, args.expect_allow)
 
     tag = {EXIT_OK: "AIRY-WX-PASS", EXIT_FAIL: "AIRY-WX-FAIL",
            EXIT_NA: "AIRY-WX-WAIVED"}[rc]

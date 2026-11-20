@@ -10,10 +10,10 @@
 # 背景：ALK 强制 W^X 之后，声明 PT_GNU_STACK=RWE 的共享库在 dlopen 阶段被拒
 # ——glibc 要把栈改成可执行，撞的是同一条 W→X 路径。0.0.3 在验证机上清掉库
 # 的那一位取证，那是取证手段而非修法：写进发行版等于要求用户改厂商库，且
-# 厂商一升级就失效。真正的修法是内核受理一份白名单并据此放行，这需要
-# file_mprotect 钩子与可写策略通道；0.0.4 内核侧净新增 0 行（方案 §0 铁律
-# ①与 ⑤），故白名单登记顺延（§2.3），本门禁改为钉住顺延期的两件事：不许
-# 用绕过手段，以及有多少库会在装机后撞墙。
+# 厂商一升级就失效。0.0.5 起内核受理一份编译期例外表（distro/lockfile/
+# wx-exceptions.toml → airy_wx_table.c），未登记的 W→X 一律拒绝。本门禁钉住
+# 两件事：交付链不许用绕过手段；回归器必须同时能判「未登记被拒」与「已登记
+# 放行」，后者在目标内核上以 AIRY_WX_ALLOW=1 复跑。
 #
 # 声明面（任何机器可跑）：
 #
@@ -26,13 +26,14 @@
 #
 # 实物面：
 #
-#   * --root DIR：列出镜像内 PT_GNU_STACK 可执行的 ELF。这是顺延期的例外
-#     清单，不是白名单——清单决定顺延期间哪些软件会在加载阶段失败。
+#   * --root DIR：列出镜像内 PT_GNU_STACK 可执行的 ELF，作为例外表的输入面。
 #   * --live：现场合成一对共享库（同源，只差 -z execstack）并真实 dlopen。
 #     先立阴性对照（普通库必须能加载，否则拒绝来自环境而非 W^X），再判
 #     可执行栈库被拒且语义是权限拒绝、W→X mprotect 仍被拒、mmap(W|X) 仍
 #     放行。本机不是 AirymaxOS 内核时判「不适用」，打印所需内核能力并以 5
 #     退出——不适用不等于通过。
+#   * AIRY_WX_ALLOW=1 时按「已登记」判：可执行栈库与 W→X 必须成功。仅在
+#     目标内核上、测试进程确以被登记的 agent_id 运行时才有意义。
 #
 # 退出码: 0 通过；1 检查失败；5 参数或环境不满足（含不适用）。
 # ===========================================================================
@@ -48,6 +49,9 @@ TREE=""
 SYSROOT=""
 LIVE=0
 FAILS=0
+# 目标内核验收时置 1，交给回归器判「已登记放行」而非「未登记拒绝」。
+ALLOW=0
+[ "${AIRY_WX_ALLOW:-0}" = "1" ] && ALLOW=1
 
 usage()
 {
@@ -98,6 +102,7 @@ chk_tool()
         grep -q "${tag}" "${TOOL}" || bad "回归器缺少 ${tag}"
     done
     grep -q 'p_type == PT_GNU_STACK' "${TOOL}" || bad "回归器缺少 PT_GNU_STACK 解析"
+    grep -q -- '--expect-allow' "${TOOL}" || bad "回归器缺少已登记放行判据"
 }
 
 # 绕过禁令：交付链里只允许存在「撞墙清单」，不允许清位或重编来绕过。
@@ -150,6 +155,7 @@ scan_root()
 live_probe()
 {
     local out rc
+    local args=()
 
     group "实机判定"
     for c in python3 gcc; do
@@ -158,10 +164,11 @@ live_probe()
             exit "${EINVAL}"
         }
     done
+    [ "${ALLOW}" -eq 1 ] && args+=(--expect-allow)
     if [ -n "${SYSROOT}" ]; then
-        out=$(python3 "${TOOL}" --scan "${SYSROOT}" 2>&1)
+        out=$(python3 "${TOOL}" ${args[@]+"${args[@]}"} --scan "${SYSROOT}" 2>&1)
     else
-        out=$(python3 "${TOOL}" 2>&1)
+        out=$(python3 "${TOOL}" ${args[@]+"${args[@]}"} 2>&1)
     fi
     rc=$?
     printf '%s\n' "${out}"
@@ -171,8 +178,8 @@ live_probe()
         1) err "W^X 判据不成立"; exit 1 ;;
         4)
             note "不适用：本机不是 AirymaxOS 内核，W^X 未由 airy 强制"
-            note "受理白名单所需内核能力：file_mprotect 钩子 + 可执行栈例外字段"
-            note "                          + 可写策略通道（0.0.4 顺延，见方案 §2.3）"
+            note "目标内核验收：AIRY_WX_ALLOW=1 ci/gates/wx-policy.sh --live"
+            note "  （该进程须以 distro/lockfile/wx-exceptions.toml 登记的 agent_id 运行）"
             exit "${EINVAL}"
             ;;
         *) err "回归器退出码 ${rc}"; exit "${EINVAL}" ;;
