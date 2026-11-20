@@ -17,7 +17,7 @@ on:
     paths:
       - '**.md'
       - 'ssot-registry.yaml'
-      - 'tools/repo/validate-ssot.py'
+      - 'tools/governance/validate-ssot.py'
       - 'ci/gates/ssot-verify.sh'
       - '.github/workflows/ssot-verify.yml'
   push:
@@ -25,7 +25,7 @@ on:
     paths:
       - '**.md'
       - 'ssot-registry.yaml'
-      - 'tools/repo/validate-ssot.py'
+      - 'tools/governance/validate-ssot.py'
       - 'ci/gates/ssot-verify.sh'
       - '.github/workflows/ssot-verify.yml'
 
