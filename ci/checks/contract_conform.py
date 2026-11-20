@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 # SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 # ===========================================================================
-# ci/contract_conform.py — 契约册与代码投影的一致性判定（Q-02 / QG-02）
+# ci/checks/contract_conform.py — 契约册与代码投影的一致性判定（Q-02 / QG-02）
 #
 # 契约册在 system/contracts/，代码投影在 system/tui/crates/。两边各自演化时
 # 最容易出现「文档写了、代码没改」与「代码改了、文档没跟上」两种漂移，而
@@ -16,7 +16,7 @@
 # 每类判据各自成函数、只读「契约册」与「代码投影」两个入参，新增一节
 # 契约时改一处即可；`check_all` 只负责汇总，不含任何具体判据。
 #
-# 用法: python3 ci/contract_conform.py [--root DIR]
+# 用法: python3 ci/checks/contract_conform.py [--root DIR]
 # 退出码: 0 通过；1 有分叉；5 参数不满足或契约册缺失。
 # ===========================================================================
 
@@ -27,7 +27,7 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent.parent
 
 ENUMS = ("source", "trust", "payload-kind", "session-mode")
 BLOCK = re.compile(r"```contract\n(.*?)```", re.S)
@@ -567,7 +567,7 @@ def main() -> int:
     args = sys.argv[1:]
     if args:
         if len(args) != 2 or args[0] != "--root":
-            print("用法: python3 ci/contract_conform.py [--root DIR]", file=sys.stderr)
+            print("用法: python3 ci/checks/contract_conform.py [--root DIR]", file=sys.stderr)
             return 5
         configure(Path(args[1]).resolve())
     try:

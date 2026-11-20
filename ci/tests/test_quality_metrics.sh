@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 # SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 # ===========================================================================
-# ci/tests/test_quality_metrics.sh — ci/quality_metrics.py 的判据回归
+# ci/tests/test_quality_metrics.sh — ci/checks/quality_metrics.py 的判据回归
 #
 # 棘轮门禁对真实树是绿的（基线按现状登记），判据是否正确只能靠负例驱动：
 # 新增超标函数、新增重复片段、均值抬高、基线被抬高四种情形各造一次，另验
@@ -17,7 +17,7 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
-TOOL="${ROOT}/ci/quality_metrics.py"
+TOOL="${ROOT}/ci/checks/quality_metrics.py"
 tmp="$(mktemp -d)"
 trap 'rm -rf "${tmp}"' EXIT
 FX="${tmp}/fx"

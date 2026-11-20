@@ -20,7 +20,7 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 - **`ci/gates/*.sh`**：全部断言与宿主准备，带 `# 用法:` 头，可直接执行。
 - **`ci/lib/*.sh`**：跨门禁共用的实现（apt 获取、宿主清理、TAP 解析等）。
 
-这条分工由 `ci/check-workflows.py` 的十九条规则强制执行（见第 4 节），而不是
+这条分工由 `ci/checks/check-workflows.py` 的十九条规则强制执行（见第 4 节），而不是
 靠评审时的自觉。一个约定如果没有执行者，它就不是约定。第 4 节的表格首列
 登记规则号，其覆盖范围由脚本反过来校验：文档漏登或重号同样判红。
 
@@ -45,7 +45,7 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 ```
 
 十三个流水线，作业数 1~4（`os-chk-verify` 一个、`sdk-verify` 四个）。
-作业数上限登记在 `ci/workflow-budgets.txt`，只许下调。
+作业数上限登记在 `ci/baseline/workflow-budgets.txt`，只许下调。
 
 ## 3. 流水线清单
 
@@ -88,12 +88,12 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 
 ## 4. 命名与结构约定
 
-规则实现在 `ci/check-workflows.py`，由 `ci/lint.sh` 在 `os-chk-verify` 与本地
+规则实现在 `ci/checks/check-workflows.py`，由 `ci/lint.sh` 在 `os-chk-verify` 与本地
 lint 中执行。下表是规则本身，不是建议。
 
 | # | 规则 | 为什么 |
 |---|------|--------|
-| 1 | 结构上限：每个 workflow 的 job 数与内联 `run: \|` 块数不得超过 `ci/workflow-budgets.txt` 的登记值，预算只许下调 | 「薄化」要有可测量的上限，否则一次搬迁之后又会重新长回来 |
+| 1 | 结构上限：每个 workflow 的 job 数与内联 `run: \|` 块数不得超过 `ci/baseline/workflow-budgets.txt` 的登记值，预算只许下调 | 「薄化」要有可测量的上限，否则一次搬迁之后又会重新长回来 |
 | 2 | 棘轮：内联块数不得高于 `git HEAD` 中的同名文件 | 调低预算才算迁移；把逻辑抄回 YAML 会立即变红 |
 | 3 | 内联预算为 0 的文件不得出现已被门禁收编的模式：宿主清理、`docker load`、摘要校验、QEMU 安装、串口 TAP 解析 | 同一段断言有两份实现，改一处必漏一处 |
 | 4 | 不得在 YAML 里直接调用 `apt-get`，统一走 `ci/lib/apt.sh` | 获取超时、重试与硬超时只有一处实现，否则一次镜像不响应就烧光整步预算 |
@@ -113,7 +113,7 @@ lint 中执行。下表是规则本身，不是建议。
 | 18 | 门禁、库、工具与 workflow 都禁止由名称形状推语义：不得以「标签以 `-latest` 结尾」判定托管，也不得写 `*-latest` 做比较、`case` 匹配或表达式判断 | 托管运行器的两种写法都表示托管，自托管标签任意命名；形状与语义之间没有蕴含关系，`run 40864072696` 就是这样误判 |
 | 19 | 调用 `ci/ci.sh remote-sync` 必须显式给出 `--kind` | 门禁缺省查 `refs/heads/<ref>`，而 `github.ref_name` 已剥掉 `refs/` 前缀：标签派发时它去查不存在的同名分支，判负成「无此分支」（`run 42335415156` 整轮组装在第一步落空） |
 
-新增或改名一个流水线需要三处同步：文件、`name:`、`ci/workflow-budgets.txt`。
+新增或改名一个流水线需要三处同步：文件、`name:`、`ci/baseline/workflow-budgets.txt`。
 `./ci/lint.sh` 在任一处漂移时直接判红。
 
 规则 13–18 的负向回归在 `ci/tests/test_workflow_rules.sh`：它在一棵最小假树上
@@ -161,7 +161,7 @@ lint 中执行。下表是规则本身，不是建议。
 | L1 | 派发时带 `release_tag`，让 ISO 复用已签名的发行内核包 | 每轮省 73 min | 已实现（`Fetch release kernel RPMs`），靠派发纪律兑现 |
 | L2 | 以内容键缓存已组装的 ISO，重跑只做装机验收 | 每次重试省 80 min | 待实施（键须含内核包摘要与 distro gitlink） |
 | L3 | 四架构内核腿引入 ccache | 每腿省 40–60% | 待验证（键须含编译器版本、配置摘要与源码提交，键错则结论作废） |
-| L4 | 装机三腿并行 | 不采用 | 否决：作业数按 `ci/workflow-budgets.txt` 记账，单 job 内并行只是把三条腿的墙钟时间藏进一个作业，失败归因反而更难 |
+| L4 | 装机三腿并行 | 不采用 | 否决：作业数按 `ci/baseline/workflow-budgets.txt` 记账，单 job 内并行只是把三条腿的墙钟时间藏进一个作业，失败归因反而更难 |
 
 L2/L3 都不改判据，只改「同一份物料要付几次成本」。任何一条上线前必须能在
 本地用同一门禁对缓存产物复跑，否则只是把不确定性搬进了流水线。
@@ -274,7 +274,7 @@ L2/L3 都不改判据，只改「同一份物料要付几次成本」。任何�
 判据是「流水线跟随可交付制品与独立验证轴」，不是「一个子仓一条流水线」。
 9 个子仓各建一条，会把检出、子模块与工具链预热的固定成本重复九遍；作业数
 也不以多为胜：本仓 13 条流水线当前为 1–4 个作业，预算在
-`ci/workflow-budgets.txt` 登记且只许下调。取舍口径、模块归属表，以及
+`ci/baseline/workflow-budgets.txt` 登记且只许下调。取舍口径、模块归属表，以及
 security / memory / cognition 三仓不设流水线的证据（x86 / arm64 / riscv /
 loongarch 的 `airy_defconfig` 均 `# CONFIG_MODULES is not set`，实现内建于
 `kernel/security/airy/` 与 `kernel/kernel/syscalls/airy_clt.c`），见

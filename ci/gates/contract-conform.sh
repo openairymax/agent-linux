@@ -10,7 +10,7 @@
 # 类型与常量表是它的投影。两份东西分别演化时，靠人读是查不出漂移的：
 # 少一个字段、换一个枚举顺序、改一个 errno，都要有机器判据立刻拦下。
 #
-# 解析与对照在 ci/contract_conform.py；本脚本只做前置校验与统一日志，
+# 解析与对照在 ci/checks/contract_conform.py；本脚本只做前置校验与统一日志，
 # 判定逻辑不在这里再写一份。
 #
 # 不需要编译器与联网：只读工作树，故与其它只读门禁同层。
@@ -19,7 +19,7 @@
 set -uo pipefail
 
 readonly EINVAL=5
-readonly CHECK=ci/contract_conform.py
+readonly CHECK=ci/checks/contract_conform.py
 readonly DOCS=system/contracts
 # shellcheck source=../lib/log.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/log.sh"

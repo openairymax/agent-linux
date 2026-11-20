@@ -2,13 +2,13 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 # SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 # ===========================================================================
-# ci/tests/test_workflow_rules.sh — ci/check-workflows.py 规则 13–19 的负向回归
+# ci/tests/test_workflow_rules.sh — ci/checks/check-workflows.py 规则 13–19 的负向回归
 #
 # 这几条规则此前只有正向：真实树常年合规，规则写错、判反或者根本没接进
 # main() 都不会有人发现。本文件在一棵最小假树上逐条破坏，断言只看退出码
 # 与稳定判据字符串，因此不依赖真实 workflow 的数量与预算。
 #
-# 真实树是否合规不在这里判：os-chk-verify 直接跑 ci/check-workflows.py
+# 真实树是否合规不在这里判：os-chk-verify 直接跑 ci/checks/check-workflows.py
 # 那一条，本文件只保证这几条规则既不漏判也不误判。
 #
 # 用法: bash ci/tests/test_workflow_rules.sh
@@ -23,8 +23,8 @@ FX="${tmp}/fx"
 SHA=11bd71901bbe5b1630ceea73d27597364c9af683
 fails=0
 
-mkdir -p "${FX}/ci" "${FX}/.github/workflows" "${FX}/tools/nightly"
-cp "${ROOT}/ci/check-workflows.py" "${FX}/ci/check-workflows.py"
+mkdir -p "${FX}/ci/checks" "${FX}/ci/baseline" "${FX}/.github/workflows" "${FX}/tools/nightly"
+cp "${ROOT}/ci/checks/check-workflows.py" "${FX}/ci/checks/check-workflows.py"
 # check_gate_libs 无条件读 ci/ci.sh；本文件不判门禁库，留空文件即可。
 : >"${FX}/ci/ci.sh"
 
@@ -41,7 +41,7 @@ bad()
 
 run()
 {
-    python3 "${FX}/ci/check-workflows.py" 2>&1
+    python3 "${FX}/ci/checks/check-workflows.py" 2>&1
 }
 
 check()
@@ -100,7 +100,7 @@ flow()
         printf '      - uses: %s%s\n' "${ref}" "${note}"
         printf '      - run: echo ok\n'
     } >"${FX}/.github/workflows/${file}"
-    printf '%s 0 1\n' "${file}" >"${FX}/ci/workflow-budgets.txt"
+    printf '%s 0 1\n' "${file}" >"${FX}/ci/baseline/workflow-budgets.txt"
 }
 
 reset
@@ -202,7 +202,7 @@ flowm()
         printf '    timeout-minutes: 30\n    steps:\n'
         printf '      - uses: actions/checkout@%s # v4\n' "${SHA}"
     } >"${FX}/.github/workflows/${file}"
-    printf '%s 0 1\n' "${file}" >"${FX}/ci/workflow-budgets.txt"
+    printf '%s 0 1\n' "${file}" >"${FX}/ci/baseline/workflow-budgets.txt"
 }
 
 reset
@@ -256,7 +256,7 @@ doc
 flow demo-verify.yml ubuntu-24.04 "actions/checkout@${SHA}" " # v4" pr
 printf '      - run: ci/ci.sh remote-sync --ref v0.0.4\n' \
     >>"${FX}/.github/workflows/demo-verify.yml"
-printf 'demo-verify.yml 1 1\n' >"${FX}/ci/workflow-budgets.txt"
+printf 'demo-verify.yml 1 1\n' >"${FX}/ci/baseline/workflow-budgets.txt"
 out=$(run)
 check "规则 19：remote-sync 缺 --kind" 1 "$?" "${out}" "未声明 --kind"
 
@@ -265,7 +265,7 @@ doc
 flow demo-verify.yml ubuntu-24.04 "actions/checkout@${SHA}" " # v4" pr
 printf '      - run: ci/ci.sh remote-sync --kind tags --ref v0.0.4\n' \
     >>"${FX}/.github/workflows/demo-verify.yml"
-printf 'demo-verify.yml 1 1\n' >"${FX}/ci/workflow-budgets.txt"
+printf 'demo-verify.yml 1 1\n' >"${FX}/ci/baseline/workflow-budgets.txt"
 out=$(run)
 check "规则 19：显式 --kind 时通过" 0 "$?" "${out}" "检查通过"
 

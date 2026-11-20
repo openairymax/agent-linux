@@ -33,7 +33,7 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 |------|----------|
 | 某个工作流由什么触发，跑哪些作业？ | [`workflows/README.md`](workflows/README.md) |
 | 哪些矩阵单元、排除项与超时是合法的？ | `tools/ci-matrix/manifest.yaml`（由 `tools/ci-matrix/ci_matrix.py --check` 校验） |
-| 一个工作流最多能留几段内联 `run:`？ | `ci/workflow-budgets.txt`（棘轮，由 `ci/check-workflows.py` 校验） |
+| 一个工作流最多能留几段内联 `run:`？ | `ci/baseline/workflow-budgets.txt`（棘轮，由 `ci/checks/check-workflows.py` 校验） |
 | 某条门禁断言什么，本地怎么复跑？ | `ci/gates/*.sh` 与 `ci/ci.sh --list` |
 | 流水线为什么是这个形状？ | hub 仓库 `docs/docs-linux/70-build-system/03-ci-cd-pipeline.md` |
 
@@ -49,7 +49,7 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 - **密钥**：`GPG_PRIVATE_KEY`、`GPG_PASSPHRASE`、`COSIGN_KEY`、`COSIGN_PASSWORD`，
   任何情况下都不回显。
 
-新增或改名工作流要同步改三处：文件本身、`name:`、`ci/workflow-budgets.txt`；
+新增或改名工作流要同步改三处：文件本身、`name:`、`ci/baseline/workflow-budgets.txt`；
 `./ci/lint.sh` 会拒绝漂移。
 
 ## 许可

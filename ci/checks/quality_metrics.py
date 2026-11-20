@@ -2,10 +2,10 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 # SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 # ===========================================================================
-# ci/quality_metrics.py — 代码度量棘轮（重复率与圈复杂度）
+# ci/checks/quality_metrics.py — 代码度量棘轮（重复率与圈复杂度）
 #
-# 用法: python3 ci/quality_metrics.py --check [--dir DIR ...] [--base FILE]
-#       python3 ci/quality_metrics.py --update [--dir DIR ...] [--base FILE]
+# 用法: python3 ci/checks/quality_metrics.py --check [--dir DIR ...] [--base FILE]
+#       python3 ci/checks/quality_metrics.py --update [--dir DIR ...] [--base FILE]
 #
 # 0.0.2 与 0.0.3 的方案都把「重复率 < 3%、圈复杂度 < 2.5」写进 QG-01/QG-02，
 # 但没人实现过判定——没有判据的目标值等于没有目标。0.0.4 把它落成棘轮式门禁：
@@ -27,7 +27,7 @@
 # 不会因为「没判据」而悄悄回到原点。0.0.5 起均值单调下降，目标 2.5。
 #
 # 口径与边界：
-#   · 只量 shell、python 与 rust——与 ci/name_lint.py 同一交付面（ci tools
+#   · 只量 shell、python 与 rust——与 ci/checks/name_lint.py 同一交付面（ci tools
 #     distro system），kernel 是上游树、不参与本仓度量（ALK-01 亦要求内核侧
 #     零改动）；
 #   · tests/fixture 不量：那里的重复与分支是刻意构造的负例；vendor/target
@@ -57,6 +57,12 @@ from pathlib import Path
 
 # 定义行与测试模块边界与 name_lint.py 共用一份（ci/lib/rs_src.py）：两份实现
 # 必然在某个边界上分叉，而两道门禁都绿时没人会发现。
+# 判定器位于 ci/checks/，把上级 ci/ 加入 sys.path：共用库 `lib` 与同层
+# 的 `no_stub` 都按包名导入，夹具树也保持同一布局。
+_CI = Path(__file__).resolve().parent.parent
+if str(_CI) not in sys.path:
+    sys.path.insert(0, str(_CI))
+
 from lib import rs_src, scan_src
 
 LIMIT_CC = 10
@@ -418,15 +424,15 @@ def roots_of(args, root):
 
 
 def main(argv):
-    root = Path(__file__).resolve().parent.parent
+    root = Path(__file__).resolve().parent.parent.parent
     ap = argparse.ArgumentParser(add_help=True, description="代码度量棘轮")
     ap.add_argument("--check", action="store_true", help="按基线判定（默认）")
     ap.add_argument("--update", action="store_true", help="重写基线，只降不升")
     ap.add_argument("--dir", action="append", default=[], help="待量目录，可重复")
-    ap.add_argument("--base", default="", help="基线文件，默认 ci/quality-baseline.json")
+    ap.add_argument("--base", default="", help="基线文件，默认 ci/baseline/quality-baseline.json")
     args = ap.parse_args(argv)
 
-    base_path = Path(args.base) if args.base else root / "ci/quality-baseline.json"
+    base_path = Path(args.base) if args.base else root / "ci/baseline/quality-baseline.json"
     base = load(base_path)
     funcs, dup, lines, bad = scan(roots_of(args, root))
     report(funcs, dup, lines, base)

@@ -12,7 +12,7 @@
 # 比缺一篇文档更伤——缺了看得见，链接坏了看不出来。本门禁把这条变成
 # 可复算的判定。
 #
-# 判定实现在 ci/doc_links.py：本文件只做参数校验与调用，不复制解析逻辑。
+# 判定实现在 ci/checks/doc_links.py：本文件只做参数校验与调用，不复制解析逻辑。
 #
 #   --source DIR   文档树根，默认为超级仓里的 docs/docs-linux
 #   --exclude NAME 整目录跳过的名字，默认 20-archive（冻结归档不改写）
@@ -31,7 +31,7 @@
 set -uo pipefail
 
 readonly EINVAL=5
-readonly CHECK=ci/doc_links.py
+readonly CHECK=ci/checks/doc_links.py
 # shellcheck source=../lib/log.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/log.sh"
 

@@ -12,10 +12,10 @@
 # 重复率 6.19% 也没人看见。本门禁按棘轮落地：
 #
 #   · 新增函数单函数圈复杂度不得 > 10，新增重复片段一律判红；
-#   · 存量按 ci/quality-baseline.json 登记，只减不增（--update 拒绝抬高数量）；
+#   · 存量按 ci/baseline/quality-baseline.json 登记，只减不增（--update 拒绝抬高数量）；
 #   · 每次运行都打印与 3% / 2.5 目标的差额，差额不会因为没判据而隐形。
 #
-# 度量与判定都在 ci/quality_metrics.py：本文件只做参数校验与转调，不复制
+# 度量与判定都在 ci/checks/quality_metrics.py：本文件只做参数校验与转调，不复制
 # 口径——两处各写一份，改阈值时必然漏改一处。缺省度量根由实装位置决定
 # （它量的就是本仓），因此这里不设 --source：根只在一处定义。
 #
@@ -58,6 +58,6 @@ while [ "$#" -gt 0 ]; do
 done
 
 need_cmd python3
-python3 "${ROOT}/ci/quality_metrics.py" "${MODE}" "${DIRS[@]}" || exit 1
+python3 "${ROOT}/ci/checks/quality_metrics.py" "${MODE}" "${DIRS[@]}" || exit 1
 say "代码度量棘轮通过"
 exit 0

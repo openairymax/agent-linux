@@ -7,10 +7,10 @@
 # 用法: ci/lint.sh [--no-distro]
 #
 # 检查十六件事：
-#   1. workflow 薄化与命名约束（ci/check-workflows.py）；
+#   1. workflow 薄化与命名约束（ci/checks/check-workflows.py）；
 #   2. ci/ 与 tools/ 下每个 shell 脚本可被 bash -n 解析；
-#   3. 函数名不超过 15 字节（ci/name_lint.py，N001，覆盖 shell 与 python）；
-#   4. 代码度量棘轮（ci/gates/quality-metrics.sh → ci/quality_metrics.py：新增
+#   3. 函数名不超过 15 字节（ci/checks/name_lint.py，N001，覆盖 shell 与 python）；
+#   4. 代码度量棘轮（ci/gates/quality-metrics.sh → ci/checks/quality_metrics.py：新增
 #      超标函数与新增重复片段判红，存量按基线只减不增）；
 #   5. 验收剖面归一化的行为（ci/lib/profile.sh）；
 #   6. 门禁脚本里「声明后从未使用」的 readonly 常量（无外部依赖）；
@@ -22,7 +22,7 @@
 #  12. 功能归属册三态对账（ci/gates/completeness.sh，docs-linux 功能面逐条归账）；
 #  13. 零桩扫描（ci/gates/no-stub.sh，QG-02）；
 #  14. 死代码扫描（ci/gates/dead-code.sh，QG-03）；
-#  15. 文件头许可证与版权行（ci/header_lint.py，H001/H002）；
+#  15. 文件头许可证与版权行（ci/checks/header_lint.py，H001/H002）；
 #  16. docs-linux 文档树的悬空相对链接（ci/gates/docs-links.sh，DOC-02）。
 #
 # 第 13、14 项把「禁桩」从文字变成判据：todo!/unimplemented!、产品代码里的
@@ -74,10 +74,10 @@ done
 rc=0
 
 group "workflow 薄化与命名约束"
-if python3 "${ROOT}/ci/check-workflows.py"; then
+if python3 "${ROOT}/ci/checks/check-workflows.py"; then
     say "通过"
 else
-    err "ci/check-workflows.py 未通过"
+    err "ci/checks/check-workflows.py 未通过"
     rc=1
 fi
 endgroup
@@ -104,10 +104,10 @@ roots=(ci tools system)
 if [ "${no_distro}" -eq 0 ]; then
     roots=(ci tools distro system)
 fi
-if python3 "${ROOT}/ci/name_lint.py" "${roots[@]}"; then
+if python3 "${ROOT}/ci/checks/name_lint.py" "${roots[@]}"; then
     say "通过"
 else
-    err "ci/name_lint.py 未通过（函数名超过 15 字节）"
+    err "ci/checks/name_lint.py 未通过（函数名超过 15 字节）"
     rc=1
 fi
 endgroup
@@ -116,7 +116,7 @@ group "代码度量棘轮"
 # QG-01/QG-02 的「重复率 <3%、圈复杂度 <2.5」此前只有文字没有判据，存量
 # 因此停在均值 3.70、重复率 6.17% 也没人看见。基线按现状登记、只减不增：
 # 新增超标函数与新增重复片段当场判红，差额每轮打印。
-# 转调门禁入口而不是直连 ci/quality_metrics.py：`--update` 的「只减不增」
+# 转调门禁入口而不是直连 ci/checks/quality_metrics.py：`--update` 的「只减不增」
 # 政策只在 ci/gates/quality-metrics.sh 一处实现，两个入口各写一份迟早出现
 # 一条路能抬高基线而另一条不认。缺省根由门禁按实装位置取，`--no-distro`
 # 时只把子集目录透传过去。
@@ -275,10 +275,10 @@ group "文件头许可证与版权"
 # 个自有源文件只有许可证行，tools/repo 下还有一个连许可证都没有。判据与
 # 归一化同批落地，否则下一个新文件照样能只写许可证。sdk/ 是生成产物，已带
 # 传统版权行，纳入判据防止生成器倒退。
-if python3 "${ROOT}/ci/header_lint.py" "${roots[@]}" sdk; then
+if python3 "${ROOT}/ci/checks/header_lint.py" "${roots[@]}" sdk; then
     say "通过"
 else
-    err "ci/header_lint.py 未通过（文件头缺许可证或版权行）"
+    err "ci/checks/header_lint.py 未通过（文件头缺许可证或版权行）"
     rc=1
 fi
 endgroup

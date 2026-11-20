@@ -20,7 +20,7 @@ trap 'rm -rf "${tmp}"' EXIT
 fails=0
 
 FX="${tmp}/fx"
-mkdir -p "${FX}/ci/gates" "${FX}/ci/lib"
+mkdir -p "${FX}/ci/gates" "${FX}/ci/lib" "${FX}/ci/checks"
 cp "${GATE}" "${FX}/ci/gates/dead-code.sh"
 cp "${ROOT}/ci/lib/log.sh" "${FX}/ci/lib/log.sh"
 cp "${ROOT}/ci/lib/dirs.sh" "${FX}/ci/lib/dirs.sh"
@@ -28,8 +28,8 @@ cp "${ROOT}/ci/lib/gate.sh" "${FX}/ci/lib/gate.sh"
 cp "${ROOT}/ci/lib/__init__.py" "${FX}/ci/lib/__init__.py"
 cp "${ROOT}/ci/lib/rs_src.py" "${FX}/ci/lib/rs_src.py"
 cp "${ROOT}/ci/lib/scan_src.py" "${FX}/ci/lib/scan_src.py"
-cp "${ROOT}/ci/no_stub.py" "${FX}/ci/no_stub.py"
-cp "${ROOT}/ci/dead_code.py" "${FX}/ci/dead_code.py"
+cp "${ROOT}/ci/checks/no_stub.py" "${FX}/ci/checks/no_stub.py"
+cp "${ROOT}/ci/checks/dead_code.py" "${FX}/ci/checks/dead_code.py"
 
 ok()
 {
@@ -148,10 +148,10 @@ check "目录不存在退 5" 5 "$?" "${out}" "目录不存在"
 out="$(run --help)"
 check "帮助退 0" 0 "$?" "${out}" "用法"
 
-mv "${FX}/ci/dead_code.py" "${tmp}/dead_code.py"
+mv "${FX}/ci/checks/dead_code.py" "${tmp}/dead_code.py"
 out="$(run "${tmp}/src")"
 check "缺少检查器退 5" 5 "$?" "${out}" "缺少检查器"
-mv "${tmp}/dead_code.py" "${FX}/ci/dead_code.py"
+mv "${tmp}/dead_code.py" "${FX}/ci/checks/dead_code.py"
 
 if [ "${fails}" -ne 0 ]; then
     printf 'test_dead_code: %d 项失败\n' "${fails}"

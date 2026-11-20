@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 # SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 # ===========================================================================
-# ci/tests/test_name_lint.sh — ci/name_lint.py 的分支回归
+# ci/tests/test_name_lint.sh — ci/checks/name_lint.py 的分支回归
 #
 # 门禁判的是「函数名不超过 15 字节」，真实树常年为绿，判定逻辑只能靠负例
 # 驱动：逐条造出刚好 16 字节的定义、`function` 前缀写法、注释里的假定义、
@@ -23,8 +23,8 @@ trap 'rm -rf "${tmp}"' EXIT
 fails=0
 
 FX="${tmp}/fx"
-mkdir -p "${FX}/ci/lib" "${FX}/tools/pkg/tests"
-cp "${ROOT}/ci/name_lint.py" "${FX}/ci/name_lint.py"
+mkdir -p "${FX}/ci/checks" "${FX}/ci/lib" "${FX}/tools/pkg/tests"
+cp "${ROOT}/ci/checks/name_lint.py" "${FX}/ci/checks/name_lint.py"
 # 判定器与 quality_metrics 共用定义行与测试模块边界的解析，缺了它门禁连
 # 导入都过不去——夹具必须带上同一份实现，否则测的是另一套判据。整目录复制：
 # 点名清单会与判定器的 import 图分叉，多引一个模块就变成 ImportError 假红。
@@ -43,7 +43,7 @@ bad()
 
 run()
 {
-    ( cd "${FX}" && env -u LD_LIBRARY_PATH python3 ci/name_lint.py "$@" 2>&1 )
+    ( cd "${FX}" && env -u LD_LIBRARY_PATH python3 ci/checks/name_lint.py "$@" 2>&1 )
 }
 
 check()

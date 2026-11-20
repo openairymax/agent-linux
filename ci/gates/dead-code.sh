@@ -15,7 +15,7 @@
 #   · `pub` 项在扫描根内只有定义、没有任何引用 → 复核清单，不判负——跨仓
 #     消费方在本仓不可见，判负会把合法的对外接口全部拖红。
 #
-# 判定实现在 ci/dead_code.py；`pub(crate)` 与私有项交给 clippy 的 dead_code，
+# 判定实现在 ci/checks/dead_code.py；`pub(crate)` 与私有项交给 clippy 的 dead_code，
 # 两边不重复实现同一条判据。
 #
 #   DIR   要扫描的目录（可多个），缺省 system/tui
@@ -32,6 +32,6 @@ set -uo pipefail
 # shellcheck disable=SC2034  # ROOT 由 gate.sh 的 gate_py 读取
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 
-gate_py ci/dead_code.py "$@"
+gate_py ci/checks/dead_code.py "$@"
 say "死代码扫描通过（allow(dead_code) 均有理由）"
 exit 0

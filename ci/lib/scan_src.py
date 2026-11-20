@@ -4,7 +4,7 @@
 # ===========================================================================
 # ci/lib/scan_src.py — 源码遍历与扫描根的共用实现
 #
-# 遍历口径原先在 ci/name_lint.py、ci/quality_metrics.py 里各写了一份，V-06 的
+# 遍历口径原先在 ci/checks/name_lint.py、ci/checks/quality_metrics.py 里各写了一份，V-06 的
 # 零桩与死代码扫描如果照抄就是第三、第四份：四处都跳过 vendor/ 与 target/，
 # 四处都要处理相对根，改一处必然漏改三处。这里收成一份。
 #

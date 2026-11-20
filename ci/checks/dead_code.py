@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 # SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 # ===========================================================================
-# ci/dead_code.py — 死代码扫描（§3.4 判负口径「死代码」一行）
+# ci/checks/dead_code.py — 死代码扫描（§3.4 判负口径「死代码」一行）
 #
 # 死代码是禁桩的另一面：桩让没实现的代码看起来能用，死代码让已实现的代码
 # 看起来还在用。两者都不报错，只能靠扫描发现。
@@ -18,7 +18,7 @@
 #               这一条只输出清单供人工复核，不判负：跨仓消费方不在本仓可见，
 #               判负会把合法的对外接口全部拖红。
 #
-# 词法清理复用 ci/no_stub.py 的 blank()：注释与字符串里的名字不算引用，否则
+# 词法清理复用 ci/checks/no_stub.py 的 blank()：注释与字符串里的名字不算引用，否则
 # 一句「参见 Foo」就能让死代码复活。测试代码（tests/ 与 #[cfg(test)] 模块）
 # 参与引用计数（被测语义里用到就是用到），但不从中收集待复核项。
 #
@@ -26,7 +26,7 @@
 # 不可达分支；本脚本只补它看不见的 `pub` 面与 `allow(dead_code)` 的理由。
 # `cargo udeps` 需要 nightly，未纳入 vendor（R-02），故本版不依赖它。
 #
-# 用法: python3 ci/dead_code.py [根...]（缺省 system/tui）
+# 用法: python3 ci/checks/dead_code.py [根...]（缺省 system/tui）
 # 退出码: 0 通过（复核清单不影响退出码）；1 有 D001 或根不存在。
 #
 # Author: Liren Wang <wangliren@spharx.cn>
@@ -39,13 +39,17 @@ import re
 import sys
 from pathlib import Path
 
-# 脚本方式运行时 ci/ 目录在 sys.path[0]，故 `no_stub` 与 `lib` 都按包名取到，
-# 不必自己插路径（插入逻辑会在多个脚本里逐行重复，质量棘轮会判红）。
+# 判定器位于 ci/checks/：同层的 `no_stub` 随 sys.path[0] 取到，共用库 `lib`
+# 在上一级，故显式补一次路径；夹具树保持同一布局。
+_CI = Path(__file__).resolve().parent.parent
+if str(_CI) not in sys.path:
+    sys.path.insert(0, str(_CI))
+
 import no_stub
 from lib import rs_src, scan_src
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parent
+ROOT = HERE.parent.parent
 DEFAULT = ("system/tui",)
 ALLOW = re.compile(r"#!?\[\s*allow\s*\(([^)]*)\)")
 PUB_FN = re.compile(

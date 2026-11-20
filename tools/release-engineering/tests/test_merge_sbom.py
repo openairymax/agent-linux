@@ -346,7 +346,7 @@ def test_reference_release_workflow_uses_this_tool(repo_root):
     """发布流水线必须经门禁调用本工具，且链路上不存在 SKIP 桩。
 
     调用点落在 ci/gates/release-sbom.sh：workflow 只允许 checkout 与
-    ci/ci.sh <gate>，内联 shell 无法在本地重放（ci/check-workflows.py 的
+    ci/ci.sh <gate>，内联 shell 无法在本地重放（ci/checks/check-workflows.py 的
     棘轮）。因此判据是「workflow 引用该门禁」且「门禁引用本工具」，两者
     缺一即断链——只查 workflow 会随门禁下沉而假红，只查门禁则不保证它真
     被发布流水线调用。

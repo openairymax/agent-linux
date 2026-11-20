@@ -11,7 +11,7 @@
 # 「禁桩」写进方案很容易，拦住它却很难：`todo!()` 与 `unimplemented!()` 编译
 # 期完全合法，恒 `Ok(())` 的函数在调用方看来就是成功，三者都不会让构建、测试
 # 或 clippy 变红。本门禁把这三类形态连同产品代码里的 `unreachable!()` 与
-# `unsafe` 一起判负，判据实现在 ci/no_stub.py，本文件只做参数校验与转调。
+# `unsafe` 一起判负，判据实现在 ci/checks/no_stub.py，本文件只做参数校验与转调。
 #
 #   DIR   要扫描的目录（可多个），缺省 system/tui
 #
@@ -30,6 +30,6 @@ set -uo pipefail
 # shellcheck disable=SC2034  # ROOT 由 gate.sh 的 gate_py 读取
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 
-gate_py ci/no_stub.py "$@"
+gate_py ci/checks/no_stub.py "$@"
 say "零桩扫描通过（todo!/unimplemented!/unreachable!/unsafe/恒 Ok(()) 均无命中）"
 exit 0
