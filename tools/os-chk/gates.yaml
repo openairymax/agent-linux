@@ -27,7 +27,7 @@
 #
 # version: 注册表版本，随门禁增删而递增。
 
-version: "1.9.0"
+version: "1.10.0"
 
 gates:
   # ── 文档类 ────────────────────────────────────────────────────────────
@@ -82,6 +82,19 @@ gates:
     authority: 30-interfaces/06-codegen-pipeline.md §7.2（IRON-9）
     executor:
       argv: ["python3", "tools/dsl/dsl_compile.py", "--check"]
+
+  # ── W^X 例外表零漂移（OS-BUILD-WX-TABLE / I-27）───────────────────────
+  # 受检对象为 distro/lockfile/wx-exceptions.toml 与生成文件
+  # kernel/security/airy/airy_wx_table.c：后者必须逐字节等于前者的渲染结果。
+  # 内核只读生成表，运行期不接受例外登记，因此生成文件被手改就等于绕过
+  # 评审放行 W→X；反向漏生成则例外无声失效。任一漂移即阻断。
+  - id: OS-BUILD-WX-TABLE
+    name: W^X 例外表零漂移
+    severity: P0
+    category: build
+    authority: 110-security/10-policy-compiler.md §7；0.0.5 施工图纸 §14.11
+    executor:
+      argv: ["python3", "ci/tools/wx-table-gen.py", "--check"]
 
   # ── Airymax 定制 checkpatch 扩展规则（OS-TEST-066 / OS-KER-120）──────
   - id: OS-TEST-066
