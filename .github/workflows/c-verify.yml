@@ -1,6 +1,6 @@
 # ===========================================================================
 # agent-linux (AirymaxOS) CI Pipeline
-# 用户态 C 组件 CI（2 jobs：cloudnative + services，各自独立）
+# 用户态 C 组件 CI（4 jobs：cloudnative / services / system / tests-linux，各自独立）
 # ===========================================================================
 # Authority: docs/docs-linux/70-build-system/03-ci-cd-pipeline.md
 # Design: 一个构建面一条流水线，模块各占一个作业，互不掩盖失败结论
@@ -12,6 +12,8 @@ on:
     paths:
       - 'cloudnative'
       - 'services'
+      - 'system'
+      - 'tests-linux'
       # [SC] 头文件随 kernel gitlink 升级；用户态 C 组件按 UAPI 编译，
       # 契约头变化必须重编，否则只有装机后才发现不兼容。
       - 'kernel'
@@ -23,6 +25,8 @@ on:
     paths:
       - 'cloudnative'
       - 'services'
+      - 'system'
+      - 'tests-linux'
       - 'kernel'
       - 'ci/gates/c-verify.sh'
       - 'ci/lib/**'
@@ -57,3 +61,27 @@ jobs:
         with: { submodules: recursive }
       - name: Build services
         run: ci/ci.sh c-verify --module services
+
+  # ─── Job 3: system（airymaxmon + CTest） ─────────────────────────────
+  # 此前的 system 只被 Rust 与 Python 门禁覆盖：CMake 目标 airymaxmon 与
+  # 四条 CTest 用例从未被任何作业执行过，-Werror 是否成立无从判定。
+  system:
+    name: system build & ctest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { submodules: recursive }
+      - name: Build system
+        run: ci/ci.sh c-verify --module system
+
+  # ─── Job 4: tests-linux（测试骨架 + CTest） ──────────────────────────
+  tests-linux:
+    name: tests-linux build & ctest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { submodules: recursive }
+      - name: Build tests-linux
+        run: ci/ci.sh c-verify --module tests-linux
