@@ -66,12 +66,16 @@ tools/os-chk/
 | OS-IRON-015 | SSoT 规则 ID 注册一致性 | `tools/repo/validate-ssot.py` |
 | OS-IRON-009-CODEGEN | codegen 生成产物零漂移 | `tools/codegen/run_codegen.py` |
 | OS-IRON-009-DSL | 策略 DSL 决策表零漂移 | `tools/dsl/dsl_compile.py` |
+| OS-BUILD-WX-TABLE | W^X 例外表零漂移 | `ci/tools/wx-table-gen.py` |
 | OS-TEST-066 | Airymax 定制 checkpatch 扩展规则 | `kernel/scripts/airy_checkpatch_ext.pl` |
 | OS-BUILD-MATRIX | defconfig 构建矩阵一致性 | `tools/defconfig-matrix/defconfig_matrix.py` |
 | OS-BUILD-CI-MATRIX | CI 编译矩阵一致性 | `tools/ci-matrix/ci_matrix.py` |
 | OS-BUILD-BTF | BTF / eBPF 基线一致性 | `tools/btf-integration/btf_integration.py` |
 | OS-BUILD-KBUILD-VERSION | Kbuild 版本注入一致性 | `tools/kbuild-version/kbuild_version.py` |
 | OS-BUILD-RELEASE | 发布物料清单一致性 | `tools/release-engineering/release_manifest.py` |
+| OS-BUILD-NIGHTLY | nightly 契约一致性 | `tools/nightly/nightly.py` |
+| OS-BUILD-REPO-SCAFFOLD | 八子仓脚手架一致性 | `tools/repo-scaffold/repo_scaffold.py` |
+| OS-OPS-ROLLBACK | 版本回滚契约一致性 | `tools/airy-rollback/airy_rollback.py` |
 
 ## 使用方法
 
@@ -82,29 +86,23 @@ tools/os-chk/
 python3 tools/os-chk/os_chk.py
 ```
 
-输出示例（§5.3 格式）：
+输出示例（§5.3 格式；门禁行按注册表逐条打印，此处只留数条）：
 
 ```text
 ========================================================================
 AirymaxOS OS-CHK 门禁报告
-注册表版本: 1.6.0
+注册表版本: <gates.yaml 的 version>
 ========================================================================
 
 [2026-11-17 09:00:00] [  OK  ] OS-CHK-DOC-01 Copyright 头部: OK: 所有受检 .md 文件的第 1 行均含版权头
 [2026-11-17 09:00:00] [  OK  ] OS-CHK-DOC-04 [SC] 头文件清单一致性: SC TRI-COMPILE: PASS (4/4 checks)
 [2026-11-17 09:00:01] [  OK  ] OS-IRON-001 syscall ABI 稳定性: ABI CHECK: PASS (12/12 checks)
-[2026-11-17 09:00:01] [  OK  ] OS-IRON-015 SSoT 规则 ID 注册一致性: RESULT: PASS — all rule IDs registered
-[2026-11-17 09:00:01] [  OK  ] OS-IRON-009-CODEGEN codegen 生成产物零漂移: [codegen] all 4 generators verified successfully
-[2026-11-17 09:00:02] [  OK  ] OS-IRON-009-DSL 策略 DSL 决策表零漂移: OK: dsl_compile outputs match committed files (1 files)
-[2026-11-17 09:00:02] [  OK  ] OS-TEST-066 Airymax 定制 checkpatch 扩展规则: airy_checkpatch_ext: 95 files checked, 0 errors, 0 warnings
-[2026-11-17 09:00:02] [  OK  ] OS-BUILD-MATRIX defconfig 构建矩阵一致性: DEFCONFIG-MATRIX: PASS (8/8 checks)
-[2026-11-17 09:00:02] [  OK  ] OS-BUILD-CI-MATRIX CI 编译矩阵一致性: CI-MATRIX: PASS (11/11 checks)
-[2026-11-17 09:00:02] [  OK  ] OS-BUILD-BTF BTF / eBPF 基线一致性: BTF-INTEGRATION: PASS (6/6 checks)
-[2026-11-17 09:00:02] [  OK  ] OS-BUILD-KBUILD-VERSION Kbuild 版本注入一致性: KBUILD-VERSION: PASS (7/7 checks)
-[2026-11-17 09:00:02] [  OK  ] OS-BUILD-RELEASE 发布物料清单一致性: RELEASE-MANIFEST: PASS (2/2 checks)
+[2026-11-17 09:00:01] [  OK  ] OS-IRON-009-DSL 策略 DSL 决策表零漂移: OK: dsl_compile outputs match committed files (1 files)
+[2026-11-17 09:00:01] [  OK  ] OS-BUILD-WX-TABLE W^X 例外表零漂移: 一致 kernel/security/airy/airy_wx_table.c
+…（其余门禁逐行同上）
 
 ------------------------------------------------------------------------
-RESULT: PASS — 全部 12 条门禁通过（1.7s）
+RESULT: PASS — 全部 N 条门禁通过（1.7s）
 ------------------------------------------------------------------------
 ```
 
@@ -112,7 +110,7 @@ RESULT: PASS — 全部 12 条门禁通过（1.7s）
 
 ```bash
 python3 tools/os-chk/os_chk.py --check
-# 输出: OS-CHK: PASS (12/12 gates, 1.7s)
+# 输出: OS-CHK: PASS (N/N gates, 1.7s)
 # 退出码: 0=通过, 1=阻断, 2=用法/环境错误
 ```
 
