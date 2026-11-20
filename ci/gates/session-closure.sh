@@ -63,6 +63,20 @@ want_text() { # want_text <文件> <固定串> <判据名>
     bad "$3: $1 不含「$2」"
 }
 
+# want_stmt FILE LINE NAME —— 文件里存在一条「忽略缩进后逐字相同」的语句。
+#
+# 与 want_line 的分工：赋值语句常写在条件分支内部，缩进是结构的一部分，
+# 不该因此判负；而注释行必须以 # 开头，忽略缩进后仍不等，故不会被误认成
+# 语句。
+want_stmt() { # want_stmt <文件> <逐字语句> <判据名>
+    [ -f "$1" ] || { bad "$3: 缺少 $1"; return 0; }
+    awk -v want="$2" '
+        { s = $0; sub(/^[[:space:]]+/, "", s); if (s == want) hit = 1 }
+        END { exit !hit }
+    ' "$1" && return 0
+    bad "$3: $1 缺语句「$2」"
+}
+
 want_absent() { # want_absent <文件> <扩展正则> <判据名>
     [ -f "$1" ] || { bad "$3: 缺少 $1"; return 0; }
     grep -qE -- "$2" "$1" || return 0
@@ -71,9 +85,12 @@ want_absent() { # want_absent <文件> <扩展正则> <判据名>
 
 # console_count FILE WANT NAME —— bootloader 追加行的 console= 项数。
 #
-# 控制台集合按架构展开后就是定值；项数漂移只有两种来路：把别的架构的
-# 控制台抄进来，或有人追加了第三条。两者都会让「最后注册者路由
-# /dev/console」不可读，因此在静态闭包阶段就按计数断言。
+# 期望值是 0：控制台是顺序敏感项，唯一事实源是 boot/grub_args.sh 的
+# consoles 常量（D-30）。--append 里出现 console= 只有两种来路，且都只
+# 改变「数量与位置」：一是把安装器生成的这一份当成持久来源（anaconda 不写
+# /etc/default/grub，下一次 grub2-mkconfig 即丢），二是把别的架构的控制台
+# 抄进来（注册幽灵项，systemd-vconsole-setup 随之失败）。两种来路都表现
+# 为计数非零，故计数就是判据；集合本身的项数与顺序在 consoles 常量上另判。
 console_count() { # console_count <文件> <期望项数> <判据名>
     local line n
     line=$(sed -n 's/^bootloader .*--append="\([^"]*\)".*/\1/p' "$1" | head -n 1)
@@ -128,6 +145,7 @@ check_source()
     local mode="${d}/distro/desktop/display_mode.sh"
     local frag="${d}/distro/desktop/01_airymax_display"
     local brand="${d}/distro/boot/efi_brand.sh"
+    local grubargs="${d}/distro/boot/grub_args.sh"
     local saver="${d}/distro/login/00-airymax-screensaver"
 
     say "静态闭包 ${d}"
@@ -148,19 +166,33 @@ check_source()
     want_text "${spec}" 'set gfxpayload=keep' "spec-check/gfxpayload"
     want_text "${spec}" "${GFXMODE}" "spec-check/gfxmode"
 
-    # 控制台集合按架构收敛（D-05）：本产品配方只产 x86_64，命令行就是
-    # tty0 + ttyS0。0.0.3 把 ARM64 的 ttyAMA0 抄进来，无该设备的机器上
-    # console= 会注册成幽灵项，systemd-vconsole-setup 随之失败；三项
-    # console= 也让「最后一项路由 /dev/console」的语义不可读。
+    # 控制台集合的归属（D-30）：--append 只作用于安装器本次生成的 grub.cfg，
+    # 而 anaconda 不把它写进 /etc/default/grub，此后任何一次 grub2-mkconfig
+    # 都会丢参数，因此持久来源是 grub_args.sh 的 consoles 常量，%post 按
+    # uname -m 落进 /etc/default/grub 并重建 grub.cfg。判据随之分两处：
+    #   * --append 不得夹带 console=（顺序敏感项从 append 追加会排到 tty0
+    #     之后并抢走 /dev/console）；
+    #   * consoles 默认集恰两项、串口在前，ARM 只在那一个按运行架构分派的
+    #     分支里换成 ttyAMA0。
     #
-    # 判据落在 console= 赋值上，不落在设备名本身：包内 changelog 与注释
-    # 需要能如实写明「此处故意不写 ttyAMA0」，禁设备名会把解释也判死，
-    # 逼人删掉唯一说明为什么这么做的证据。
+    # 判据落在 console= 赋值与 consoles 常量上，不落在设备名本身：包内
+    # changelog 与注释需要能如实写明「此处故意不写 ttyAMA0」，禁设备名会把
+    # 解释也判死，逼人删掉唯一说明为什么这么做的证据。
     want_absent "${ks}" 'console=ttyAMA0' "kickstart/console-arch"
     want_absent "${min}" 'console=ttyAMA0' "kickstart-min/console-arch"
     want_absent "${spec}" 'console=ttyAMA0' "spec-check/console-arch"
-    console_count "${ks}" 2 "kickstart/console-count"
-    console_count "${min}" 2 "kickstart-min/console-count"
+    console_count "${ks}" 0 "kickstart/console-count"
+    console_count "${min}" 0 "kickstart-min/console-count"
+    want_stmt "${grubargs}" "consoles='ttyS0,115200 tty0'" \
+        "grub-args/consoles-default"
+    want_stmt "${grubargs}" "consoles='ttyAMA0,115200 tty0'" \
+        "grub-args/consoles-arm"
+    want_text "${grubargs}" '[ "$(uname -m)" = aarch64 ]' \
+        "grub-args/consoles-dispatch"
+    want_text "${ks}" '/usr/lib/airymaxos/boot/grub_args.sh' \
+        "kickstart/grub-args"
+    want_text "${min}" '/usr/lib/airymaxos/boot/grub_args.sh' \
+        "kickstart-min/grub-args"
 
     # 活动配置副本（D-07）：NVRAM 走 EFI/airymaxos，mkconfig 只写
     # EFI/openEuler，不同步品牌副本则改了完全不生效。判据落在「谁把
