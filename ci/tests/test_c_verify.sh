@@ -73,6 +73,29 @@ printf 'int main(void) { return nope; }\n' >"${FX}/cloudnative/bad.c"
 out="$(run --module cloudnative)"; rc=$?
 check "编译失败判负" 1 "${rc}" "${out}" "cloudnative 构建失败"
 
+# tests-linux 必须先把 UAPI 头导出到源码树外，再把导出根经 -DAIRY_HDR_ROOT
+# 交给 CMake。用最小内核桩与只做断言的 CMakeLists 锁住这条接线：门禁若退
+# 回直接指向源码树的 kernel/include/uapi，配置阶段就会失败。
+mkdir -p "${FX}/kernel" "${FX}/tests-linux"
+cat >"${FX}/kernel/Makefile" <<'EOF'
+headers_install:
+	@mkdir -p $(INSTALL_HDR_PATH)/include/linux/airymax
+	@touch $(INSTALL_HDR_PATH)/include/linux/airymax/ipc.h
+EOF
+cat >"${FX}/tests-linux/CMakeLists.txt" <<'EOF'
+cmake_minimum_required(VERSION 3.20)
+project(hdrcheck NONE)
+if(NOT DEFINED AIRY_HDR_ROOT)
+	message(FATAL_ERROR "AIRY_HDR_ROOT 未传递")
+endif()
+if(NOT EXISTS "${AIRY_HDR_ROOT}/linux/airymax/ipc.h")
+	message(FATAL_ERROR "导出树里没有契约头")
+endif()
+EOF
+
+out="$(run --module tests-linux)"; rc=$?
+check "tests-linux 用导出头" 0 "${rc}" "${out}" "tests-linux 用例通过"
+
 # 构建目录必须可由 AIRY_C_BUILD_ROOT 指到源码树外；门禁不得在 ${FX} 内留下
 # CMakeCache.txt 等产物。
 if [ -e "${FX}/CMakeCache.txt" ] || [ -d "${FX}/cloudnative/CMakeFiles" ]; then
