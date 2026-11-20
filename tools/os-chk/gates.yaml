@@ -27,7 +27,7 @@
 #
 # version: 注册表版本，随门禁增删而递增。
 
-version: "1.10.0"
+version: "1.11.0"
 
 gates:
   # ── 文档类 ────────────────────────────────────────────────────────────
@@ -95,6 +95,19 @@ gates:
     authority: 110-security/10-policy-compiler.md §7；0.0.5 施工图纸 §14.11
     executor:
       argv: ["python3", "ci/tools/wx-table-gen.py", "--check"]
+
+  # ── [SC] UAPI 头文件字节级冻结（OS-BUILD-UAPI-SNAPSHOT / K-03）────────
+  # 受检对象为 kernel/include/uapi/linux/airymax/ 下全部 .h：集合与 sha256
+  # 都必须等于 tools/abi-check/contract/uapi_headers.sha256。新增、删除、
+  # 改名与任一字节改动都阻断——结构兼容由 tools/abi-check 与
+  # tools/sc-tri-compile 断言，本门禁守的是用户态发布物料的字节面。
+  - id: OS-BUILD-UAPI-SNAPSHOT
+    name: "[SC] UAPI 头文件字节级冻结"
+    severity: P0
+    category: build
+    authority: 30-interfaces/README.md §ABI 稳定；0.0.5 施工图纸 §6.5 K-03
+    executor:
+      argv: ["python3", "ci/gates/abi-snapshot.py", "--check"]
 
   # ── Airymax 定制 checkpatch 扩展规则（OS-TEST-066 / OS-KER-120）──────
   - id: OS-TEST-066
