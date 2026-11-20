@@ -59,7 +59,7 @@ out="$(run)"; rc=$?
 check "缺 --module" 5 "${rc}" "${out}" "--module 必填"
 
 out="$(run --module nope)"; rc=$?
-check "非法模块" 5 "${rc}" "${out}" "只接受 cloudnative|services"
+check "非法模块" 5 "${rc}" "${out}" "只接受 cloudnative|services|system|tests-linux"
 
 # 编译错误：配置能过、编译必失败，断言门禁不把它当成「配置失败」蒙混过去，
 # 也不进入冒烟段。
