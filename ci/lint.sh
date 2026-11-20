@@ -6,7 +6,7 @@
 #
 # 用法: ci/lint.sh [--no-distro]
 #
-# 检查十七件事：
+# 检查十九件事：
 #   1. workflow 薄化与命名约束（ci/checks/check-workflows.py）；
 #   2. ci/ 与 tools/ 下每个 shell 脚本可被 bash -n 解析；
 #   3. 函数名不超过 15 字节（ci/checks/name_lint.py，N001，覆盖 shell 与 python）；
@@ -24,7 +24,14 @@
 #  14. 零桩扫描（ci/gates/no-stub.sh，QG-02）；
 #  15. 死代码扫描（ci/gates/dead-code.sh，QG-03）；
 #  16. 文件头许可证与版权行（ci/checks/header_lint.py，H001/H002）；
-#  17. docs-linux 文档树的悬空相对链接（ci/gates/docs-links.sh，DOC-02）。
+#  17. docs-linux 文档树的悬空相对链接（ci/gates/docs-links.sh，DOC-02）；
+#  18. 提交范围与施工图纸产出物的对账（ci/gates/wp-scope.sh，§2.1／§4.1）；
+#  19. 双通路依赖隔离（ci/gates/tui-dock-isolation.sh，§2.2 铁律①）。
+#
+# 第 18 项只在开发机上可判：册子在 docs-closed，单仓检出看不到。门禁因此
+# 会退 3（不适用），下面的分支把 3 与「通过」分开——跳过必须说出来。
+# 第 19 项正向永远可判，反向要看对侧 agentrt 树在不在，缺席时门禁自身打印
+# 「反向未判」。两项的判据本体都由 ci/tests 的回归夹具覆盖。
 #
 # 第 14、15 项把「禁桩」从文字变成判据：todo!/unimplemented!、产品代码里的
 # unreachable!、恒 Ok(()) 与 unsafe 逐条判负，allow(dead_code) 必须写理由，
@@ -248,6 +255,32 @@ if bash "${ROOT}/ci/ci.sh" doc-contract; then
     say "通过"
 else
     err "文档契约一致性未通过（ci/ci.sh doc-contract）"
+    rc=1
+fi
+endgroup
+
+group "WP 范围对账"
+# 提交信息里的 WP 号决定改动该落在哪些产出物内。册子在 docs-closed，单仓
+# 检出看不到，门禁退 3；3 与 0 分开写，跳过不会被读成通过。
+bash "${ROOT}/ci/ci.sh" wp-scope
+wrc=$?
+case "${wrc}" in
+0) say "通过" ;;
+3) say "不适用（未检出施工图纸或无提交）" ;;
+*)
+    err "WP 范围对账未通过（ci/ci.sh wp-scope）"
+    rc=1
+    ;;
+esac
+endgroup
+
+group "双通路依赖隔离"
+# 引导期 TUI 不链 agentrt、dock 走 gateway，这条边界只有依赖图能守。
+# 对侧树缺席时门禁只判本侧并打印「反向未判」，不因此变红也不假装全判。
+if bash "${ROOT}/ci/ci.sh" tui-dock-isolation; then
+    say "通过"
+else
+    err "双通路依赖隔离未通过（ci/ci.sh tui-dock-isolation）"
     rc=1
 fi
 endgroup
