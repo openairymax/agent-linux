@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import re
 import sys
 from pathlib import Path
 
@@ -37,7 +38,7 @@ EXIT_INPUT = 5
 
 UAPI_DIR = "kernel/include/uapi/linux/airymax"
 SNAP_FILE = "tools/abi-check/contract/uapi_headers.sha256"
-HEX = set("0123456789abcdef")
+ROW = re.compile(r"([0-9a-f]{64})  ([^ ]+)")
 
 BANNER = """\
 # AirymaxOS [SC] UAPI 头文件字节级快照（K-03）
@@ -76,12 +77,10 @@ def scan(root: Path) -> dict[str, str]:
 
 def _split(line: str, no: int) -> tuple[str, str]:
     """把一条登记行拆成 (digest, path)，格式不对即判输入错误。"""
-    parts = line.split("  ")
-    digest = parts[0] if parts else ""
-    path = parts[1] if len(parts) == 2 else ""
-    if len(parts) != 2 or len(digest) != 64 or set(digest) - HEX or not path:
+    hit = ROW.fullmatch(line)
+    if hit is None:
         raise BadInput(f"快照第 {no} 行格式错误")
-    return digest, path
+    return hit.group(1), hit.group(2)
 
 
 def load(snap: Path) -> dict[str, str]:
