@@ -250,8 +250,35 @@ gate 按绝对路径调用，`tools/airy` 的引入不改变任何既有调用�
 
 目录保持一层（`repo/`、`tap/` 是已有的分组例外）：分组若靠目录层级表达，
 `import` 路径、gate 里的绝对路径、工作流里的脚本路径要同时改，一次搬迁
-牵动四条链路，而收益只是少看几行 `ls`。归类改由命令表与工具表的顺序
-承担——这两种视图可以在不移动任何文件的前提下重排。
+牵动四条链路，而收益只是少看几行 `ls`。归类由下表、工具表与命令表承担——
+这三种视图可以在不移动任何文件的前提下重排。
+
+## 目录形态
+
+目录只表达「一组文件怎么协作」，不表达产品或版本归属。形态只有五种，
+新增工具先在这张表里找到位置，找不到就说明它还不该独立成目录：
+
+| 形态 | 判定条件 | 成员 | 命名 |
+|------|----------|------|------|
+| 共享层 | 被其他工具 `import`，自身不是命令 | `lib/` | 固定名 |
+| 分组 | 三条以上单一职责 CLI 共享同一主题，各自有 README 与独立触发面 | `repo/`、`tap/`、`release-engineering/` | 主题名 |
+| 单工具 | 一个入口脚本 + 私有模块 + `tests/` + `README.md` | `os-chk/`、`codegen/`、`dsl/`、`abi-check/`、`sc-tri-compile/`、`airy-checkpatch/`、`defconfig-matrix/`、`ci-matrix/`、`btf-integration/`、`kbuild-version/`、`nightly/`、`repo-scaffold/`、`airy-rollback/`、`airy-flash/`、`airy-qemu/` | 主题的 kebab-case |
+| 套件 | 多个协作模块，无单一 CLI 入口 | `osaccrt/` | 主题名 |
+| 根级文件 | 命令面与引导，仅此四项 | `airy`、`commands.tsv`、`venv-bootstrap.sh`、`README.md` | 固定名 |
+
+四条约束：
+
+1. 新工具默认单工具形态。新增平级分组要同时满足分组行三个条件；只满足
+   「文件多」不是理由——文件多恰恰说明它还是同一个工具。
+2. 目录不嵌工具目录。`tests/`、`templates/`、`examples/`、`contract/` 是
+   允许的固定子目录，只用来分职责，不用来分类工具。
+3. 根级只留上表四项。带日期的脚本、一次性迁移脚本入临时目录，不入库。
+4. 目录名是主题的 kebab-case，不随入口脚本改名：`airy-qemu/` 的入口是
+   `farm_cli.py`，改入口不改目录；`os-chk/` 与 `os_chk.py` 同名只是巧合，
+   不是命名规则。
+
+`os-chk/tests/test_tools_index.py` 把这张表与磁盘双向钉死：每个工具目录必须
+在表内出现、目录名必须是 kebab-case、根级文件不得超出四项。
 
 ## Usage
 
