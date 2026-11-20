@@ -62,7 +62,7 @@ SURF_PAT=(
     '^[[:space:]]*(Requires|BuildRequires|Obsoletes):.*(openEuler|openeuler)'
     '^[[:space:]]*(Requires|BuildRequires|Obsoletes):.*(openEuler|openeuler)'
     '^ARG BASE_IMAGE='
-    '^[[:space:]]*(OE_ISO_NAME|OE_IMG_NAME|runs-on):|Fetch fixed openEuler media|key: dnf-'
+    '^[[:space:]]*(iso_name|iso_sha256|img_name|img_sha256|runner|runs-on):|Fetch fixed openEuler media|key: dnf-'
 )
 
 RD_ID=()
