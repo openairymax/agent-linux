@@ -68,9 +68,29 @@ esac
 rm -rf "${BUILD}"
 mkdir -p "${BUILD}"
 
+# tests-linux 是用户态测试，按 <linux/airymax/...> 引用 [SC] 契约头；契约头
+# 经 uapi_compat.h 拉入 <linux/types.h> 与 <linux/stddef.h>。把源码树的
+# kernel/include/uapi 直接当 include 根只能拿到原样内核头：types.h 因缺少
+# __EXPORTED_HEADERS__ 报「Attempt to use kernel headers from user space」，
+# stddef.h 再去找只存在于内核内部的 linux/compiler_types.h。内核为此提供
+# 的出口就是 headers_install，它把 uapi 头导出成用户态可用形态。这里先导出
+# 再构建；O= 让内核侧生成物（scripts/、generated/version.h）也落在源码树外。
+HDR_ARGS=()
+if [ "${MODULE}" = tests-linux ]; then
+    need_cmd make
+    group "tests-linux: 导出 UAPI 头"
+    if ! make -C "${ROOT}/kernel" O="${BUILD}/kobj" \
+            headers_install INSTALL_HDR_PATH="${BUILD}/hdr" >/dev/null; then
+        endgroup
+        die "UAPI 头导出失败（内核 O=${BUILD}/kobj）"
+    fi
+    endgroup
+    HDR_ARGS=(-DAIRY_HDR_ROOT="${BUILD}/hdr/include")
+fi
+
 group "${MODULE}: 出树构建"
 if ! cmake -S "${ROOT}/${MODULE}" -B "${BUILD}" \
-        -DCMAKE_BUILD_TYPE=Release >/dev/null; then
+        -DCMAKE_BUILD_TYPE=Release ${HDR_ARGS[@]+"${HDR_ARGS[@]}"} >/dev/null; then
     endgroup
     die "${MODULE} 配置失败（构建目录 ${BUILD}）"
 fi
