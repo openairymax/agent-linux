@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 # SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 # ===========================================================================
-# ci/header_lint.py — 文件头许可证与版权判据（H001/H002）
+# ci/checks/header_lint.py — 文件头许可证与版权判据（H001/H002）
 #
 # 编码规范要求每个源文件头部带 SPDX 许可证标识与版权行，此前没有任何执行
 # 者：720 个自有源文件全部只有许可证行、没有版权行，tools/repo 下还有一个
@@ -20,7 +20,7 @@
 # 等子模块是上游源码，版权不属于本项目，不扫；vendor/ 与 target/ 由
 # scan_src 的 DEEP 口径排除。
 #
-# 用法: python3 ci/header_lint.py [根...]（缺省 ci tools distro sdk system）
+# 用法: python3 ci/checks/header_lint.py [根...]（缺省 ci tools distro sdk system）
 # 退出码: 0 通过；1 有缺失或文件读不出来。
 #
 # Author: Liren Wang <wangliren@spharx.cn>
@@ -33,9 +33,15 @@ import re
 import sys
 from pathlib import Path
 
+# 判定器位于 ci/checks/，把上级 ci/ 加入 sys.path：共用库 `lib` 与同层
+# 的 `no_stub` 都按包名导入，夹具树也保持同一布局。
+_CI = Path(__file__).resolve().parent.parent
+if str(_CI) not in sys.path:
+    sys.path.insert(0, str(_CI))
+
 from lib import lint_drive, scan_src
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent.parent
 HEAD = 10
 DEFAULT = ("ci", "tools", "distro", "sdk", "system")
 COMMENT = ("#", "//", "/*", "*")

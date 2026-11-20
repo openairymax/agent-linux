@@ -6,7 +6,7 @@
 #
 # 本文件只做三件事：checkout、调用门禁、上传产物。任何超过一行 shell 的
 # 判断都必须落进 ci/gates/ —— 内联逻辑只能在云端 job 里验证，是这条流水线
-# 此前「一堆脚本拼凑」的根因。约束由 ci/check-workflows.py 强制（棘轮）。
+# 此前「一堆脚本拼凑」的根因。约束由 ci/checks/check-workflows.py 强制（棘轮）。
 #
 # 两条 job 的分工：
 #   kernel-build   28 格矩阵（4 config × 4 arch × 2 compiler − 4）。每格

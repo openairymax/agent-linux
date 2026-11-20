@@ -23,10 +23,10 @@ trap 'rm -rf "${tmp}"' EXIT
 fails=0
 
 FX="${tmp}/fx"
-mkdir -p "${FX}/ci/gates" "${FX}/ci/lib"
+mkdir -p "${FX}/ci/gates" "${FX}/ci/lib" "${FX}/ci/checks"
 cp "${GATE}" "${FX}/ci/gates/docs-links.sh"
 cp "${ROOT}/ci/lib/log.sh" "${FX}/ci/lib/log.sh"
-cp "${ROOT}/ci/doc_links.py" "${FX}/ci/doc_links.py"
+cp "${ROOT}/ci/checks/doc_links.py" "${FX}/ci/checks/doc_links.py"
 
 ok()
 {
@@ -144,10 +144,10 @@ check "未知参数退 5" 5 "$?" "${out}" "未知参数"
 out="$(run --exclude)"
 check "缺 --exclude 参数退 5" 5 "$?" "${out}" "需要名字"
 
-mv "${FX}/ci/doc_links.py" "${tmp}/doc_links.py"
+mv "${FX}/ci/checks/doc_links.py" "${tmp}/doc_links.py"
 out="$(run --source "${tmp}/tree")"
 check "缺少检查器退 5" 5 "$?" "${out}" "缺少检查器"
-mv "${tmp}/doc_links.py" "${FX}/ci/doc_links.py"
+mv "${tmp}/doc_links.py" "${FX}/ci/checks/doc_links.py"
 
 out="$(run)"
 check "无文档树时跳过不假绿" 0 "$?" "${out}" "本门禁不适用"

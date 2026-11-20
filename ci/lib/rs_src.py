@@ -12,7 +12,7 @@
 # 度量。这条不是权宜：括号配平要正确处理 raw string 与嵌套注释，行级扫描
 # 做不到；与其在词法上猜，不如把结构约束写进编码规范并在此断言。
 #
-# 调用方：ci/name_lint.py 与 ci/quality_metrics.py（同目录，均为独立脚本，
+# 调用方：ci/checks/name_lint.py 与 ci/checks/quality_metrics.py（同目录，均为独立脚本，
 # 故由调用方把 ci/lib 加进 sys.path）。
 # ===========================================================================
 """Rust source helpers shared by the lint and metrics gates."""

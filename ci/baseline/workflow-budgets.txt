@@ -17,7 +17,7 @@
 #   * 第二列  允许的内联 run 块数上限（只许减，不许加）
 #   * 第三列  允许的 job 数上限
 #
-# 校验：ci/ci.sh 之外由 ci/check-workflows.py 执行，run-lint 里跑一遍。
+# 校验：ci/ci.sh 之外由 ci/checks/check-workflows.py 执行，run-lint 里跑一遍。
 # 迁移某个 workflow 时把它的内联预算改成 0；内联预算为 0 的文件还会额外
 # 检查禁用模式（docker load、sha256sum -c、rm -rf /usr/share/dotnet、
 # apt-get install qemu、AIRYMAX-TAP| 解析），防止把逻辑再抄回 YAML。

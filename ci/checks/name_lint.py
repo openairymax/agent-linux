@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 # SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 # ===========================================================================
-# ci/name_lint.py — 函数名长度门禁（N001，覆盖 shell、python 与 rust）
+# ci/checks/name_lint.py — 函数名长度门禁（N001，覆盖 shell、python 与 rust）
 #
 # 0.0.4 收尾时全仓有 139 个函数名超过 15 字节，改完之后没有任何机制拦住
 # 回潮：下一个 helper 只要叫 airy_assets_wanted，规范就被重新拉开一档，而
@@ -34,7 +34,7 @@
 # distro/ 由本门禁一并覆盖，其 run-lint.sh 不再放第二份实现：同一判据写两
 # 遍，改阈值时必然漏改一处。
 #
-# 用法: python3 ci/name_lint.py [根...]（缺省 ci tools distro system）
+# 用法: python3 ci/checks/name_lint.py [根...]（缺省 ci tools distro system）
 # 退出码: 0 通过；1 有超长名或文件读不出来（解析失败按缺陷计，不静默跳过）。
 #
 # Author: Liren Wang <wangliren@spharx.cn>
@@ -50,9 +50,15 @@ from pathlib import Path
 
 # 定义行与测试模块边界的判据与 quality_metrics.py 共用一份（ci/lib/rs_src.py）：
 # 两份实现必然在某个边界上分叉，而两道门禁都绿时没人会发现。
+# 判定器位于 ci/checks/，把上级 ci/ 加入 sys.path：共用库 `lib` 与同层
+# 的 `no_stub` 都按包名导入，夹具树也保持同一布局。
+_CI = Path(__file__).resolve().parent.parent
+if str(_CI) not in sys.path:
+    sys.path.insert(0, str(_CI))
+
 from lib import lint_drive, rs_src, scan_src
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent.parent
 LIMIT = 15
 DEFAULT = ("ci", "tools", "distro", "system")
 

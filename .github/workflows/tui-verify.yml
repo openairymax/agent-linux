@@ -7,7 +7,7 @@
 # 检出、子模块取用与门禁调用，任何编译参数都不在这里出现。
 #
 # 文件名词族：阻断型门禁一律取 `*-verify` 并由 pull_request 触发
-# （ci/check-workflows.py 规则 14），故本文件是 tui-verify 而非 tui。
+# （ci/checks/check-workflows.py 规则 14），故本文件是 tui-verify 而非 tui。
 #
 # 顺序即成本：policy 只读工作树、最先失败；build 与 cross 共享同一份
 # 已对账的依赖源。跨架构只做类型检查，真机行为由装机验收承担。
@@ -29,7 +29,7 @@ on:
       - 'ci/gates/submodules.sh'
       - 'ci/gates/width-unify.sh'
       - 'ci/gates/contract-conform.sh'
-      - 'ci/contract_conform.py'
+      - 'ci/checks/contract_conform.py'
       - 'ci/container/build-packages.txt'
       - 'system'
       - 'distro'
@@ -49,7 +49,7 @@ on:
       - 'ci/gates/submodules.sh'
       - 'ci/gates/width-unify.sh'
       - 'ci/gates/contract-conform.sh'
-      - 'ci/contract_conform.py'
+      - 'ci/checks/contract_conform.py'
       - 'ci/container/build-packages.txt'
       - 'system'
       - 'distro'

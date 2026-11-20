@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 # SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 # ===========================================================================
-# ci/no_stub.py — 零桩扫描（QG-02 与 §3.4 判负口径的判定实现）
+# ci/checks/no_stub.py — 零桩扫描（QG-02 与 §3.4 判负口径的判定实现）
 #
 # 「禁桩」是本版的铁律，但此前只有文字：`todo!()` 与 `unimplemented!()` 编译
 # 期合法，运行时才 panic；恒 `Ok(())` 的函数更像实现——调用方拿到成功、用户
@@ -32,7 +32,7 @@
 # 遍历口径见 ci/lib/scan_src.py：本脚本必须看进 tests/，故用 DEEP 跳过集；
 # vendor/ 与 target/ 一律不扫——前者是第三方快照，后者是构建产物。
 #
-# 用法: python3 ci/no_stub.py [根...]（缺省 system/tui）
+# 用法: python3 ci/checks/no_stub.py [根...]（缺省 system/tui）
 # 退出码: 0 通过；1 有命中或根不存在；门禁脚本对参数错误另退 5。
 #
 # Author: Liren Wang <wangliren@spharx.cn>
@@ -45,9 +45,15 @@ import re
 import sys
 from pathlib import Path
 
+# 判定器位于 ci/checks/，把上级 ci/ 加入 sys.path：共用库 `lib` 与同层
+# 的 `no_stub` 都按包名导入，夹具树也保持同一布局。
+_CI = Path(__file__).resolve().parent.parent
+if str(_CI) not in sys.path:
+    sys.path.insert(0, str(_CI))
+
 from lib import rs_src, scan_src
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT = ("system/tui",)
 TODO = re.compile(r"\btodo!")
 UNIMPL = re.compile(r"\bunimplemented!")

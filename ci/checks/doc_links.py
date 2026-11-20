@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 # SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 # ===========================================================================
-# ci/doc_links.py — 文档树悬空链接检查（供 ci/gates/docs-links.sh 调用）
+# ci/checks/doc_links.py — 文档树悬空链接检查（供 ci/gates/docs-links.sh 调用）
 #
 # 只判相对链接能否落到真实文件：绝对 URL（http/https/mailto/file）与页内锚点
 # 不在此列——前者要联网才能判活，后者由渲染器自己处理，混进来只会让门禁

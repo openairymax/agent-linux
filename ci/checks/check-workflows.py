@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 # SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
-"""ci/check-workflows.py —— 守住 workflow 薄化与命名约束
+"""ci/checks/check-workflows.py —— 守住 workflow 薄化与命名约束
 
 十九条规则：
 
 1. 结构上限：每个 workflow 的 job 数 ≤ 预算，内联 ``run: |`` 块数 ≤ 预算
-   （预算见 ci/workflow-budgets.txt，只许下调）。
+   （预算见 ci/baseline/workflow-budgets.txt，只许下调）。
 2. 棘轮：内联块数不得高于 git HEAD 中的同名文件——调低预算才算迁移，
    把逻辑抄回 YAML 会让这条规则变红。
 3. 已迁移文件（内联预算为 0）不得出现被 gate 收编的模式：宿主清理、
@@ -94,9 +94,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent.parent
 WORKFLOWS = ROOT / ".github" / "workflows"
-BUDGETS = ROOT / "ci" / "workflow-budgets.txt"
+BUDGETS = ROOT / "ci" / "baseline" / "workflow-budgets.txt"
 
 # 所有 workflow 都适用的禁令：(正则, 应改用的入口)
 ALWAYS_FORBIDDEN = [
@@ -285,7 +285,7 @@ def load_budgets() -> dict[str, tuple[int, int]]:
             continue
         parts = line.split()
         if len(parts) != 3:
-            raise SystemExit(f"ci/workflow-budgets.txt 格式错误: {raw!r}")
+            raise SystemExit(f"ci/baseline/workflow-budgets.txt 格式错误: {raw!r}")
         name, inline, jobs = parts
         out[name] = (int(inline), int(jobs))
     return out
@@ -661,7 +661,7 @@ def _doc_errors(name: str, declared: list[int], seen: list[int]) -> list[str]:
 def check_registry(budgets: dict[str, tuple[int, int]],
                    files: list[str]) -> list[str]:
     """预算表与文件集合互为对照：少登记会静默放宽，多登记会掩盖改名。"""
-    errors = [f"{name}: 未登记预算（请写入 ci/workflow-budgets.txt）"
+    errors = [f"{name}: 未登记预算（请写入 ci/baseline/workflow-budgets.txt）"
               for name in files if name not in budgets]
     errors += [f"{name}: 预算已登记但文件不存在"
                for name in budgets if name not in files]
