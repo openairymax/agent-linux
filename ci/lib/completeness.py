@@ -215,6 +215,17 @@ def audit(doc, src, docs, release):
     return got
 
 
+def emit(got, as_json):
+    """按开关输出统计：--json 给流水线，其余给人读。"""
+    if as_json:
+        print(json.dumps({"rows": got["合计"], "impl": got["已实现"],
+                          "open": got["0.0.5"], "out": got["移出"]},
+                         ensure_ascii=False, sort_keys=True))
+        return
+    print("rows=%d impl=%d open=%d out=%d"
+          % (got["合计"], got["已实现"], got["0.0.5"], got["移出"]))
+
+
 def main(argv):
     """命令行：三个位置参数（册、源码树、设计树）加两个开关。"""
     args = argv[1:]
@@ -227,13 +238,7 @@ def main(argv):
         print(USAGE, file=sys.stderr)
         return 2
     got = audit(pos[0], pos[1], pos[2], "--release" in flags)
-    if "--json" in flags:
-        print(json.dumps({"rows": got["合计"], "impl": got["已实现"],
-                          "open": got["0.0.5"], "out": got["移出"]},
-                         ensure_ascii=False, sort_keys=True))
-    else:
-        print("rows=%d impl=%d open=%d out=%d"
-              % (got["合计"], got["已实现"], got["0.0.5"], got["移出"]))
+    emit(got, "--json" in flags)
     return 0
 
 

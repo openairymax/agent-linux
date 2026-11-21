@@ -98,11 +98,15 @@ chk_tool()
     if grep -nE 'TODO|FIXME|XXX' "${TOOL}"; then
         bad "回归器存在桩标记"
     fi
-    for tag in AIRY-WX-PASS AIRY-WX-FAIL AIRY-WX-WAIVED; do
-        grep -q "${tag}" "${TOOL}" || bad "回归器缺少 ${tag}"
+    # 判据表：模式与报错一一对应，新增结论标记只改这张表。
+    for pair in \
+        'AIRY-WX-PASS|回归器缺少 AIRY-WX-PASS' \
+        'AIRY-WX-FAIL|回归器缺少 AIRY-WX-FAIL' \
+        'AIRY-WX-WAIVED|回归器缺少 AIRY-WX-WAIVED' \
+        'p_type == PT_GNU_STACK|回归器缺少 PT_GNU_STACK 解析' \
+        '--expect-allow|回归器缺少已登记放行判据'; do
+        grep -q -- "${pair%%|*}" "${TOOL}" || bad "${pair#*|}"
     done
-    grep -q 'p_type == PT_GNU_STACK' "${TOOL}" || bad "回归器缺少 PT_GNU_STACK 解析"
-    grep -q -- '--expect-allow' "${TOOL}" || bad "回归器缺少已登记放行判据"
 }
 
 # 绕过禁令：交付链里只允许存在「撞墙清单」，不允许清位或重编来绕过。

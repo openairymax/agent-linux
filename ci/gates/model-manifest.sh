@@ -90,6 +90,19 @@ check_tmpfile()
     say "运行根属主与权限有唯一声明"
 }
 
+# 清单里必须出现的词：组清单与账户块共用同一处判定，增删账户只改词表。
+want_words()
+{
+    local text="$1" what="$2" word
+    shift 2
+    for word in "$@"; do
+        case " ${text} " in
+        *" ${word} "*) ;;
+        *) die "${what}缺少 ${word}" ;;
+        esac
+    done
+}
+
 # 组清单在配方里是一行循环声明，不是逐条 groupadd 字面量。门禁钉字面量
 # 时，配方把逐条建组收成循环就会误报「未交付」——判据应是清单覆盖到单元
 # 依赖的账户，而不是某一行的写法。组取 for 循环的列表，账户取 useradd 的
@@ -97,28 +110,14 @@ check_tmpfile()
 check_accounts()
 {
     local decl add
-    decl="$(awk '/^for grp in /{f=1} f{print; if ($0 ~ /; do$/) exit}' \
+    decl="$(awk '/^for grp in /{f=1} f{print} f&&/; do$/{exit}' \
+        "${SPEC}" | tr '\n' ' ')"
+    add="$(awk '/^[[:space:]]*useradd /{f=1} f{print} f&&!/\\$/{exit}' \
         "${SPEC}" | tr '\n' ' ')"
     [ -n "${decl}" ] || die "配方 %pre 未声明服务组清单"
-    case "${decl}" in
-    *" airy "*) ;;
-    *) die "服务组清单缺少 airy" ;;
-    esac
-    case "${decl}" in
-    *" airy-cogn "*) ;;
-    *) die "服务组清单缺少 airy-cogn" ;;
-    esac
-    add="$(awk '/^[[:space:]]*useradd /{f=1} f{print; if ($0 !~ /\\$/) exit}' \
-        "${SPEC}" | tr '\n' ' ')"
     [ -n "${add}" ] || die "配方 %pre 未建 airy 服务账户"
-    case "${add}" in
-    *"-g airy "*) ;;
-    *) die "airy 账户的主组不是 airy" ;;
-    esac
-    case "${add}" in
-    *"-G airy-cogn"*) ;;
-    *) die "airy 账户缺少附属组 airy-cogn" ;;
-    esac
+    want_words "${decl}" "服务组清单" airy airy-cogn
+    want_words "${add}" "airy 账户" "-g airy" "-G airy-cogn"
 }
 
 check_package()

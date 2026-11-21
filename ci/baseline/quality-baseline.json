@@ -2,8 +2,8 @@
   "version": 1,
   "window": 6,
   "limit_cc": 10,
-  "cc_sum": 16949,
-  "cc_funcs": 5734,
+  "cc_sum": 17459,
+  "cc_funcs": 5907,
   "over": [],
   "dup": [
     "015549a943350caf816828f79bd2e047e6aa8987",
@@ -79,7 +79,6 @@
     "b0a9a14762813712deb71aa37de443e2d9018193",
     "b2736a5bf958ce75c8b4620647ffaeba762c56ba",
     "b756f6a70cd19f20068a10001b176c8a7ec7372f",
-    "b862032563e5559271292e9781e89aedabd95df1",
     "b9bc55f3a836529bd016b9e9f78016aaff39463b",
     "ba6811ba628635d73c8e7d771dba93f8e0bf54ef",
     "bcc443e895123487a3d51df0392786bddf6b475c",
