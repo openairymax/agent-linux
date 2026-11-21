@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 # SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 # ===========================================================================
-# ci/tests/test_workflow_rules.sh — ci/checks/check-workflows.py 规则 13–19 的负向回归
+# ci/tests/test_workflow_rules.sh — ci/checks/check-workflows.py 规则 13–20 的负向回归
 #
 # 这几条规则此前只有正向：真实树常年合规，规则写错、判反或者根本没接进
 # main() 都不会有人发现。本文件在一棵最小假树上逐条破坏，断言只看退出码
@@ -27,6 +27,8 @@ mkdir -p "${FX}/ci/checks" "${FX}/ci/baseline" "${FX}/.github/workflows" "${FX}/
 cp "${ROOT}/ci/checks/check-workflows.py" "${FX}/ci/checks/check-workflows.py"
 # check_gate_libs 无条件读 ci/ci.sh；本文件不判门禁库，留空文件即可。
 : >"${FX}/ci/ci.sh"
+# gate_callers 无条件读 ci/lint.sh；空文件等价于「lint.sh 没有调用任何门禁」。
+: >"${FX}/ci/lint.sh"
 
 ok()
 {
@@ -64,14 +66,15 @@ reset()
 {
     rm -rf "${FX}/.github"
     mkdir -p "${FX}/.github/workflows"
+    rm -f "${FX}/ci/baseline/gate-owners.tsv"
     printf 'runner:\n  label: ubuntu-24.04\n  hosted_ceiling_minutes: 360\n' \
         >"${FX}/tools/nightly/manifest.yaml"
 }
 
-# doc [规则号列表] — 写第 4 节规则表；默认登记 1..19，与脚本自述一致。
+# doc [规则号列表] — 写第 4 节规则表；默认登记 1..20，与脚本自述一致。
 doc()
 {
-    local nums="${1:-1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19}"
+    local nums="${1:-1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20}"
 
     {
         printf '## 4. 命名与结构约定\n\n| # | 规则 | 为什么 |\n|---|------|--------|\n'
@@ -128,16 +131,16 @@ out=$(run)
 check "规则 14：-verify 不由 PR 触发" 1 "$?" "${out}" "不由 pull_request 触发"
 
 reset
-doc 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18
+doc 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,20
 flow demo-verify.yml ubuntu-24.04 "actions/checkout@${SHA}" " # v4" pr
 out=$(run)
 check "规则 15：规则表漏登" 1 "$?" "${out}" "规则 19 未出现"
 
 reset
-doc 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20
+doc 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21
 flow demo-verify.yml ubuntu-24.04 "actions/checkout@${SHA}" " # v4" pr
 out=$(run)
-check "规则 15：规则表多登" 1 "$?" "${out}" "不存在的规则 20"
+check "规则 15：规则表多登" 1 "$?" "${out}" "不存在的规则 21"
 
 reset
 doc 1,2,3,4,5,6,7,8,9,10,11,12,13,13,14,15,16,17,18
@@ -268,6 +271,59 @@ printf '      - run: ci/ci.sh remote-sync --kind tags --ref v0.0.4\n' \
 printf 'demo-verify.yml 1 1\n' >"${FX}/ci/baseline/workflow-budgets.txt"
 out=$(run)
 check "规则 19：显式 --kind 时通过" 0 "$?" "${out}" "检查通过"
+
+# 规则 20：每个门禁须有调用方或登记；登记项须指向真实门禁，列数恰好三列。
+# 夹具里的门禁只放用法头：判据看的是「谁引用它」，脚本内容不参与。
+gate()
+{
+    local name="$1"
+
+    mkdir -p "${FX}/ci/gates"
+    printf '#!/bin/sh\n# 用法: ci/gates/%s.sh\n' "${name}" \
+        >"${FX}/ci/gates/${name}.sh"
+}
+
+# owners <行>... — 原样写入登记表；列数与分隔符由调用方给出的字面量决定。
+owners()
+{
+    mkdir -p "${FX}/ci/baseline"
+    printf '%s\n' "$@" >"${FX}/ci/baseline/gate-owners.tsv"
+}
+
+rm -rf "${FX}/ci/gates"
+reset
+doc
+flow demo-verify.yml ubuntu-24.04 "actions/checkout@${SHA}" " # v4" pr
+gate orphan.sh
+out=$(run)
+check "规则 20：无调用方且未登记" 1 "$?" "${out}" "无调用方"
+
+rm -rf "${FX}/ci/gates"
+reset
+doc
+flow demo-verify.yml ubuntu-24.04 "actions/checkout@${SHA}" " # v4" pr
+owners "$(printf 'ghost\tmanual\t改名后遗留')"
+out=$(run)
+check "规则 20：登记了不存在的门禁" 1 "$?" "${out}" \
+    "没有对应的 ci/gates/ghost.sh"
+
+rm -rf "${FX}/ci/gates"
+reset
+doc
+flow demo-verify.yml ubuntu-24.04 "actions/checkout@${SHA}" " # v4" pr
+gate manual-size
+owners "$(printf 'manual-size\tmanual\t需发行机构建两轮对照')"
+out=$(run)
+check "规则 20：已登记的真实门禁放行" 0 "$?" "${out}" "检查通过"
+
+rm -rf "${FX}/ci/gates"
+reset
+doc
+flow demo-verify.yml ubuntu-24.04 "actions/checkout@${SHA}" " # v4" pr
+gate manual-size
+owners "$(printf 'manual-size\tmanual')"
+out=$(run)
+check "规则 20：登记列数不为 3" 1 "$?" "${out}" "列数须为 3"
 
 if [ "${fails}" -ne 0 ]; then
     printf 'test_workflow_rules: %d 项失败\n' "${fails}" >&2

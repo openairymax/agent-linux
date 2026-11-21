@@ -1,0 +1,24 @@
+# 门禁归属登记（check-workflows.py 第 20 条规则）
+#
+# 背景：ci/gates/ 下的脚本有两种存在方式——被流水线或本地 lint 调用的，
+# 和只能在特定现场手工执行的。后者没有任何调用方，却照样留在树里，看上去
+# 像一条已生效的判据。把它们显式登记为 manual，是让「没有自动调用」成为一个
+# 决定，而不是一次遗漏。
+#
+# 列（TAB 分隔，恰好三列）：
+#   * 第一列  门禁名，对应 ci/gates/<name>.sh
+#   * 第二列  归属类型，目前只有 manual（只能手工执行，自动化前须先改判据）
+#   * 第三列  理由/触发条件，写清对应里程碑与为什么当前进不了流水线
+#
+# 新增条目要同时满足两点：ci/gates/<name>.sh 真实存在；第三列写得出现场
+# 依赖。登记不是免责声明：门禁改名时必须同步改这里，否则第 20 条规则会以
+# 「登记悬空」判红。
+#
+# 校验：ci/checks/check-workflows.py 第 20 条规则，ci/lint.sh 与
+# os-chk-verify 各跑一次。
+#
+# gate	type	reason
+alk-size	manual	ALK-01（0.0.4 体积守恒）：需对同一 defconfig 的两次构建产物做字节级对照；流水线每轮只构建一份，拿不出第二轮，故只能在发行构建机上手工跑
+system-inventory	manual	R-02（0.0.4 装机后完整性）：需装机完成的真机读数（failed 单元、本次开机 err 日志、实际包集合），托管 runner 没有安装面与 systemd 现场
+session-switch	manual	U-10（0.0.5 中文会话切换）：需真实 GPU 与 D-Bus 才能切 VT，计划由 tui-e2e 接线；功能尚未落地，当前只能真机执行
+closure-pool	manual	播种机入口（0.0.4 闭包交付）：需宿主机自带 dnf/createrepo_c 与国内镜像出口（托管 runner 到国内镜像仅 16–22 KiB/s）；调用形态记录在 ci/gates/pool-seed.sh 头注释

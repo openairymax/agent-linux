@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """ci/checks/check-workflows.py —— 守住 workflow 薄化与命名约束
 
-十九条规则：
+二十条规则：
 
 1. 结构上限：每个 workflow 的 job 数 ≤ 预算，内联 ``run: |`` 块数 ≤ 预算
    （预算见 ci/baseline/workflow-budgets.txt，只许下调）。
@@ -82,6 +82,13 @@
    ``refs/heads/v0.0.4``，判负为「无此分支」（run 42335415156 即如此，
    代价是整轮组装在第一步就落空）。命名空间是调用方的已知事实，必须由
    调用方写明，而不是让门禁去猜。
+20. 每个 ``ci/gates/*.sh`` 都必须有调用方：workflow 或 ``ci/lint.sh`` 里的
+   ``ci/ci.sh <gate>``、同名的 ``ci/tests/test_<gate>.sh``，或在
+   ``ci/baseline/gate-owners.tsv`` 登记。反向同样成立：登记的每个名字都要
+   有对应的 ``ci/gates/<name>.sh``，且每行列数恰好为 3，否则改名之后登记
+   悬空，读者仍以为它有人执行。缺了这条，门禁会静默漂成无人执行的文档：
+   当前树里 alk-size、system-inventory、session-switch 与 closure-pool 四个
+   脚本没有自动调用方，判据再对也拦不住任何合入，直到有人重读目录才发现。
 
 为什么需要它：这些约束此前只存在于文档里，没有执行者。78 段内联 shell
 就是这样一段段长出来的——每一次单看都合理，合起来就没有人能在本地验证。
@@ -97,6 +104,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 WORKFLOWS = ROOT / ".github" / "workflows"
 BUDGETS = ROOT / "ci" / "baseline" / "workflow-budgets.txt"
+# 门禁归属登记：没有自动调用方的门禁必须在这里写清为什么只能手工执行。
+GATE_OWNERS = ROOT / "ci" / "baseline" / "gate-owners.tsv"
+LINT = ROOT / "ci" / "lint.sh"
+TESTS = ROOT / "ci" / "tests"
 
 # 所有 workflow 都适用的禁令：(正则, 应改用的入口)
 ALWAYS_FORBIDDEN = [
@@ -145,7 +156,7 @@ JOB_TIMEOUT = re.compile(r"^    timeout-minutes:\s*\S")
 JOB_HEAD = re.compile(r"^  ([A-Za-z0-9_-]+):\s*$")
 
 # 门禁引用：ci/ci.sh 后面紧跟的门禁名（``--list``、``-h`` 等选项不算）。
-GATE_REF = re.compile(r"ci/ci\.sh\s+([a-z][a-z0-9-]*)")
+GATE_REF = re.compile(r"ci/ci\.sh[\"']?\s+([a-z][a-z0-9-]*)")
 GATE_USAGE = re.compile(r"^# 用法:", re.MULTILINE)
 
 # 供应链：uses: 只认 40 位提交 SHA，且要带 ``# <版本>`` 溯源注释。
@@ -432,6 +443,63 @@ def check_gate_refs(name: str, text: str) -> list[str]:
     return errors
 
 
+def parse_owners() -> tuple[dict[str, tuple[str, int]], list[str]]:
+    """读门禁归属登记：名字 → (归属类型, 行号)，另返回格式错误。
+
+    制表符恰好三列；``#`` 开头与空行是注释。行号一并返回，反向校验才能
+    指出是哪一行登记悬空。注释剔除沿用 code_lines，与 workflow 侧同一口径。
+    """
+    if not GATE_OWNERS.exists():
+        return {}, []
+    rel = GATE_OWNERS.relative_to(ROOT)
+    owners: dict[str, tuple[str, int]] = {}
+    errors: list[str] = []
+    for no, raw in enumerate(code_lines(GATE_OWNERS.read_text()).splitlines(), 1):
+        parts = raw.split("\t")
+        if not raw.strip():
+            continue
+        if len(parts) != 3:
+            errors.append(
+                f"{rel}:{no}: 列数须为 3（门禁名/归属类型/理由），实际 {len(parts)}")
+            continue
+        owners[parts[0].strip()] = (parts[1].strip(), no)
+    return owners, errors
+
+
+def test_gate(path: Path) -> str:
+    """回归夹具名 → 被测门禁名：``test_x_y.sh`` 对应门禁 ``x-y``。"""
+    return path.stem[len("test_"):].replace("_", "-")
+
+
+def gate_callers() -> set[str]:
+    """有自动调用方的门禁名：workflow 与 lint.sh 的 ci/ci.sh 调用，同名回归脚本。
+
+    注释里提到的名字不算调用：本判据要回答的是「谁真的执行它」，而不是
+    「谁在文中提过它」。
+    """
+    out: set[str] = set()
+    for job in (*WORKFLOWS.glob("*.yml"), LINT):
+        out.update(GATE_REF.findall(code_lines(job.read_text())))
+    out.update(test_gate(p) for p in TESTS.glob("test_*.sh"))
+    return out
+
+
+def gate_owned() -> list[str]:
+    """每个门禁须有调用方或登记；登记项须指向真实门禁。"""
+    owners, errors = parse_owners()
+    gates = {p.stem for p in CIGATES.glob("*.sh")}
+    for name in sorted(gates - gate_callers() - set(owners)):
+        errors.append(
+            f"ci/gates/{name}.sh: 无调用方且未在 "
+            "ci/baseline/gate-owners.tsv 登记（接线，或登记为 manual）")
+    for name, (_, no) in owners.items():
+        if not (CIGATES / f"{name}.sh").exists():
+            errors.append(
+                f"ci/baseline/gate-owners.tsv:{no}: 登记的 {name} 没有对应的 "
+                f"ci/gates/{name}.sh（改名后登记悬空）")
+    return errors
+
+
 def check_pins(name: str, text: str) -> list[str]:
     """每个 uses: 钉 40 位 SHA 并带版本注释；本地 action 与镜像除外。"""
     errors: list[str] = []
@@ -679,7 +747,7 @@ def wf_size(name: str, inline: int, jobs: int,
         errors.append(f"{name}: job 数 {jobs} > 预算 {max_jobs}")
     if jobs == 0:
         errors.append(f"{name}: 没有解析到任何 job")
-    if base is not None and inline > base and inline > max_inline:
+    if base is not None and inline > max(base, max_inline):
         errors.append(f"{name}: 内联块由 HEAD 的 {base} 增至 {inline}（棘轮回退）")
     return errors
 
@@ -737,7 +805,7 @@ def scan_workflows(files: list[str],
 
     顺序即错误报告顺序：跨文件问题只出现一次，排在单文件问题之前。
     """
-    errors = check_gate_libs() + check_doc()
+    errors = check_gate_libs() + check_doc() + gate_owned()
     labels = runner_labels()
     if not labels:
         errors.append(
