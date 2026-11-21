@@ -161,10 +161,13 @@ docker run --rm --privileged \
 
         # 严格离线：缓存由 ci/gates/toolchain.sh 预热并自证过。这里装不上
         # 只有一种含义——缓存没预热，秒级失败，不回落到公网。
+        # everything 与预热段同一口径：ukui-settings-daemon 的 BR 只在该仓，
+        # 只影响构建容器，装机仓库表保持 enabled=0。
         t_tc="$(date +%s)"
         stamp "工具链: 离线重放"
         dnf -y install --cacheonly --setopt=keepcache=1 \
-            --setopt=timeout=60 '"${pkgs}"' || {
+            --setopt=timeout=60 --enablerepo=airymaxos-everything \
+            '"${pkgs}"' || {
             echo "工具链未预热：先运行 ci/ci.sh toolchain --cache <DIR>" >&2
             exit 1
         }

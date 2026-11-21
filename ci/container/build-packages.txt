@@ -15,12 +15,19 @@
 #          util-linux findutils ca-certificates —— run-image-ci.sh 的运行时依赖
 #   取源侧  curl —— 配方以 `# spec-lint: source-url` 声明上游 tarball 时，
 #          build-rpms.sh 用它下载并校验摘要
-#   重建侧  ukui-control-center 的 BuildRequires（qt5/kf5/mate 一组）——
-#          该包按 EPOL 源码重建，rpmbuild 在容器内按 rpmdb 解析 BR，缺一条
-#          就只会报「Failed build dependencies」，因此逐条列在这里，让
-#          工具链缓存一次预热、装配段严格离线。这些包只在 EPOL，容器镜像
-#          自带的 repo 文件不含 EPOL，由 ci/gates 挂 distro/repo/
-#          airymax-os.repo 补齐仓库表。
+#   重建侧  ukui-control-center 与 ukui-settings-daemon 的 BuildRequires
+#          （qt5/kf5/mate 一组）——两个包按 EPOL 源码重建，rpmbuild 在容器内
+#          按 rpmdb 解析 BR，缺一条就只会报「Failed build dependencies」，
+#          因此逐条列在这里，让工具链缓存一次预热、装配段严格离线。
+#          两项的 BR 取值口径不同：
+#            · ukui-control-center 的 BR 全在 EPOL；容器镜像自带的 repo 文件
+#              不含 EPOL，由 ci/gates 挂 distro/repo/airymax-os.repo 补齐。
+#            · ukui-settings-daemon 有 13 条 BR 只在 everything 仓（上游 OBS
+#              的构建根就是 everything），而 everything 在装机仓库表里是
+#              enabled=0。构建期需要它、运行期不需要，两者不是同一件事：
+#              ci/gates 的两条安装路径因此显式 --enablerepo=airymaxos-everything，
+#              装机侧的仓库表保持默认关闭，ISO 闭包求解另用 recipes 里的
+#              仓库声明（distro/scripts/lib/closure.sh），不受此影响。
 #          改动重建配方的 BR 必须同步本清单：两份不同步的唯一后果是装配段
 #          构建失败，而失败信息指向配方，不指向这份清单。
 #   TUI 侧  rust cargo clippy rustfmt —— system/tui 工作区的编译器与门禁工具。
@@ -97,6 +104,21 @@ cups-devel
 ukui-interface
 libddcutil-devel
 libkylin-chkname-devel
+# ukui-settings-daemon 独有的 BR：只在 everything/EPOL/OS 的并集里齐全，
+# 缺一条 rpmbuild 就停在「Failed build dependencies」（见文件头重建侧说明）。
+colord-devel
+geoclue2-devel
+gnome-desktop3-devel
+imlib2-devel
+intltool
+lcms2-devel
+libcanberra-devel
+libgudev-devel
+libnotify-devel
+libwnck3-devel
+qt5-qtsensors-devel
+qtchooser
+xcb-util-devel
 rust
 cargo
 clippy
