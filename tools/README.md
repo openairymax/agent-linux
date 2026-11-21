@@ -63,7 +63,8 @@ tools/
 │   ├── templates/               # Jinja2 decision-table template
 │   ├── examples/                # .adl contract source + committed generated header
 │   ├── tests/                   # pytest suite (lexer/parser/semantics/codegen/compile)
-│   └── Makefile                 # Local DSL compiler driver
+│   ├── Makefile                 # Local DSL compiler driver
+│   └── README.md                # Tool contract and usage
 ├── abi-check/                   # Syscall ABI stability checker
 │   ├── abi_check.py             # ABI checker (stdlib only)
 │   ├── abi_baseline.json        # ABI baseline snapshot
