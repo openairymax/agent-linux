@@ -8,12 +8,13 @@
 #   ci/gates/desktop-capability.sh [--tree DIR]
 #
 # 背景：0.0.3 的座位封装只看 sysfs 驱动名，simpledrm 之外一律交给 X 自动
-# 选择。驱动名只能说明内核绑上了显卡，说明不了这块屏能用：面板未点亮、
-# EDID 没读到、只剩未连接端口时，X 会在模式求交上失败，表现为「进了桌面
-# 但黑屏」，而日志里看不出是哪一条不成立。0.0.4 的判据改为三条同时成立：
-# 真实 KMS 驱动、连接器已连接、该连接器同时有可枚举模式与非空 EDID。缺任
-# 一条落 fbdev 并把缺口写进标记；两样都没有（无卡也无 framebuffer）时判
-# 「不适用」，不静默跳过。
+# 选择。驱动名只能说明内核绑上了显卡，说明不了这块屏能用：面板未点亮、只剩
+# 未连接端口时，X 会在模式求交上失败，表现为「进了桌面但黑屏」，而日志里看
+# 不出是哪一条不成立。0.0.5 的判据为两条同时成立：真实 KMS 驱动、连接器已
+# 连接且有可枚举模式。缺任一条落 fbdev 并把缺口写进标记；两样都没有（无卡
+# 也无 framebuffer）时判「不适用」，不静默跳过。EDID 不参与判定：虚拟输出
+# 按设计可以没有 EDID，modesetting 用的是连接器模式表；把它当前提会让
+# QEMU virtio-gpu 误落 fbdev，X 随即 "no screens found"。
 #
 # 声明面：
 #
@@ -24,9 +25,9 @@
 #
 # 实物面（临时 DRM 树 + 伪 Xorg，全部判定与真机内核无关）：
 #
-#   * 三条全成立：不传 -config、不生成配置，标记 kms=1。
-#   * 缺 EDID、缺模式、只有未连接输出、只有 simpledrm：四种缺口各落一次
-#     fbdev，reason 与告警里的缺口一致。
+#   * 两条全成立：不传 -config、不生成配置，标记 kms=1。
+#   * 缺模式、只有未连接输出、只有 simpledrm：三种缺口各落一次 fbdev，
+#     reason 与告警里的缺口一致。
 #   * 无卡且无 framebuffer：不适用（note=no-display），既不传配置也不报错。
 #   * 兜底配置写不进去：退回自动选择，标记如实写 conf-unwritable。
 #   * 每个用例的标记都落盘，且与 stdout 同一行——现场只认这一行。
@@ -151,6 +152,17 @@ fbdev_is()
     grep -qF 'Driver "fbdev"' "${CONF}" || bad "${what}: 配置不是 fbdev"
 }
 
+# kms_is WHAT — 自动选择分支的三条断言：不传配置、不生成配置、标记成立。
+kms_is()
+{
+    local what="$1"
+
+    [ "${CODE}" -eq 0 ] || bad "${what}: 退出码 ${CODE}"
+    mark_is "driver=i915 kms=1" "${what}"
+    has_arg -config && bad "${what}: 不应传 -config"
+    [ -e "${CONF}" ] && bad "${what}: 不应生成 fbdev 配置"
+}
+
 chk_tree()
 {
     say "实物面（临时 DRM 树 + 伪 Xorg）"
@@ -159,16 +171,13 @@ chk_tree()
     mkcard i915
     mkout DP-1 connected 1920x1080 edid
     run
-    [ "${CODE}" -eq 0 ] || bad "kms: 退出码 ${CODE}"
-    mark_is "driver=i915 kms=1" "kms"
-    has_arg -config && bad "kms: 不应传 -config"
-    [ -e "${CONF}" ] && bad "kms: 不应生成 fbdev 配置"
+    kms_is kms
 
     start
     mkcard i915
     mkout DP-1 connected 1920x1080 ""
     run
-    fbdev_is no-edid "no-edid"
+    kms_is no-edid
 
     start
     mkcard i915
