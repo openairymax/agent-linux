@@ -20,7 +20,7 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 - **`ci/gates/*.sh`**：全部断言与宿主准备，带 `# 用法:` 头，可直接执行。
 - **`ci/lib/*.sh`**：跨门禁共用的实现（apt 获取、宿主清理、TAP 解析等）。
 
-这条分工由 `ci/checks/check-workflows.py` 的十九条规则强制执行（见第 4 节），而不是
+这条分工由 `ci/checks/check-workflows.py` 的二十条规则强制执行（见第 4 节），而不是
 靠评审时的自觉。一个约定如果没有执行者，它就不是约定。第 4 节的表格首列
 登记规则号，其覆盖范围由脚本反过来校验：文档漏登或重号同样判红。
 
@@ -112,11 +112,12 @@ lint 中执行。下表是规则本身，不是建议。
 | 17 | 每个 `runs-on:` 必须落在 `tools/nightly/manifest.yaml` 的 `runner.label`/`runner.labels` 登记集合内；`runs-on: ${{ matrix.runner }}` 时矩阵 `include` 的每个 `runner` 取值同样要已登记 | 运行器版本散在两处时，改 workflow 不会带出清单，只能等云端跑红后人工对齐 |
 | 18 | 门禁、库、工具与 workflow 都禁止由名称形状推语义：不得以「标签以 `-latest` 结尾」判定托管，也不得写 `*-latest` 做比较、`case` 匹配或表达式判断 | 托管运行器的两种写法都表示托管，自托管标签任意命名；形状与语义之间没有蕴含关系，`run 40864072696` 就是这样误判 |
 | 19 | 调用 `ci/ci.sh remote-sync` 必须显式给出 `--kind` | 门禁缺省查 `refs/heads/<ref>`，而 `github.ref_name` 已剥掉 `refs/` 前缀：标签派发时它去查不存在的同名分支，判负成「无此分支」（`run 42335415156` 整轮组装在第一步落空） |
+| 20 | 每个 `ci/gates/*.sh` 必须有调用方：workflow 或 `ci/lint.sh` 的 `ci/ci.sh <gate>`、同名 `ci/tests/test_<gate>.sh`，或在 `ci/baseline/gate-owners.tsv` 登记；登记项必须指向真实门禁，且每行恰好三列 | 没有执行者的门禁只是文档：`alk-size`、`system-inventory`、`session-switch`、`closure-pool` 四个脚本没有自动调用方，判据再对也拦不住任何合入 |
 
 新增或改名一个流水线需要三处同步：文件、`name:`、`ci/baseline/workflow-budgets.txt`。
 `./ci/lint.sh` 在任一处漂移时直接判红。
 
-规则 13–18 的负向回归在 `ci/tests/test_workflow_rules.sh`：它在一棵最小假树上
+规则 13–20 的负向回归在 `ci/tests/test_workflow_rules.sh`：它在一棵最小假树上
 逐条破坏并断言判据字符串，因此真实树常年为绿也不会掩盖规则失效。
 
 ## 5. 流水线治理：先记账，再提速

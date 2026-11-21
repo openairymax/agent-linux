@@ -45,7 +45,7 @@ ci/
 │   └── lib/             # 门禁协议声明（Q-04 施工图纸钉定此路径）
 ├── checks/              # Python 检查器
 ├── lib/                 # 共享实现（shell + python）
-├── baseline/            # 棘轮基线
+├── baseline/            # 棘轮基线与门禁归属登记
 ├── tests/               # 门禁回归夹具
 ├── tools/               # 门禁私有取证工具（回归器、字段采集器）
 └── container/           # 基础镜像定义与包清单
@@ -106,7 +106,10 @@ ci/
    `./ci/lint.sh` 的第 7 项会跑它们，真实树常年为绿不会掩盖判据失效。
 5. 在流水线里只加一步 `ci/ci.sh <name>`；新增作业时同步
    `baseline/workflow-budgets.txt` 与 `.github/workflows/README.md`，
-   任一处漂移 `check-workflows.py` 立即判红。
+   任一处漂移 `check-workflows.py` 立即判红。只能在特定现场手工执行的判据
+   （需要真机、两轮构建产物、宿主镜像出口）没有调用方，必须在
+   `baseline/gate-owners.tsv` 登记 `manual` 与现场依赖；不登记即按无调用方
+   判红，登记项指向不存在的门禁同样判红。
 6. 产出棘轮基线时，只允许 `--update` 显式改写，且基线数量只减不增；手改
    数字与删除判据等价。
 
