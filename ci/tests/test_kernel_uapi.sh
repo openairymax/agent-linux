@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 # SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 # ===========================================================================
-# ci/tests/test_abi_snapshot.sh — ci/gates/abi-snapshot.py 的分支回归
+# ci/tests/test_kernel_uapi.sh — 门禁 kernel-uapi 与判定本体的分支回归
 #
 # 冻结门禁有两种失效方式，都会让「快照一致」变成空话：
 #   · 只比摘要不比集合——新增或改名一个头文件，快照里没有对应条目，
@@ -12,13 +12,14 @@
 # 本回归用一棵最小假树逐条断言这两类失效，并钉住确定性与退出码：
 # 同一棵树两次 --update 必须逐字节相同，--check 必须不写盘。
 #
-# 用法: bash ci/tests/test_abi_snapshot.sh
+# 用法: bash ci/tests/test_kernel_uapi.sh
 # 退出码: 0 全部通过；1 有断言失败。
 # ===========================================================================
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
-TOOL="${ROOT}/ci/gates/abi-snapshot.py"
+TOOL="${ROOT}/ci/checks/abi_snapshot.py"
+GATE="${ROOT}/ci/gates/kernel-uapi.sh"
 UAPI="kernel/include/uapi/linux/airymax"
 SNAP="tools/abi-check/contract/uapi_headers.sha256"
 tmp="$(mktemp -d)"
@@ -155,5 +156,19 @@ check "两个模式互斥" 5 "$?" "${out}" "usage"
 
 out="$(run --help)"
 check "帮助以 0 退出" 0 "$?" "${out}" "usage"
+
+# --- 门禁入口：参数透传与退出码必须与本体一致 ------------------------------
+
+plant
+run --update >/dev/null
+out="$(bash "${GATE}" --root "${FX}" 2>&1)"
+check "门禁入口一致时判通过" 0 "$?" "${out}" "UAPI 头文件集合与字节面一致"
+
+printf '#define AIRY_A 9\n' >"${FX}/${UAPI}/alpha.h"
+out="$(bash "${GATE}" --root "${FX}" --check 2>&1)"
+check "门禁入口透传判负" 1 "$?" "${out}" "变更 ${UAPI}/alpha.h"
+
+out="$(bash "${GATE}" --help 2>&1)"
+check "门禁帮助以 0 退出" 0 "$?" "${out}" "用法: ci/gates/kernel-uapi.sh"
 
 exit "${fails}"

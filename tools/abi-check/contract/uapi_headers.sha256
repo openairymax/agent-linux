@@ -1,11 +1,11 @@
 # AirymaxOS [SC] UAPI 头文件字节级快照（K-03）
 #
 # 受检目录: kernel/include/uapi/linux/airymax
-# 刷新命令: python3 ci/gates/abi-snapshot.py --update
+# 刷新命令: bash ci/ci.sh kernel-uapi --update
 # 每行格式: <sha256>  <相对仓库根的路径>
 #
 # 受检目录下的 .h 全部登记：新增、删除、改名与任何字节改动都会让
-# ci/gates/abi-snapshot.py --check 判负。改动 UAPI 头文件是允许的，
+# bash ci/ci.sh kernel-uapi --check 判负。改动 UAPI 头文件是允许的，
 # 但必须显式重跑 --update 并把快照一并提交，让改动进入评审视野。
 
 22ad4d9cc36ce5cf8c41b2ae8f0d74bb8d5ce669bae98be2cb97061d18d2d6cb  kernel/include/uapi/linux/airymax/bpf_struct_ops.h
