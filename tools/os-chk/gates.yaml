@@ -107,7 +107,7 @@ gates:
     category: build
     authority: 30-interfaces/README.md §ABI 稳定；0.0.5 施工图纸 §6.5 K-03
     executor:
-      argv: ["python3", "ci/gates/abi-snapshot.py", "--check"]
+      argv: ["python3", "ci/checks/abi_snapshot.py", "--check"]
 
   # ── Airymax 定制 checkpatch 扩展规则（OS-TEST-066 / OS-KER-120）──────
   - id: OS-TEST-066

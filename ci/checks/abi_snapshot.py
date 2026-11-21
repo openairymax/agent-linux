@@ -2,11 +2,14 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 # SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 # ===========================================================================
-# ci/gates/abi-snapshot.py — [SC] UAPI 头文件字节级冻结（K-03）
+# ci/checks/abi_snapshot.py — [SC] UAPI 头文件字节级冻结（K-03 判定本体）
+#
+# 调用方是 ci/gates/kernel-uapi.sh；本文件只做判定，参数校验与退出码透传
+# 由门禁承担，操作员入口统一为 `ci/ci.sh kernel-uapi`。
 #
 # 用法:
-#   python3 ci/gates/abi-snapshot.py [--root DIR] [--check]
-#   python3 ci/gates/abi-snapshot.py [--root DIR] --update
+#   python3 ci/checks/abi_snapshot.py [--root DIR] [--check]
+#   python3 ci/checks/abi_snapshot.py [--root DIR] --update
 #
 # 判据有两层，缺一不可：
 #   · 集合面——kernel/include/uapi/linux/airymax/ 下的 .h 集合必须与快照
@@ -44,11 +47,11 @@ BANNER = """\
 # AirymaxOS [SC] UAPI 头文件字节级快照（K-03）
 #
 # 受检目录: kernel/include/uapi/linux/airymax
-# 刷新命令: python3 ci/gates/abi-snapshot.py --update
+# 刷新命令: bash ci/ci.sh kernel-uapi --update
 # 每行格式: <sha256>  <相对仓库根的路径>
 #
 # 受检目录下的 .h 全部登记：新增、删除、改名与任何字节改动都会让
-# ci/gates/abi-snapshot.py --check 判负。改动 UAPI 头文件是允许的，
+# bash ci/ci.sh kernel-uapi --check 判负。改动 UAPI 头文件是允许的，
 # 但必须显式重跑 --update 并把快照一并提交，让改动进入评审视野。
 """
 
@@ -127,20 +130,20 @@ def check(root: Path) -> int:
     snap = root / SNAP_FILE
     if not snap.is_file():
         # 快照缺失是判负而非参数错误：CI 上它意味着冻结记录没进仓库。
-        print(f"abi-snapshot: 快照缺失: {SNAP_FILE}", file=sys.stderr)
-        print("abi-snapshot: 首次登记请跑 --update 并把快照一并提交",
+        print(f"uapi-snapshot: 快照缺失: {SNAP_FILE}", file=sys.stderr)
+        print("uapi-snapshot: 首次登记请跑 --update 并把快照一并提交",
               file=sys.stderr)
         return EXIT_DRIFT
 
     msgs = drift(load(snap), files)
     for msg in msgs:
-        print(f"abi-snapshot: {msg}", file=sys.stderr)
+        print(f"uapi-snapshot: {msg}", file=sys.stderr)
     if msgs:
-        print("abi-snapshot: 刷新请跑 --update，并把快照一并提交评审",
+        print("uapi-snapshot: 刷新请跑 --update，并把快照一并提交评审",
               file=sys.stderr)
         return EXIT_DRIFT
 
-    print(f"abi-snapshot: UAPI 快照 {len(files)} 份一致")
+    print(f"uapi-snapshot: UAPI 快照 {len(files)} 份一致")
     return EXIT_OK
 
 
@@ -154,8 +157,8 @@ def update(root: Path) -> int:
     snap.write_text(render(files), encoding="utf-8")
 
     for msg in drift(old, files) if old else []:
-        print(f"abi-snapshot: {msg}")
-    print(f"abi-snapshot: 已登记 {len(files)} 份 -> {SNAP_FILE}")
+        print(f"uapi-snapshot: {msg}")
+    print(f"uapi-snapshot: 已登记 {len(files)} 份 -> {SNAP_FILE}")
     return EXIT_OK
 
 
@@ -175,13 +178,13 @@ def run(argv: list[str]) -> int:
 
     root = Path(args.root).resolve()
     if not root.is_dir():
-        print(f"abi-snapshot: 根目录不存在: {root}", file=sys.stderr)
+        print(f"uapi-snapshot: 根目录不存在: {root}", file=sys.stderr)
         return EXIT_INPUT
 
     try:
         return update(root) if args.update else check(root)
     except BadInput as exc:
-        print(f"abi-snapshot: {exc}", file=sys.stderr)
+        print(f"uapi-snapshot: {exc}", file=sys.stderr)
         return EXIT_INPUT
 
 

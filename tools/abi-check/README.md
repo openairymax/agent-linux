@@ -23,7 +23,7 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 | 通用表接线 | `arch/{riscv,loongarch}` UAPI include + 表展开形式 | asm-generic 继承校验 |
 | [SC] 契约头 | `kernel/include/uapi/linux/airymax/syscalls.h` | 共享契约宏定义 |
 | 派生契约快照 | `tools/abi-check/contract/syscall_registry.snapshot.json` | SSoT 缺失时的只读回退源 |
-| UAPI 字节冻结清单 | `tools/abi-check/contract/uapi_headers.sha256` | [SC] 头文件集合与 sha256，供 `ci/gates/abi-snapshot.py` 判定 |
+| UAPI 字节冻结清单 | `tools/abi-check/contract/uapi_headers.sha256` | [SC] 头文件集合与 sha256，供 `ci/gates/kernel-uapi.sh`（判定本体 `ci/checks/abi_snapshot.py`）判定 |
 
 SSoT 文档是唯一权威。派生契约快照由 SSoT 确定性导出（含源仓 commit
 与 sha256 溯源），**不是第二权威**；当权威 SSoT 可得时，工具会以快照

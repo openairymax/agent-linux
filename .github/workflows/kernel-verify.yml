@@ -34,6 +34,7 @@ on:
       - 'tools/tap/kunit-tap-diff.py'
       - '.github/workflows/kernel-verify.yml'
       - 'ci/gates/kernel-*.sh'
+      - 'ci/checks/abi_snapshot.py'
       - 'ci/lib/**'
   push:
     branches: [main]
@@ -44,6 +45,7 @@ on:
       - 'tools/tap/kunit-tap-diff.py'
       - '.github/workflows/kernel-verify.yml'
       - 'ci/gates/kernel-*.sh'
+      - 'ci/checks/abi_snapshot.py'
       - 'ci/lib/**'
 
 # 最小权限：矩阵只读内核源码与工具，构建产物走 artifact，不碰仓库写接口。
@@ -125,6 +127,12 @@ jobs:
       # 零漂移三连：真值（任务书矩阵 / ABI 黄金样本 / DSL）与生成物必须一致。
       - name: Consistency (matrix / ABI / codegen)
         run: ci/ci.sh kernel-consistency --kind all
+
+      # UAPI 字节面：用户态看到的头文件集合与每份 sha256 都必须等于快照。
+      # 结构兼容由上一步与 tools/abi-check 判；本步守发布物料的字节面，
+      # 一条注释的改动也会在这里显形（见 docs 的 K-03 说明）。
+      - name: UAPI header freeze (K-03)
+        run: ci/ci.sh kernel-uapi
 
       # KUnit 必须在任何 in-tree 构建之前：kbuild 要求源码树干净。
       - name: KUnit on UML + baseline diff
