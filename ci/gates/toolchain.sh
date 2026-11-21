@@ -6,8 +6,8 @@
 #
 # 用法: ci/gates/toolchain.sh --image IMG --cache DIR
 #
-# 为什么单独成一个 gate：build-packages.txt 的 34 个直接依赖会解析出 1273 个
-# 包，全部跨公网取，耗时只由镜像站状态决定——同一棵树在 run 40818193756 是
+# 为什么单独成一个 gate：build-packages.txt 的直接依赖会解析出千余个包，
+# 全部跨公网取，耗时只由镜像站状态决定——同一棵树在 run 40818193756 是
 # 14 分钟，在 run 40866231339 涨到两小时并把 job 预算烧穿。它和 CPU/IO 密集的
 # ISO 组装混在同一步时，Actions 只报一个总耗时，既看不出慢在哪一段，也让
 # actions/cache 的保存挂在 job 成功态上：job 一旦被取消，缓存永不落盘，下一轮
@@ -58,11 +58,17 @@ mkdir -p "${CACHE}"
 
 # 容器内只做一件事：按模式装同一份包清单。两段共用一份脚本，避免离线与
 # 在线两条路径的选项漂移——它们装的必须是同一批包，否则自证不成立。
+#
+# everything 仓只在构建期打开：ukui-settings-daemon 的 13 条 BR 只在该仓，
+# 上游 OBS 的构建根也正是 everything。装机仓库表里它是 enabled=0（运行期
+# 不需要这些 -devel），两个场景不是同一件事，不能为了构建去改装机口径。
+# 该仓库定义来自下面挂载的 airymax-os.repo，不另写第二份 URL 清单。
 read -r -d '' script <<'EOF'
 set -euo pipefail
 stamp() { printf "[%s] %s\n" "$(date -u +%H:%M:%SZ)" "$*"; }
 opts=(--setopt=keepcache=1 --setopt=timeout=60 --setopt=minrate=1000
-      --setopt=retries=6 --setopt=max_parallel_downloads=10)
+      --setopt=retries=6 --setopt=max_parallel_downloads=10
+      --enablerepo=airymaxos-everything)
 if [ "${AIRYMAX_MODE}" = offline ]; then
     opts+=(--cacheonly)
 fi
