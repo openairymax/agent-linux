@@ -241,6 +241,40 @@ EOF
 out="$(run)"
 check "总量下降时均值上升放行" 0 "$?" "${out}" "棘轮通过"
 
+# 引号内的字面量不是 shell 分支：内嵌 awk 程序只能用单引号书写，且常跨
+# 多行，按行剥离会把整段 awk 的 if/|| 算成 shell 分支（closure.sh 的
+# cl_total 因此虚增 8 点，均值棘轮随即判红正确代码）。下面一正一反：
+# 只有 awk 判定点的函数必须放行，真分支超过上限仍必须判红。
+seed
+run --update >/dev/null
+cat >"${FX}/awk.sh" <<'EOF'
+#!/usr/bin/env bash
+count_rows()
+{
+    awk '
+        /^Total/ {
+            if (a) { b = 1 }
+            if (b) { c = 2 }
+            if (c) { d = 3 }
+            if (d) { e = 4 }
+            if (e) { f = 5 }
+            if (f) { g = 6 }
+            if (g) { h = 7 }
+            if (h) { i = 8 }
+            if (i) { j = 9 }
+            if (j) { k = 10 }
+            if (k && b || c) { m = 11 }
+        }
+    ' "$1"
+}
+EOF
+out="$(run)"
+check "内嵌 awk 不计入 shell 分支" 0 "$?" "${out}" "棘轮通过"
+busy
+mv "${FX}/busy.sh" "${FX}/real.sh"
+out="$(run)"
+check "引号旁的 shell 分支仍计入" 1 "$?" "${out}" "quality/cc: "
+
 if [ "${fails}" -eq 0 ]; then
     printf 'ok   %s\n' "quality-metrics 回归全部通过"
 else

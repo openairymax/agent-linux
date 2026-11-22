@@ -40,6 +40,9 @@
 #     rust 走 if/for/while/loop、match 臂、&&/|| 与后缀 `?`；rust 先剥掉
 #     注释与字符串字面量再计数，函数体按缩进分段（定义行至同缩进的 `}`），
 #     文件末尾的 `#[cfg(test)]` 模块与 name_lint 同一口径排除；
+#     shell 同样先剥掉引号内的字面量再计数（引号可跨行）：内嵌 awk 程序
+#     原文里的 `if`、`||` 属于另一种语言，算进 shell 分支是把「写了多少
+#     awk」误读成「shell 有多绕」；
 #     嵌套定义的判定点只计入它自己，不摊给外层；
 #   · 重复窗口按内容登记：改名会让旧窗口退役、新窗口登记，因此 --update
 #     只比总量——数量不增即可换登记，数量增加即判红。
@@ -135,25 +138,60 @@ def py_scan(path):
     return got, norm(text.splitlines(), doc_rows(tree))
 
 
+def sh_lit(line, state):
+    """剥掉引号内的字面量，返回 (剩余 shell 文本, 跨行引号状态)。
+
+    引号里的 `if`、`&&` 不是 shell 判定点：内嵌 awk 程序只能用单引号书写，
+    且常跨多行（closure.sh 的 cl_total 因此被虚增 8 点，均值棘轮随即判红
+    正确代码）。双引号内只有 `$` 展开是 shell，这里按字面量整体剥掉——
+    展开里的分支极少，真出现时会被漏计，代价远小于按行剥离造成的虚增。
+    引号状态必须跨行传递；双引号内的单引号是字面字符，不能当作引号起点。
+    """
+    out, i = [], 0
+    while i < len(line):
+        ch = line[i]
+        if state == "'":
+            if ch == "'":
+                state = None
+            i += 1
+            continue
+        if state == '"':
+            if ch == "\\":
+                i += 2
+                continue
+            if ch == '"':
+                state = None
+            i += 1
+            continue
+        if ch in "'\"":
+            state = ch
+            i += 1
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out), state
+
+
 def sh_funcs(path):
     """行内关键字近似；`}` 顶格行视为函数结束，避免把尾部调用段计入最后一个函数。"""
-    out, name, cc = [], None, 1
+    out, name, cc, state = [], None, 1, None
     text = path.read_text(encoding="utf-8", errors="replace")
     for line in text.splitlines():
         hit = SH_DEF.match(line)
         if hit:
             if name:
                 out.append((name, cc))
-            name, cc = hit.group(1), 1
+            name, cc, state = hit.group(1), 1, None
             continue
         if name is None:
             continue
         if line.startswith("}"):
             out.append((name, cc))
-            name, cc = None, 1
+            name, cc, state = None, 1, None
             continue
         if not line.lstrip().startswith("#"):
-            cc += len(SH_STEP.findall(line))
+            code, state = sh_lit(line, state)
+            cc += len(SH_STEP.findall(code))
     if name:
         out.append((name, cc))
     return out

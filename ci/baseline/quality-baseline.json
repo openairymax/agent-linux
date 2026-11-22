@@ -2,8 +2,8 @@
   "version": 1,
   "window": 6,
   "limit_cc": 10,
-  "cc_sum": 17459,
-  "cc_funcs": 5907,
+  "cc_sum": 17330,
+  "cc_funcs": 5910,
   "over": [],
   "dup": [
     "015549a943350caf816828f79bd2e047e6aa8987",
