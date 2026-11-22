@@ -290,7 +290,7 @@ L2/L3 都不改判据，只改「同一份物料要付几次成本」。任何�
 | distro | `os-chk-verify`、`image-build`、`payload-seed` | 静态规则随 PR，镜像组装属发行前，载荷预热按周期，三者触发时机不同 |
 | services、cloudnative | `c-verify`（各 1 个作业） | 同一构建面，作业分开保证失败结论互不掩盖 |
 | sdk | `sdk-verify`（一语言一作业） | 生成一致不代表能编译，四个编译器视角互不替代 |
-| security、memory、cognition | 无独立流水线 | 外部模块原型，四架构 `airy_defconfig` 均 `# CONFIG_MODULES is not set`，实现内建于 `kernel/security/airy/` 与 `kernel/kernel/syscalls/airy_clt.c`，由 `kernel-verify`／`airy-verify` 覆盖 |
+| security、memory、cognition | 无独立流水线 | 三棵是外部模块原型树，产品配方无引用、载荷不安装（`distro/` 内零引用）；产品路线的实现内建于 `kernel/security/airy/` 与 `kernel/kernel/syscalls/airy_clt.c`，由 `kernel-verify`／`airy-verify` 覆盖。原型树转成交付物（进配方或被载荷安装）时，按本节「何时才拆新流水线」补作业 |
 | tests-linux | 无独立流水线 | 单元测试由该叶仓自身 CI 承担，父仓只做 gitlink 完整性与 SBOM 归集 |
 | tools、ci | 无独立流水线 | `os-chk-verify` 的一次依赖安装与一次 pytest 已覆盖，拆开只会让一次工具改动排队多轮 |
 | docs | `mgmt-verify`、`ssot-verify` | 文档完整性与 SSoT 交叉引用是两件事，但都廉价，各一条流水线已足够 |
