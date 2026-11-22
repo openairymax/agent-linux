@@ -33,4 +33,4 @@
 [submodule "distro"]
 	path = distro
 	url = ../distro.git
-	branch = dev/hubs-01
+	branch = main
