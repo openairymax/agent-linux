@@ -215,6 +215,20 @@ spec()
         >"${FX}/distro/specs/airymaxos-release.spec"
 }
 
+# 重建配方的 Release 必须写全台账 release 再加 .airyN：构建容器不定义
+# dist，%{?dist} 会折叠成低 EVR，求解器改用上游未打补丁的包。夹具缺这一
+# 层时，折叠的配方与合规配方都会被判绿。
+patches()
+{
+    mkdir -p "${FX}/distro/ukui-patches/ukui-control-center"
+    cat >"${FX}/distro/ukui-patches/ukui-control-center/ukui-control-center.spec" <<'EOF'
+Name:           ukui-control-center
+Version:        3.1.2
+Release:        33.oe2403sp3.airy1
+Summary:        fixture
+EOF
+}
+
 mkfix()
 {
     base
@@ -222,6 +236,7 @@ mkfix()
     comps
     seeds
     spec
+    patches
     docs
 }
 
@@ -357,6 +372,30 @@ mkfix
 rm -f "${DOC}/ukui-424-feasibility.md"
 out="$(run --source "${FX}" --docs "${DOC}")"
 check "取证册缺册判拒绝" 1 "$?" "${out}" "docs/missing"
+
+mkfix
+sed -i 's/^Release:.*/Release:        33%{?dist}.airy1/' \
+    "${FX}/distro/ukui-patches/ukui-control-center/ukui-control-center.spec"
+out="$(run --source "${FX}")"
+check "重建配方依赖 dist 宏判拒绝" 1 "$?" "${out}" "ukui/release"
+
+mkfix
+sed -i 's/^Release:.*/Release:        33.airy1/' \
+    "${FX}/distro/ukui-patches/ukui-control-center/ukui-control-center.spec"
+out="$(run --source "${FX}")"
+check "重建配方 EVR 下沉判拒绝" 1 "$?" "${out}" "ukui/release"
+
+mkfix
+sed -i 's/^Version:.*/Version:        3.1.1/' \
+    "${FX}/distro/ukui-patches/ukui-control-center/ukui-control-center.spec"
+out="$(run --source "${FX}")"
+check "重建配方版本漂移判拒绝" 1 "$?" "${out}" "ukui/version"
+
+mkfix
+sed -i 's/^Name:.*/Name:           ukui-nowhere/' \
+    "${FX}/distro/ukui-patches/ukui-control-center/ukui-control-center.spec"
+out="$(run --source "${FX}")"
+check "重建配方不在台账判拒绝" 1 "$?" "${out}" "ukui/phantom"
 
 if [ "${fails}" -ne 0 ]; then
     printf 'test_ukui_lock: %d 项失败\n' "${fails}"
