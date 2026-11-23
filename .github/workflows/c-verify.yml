@@ -19,6 +19,7 @@ on:
       - 'kernel'
       - 'ci/gates/c-verify.sh'
       - 'ci/gates/config-d.sh'
+      - 'ci/gates/logger-d.sh'
       - 'ci/lib/**'
       - '.github/workflows/c-verify.yml'
   push:
@@ -31,6 +32,7 @@ on:
       - 'kernel'
       - 'ci/gates/c-verify.sh'
       - 'ci/gates/config-d.sh'
+      - 'ci/gates/logger-d.sh'
       - 'ci/lib/**'
       - '.github/workflows/c-verify.yml'
 
@@ -100,3 +102,17 @@ jobs:
         with: { submodules: recursive }
       - name: Verify config_d
         run: ci/ci.sh config-d
+
+  # ─── Job 6: logger-d（A-ULP 日志守护） ──────────────────────────────
+  # 日志守护与内核日志环是同一份 ABI 的两端：配置漂移、轮转窗口失守
+  # 或 unit 契约与出厂配置路径不一致，都只有装机后才暴露，必须在构建
+  # 期用单测与契约断言固定下来。
+  logger-d:
+    name: logger_d build & contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { submodules: recursive }
+      - name: Verify logger_d
+        run: ci/ci.sh logger-d
