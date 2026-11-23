@@ -27,7 +27,9 @@ airy_build_dir()
     printf '%s\n' "${dir}"
 }
 
-# airy_workdir: 进程退出时自动清理的临时目录
+# airy_workdir <变量名>: 创建进程退出时自动清理的临时目录
+# 目录名经变量名回填，而不是用 $(...) 取回显：命令替换在子 shell 里执行，
+# 钩子会随着子 shell 立即退出而触发，目录刚建好就被删掉。
 airy_workdir()
 {
     local dir
@@ -35,7 +37,7 @@ airy_workdir()
     dir="$(mktemp -d)"
     # shellcheck disable=SC2064  # 立即展开：退出时清理的就是本次创建的目录
     trap "rm -rf '${dir}'" EXIT
-    printf '%s\n' "${dir}"
+    printf -v "$1" '%s' "${dir}"
 }
 
 # airy_expect_rc <描述> <期望退出码> <命令...>

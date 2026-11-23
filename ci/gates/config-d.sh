@@ -34,7 +34,7 @@ BUILD="$(airy_build_dir "${ROOT}" AIRY_CFG_BUILD_ROOT airy-cfg-verify)"
 need_cmd cmake
 need_cmd diff
 
-WORK="$(airy_workdir)"
+airy_workdir WORK
 
 # ─── 1. 出树构建 ─────────────────────────────────────────────────────
 airy_build "${ROOT}/services" "${BUILD}" config_d config_d

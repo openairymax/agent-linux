@@ -32,7 +32,7 @@ BUILD="$(airy_build_dir "${ROOT}" AIRY_LOGD_BUILD_ROOT airy-logd-verify)"
 need_cmd cmake
 need_cmd ctest
 
-WORK="$(airy_workdir)"
+airy_workdir WORK
 
 # ─── 1. 出树构建 ─────────────────────────────────────────────────────
 airy_build "${ROOT}/services" "${BUILD}" logger_d \
