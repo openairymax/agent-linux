@@ -12,6 +12,7 @@
 6696e44f66e3214cf736ed9f68235b179031da185fd00da0008cefdc4ef82fc9  kernel/include/uapi/linux/airymax/cognition_types.h
 679c78f9301fbc223957ce336b2ea931aac83bd9ebb8c9d974e9fb40df9316e0  kernel/include/uapi/linux/airymax/error.h
 238db4ac3b16e7557e6a12ae8912eb08a05f2e9cbbd08396dbe5dc1b9a5deea0  kernel/include/uapi/linux/airymax/ipc.h
+37355fcaad6977355d14de1b02472a1869f23720a29fcdf6207fb26814110ea7  kernel/include/uapi/linux/airymax/log_ring.h
 99d3c3a843be94b622faaa2ad74bdebd4de213e68d36eeb5bc3d0814d6e49c54  kernel/include/uapi/linux/airymax/log_types.h
 6a4f88cb014e3e6e6a4bbb38eeb94d2795d80daa5b20571bfc2707ae55b5b629  kernel/include/uapi/linux/airymax/lsm_types.h
 c686e03d12fc8fd9817a456d4af430fbfc90dac1226c1916472a844cea3e5f50  kernel/include/uapi/linux/airymax/memory_types.h

@@ -1,6 +1,7 @@
 # ===========================================================================
 # agent-linux (AirymaxOS) CI Pipeline
-# 用户态 C 组件 CI（5 jobs：cloudnative / services / system / tests-linux / config-d，各自独立）
+# 用户态 C 组件 CI（4 jobs：cloudnative / services / system / tests-linux）
+# services 作业内分步执行 config_d 与 logger_d 契约门禁，预算内不拆作业。
 # ===========================================================================
 # Authority: docs/docs-linux/70-build-system/03-ci-cd-pipeline.md
 # Design: 一个构建面一条流水线，模块各占一个作业，互不掩盖失败结论
@@ -55,16 +56,22 @@ jobs:
       - name: Build cloudnative
         run: ci/ci.sh c-verify --module cloudnative
 
-  # ─── Job 2: services（daemon 框架 + CTest） ──────────────────────────
+  # ─── Job 2: services（daemon 框架 + 出厂配置/日志守护契约） ──────────
+  # config_d 与 logger_d 是 services 模块内的守护，装载契约与 unit 契约
+  # 各自独立成门禁；同一条作业内分步执行，结论按 step 归因，不互相掩盖。
   services:
     name: services build & ctest
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: { submodules: recursive }
       - name: Build services
         run: ci/ci.sh c-verify --module services
+      - name: Verify config_d
+        run: ci/ci.sh config-d
+      - name: Verify logger_d
+        run: ci/ci.sh logger-d
 
   # ─── Job 3: system（airymaxmon + CTest） ─────────────────────────────
   # 此前的 system 只被 Rust 与 Python 门禁覆盖：CMake 目标 airymaxmon 与
@@ -89,30 +96,3 @@ jobs:
         with: { submodules: recursive }
       - name: Build tests-linux
         run: ci/ci.sh c-verify --module tests-linux
-
-  # ─── Job 5: config-d（A-UCS 装载契约） ──────────────────────────────
-  # 出厂配置与内置默认值同源、拒绝路径可归因、conf.d 叠加顺序与 unit
-  # 契约，都是装机后才暴露的判据，必须在构建期就固定下来。
-  config-d:
-    name: config-d contract
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with: { submodules: recursive }
-      - name: Verify config_d
-        run: ci/ci.sh config-d
-
-  # ─── Job 6: logger-d（A-ULP 日志守护） ──────────────────────────────
-  # 日志守护与内核日志环是同一份 ABI 的两端：配置漂移、轮转窗口失守
-  # 或 unit 契约与出厂配置路径不一致，都只有装机后才暴露，必须在构建
-  # 期用单测与契约断言固定下来。
-  logger-d:
-    name: logger_d build & contract
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with: { submodules: recursive }
-      - name: Verify logger_d
-        run: ci/ci.sh logger-d
