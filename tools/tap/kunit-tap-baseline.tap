@@ -260,8 +260,9 @@ ok 21 airy_utf8_charset
     ok 4 payload_is_clipped_to_slot_test
     ok 5 frozen_ring_rejects_without_emitting_test
     ok 6 reserve_commit_publishes_without_event_test
-    ok 7 entry_guards_test
-    ok 8 destroy_releases_backing_store_test
+    ok 7 late_slot_publish_keeps_prefix_test
+    ok 8 entry_guards_test
+    ok 9 destroy_releases_backing_store_test
 ok 22 airy_log_ring
     # Subtest: airy_ipc_capability_p1_5
     ok 1 cap_init_clears_mdb_test
