@@ -7,7 +7,8 @@
 # 用法:
 #   ci/gates/kernel-kselftest.sh [--src DIR] [--install DIR] [--tap FILE]
 #                               [--targets "seccomp pidfd membarrier rseq"]
-#                               [--skip "rseq:run_param_test.sh"]
+#                               [--skip "rseq:run_param_test.sh \
+#                                       seccomp:seccomp_benchmark"]
 #                               [--wall SEC] [--kvm|--no-kvm]
 #
 # 三段逻辑此前是 kernel-verify.yml 里三个相邻的 run 块，靠 job 级 env 传
@@ -35,10 +36,15 @@
 # 现在按目录把预算写进安装目录的 settings，上游已声明有限预算的目录
 # 一律尊重（例如 seccomp 的 120s），不再做全局覆盖。
 #
-# 浸泡类用例在有界 CI 里无解，只能显式剔除并登记：rseq/run_param_test.sh
-# 一轮 = 默认 8 组配置 + 9 个注入点 + 9 个阻塞注入相位，每组配置跑 4 个
-# 二进制、1000 reps、6×ncpu 线程，合计约 608 次进程启动。它不是回归
-# 信号，属于实机浸泡，登记在 0.0.4 的实机验证任务里。
+# 浸泡类与基准类用例在有界 CI 里无解，只能显式剔除并登记：
+#   - rseq/run_param_test.sh 一轮 = 默认 8 组配置 + 9 个注入点 + 9 个阻塞
+#     注入相位，每组配置跑 4 个二进制、1000 reps、6×ncpu 线程，合计约
+#     608 次进程启动。它不是回归信号，属于实机浸泡，登记在 0.0.4 的实机
+#     验证任务里。
+#   - seccomp/seccomp_benchmark 量的是「每次系统调用多少纳秒」，在 TCG
+#     下受宿主机负载主导，上游给的 120s 预算只是裸机上界。把它当回归门
+#     会让同一棵树因机器忙闲而红绿互换；性能读数归基准线台账，不进门禁。
+# 剔除项与浸泡项一样登记在案，名字对不上即硬失败，不允许静默少跑。
 #
 # 退出码: 0 通过；1 构建/运行/TAP 解析失败；5 参数不满足。
 # ===========================================================================
@@ -54,7 +60,7 @@ INSTALL="${KSFT_INSTALL:-${REPO_ROOT}/kselftest-install}"
 TAP="kselftest.tap"
 TARGETS="seccomp pidfd membarrier rseq"
 # 剔除项（dir:name，空格分隔）。剔除本身是可审计的：名字对不上就硬失败。
-SKIP="${KSFT_SKIP:-rseq:run_param_test.sh}"
+SKIP="${KSFT_SKIP:-rseq:run_param_test.sh seccomp:seccomp_benchmark}"
 # 整批墙钟上界（秒），防止死锁把 job 拖到 job 级超时。
 WALL="${KSFT_WALL:-1200}"
 ACCEL=""
@@ -65,7 +71,7 @@ usage()
     cat <<'EOF'
 用法: ci/gates/kernel-kselftest.sh [--src DIR] [--install DIR] [--tap FILE]
                                    [--targets "seccomp pidfd membarrier rseq"]
-                                   [--skip "rseq:run_param_test.sh"]
+                                   [--skip "rseq:run_param_test.sh seccomp:seccomp_benchmark"]
                                    [--wall SEC] [--kvm|--no-kvm]
 
   --install  构建安装目录（缺省 $KSFT_INSTALL 或 <repo>/kselftest-install）
