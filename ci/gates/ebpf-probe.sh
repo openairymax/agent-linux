@@ -52,24 +52,29 @@ code_only()
 }
 
 # 目录整洁与头注释 ---------------------------------------------------------
+# chk_head FILE —— 源文件首行 SPDX 标识与首六行版权行。
+chk_head()
+{
+    local f="$1"
+
+    [ "$(sed -n '1p' "${f}")" = '// SPDX-License-Identifier: GPL-2.0-only' ] ||
+        bad "$(basename "${f}"): 首行缺少 SPDX"
+    sed -n '1,6p' "${f}" | grep -q 'Copyright' ||
+        bad "$(basename "${f}"): 缺少版权行"
+}
+
 chk_files()
 {
-    local f name
+    local f got
 
     group "目录与头注释"
-    while IFS= read -r f; do
-        name="$(basename "${f}")"
-        case "${name}" in
-        airy_probe.bpf.c|airy_probe.c|CMakeLists.txt) ;;
-        *) bad "目录出现非源码文件: ${name}" ;;
-        esac
-    done < <(find "${EBPF}" -mindepth 1 -maxdepth 1)
+    got="$(find "${EBPF}" -mindepth 1 -maxdepth 1 -printf '%f\n' | sort |
+        tr '\n' ' ')"
+    if [ "${got}" != 'CMakeLists.txt airy_probe.bpf.c airy_probe.c ' ]; then
+        bad "目录内容不符: ${got}"
+    fi
     for f in "${BPF_C}" "${BPF_L}"; do
-        sed -n '1p' "${f}" |
-            grep -q 'SPDX-License-Identifier: GPL-2.0-only' ||
-            bad "$(basename "${f}"): 首行缺少 SPDX"
-        sed -n '1,6p' "${f}" | grep -q 'Copyright' ||
-            bad "$(basename "${f}"): 缺少版权行"
+        chk_head "${f}"
     done
     have 'SPDX-License-Identifier' "${CMAKE}" "CMakeLists 缺少 SPDX"
     deny 'pt_regs|PT_REGS' <(code_only "${BPF_C}") \
@@ -170,57 +175,72 @@ chk_loader()
 }
 
 # 出树构建 -----------------------------------------------------------------
+# deps —— 探针构建依赖；已就位直接返回，否则一次装上。
 deps()
 {
-    if pkg-config --exists libbpf && command -v clang >/dev/null 2>&1 &&
-        command -v cmake >/dev/null 2>&1; then
+    if command -v clang >/dev/null 2>&1 && command -v cmake >/dev/null 2>&1 &&
+        pkg-config --exists libbpf; then
         return 0
     fi
     note "安装 eBPF 构建依赖"
     apt_sync && apt_install_min clang libbpf-dev pkg-config
 }
 
+# build_tree DIR —— 在 DIR 内配置并编译字节码；失败点各自留一行日志尾巴。
+build_tree()
+{
+    local dir="$1" log="$1/build.log"
+
+    if ! deps; then
+        bad "eBPF 构建依赖不可用"
+        return 1
+    fi
+    if ! cmake -S "${EBPF}" -B "${dir}/b" -DCMAKE_BUILD_TYPE=Release \
+        >"${log}" 2>&1; then
+        bad "cmake 配置失败"
+        tail -n 20 "${log}" >&2
+        return 1
+    fi
+    if ! cmake --build "${dir}/b" -j "$(nproc)" >>"${log}" 2>&1; then
+        bad "编译失败"
+        tail -n 40 "${log}" >&2
+        return 1
+    fi
+}
+
+# chk_obj DIR —— 字节码体积、BTF 段与加载器三处产物判据。
+chk_obj()
+{
+    local dir="$1" obj="$1/b/airy_probe.bpf.o" size
+
+    if [ ! -f "${obj}" ]; then
+        bad "缺少 airy_probe.bpf.o"
+        return
+    fi
+    size="$(stat -c %s "${obj}")"
+    if [ "${size}" -ge 65536 ]; then
+        bad "字节码 ${size} 字节，超过 64 KB（OS-KER-115）"
+    fi
+    if ! readelf -S "${obj}" 2>/dev/null | grep -qF '.BTF'; then
+        bad "字节码缺少 .BTF 段"
+    fi
+    need_exe "${dir}/b/airy-probe" "airy-probe 加载器"
+}
+
 chk_build()
 {
-    local tmp log obj sz
+    local tmp
 
     group "出树构建"
     have '\-g \-O2 \-target bpf' "${CMAKE}" "编译参数不符 OS-OBS-015"
-    if ! deps; then
-        bad "eBPF 构建依赖不可用"
-        endgroup
-        return
-    fi
-    if ! pkg-config --exists libbpf; then
-        bad "libbpf 开发包缺失"
-        endgroup
-        return
-    fi
-    tmp="$(mktemp -d)" || {
+    tmp="$(mktemp -d)"
+    if [ -z "${tmp}" ]; then
         bad "临时目录创建失败"
         endgroup
         return
-    }
-    log="${tmp}/build.log"
-    obj="${tmp}/b/airy_probe.bpf.o"
-    if ! cmake -S "${EBPF}" -B "${tmp}/b" -DCMAKE_BUILD_TYPE=Release \
-        >"${log}" 2>&1; then
-        bad "cmake 配置失败"
-        tail -n 20 "${log}" >&2 || true
-    elif ! cmake --build "${tmp}/b" -j "$(nproc)" >>"${log}" 2>&1; then
-        bad "编译失败"
-        tail -n 40 "${log}" >&2 || true
-    else
-        if [ ! -f "${obj}" ]; then
-            bad "缺少 airy_probe.bpf.o"
-        else
-            sz="$(stat -c %s "${obj}")"
-            [ "${sz}" -lt 65536 ] ||
-                bad "字节码 ${sz} 字节，超过 64 KB（OS-KER-115）"
-            readelf -S "${obj}" 2>/dev/null | grep -q '\.BTF' ||
-                bad "字节码缺少 .BTF 段"
-        fi
-        [ -x "${tmp}/b/airy-probe" ] || bad "缺少 airy-probe 加载器"
+    fi
+    if build_tree "${tmp}"; then
+        chk_obj "${tmp}"
     fi
     rm -rf "${tmp}"
     endgroup
