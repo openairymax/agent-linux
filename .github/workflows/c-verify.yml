@@ -21,6 +21,7 @@ on:
       - 'ci/gates/c-verify.sh'
       - 'ci/gates/config-d.sh'
       - 'ci/gates/logger-d.sh'
+      - 'ci/gates/macro-d.sh'
       - 'ci/lib/**'
       - '.github/workflows/c-verify.yml'
   push:
@@ -34,6 +35,7 @@ on:
       - 'ci/gates/c-verify.sh'
       - 'ci/gates/config-d.sh'
       - 'ci/gates/logger-d.sh'
+      - 'ci/gates/macro-d.sh'
       - 'ci/lib/**'
       - '.github/workflows/c-verify.yml'
 
@@ -72,6 +74,8 @@ jobs:
         run: ci/ci.sh config-d
       - name: Verify logger_d
         run: ci/ci.sh logger-d
+      - name: Verify macro_d
+        run: ci/ci.sh macro-d
 
   # ─── Job 3: system（airymaxmon + CTest） ─────────────────────────────
   # 此前的 system 只被 Rust 与 Python 门禁覆盖：CMake 目标 airymaxmon 与
