@@ -429,6 +429,8 @@ ok 34 airy_policy
     ok 1 obs_sec_table
     ok 2 obs_superv_table
     ok 3 obs_daemons_table
-    ok 4 obs_dir_guard
-    ok 5 obs_fev_guard
+    ok 4 obs_cap_fmt
+    ok 5 obs_cap_fmt_short
+    ok 6 obs_dir_guard
+    ok 7 obs_fev_guard
 ok 35 airy_obs

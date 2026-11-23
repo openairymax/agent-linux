@@ -129,6 +129,11 @@ jobs:
       - name: Observation surface contract
         run: ci/ci.sh kernel-obs
 
+      # 调试面契约：fs_initcall 注册、只读节点、机密边界与四架构调试基线。
+      # 与观测面同为静态判定，紧邻其后执行。
+      - name: Debug surface contract
+        run: ci/ci.sh kernel-debugfs
+
       # 零漂移三连：真值（任务书矩阵 / ABI 黄金样本 / DSL）与生成物必须一致。
       - name: Consistency (matrix / ABI / codegen)
         run: ci/ci.sh kernel-consistency --kind all
