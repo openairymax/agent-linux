@@ -66,32 +66,48 @@ run()
         bash "${FX}/ci/gates/channel-fetch.sh" "$@" 2>&1
 }
 
-# 假 gh：只实现本门禁用到的两条子命令，其余一律退 2，避免「调用面扩大
-# 而测试仍绿」。
+# 假 gh：只实现本门禁用到的三条子命令（run list、run download、api），
+# 其余一律退 2，避免「调用面扩大而测试仍绿」。
 cat >"${FX}/bin/gh" <<'EOF'
 #!/usr/bin/env bash
-case "${1:-} ${2:-}" in
-"run list")
-    if [ -e "${FAKE}/list-fail" ]; then
-        exit 1
-    fi
-    cat "${FAKE}/runs.json"
+case "${1:-}" in
+run)
+    case "${2:-}" in
+    list)
+        if [ -e "${FAKE}/list-fail" ]; then
+            exit 1
+        fi
+        cat "${FAKE}/runs.json"
+        ;;
+    download)
+        shift 2
+        id="${1:-}"
+        shift
+        name="" dir=""
+        while [ "$#" -gt 0 ]; do
+            case "$1" in
+            --name) name="${2:-}"; shift 2 ;;
+            --dir)  dir="${2:-}"; shift 2 ;;
+            *)      shift ;;
+            esac
+        done
+        [ -d "${FAKE}/art/${id}/${name}" ] || exit 1
+        mkdir -p "${dir}"
+        cp -a "${FAKE}/art/${id}/${name}/." "${dir}/"
+        ;;
+    *) exit 2 ;;
+    esac
     ;;
-"run download")
-    shift 2
-    id="${1:-}"
-    shift
-    name="" dir=""
-    while [ "$#" -gt 0 ]; do
-        case "$1" in
-        --name) name="${2:-}"; shift 2 ;;
-        --dir)  dir="${2:-}"; shift 2 ;;
-        *)      shift ;;
-        esac
-    done
-    [ -d "${FAKE}/art/${id}/${name}" ] || exit 1
-    mkdir -p "${dir}"
-    cp -a "${FAKE}/art/${id}/${name}/." "${dir}/"
+api)
+    url="${2:-}"
+    case "${url}" in
+    */actions/runs/*/artifacts*) ;;
+    *) exit 2 ;;
+    esac
+    id="${url#*/actions/runs/}"
+    id="${id%%/*}"
+    [ -d "${FAKE}/art/${id}" ] || exit 1
+    ls -1 "${FAKE}/art/${id}"
     ;;
 *) exit 2 ;;
 esac
@@ -105,16 +121,16 @@ mkfix()
     mkdir -p "${FAKE}/art" "${OUT}"
 }
 
-# art <run-id> — 造一个验收制品目录。
+# art <run-id> [后缀] — 造一个验收制品目录；矩阵项按后缀分开命名。
 art()
 {
-    mkdir -p "${FAKE}/art/$1/airymaxos-acceptance"
+    mkdir -p "${FAKE}/art/$1/airymaxos-acceptance${2:+-$2}"
 }
 
-# chan <run-id> <版本> — 写一份符合客户端白名单的清单。
+# chan <run-id> <版本> [后缀] — 写一份符合客户端白名单的清单。
 chan()
 {
-    cat >"${FAKE}/art/$1/airymaxos-acceptance/channel.json" <<EOF
+    cat >"${FAKE}/art/$1/airymaxos-acceptance${3:+-$3}/channel.json" <<EOF
 {
   "schema_version": 1,
   "channel": "stable",
@@ -183,6 +199,34 @@ chan 31 0.0.4
 runs 32:2026-11-02T12:00:00Z 31:2026-11-02T10:00:00Z
 out="$(run --tag v0.0.4 --repo o/r --dir "${OUT}")"
 check "无制品的最新 run 跳过" 0 "$?" "${out}" "通道清单"
+
+# 装配按矩阵项展开，验收制品名带架构后缀：取件按内容定位，不按固定名字。
+mkfix
+art 81 x86_64
+chan 81 0.0.5 x86_64
+runs 81:2026-11-23T10:00:00Z
+out="$(run --tag v0.0.5 --repo o/r --dir "${OUT}")"
+check "按矩阵后缀取回清单" 0 "$?" "${out}" "制品 airymaxos-acceptance-x86_64"
+
+# 同一 run 的 ARM 腿没有清单：先试到它不能把整个 run 判负。
+mkfix
+art 82 aarch64-usb
+art 82 x86_64
+chan 82 0.0.4 x86_64
+runs 82:2026-11-23T10:00:00Z
+out="$(run --tag v0.0.4 --repo o/r --dir "${OUT}")"
+check "无清单的腿跳过、有清单的腿命中" 0 "$?" "${out}" \
+    "制品 airymaxos-acceptance-x86_64"
+
+# 同名制品与带后缀制品并存时，同名是更早的契约，优先取它。
+mkfix
+art 83
+chan 83 0.0.5
+art 83 x86_64
+chan 83 0.0.5 x86_64
+runs 83:2026-11-23T10:00:00Z
+out="$(run --tag v0.0.5 --repo o/r --dir "${OUT}")"
+check "同名制品优先" 0 "$?" "${out}" "制品 airymaxos-acceptance，"
 
 mkfix
 runs

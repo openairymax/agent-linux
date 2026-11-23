@@ -21,6 +21,12 @@
 # --tag 相等即命中。同一版本两次装配出不同内容属于发布事故，因此命中第一
 # 份即停：更新的 run 就是更权威的证据，回落到旧 run 只会掩盖差异。
 #
+# 制品名不是固定值：装配按矩阵项展开，验收制品带架构与腿名后缀
+# （airymaxos-acceptance-x86_64、airymaxos-acceptance-aarch64-usb），同名
+# 上传会在合并阶段 409。--artifact 因此是名字基：同名制品优先，其后按基名
+# 加连字符的前缀逐个试，清单在哪一份里就从哪一份取。按名字取件而不按内容
+# 猜，是为了让「取错制品」在日志里可见——每个尝试过的名字都会留下记录。
+#
 # 退出码: 0 已取回；1 无可用 run 或清单不可信；5 参数/环境不满足。
 # ===========================================================================
 set -uo pipefail
@@ -84,34 +90,60 @@ for run in sorted(json.load(open(sys.argv[1])),
 [ -n "${ids}" ] || die "${CH_REPO} 没有成功的 ${WF} 运行"
 
 DEST="${CH_DIR}/${CH_NAME}"
+
+# pick — 制品名候选：同名在前，其后是基名加连字符的展开项。制品名不含空格，
+# 故按空白切分即可；排序让「同名」优先，其余按字典序，取件顺序可复现。
+pick()
+{
+    awk -v base="${ART}" '
+        $0 == base { print 0, $0; next }
+        index($0, base "-") == 1 { print 1, $0 }
+    ' | sort -k1,1n -k2,2 | cut -d' ' -f2-
+}
+
+# take <run-id> —— 0 已取回；1 本 run 无本版清单；3 清单不可信；5 环境不满足。
+take()
+{
+    local id="$1" names name dl rc
+    names="$(gh api "repos/${CH_REPO}/actions/runs/${id}/artifacts?per_page=100" \
+        --jq '.artifacts[].name' 2>/dev/null)" ||
+        { note "run ${id} 制品清单不可读，跳过"; return 1; }
+    while IFS= read -r name; do
+        [ -n "${name}" ] || continue
+        dl="${TMP}/run-${id}-${name}"
+        gh run download "${id}" --repo "${CH_REPO}" --name "${name}" \
+            --dir "${dl}" >/dev/null 2>&1 || continue
+        [ -f "${dl}/${CH_NAME}" ] || continue
+        channel_verify "${dl}/${CH_NAME}"
+        rc=$?
+        if [ "${rc}" -eq "${ETRUST}" ]; then
+            err "run ${id} 的 ${CH_NAME} 不可信: ${CH_MSG}"
+            return "${ETRUST}"
+        fi
+        [ "${rc}" -eq 0 ] || {
+            err "客户端校验器不可用（rc=${rc}）: ${CH_MSG}"
+            return "${EINVAL}"
+        }
+        [ "${CH_PICK}" = "${CH_WANT}" ] || continue
+        place "${dl}/${CH_NAME}" "${DEST}" ||
+            { err "写入失败: ${DEST}"; return "${EINVAL}"; }
+        say "通道清单: ${DEST}（run ${id}，制品 ${name}，sha256 $(sha256sum "${DEST}" |
+            cut -d' ' -f1)）"
+        return 0
+    done < <(printf '%s\n' "${names}" | pick)
+    note "run ${id} 无 ${ART} 制品或制品内无 ${CH_WANT} 的 ${CH_NAME}，跳过"
+    return 1
+}
+
 while IFS= read -r id; do
     [ -n "${id}" ] || continue
-    dl="${TMP}/run-${id}"
-    if ! gh run download "${id}" --repo "${CH_REPO}" --name "${ART}" \
-            --dir "${dl}" >/dev/null 2>&1; then
-        note "run ${id} 无 ${ART} 制品，跳过"
-        continue
-    fi
-    src="${dl}/${CH_NAME}"
-    [ -f "${src}" ] ||
-        { note "run ${id} 制品内无 ${CH_NAME}，跳过"; continue; }
-
-    channel_verify "${src}"
+    take "${id}"
     rc=$?
     case "${rc}" in
-    0) ;;
-    "${ETRUST}") err "run ${id} 的 ${CH_NAME} 不可信: ${CH_MSG}"; exit 1 ;;
-    *) err "客户端校验器不可用（rc=${rc}）: ${CH_MSG}"; exit "${EINVAL}" ;;
+    0) exit 0 ;;
+    "${ETRUST}") exit 1 ;;
+    "${EINVAL}") exit "${EINVAL}" ;;
     esac
-    if [ "${CH_PICK}" != "${CH_WANT}" ]; then
-        note "run ${id} 的清单版本 ${CH_PICK}，非 ${CH_WANT}，跳过"
-        continue
-    fi
-
-    place "${src}" "${DEST}" || { err "写入失败: ${DEST}"; exit "${EINVAL}"; }
-    say "通道清单: ${DEST}（run ${id}，sha256 $(sha256sum "${DEST}" |
-        cut -d' ' -f1)）"
-    exit 0
 done <<<"${ids}"
 
 die "没有 run 提供 ${CH_WANT} 的 ${CH_NAME}（${CH_REPO} 近 ${LIMIT} 次成功的 ${WF}）"
