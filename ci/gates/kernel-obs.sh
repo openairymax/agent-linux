@@ -26,41 +26,19 @@
 # ===========================================================================
 set -uo pipefail
 
-readonly EINVAL=5
-
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 # shellcheck source=../lib/log.sh
 . "${ROOT}/ci/lib/log.sh"
+# shellcheck source=../lib/opts.sh
+. "${ROOT}/ci/lib/opts.sh"
 
 SRC="${ROOT}/kernel"
-
-usage()
-{
-    cat <<'EOF'
-用法: ci/gates/kernel-obs.sh [--src DIR]
-EOF
-}
-
-while [ "$#" -gt 0 ]; do
-    case "$1" in
-    -h | --help) usage; exit 0 ;;
-    --src) SRC="${2:-}"; shift 2 ;;
-    *)
-        err "未知参数: $1"
-        usage >&2
-        exit "${EINVAL}"
-        ;;
-    esac
-done
+opts_src kernel-obs.sh "$@"
 
 OBS="${SRC}/kernel/obs"
-FAILS=0
 
-bad() { err "$*"; FAILS=$((FAILS + 1)); }
-
-[ -d "${SRC}" ] || { err "内核源码目录不存在: ${SRC}"; exit "${EINVAL}"; }
-[ -d "${OBS}" ] || { err "缺少观测面目录: ${OBS}"; exit "${EINVAL}"; }
-[ -f "${OBS}/Kbuild" ] || { err "缺少 ${OBS}/Kbuild"; exit "${EINVAL}"; }
+[ -d "${OBS}" ] || { err "缺少观测面目录: ${OBS}"; exit "${CI_EINVAL}"; }
+[ -f "${OBS}/Kbuild" ] || { err "缺少 ${OBS}/Kbuild"; exit "${CI_EINVAL}"; }
 
 # 注册时序 -----------------------------------------------------------------
 chk_place()
@@ -68,15 +46,15 @@ chk_place()
     local lsm="${SRC}/security/airy/airy_lsm.c"
 
     group "注册时序"
-    grep -qE '^core_initcall\(airy_obs_start\);' "${OBS}/airy_obs_core.c" ||
-        bad "顶层目录未在 core_initcall 发布"
-    grep -q 'airy_probe_exit();' "${OBS}/airy_obs_core.c" ||
-        bad "发布失败未撤回 agentrt 就绪标记"
-    grep -qE 'kset_create_and_add\("airy"' "${OBS}/airy_obs_core.c" ||
-        bad "未建立 /sys/airy 顶层 kset"
-    if [ -f "${lsm}" ] &&
-        grep -qE 'airy_obs_(init|start)|airy_obs\.h' "${lsm}"; then
-        bad "LSM 初始化仍在注册观测面（kernfs 尚未就绪）"
+    have '^core_initcall\(airy_obs_start\);' "${OBS}/airy_obs_core.c" \
+        "顶层目录未在 core_initcall 发布"
+    have 'airy_probe_exit\(\);' "${OBS}/airy_obs_core.c" \
+        "发布失败未撤回 agentrt 就绪标记"
+    have 'kset_create_and_add\("airy"' "${OBS}/airy_obs_core.c" \
+        "未建立 /sys/airy 顶层 kset"
+    if [ -f "${lsm}" ]; then
+        deny 'airy_obs_(init|start)|airy_obs\.h' "${lsm}" \
+            "LSM 初始化仍在注册观测面（kernfs 尚未就绪）"
     fi
     endgroup
 }
@@ -84,31 +62,27 @@ chk_place()
 # 属性契约 -----------------------------------------------------------------
 chk_attrs()
 {
-    local f name
+    local f name attr
 
     group "属性契约"
-    grep -q '__ATTR(_name, 0444, _name##_show, NULL)' "${OBS}/airy_obs.h" ||
-        bad "AIRY_OBS_ATTR 未固定为 0444 只读"
+    have '__ATTR\(_name, 0444, _name##_show, NULL\)' "${OBS}/airy_obs.h" \
+        "AIRY_OBS_ATTR 未固定为 0444 只读"
     for f in "${OBS}"/*.c; do
         [ -f "${f}" ] || continue
-        if grep -qE '(^|[^a-z_])__ATTR\(' "${f}"; then
-            bad "$(basename "${f}"): 绕过 AIRY_OBS_ATTR 直接构造属性"
-        fi
-        if grep -qE 'static[[:space:]]+ssize_t[[:space:]]+[a-z0-9_]+_store' \
-            "${f}"; then
-            bad "$(basename "${f}"): 观测面出现写回调"
-        fi
-        if grep -qE '(^|[^a-z_])(scnprintf|snprintf|sprintf)\(' "${f}"; then
-            bad "$(basename "${f}"): 输出未走 sysfs_emit"
-        fi
-        while IFS= read -r name; do
-            grep -qE "${name}_show\\(" "${f}" ||
-                bad "$(basename "${f}"): 属性 ${name} 缺少同名 show 回调"
+        name="$(basename "${f}")"
+        deny '(^|[^a-z_])__ATTR\(' "${f}" \
+            "${name}: 绕过 AIRY_OBS_ATTR 直接构造属性"
+        deny 'static[[:space:]]+ssize_t[[:space:]]+[a-z0-9_]+_store' "${f}" \
+            "${name}: 观测面出现写回调"
+        deny '(^|[^a-z_])(scnprintf|snprintf|sprintf)\(' "${f}" \
+            "${name}: 输出未走 sysfs_emit"
+        while IFS= read -r attr; do
+            have "${attr}_show\(" "${f}" \
+                "${name}: 属性 ${attr} 缺少同名 show 回调"
         done < <(sed -n 's/.*AIRY_OBS_ATTR(\([a-z0-9_]*\)).*/\1/p' "${f}" |
             sort -u)
     done
-    grep -q 'single_open(' "${OBS}/airy_obs_proc.c" ||
-        bad "/proc/airy 未走 single_open"
+    have 'single_open\(' "${OBS}/airy_obs_proc.c" "/proc/airy 未走 single_open"
     endgroup
 }
 
@@ -126,9 +100,8 @@ chk_kbuild()
         bad "Kbuild 清单与目录内容不一致"
         diff <(printf '%s\n' "${listed}") <(printf '%s\n' "${actual}") >&2 || true
     fi
-    grep -qE '^obj-\$\(CONFIG_AIRY_OBS\)[[:space:]]*\+=[[:space:]]*obs/' \
-        "${SRC}/kernel/Makefile" ||
-        bad "kernel/Makefile 未引入 obs/ 子目录"
+    have '^obj-\$\(CONFIG_AIRY_OBS\)[[:space:]]*\+=[[:space:]]*obs/' \
+        "${SRC}/kernel/Makefile" "kernel/Makefile 未引入 obs/ 子目录"
     endgroup
 }
 
@@ -140,8 +113,8 @@ chk_config()
     group "配置开关"
     for cfg in configs/defconfig configs/defconfig-agent \
         configs/defconfig-embedded security/airy/.kunitconfig; do
-        grep -qx 'CONFIG_AIRY_OBS=y' "${SRC}/${cfg}" ||
-            bad "${cfg} 未开启 CONFIG_AIRY_OBS"
+        have '^CONFIG_AIRY_OBS=y$' "${SRC}/${cfg}" \
+            "${cfg} 未开启 CONFIG_AIRY_OBS"
     done
     endgroup
 }

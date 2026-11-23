@@ -12,6 +12,10 @@
 # 解析与兜底集中在此；usage() 仍留在各门禁，因为用法文本属于门禁自己。
 # 调用约定：先 source lib/log.sh（依赖 need_dir / err / CI_EINVAL），并已声明
 # SOURCE / ROOT 变量与 usage()；opts_tree 直接给这两个变量赋值。
+#
+# opts_src 是内核源码类门禁的形状：只有一个 --src，缺省 <repo>/kernel。
+# kernel-obs 与 kernel-debugfs 的用法行与解析循环逐行相同，两份各自演化时
+# 必然只改一边；用法文本也一并由本函数生成，两点因此不会再分叉。
 # ===========================================================================
 
 # opts_tree ARGS... —— 解析 --source/--root；两者至少给出一个。
@@ -31,6 +35,36 @@ opts_tree()
     [ -n "${SOURCE}" ] || [ -n "${ROOT}" ] || {
         err "至少给出 --source 或 --root"
         usage >&2
+        exit "${CI_EINVAL}"
+    }
+}
+
+# opts_src LABEL ARGS... —— 内核源码类门禁的 --src 解析、用法与目录校验。
+#
+# --src 指向内核源码树，缺省由调用方预置为 <repo>/kernel；目录必须存在。
+# LABEL 是门禁自身的文件名，用来生成用法行，因此每个门禁的帮助输出仍指向
+# 自己。帮助退 0、参数不合法退 CI_EINVAL，返回即表示 SRC 可用。
+opts_src()
+{
+    local label="$1"
+
+    shift
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            -h|--help)
+                printf '用法: ci/gates/%s [--src DIR]\n' "${label}"
+                exit 0
+                ;;
+            --src) need_dir "$1" "${2:-}"; SRC="$2"; shift 2 ;;
+            *)
+                err "未知参数: $1（可用: --src）"
+                printf '用法: ci/gates/%s [--src DIR]\n' "${label}" >&2
+                exit "${CI_EINVAL}"
+                ;;
+        esac
+    done
+    [ -d "${SRC}" ] || {
+        err "内核源码目录不存在: ${SRC}"
         exit "${CI_EINVAL}"
     }
 }

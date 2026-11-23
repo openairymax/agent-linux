@@ -26,55 +26,29 @@
 # ===========================================================================
 set -uo pipefail
 
-readonly EINVAL=5
-
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 # shellcheck source=../lib/log.sh
 . "${ROOT}/ci/lib/log.sh"
+# shellcheck source=../lib/opts.sh
+. "${ROOT}/ci/lib/opts.sh"
 
 SRC="${ROOT}/kernel"
-
-usage()
-{
-    cat <<'EOF'
-用法: ci/gates/kernel-debugfs.sh [--src DIR]
-EOF
-}
-
-while [ "$#" -gt 0 ]; do
-    case "$1" in
-    -h | --help) usage; exit 0 ;;
-    --src) SRC="${2:-}"; shift 2 ;;
-    *)
-        err "未知参数: $1"
-        usage >&2
-        exit "${EINVAL}"
-        ;;
-    esac
-done
+opts_src kernel-debugfs.sh "$@"
 
 OBS="${SRC}/kernel/obs"
 DBG="${OBS}/airy_obs_debugfs.c"
-FAILS=0
 
-bad() { err "$*"; FAILS=$((FAILS + 1)); }
-
-[ -d "${SRC}" ] || { err "内核源码目录不存在: ${SRC}"; exit "${EINVAL}"; }
-[ -f "${DBG}" ] || { err "缺少调试面源文件: ${DBG}"; exit "${EINVAL}"; }
+[ -f "${DBG}" ] || { err "缺少调试面源文件: ${DBG}"; exit "${CI_EINVAL}"; }
 
 # 注册时序 -----------------------------------------------------------------
 chk_place()
 {
     group "注册时序"
-    grep -qE '^fs_initcall\(airy_dbg_start\);' "${DBG}" ||
-        bad "调试面未在 fs_initcall 注册（debugfs 尚未就绪）"
-    grep -q 'airy_obs_ready' "${DBG}" ||
-        bad "调试面未依赖 /sys/airy 的就绪标记"
-    if grep -q 'airy_probe_exit' "${DBG}"; then
-        bad "调试面失败不应撤回运行时就绪标记"
-    fi
-    grep -q 'pr_warn(' "${DBG}" ||
-        bad "调试面创建失败未告警"
+    have '^fs_initcall\(airy_dbg_start\);' "${DBG}" \
+        "调试面未在 fs_initcall 注册（debugfs 尚未就绪）"
+    have 'airy_obs_ready' "${DBG}" "调试面未依赖 /sys/airy 的就绪标记"
+    deny 'airy_probe_exit' "${DBG}" "调试面失败不应撤回运行时就绪标记"
+    have 'pr_warn\(' "${DBG}" "调试面创建失败未告警"
     endgroup
 }
 
@@ -88,14 +62,9 @@ chk_readonly()
     ro=$(grep -cE 'debugfs_create_file\([^,]+,[[:space:]]*0444,' "${DBG}")
     [ "${calls}" -gt 0 ] || bad "调试面未创建任何文件"
     [ "${calls}" -eq "${ro}" ] || bad "存在非 0444 的调试文件"
-
-    if grep -qE 'debugfs_create_(u8|u16|u32|u64|bool|blob|xarray|atomic)' \
-        "${DBG}"; then
-        bad "使用可写投影接口创建调试节点"
-    fi
-    if grep -qE '\.[[:space:]]*write[[:space:]]*=[[:space:]]*' "${DBG}"; then
-        bad "调试文件出现写回调"
-    fi
+    deny 'debugfs_create_(u8|u16|u32|u64|bool|blob|xarray|atomic)' "${DBG}" \
+        "使用可写投影接口创建调试节点"
+    deny '\.[[:space:]]*write[[:space:]]*=' "${DBG}" "调试文件出现写回调"
     endgroup
 }
 
@@ -106,12 +75,10 @@ chk_nodes()
 
     group "节点面"
     for name in cap_table last_decision ring_buffer_dump; do
-        grep -q "mk_node(dir, \"${name}\"" "${DBG}" ||
-            bad "缺少调试节点 ${name}"
+        have "mk_node\(dir, \"${name}\"" "${DBG}" "缺少调试节点 ${name}"
     done
     for s in sec superv log; do
-        grep -q "dbg_group(\"${s}\"" "${DBG}" ||
-            bad "缺少调试分组 ${s}"
+        have "dbg_group\(\"${s}\"" "${DBG}" "缺少调试分组 ${s}"
     done
     endgroup
 }
@@ -127,24 +94,22 @@ chk_secret()
         case "${f}" in
         *_test.c) continue ;;
         esac
-        if grep -q 'randtag' "${f}"; then
-            bad "$(basename "${f}"): 观测/调试面引用了防伪随机标签"
-        fi
+        deny 'randtag' "${f}" \
+            "$(basename "${f}"): 观测/调试面引用了防伪随机标签"
     done
-    grep -q 'airy_obs_cap_fmt' "${OBS}/airy_obs_sec.c" ||
-        bad "缺少能力槽行格式化实现"
+    have 'airy_obs_cap_fmt' "${OBS}/airy_obs_sec.c" \
+        "缺少能力槽行格式化实现"
     endgroup
 }
 
 # 构建与配置 ---------------------------------------------------------------
 chk_build()
 {
-    local cfg arch
+    local cfg arch name
 
     group "构建与配置"
-    grep -qE '^airy_obs-\$\(CONFIG_DEBUG_FS\)[[:space:]]*\+=[[:space:]]*airy_obs_debugfs\.o' \
-        "${OBS}/Kbuild" ||
-        bad "Kbuild 未按 CONFIG_DEBUG_FS 引入调试面对象"
+    have '^airy_obs-\$\(CONFIG_DEBUG_FS\)[[:space:]]*\+=[[:space:]]*airy_obs_debugfs\.o' \
+        "${OBS}/Kbuild" "Kbuild 未按 CONFIG_DEBUG_FS 引入调试面对象"
     for arch in x86 arm64 riscv loongarch; do
         cfg="${SRC}/arch/${arch}/configs/airy_defconfig"
         if [ ! -f "${cfg}" ]; then
@@ -152,8 +117,8 @@ chk_build()
             continue
         fi
         for name in DEBUG_FS TRACING EVENT_TRACING; do
-            grep -qx "CONFIG_${name}=y" "${cfg}" ||
-                bad "${arch}/airy_defconfig 未开启 CONFIG_${name}"
+            have "^CONFIG_${name}=y\$" "${cfg}" \
+                "${arch}/airy_defconfig 未开启 CONFIG_${name}"
         done
     done
     endgroup
