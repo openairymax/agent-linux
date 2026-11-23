@@ -112,6 +112,13 @@ jobs:
       - name: Display capability gates
         run: ci/ci.sh desktop-capability
 
+      # CA-090：locale 支持面此前只有 kickstart 的一行 LANG，没有矩阵、没有
+      # 生成入口、没有门禁。这里判矩阵数据（8 条、默认 en_US、P0 两条）、
+      # 载具（源包登记与三个安装点、两个剖面的语言包）与行为（未知项与坏
+      # 矩阵各判负一次）；生成结果由装机段 airy-locale check 判定。
+      - name: Locale matrix gates
+        run: ci/ci.sh locale-matrix
+
       # R1-14 / 判据⑨①：磁盘、网络、模型三项状态此前只在三个命令的退出码
       # 里，桌面用户既不知道命令名，也看不到结论。本门禁判面板确实调用三
       # 个生产者、菜单项可点可见、打包三处同源，并用桩生产者覆盖齐备/缺件/
