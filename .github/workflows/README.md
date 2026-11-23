@@ -35,6 +35,7 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 ├── kernel-verify.yml      # 内核构建矩阵 + 静态分析 + 测试
 ├── mgmt-verify.yml        # 治理文件完整性 + 叶仓 CI 汇总
 ├── nightly.yml            # 夜间测试套件 + 自动回退/预算检查
+├── obs-verify.yml         # 可编程探针：eBPF 契约判定 + 出树构建
 ├── os-chk-verify.yml      # OS-CHK 统一门禁编排（P0/P1 阻断）
 ├── payload-seed.yml       # 定时把闭包池推成按输入指纹命名的 seed 层
 ├── release.yml            # 构建 + SBOM + 签名 + 发布
@@ -44,7 +45,7 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 └── tui-verify.yml         # TUI 工作区：依赖源 + 格式/静态/单测 + 跨架构类型检查
 ```
 
-十三个流水线，作业数 1~4（`os-chk-verify` 一个、`sdk-verify` 四个）。
+十四个流水线，作业数 1~4（`obs-verify`、`os-chk-verify` 各一个、`sdk-verify` 四个）。
 作业数上限登记在 `ci/baseline/workflow-budgets.txt`，只许下调。
 
 ## 3. 流水线清单
@@ -58,6 +59,7 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 | `mgmt-verify.yml` | `file-integrity`、`orchestrate-leaf-ci` | 文档、`.gitmodules`、`ssot-registry.yaml`、`MAINTAINERS`、`CODEOWNERS`、`tools/**`、`.github/**`、`kernel` 的 PR，以及 `main` 的 push | 校验由 `.gitmodules` 推导的子模块目录、12 份 `[SC]` 共享头、`ipc.h` 的物理唯一副本、12 份治理文件、不得出现 `airymaxos-` 前缀；第二作业汇总叶仓 CI、跑 markdownlint 与版权头检查 |
 | `image-build.yml` | `assemble`、`accept` | 仅 `workflow_dispatch`（发行门禁，不参与 PR） | `assemble` 先把构建工具链预热成可离线自证的 dnf 缓存树，再在特权官方容器内以钉版的 openEuler netinst 为基底组装桌面 ISO，校验装配清单与 ISO 校验和；`accept` 在 QEMU 下分别以 BIOS 与 UEFI 安装，冷启动到 `AIRYMAX-DESKTOP-READY`（`acceptance=true` 时为 `AIRYMAX-SMOKE-PASS`），发布 TAP 与串口日志；`release_tag` 非空且非验收剖面时，另为 ISO 出具 in-toto/SLSA 构建来源证明，以 `attest-<tag>` 推入同一制品仓库并回读摘要、`buildId` 与字节 |
 | `nightly.yml` | `nightly-test-suite`、`nightly-revert-or-budget` | cron `0 2 * * *` 与手动 | 形式化验证、72 小时浸泡、混沌注入（CPU 热插拔、内存热移除、I/O 错误、网络分区）；第二作业在回归时经 `auto-bisect` 自动回退，或做 CI 预算检查（稳态 60 分钟，内核冷缓存 90 分钟） |
+| `obs-verify.yml` | `ebpf-verify` | `system` gitlink、`ci/gates/ebpf-probe.sh`、`ci/lib/**`、`ci/ci.sh` 的 PR 与 `main` 的 push | 挂载点必须是 kprobe/kretprobe 成对的 `airy_cap_check` 与确有发射点的两个 tracepoint；探针上下文成员顺序与 `include/trace/events/airy.h` 的 `TP_STRUCT__entry` 逐项相等；ringbuf ≥ 4 MB、计数走 per-CPU array、map 显式 `max_entries`；加载器显式销毁 link、ringbuf 与 object，验证器日志落 `/var/log/airymaxos/bpf-load.log`；最后以 clang `-target bpf` 出树编译，断言产物小于 64 KB 且带 `.BTF` 段。加载与实跑需要 Airymax 内核符号，属 285H 验收面 |
 | `payload-seed.yml` | `probe`、`warm` | cron `17 19 * * *`（北京时间 03:17）与手动 | `probe` 对实时上游取五段仓库元数据，算出 `seed-<arch>-<key16>`；`warm` 恢复上一轮构建留下的闭包池，仅当池的输入标签与该指纹一致时把它推成 seed 层，上游不可达或指纹已变则退 0 并说明原因。预热只搬运已有字节，不下载任何 RPM，因此也不得成为构建的先决条件；同一作业尾部回收陈旧 seed 层（每架构按创建时间留最近 4 个，`build-` 一律不动） |
 | `release.yml` | `build-and-sign`、`publish-release` | 标签 `v*`、`v*-rc*` 与手动 | 源码 tarball（超项目 + 逐子仓按 gitlink 导出）、`airy_defconfig` 四架构快照、syscall ABI 报告、逐子模块 SBOM 合并、内核 RPM、GPG 与 cosign 签名、SDK 压缩包；第二作业校验已签名产物、推送 OCI 镜像到 ghcr、清理过期资产、创建 GitHub Release（正式版一律 `make_latest: false`，创建后由 `release-stage hold` 读回断言页面停在 held，只有发布机在 B 轮 `AIRYMAX-SMOKE-PASS` 之后执行的 `release-stage promote` 才能把它推进 `releases/latest`），并在对账后为整套发布资产出具 in-toto/SLSA 证明（`attest-<tag>`，指纹取 run id 与检出提交） |
 | `ssot-verify.yml` | `ssot-syntax-and-rules`、`doc-links` | 文档、`ssot-registry.yaml`、`tools/governance/validate-ssot.py` 的 PR 与 `main` 的 push | PyYAML 语法、规则 ID 计数与唯一性、`validate-ssot.py` 交叉引用；相对路径链接完整性 |

@@ -1,0 +1,57 @@
+# ===========================================================================
+# agent-linux (AirymaxOS) CI Pipeline
+# 可编程探针（P-09）：eBPF 契约静态判定 + 出树构建
+# ===========================================================================
+# Authority: docs/docs-linux/90-observability/02-ebpf-probes.md
+#             （OS-OBS-011/012/015/016/018/020、OS-STD-OBS-012/013/014、
+#               OS-KER-115）
+# Design: 判据全部在 ci/gates/ebpf-probe.sh，YAML 只做 checkout 与派遣；
+#         加载与实跑依赖 Airymax 内核符号，属 285H 验收面，不在托管 runner
+#         上替身验证。
+# ---------------------------------------------------------------------------
+# 监听面取 system gitlink 而不是 system/obs/ebpf/**：父仓只能看到子模块指针
+# 的移动，按子目录过滤等于永不触发。其余 system 改动由 c-verify 承担，这里
+# 只多承担一次指针变动后的探针复验。
+# ===========================================================================
+
+name: obs-verify
+
+on:
+  pull_request:
+    paths:
+      - 'system'
+      - 'ci/gates/ebpf-probe.sh'
+      - 'ci/lib/**'
+      - 'ci/ci.sh'
+      - '.github/workflows/obs-verify.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'system'
+      - 'ci/gates/ebpf-probe.sh'
+      - 'ci/lib/**'
+      - 'ci/ci.sh'
+      - '.github/workflows/obs-verify.yml'
+
+# 最小权限：只读检出与构建，不触发布与制品写。
+permissions:
+  contents: read
+
+# 同一 ref 只保留最新一轮：旧结论对当前树已失效，继续排队只抢并发额度。
+concurrency:
+  group: obs-verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ebpf-verify:
+    name: eBPF Probe Contract and Build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { submodules: recursive }
+
+      # 门禁先判契约（挂载点、tracepoint 字段顺序、map 规格、释放路径），
+      # 再以 clang -target bpf 出树编译并核产物，两步都过才算通过。
+      - name: eBPF probe contract and out-of-tree build
+        run: ci/ci.sh ebpf-probe
