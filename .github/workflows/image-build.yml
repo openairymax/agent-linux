@@ -172,8 +172,12 @@ jobs:
       # 提交上全量跑过，组装再跑一遍不增加判据，却要付 111 秒（CI-16）。其余
       # 五段合计不足两秒，留着——dispatch 可以指向任何历史提交，不必假设它
       # 一定走过 push 门禁。
+      # --partial-tree 是这条流水线的树形事实：这里只取 distro 与 system，
+      # 配方引用的 services 与 kernel/include 不在树上，源目录存在性由取全
+      # 子模块的 push 门禁与发版构建判定；在本树内判它必然假红（0.0.5 发布
+      # 链首轮即卡在此处）。
       - name: Static gates
-        run: ci/ci.sh distro-lint --no-tests
+        run: ci/ci.sh distro-lint --no-tests --partial-tree
 
       - name: Free runner disk
         run: ci/ci.sh free-disk
