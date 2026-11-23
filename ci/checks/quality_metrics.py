@@ -150,16 +150,11 @@ def sh_lit(line, state):
     out, i = [], 0
     while i < len(line):
         ch = line[i]
-        if state == "'":
-            if ch == "'":
-                state = None
-            i += 1
-            continue
-        if state == '"':
-            if ch == "\\":
+        if state:
+            if ch == "\\" and state == '"':
                 i += 2
                 continue
-            if ch == '"':
+            if ch == state:
                 state = None
             i += 1
             continue
