@@ -134,6 +134,10 @@ jobs:
       - name: Debug surface contract
         run: ci/ci.sh kernel-debugfs
 
+      # 事件契约：UAPI 名/格式串与内核侧表单一来源，四架构传输开关齐备。
+      - name: user_events contract
+        run: ci/ci.sh kernel-uevent
+
       # 零漂移三连：真值（任务书矩阵 / ABI 黄金样本 / DSL）与生成物必须一致。
       - name: Consistency (matrix / ABI / codegen)
         run: ci/ci.sh kernel-consistency --kind all

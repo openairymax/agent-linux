@@ -24,3 +24,4 @@ fe90f9e6921d6f023d30886f8d7dd98a986a3a272062a99fa672e7ecb7e5fba9  kernel/include
 7080681b55d46c6949bd79b1dafd41d7dc8a35ddff8e46b96555cb67c7eafe73  kernel/include/uapi/linux/airymax/syscall_gen.h
 1e20fc5146ed4b44b84c9991453190ca11306e59d0ee73dda4cd59a214d067a4  kernel/include/uapi/linux/airymax/syscalls.h
 8bce79a8f3652a04d70123575431ad4245d71e43faaca8550cd2f0e5f14c36da  kernel/include/uapi/linux/airymax/uapi_compat.h
+1d9834da609edaf54ed0d52967a9863c6b66c213a8d6516b8c66abb2e108453d  kernel/include/uapi/linux/airymax/user_events.h
