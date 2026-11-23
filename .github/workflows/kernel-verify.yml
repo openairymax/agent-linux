@@ -124,6 +124,11 @@ jobs:
       - name: Install analysis and runtime test tools
         run: ci/ci.sh kernel-deps --kind verify
 
+      # 观测面契约：注册时序、只读属性、Kbuild 清单与配置开关。静态判定，
+      # 不产出构建对象，因此放在最前面，契约不成立时尽快失败。
+      - name: Observation surface contract
+        run: ci/ci.sh kernel-obs
+
       # 零漂移三连：真值（任务书矩阵 / ABI 黄金样本 / DSL）与生成物必须一致。
       - name: Consistency (matrix / ABI / codegen)
         run: ci/ci.sh kernel-consistency --kind all

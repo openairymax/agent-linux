@@ -423,4 +423,12 @@ ok 33 airy_lockdown
     ok 14 policy_dup
     ok 15 policy_full
     ok 16 policy_reset
+    ok 17 policy_wx
 ok 34 airy_policy
+    # Subtest: airy_obs
+    ok 1 obs_sec_table
+    ok 2 obs_superv_table
+    ok 3 obs_daemons_table
+    ok 4 obs_dir_guard
+    ok 5 obs_fev_guard
+ok 35 airy_obs
