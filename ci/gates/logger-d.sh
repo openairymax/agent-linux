@@ -22,44 +22,21 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 # shellcheck source=../lib/log.sh
 . "${ROOT}/ci/lib/log.sh"
+# shellcheck source=../lib/verify.sh
+. "${ROOT}/ci/lib/verify.sh"
 
 UNIT="${ROOT}/system/units/agentrt-logger.service"
 CONF="${ROOT}/services/daemons/logger_d/etc/logger.conf"
-BUILD="${AIRY_LOGD_BUILD_ROOT:-${TMPDIR:-/tmp}/airy-logd-verify}"
-
-case "${BUILD}" in
-    "${ROOT}"/*) die "构建目录不得位于源码树内: ${BUILD}" ;;
-esac
+BUILD="$(airy_build_dir "${ROOT}" AIRY_LOGD_BUILD_ROOT airy-logd-verify)"
 
 need_cmd cmake
 need_cmd ctest
 
-WORK="$(mktemp -d)"
-trap 'rm -rf "${WORK}"' EXIT
-
-expect_rc()
-{
-    local desc="$1" want="$2" out rc
-    shift 2
-    out="$("$@" 2>&1)"
-    rc=$?
-    [ "${rc}" -eq "${want}" ] ||
-        die "${desc}: 退出码 ${rc}，期望 ${want}（${out}）"
-    say "${desc}: rc=${rc}"
-}
+WORK="$(airy_workdir)"
 
 # ─── 1. 出树构建 ─────────────────────────────────────────────────────
-group "logger_d: 出树构建"
-if ! cmake -S "${ROOT}/services" -B "${BUILD}" \
-        -DCMAKE_BUILD_TYPE=Release >/dev/null; then
-    endgroup
-    die "services 配置失败（构建目录 ${BUILD}）"
-fi
-cmake --build "${BUILD}" --target logger_d logd_cfg_test logd_file_test \
-    --parallel 2>&1 | tail -n 30
-rc=${PIPESTATUS[0]}
-endgroup
-[ "${rc}" -eq 0 ] || die "logger_d 构建失败（构建目录 ${BUILD}）"
+airy_build "${ROOT}/services" "${BUILD}" logger_d \
+    logger_d logd_cfg_test logd_file_test
 
 BIN="${BUILD}/daemons/logger_d/logger_d"
 [ -x "${BIN}" ] || die "未生成 logger_d: ${BIN}"
@@ -73,12 +50,12 @@ say "配置装载与落盘轮转单测通过"
 
 # ─── 3. 拒绝路径 ─────────────────────────────────────────────────────
 group "logger_d: 拒绝路径"
-expect_rc "未知参数" 64 "${BIN}" --nope
-expect_rc "帮助" 0 "${BIN}" --help
+airy_expect_rc "未知参数" 64 "${BIN}" --nope
+airy_expect_rc "帮助" 0 "${BIN}" --help
 printf '[other]\nlevel = info\n' > "${WORK}/bad.conf"
-expect_rc "未知分组" 78 "${BIN}" --config="${WORK}/bad.conf"
+airy_expect_rc "未知分组" 78 "${BIN}" --config="${WORK}/bad.conf"
 printf '[logger]\nmax_bytes = 12X\n' > "${WORK}/bad.conf"
-expect_rc "非法尺寸" 78 "${BIN}" --config="${WORK}/bad.conf"
+airy_expect_rc "非法尺寸" 78 "${BIN}" --config="${WORK}/bad.conf"
 endgroup
 
 # ─── 4. unit 契约 ────────────────────────────────────────────────────

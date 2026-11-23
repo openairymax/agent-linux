@@ -24,43 +24,20 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 # shellcheck source=../lib/log.sh
 . "${ROOT}/ci/lib/log.sh"
+# shellcheck source=../lib/verify.sh
+. "${ROOT}/ci/lib/verify.sh"
 
 ETC="${ROOT}/services/daemons/config_d/etc"
 UNIT="${ROOT}/system/units/agentrt-config.service"
-BUILD="${AIRY_CFG_BUILD_ROOT:-${TMPDIR:-/tmp}/airy-cfg-verify}"
-
-case "${BUILD}" in
-    "${ROOT}"/*) die "构建目录不得位于源码树内: ${BUILD}" ;;
-esac
+BUILD="$(airy_build_dir "${ROOT}" AIRY_CFG_BUILD_ROOT airy-cfg-verify)"
 
 need_cmd cmake
 need_cmd diff
 
-WORK="$(mktemp -d)"
-trap 'rm -rf "${WORK}"' EXIT
-
-expect_rc()
-{
-    local desc="$1" want="$2" out rc
-    shift 2
-    out="$("$@" 2>&1)"
-    rc=$?
-    [ "${rc}" -eq "${want}" ] ||
-        die "${desc}: 退出码 ${rc}，期望 ${want}（${out}）"
-    say "${desc}: rc=${rc}"
-}
+WORK="$(airy_workdir)"
 
 # ─── 1. 出树构建 ─────────────────────────────────────────────────────
-group "config_d: 出树构建"
-if ! cmake -S "${ROOT}/services" -B "${BUILD}" \
-        -DCMAKE_BUILD_TYPE=Release >/dev/null; then
-    endgroup
-    die "services 配置失败（构建目录 ${BUILD}）"
-fi
-cmake --build "${BUILD}" --target config_d --parallel 2>&1 | tail -n 30
-rc=${PIPESTATUS[0]}
-endgroup
-[ "${rc}" -eq 0 ] || die "config_d 构建失败（构建目录 ${BUILD}）"
+airy_build "${ROOT}/services" "${BUILD}" config_d config_d
 
 BIN="${BUILD}/daemons/config_d/config_d"
 [ -x "${BIN}" ] || die "未生成 config_d: ${BIN}"
@@ -87,13 +64,13 @@ group "config_d: 拒绝路径"
 mkdir -p "${WORK}/ver" "${WORK}/schema" "${WORK}/missing"
 cp "${ETC}/agentrt.conf" "${WORK}/ver/agentrt.conf"
 sed -i 's/^version = 1$/version = 2/' "${WORK}/ver/agentrt.conf"
-expect_rc "版本闸门" 101 "${BIN}" --check --root "${WORK}/ver"
+airy_expect_rc "版本闸门" 101 "${BIN}" --check --root "${WORK}/ver"
 
 cp "${ETC}/agentrt.conf" "${WORK}/schema/agentrt.conf"
 printf 'no_such_key = 1\n' >> "${WORK}/schema/agentrt.conf"
-expect_rc "未知键" 102 "${BIN}" --check --root "${WORK}/schema"
+airy_expect_rc "未知键" 102 "${BIN}" --check --root "${WORK}/schema"
 
-expect_rc "缺主配置" 105 "${BIN}" --check --root "${WORK}/missing"
+airy_expect_rc "缺主配置" 105 "${BIN}" --check --root "${WORK}/missing"
 endgroup
 
 # ─── 5. conf.d 叠加顺序与命名 ────────────────────────────────────────
