@@ -9,9 +9,10 @@
 # ---------------------------------------------------------------------------
 # 监听面按「受检对象」划定，而不是按子目录逐条枚举：os_chk.py 会调用 tools/
 # 下的全部执行器，逐个列举曾漏掉 airy-qemu、sdk 与 security，新工具加入后
-# 也不会自动纳入。四个 gitlink 各有受检对象——kernel 供 defconfig / BTF /
+# 也不会自动纳入。六个 gitlink 各有受检对象——kernel 供 defconfig / BTF /
 # kbuild 版本检查，system 供装机后启动契约的单测，distro 供 spec 与
-# kickstart 规则，security 供 LSM 用例——指针一动即重跑。ci/** 与
+# kickstart 规则，security 供 LSM 用例，services 与 tests-linux 供守护与
+# 测试构建入口的脚手架检查——指针一动即重跑。ci/** 与
 # .github/workflows/** 是为了让门禁脚本和 workflow 自身也受门禁约束：此前
 # 改 ci/gates/*.sh 不触发任何流水线，等于改动无人验证。
 # 默认 --fail-on P1（P0+P1 阻断），对齐 05-development-process.md Part III。
@@ -30,6 +31,8 @@ on:
       - 'system'
       - 'distro'
       - 'security'
+      - 'services'
+      - 'tests-linux'
       - '.github/workflows/**'
   push:
     branches: [main]
@@ -43,6 +46,8 @@ on:
       - 'system'
       - 'distro'
       - 'security'
+      - 'services'
+      - 'tests-linux'
       - '.github/workflows/**'
 
 # 最小权限：本 workflow 全程只读，显式声明后不再依赖仓库默认设置。
