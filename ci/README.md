@@ -39,7 +39,7 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 ci/
 ├── README.md            # 本文件：归属与规则
 ├── ci.sh                # 门禁分发器（--list 读取各门的「用法:」头）
-├── lint.sh              # CI 层自检（19 项，见文件头）
+├── lint.sh              # CI 层自检（20 项，见文件头）
 ├── gates/               # 一个文件一条判据
 │   └── lib/             # 门禁协议声明（Q-04 施工图纸钉定此路径）
 ├── checks/              # Python 检查器
