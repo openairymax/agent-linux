@@ -441,3 +441,11 @@ ok 35 airy_obs
     ok 4 tok_apply_delta
     ok 5 tok_window_roll
 ok 36 airy_token
+    # Subtest: airy_mem
+    ok 1 mem_ratio_edges
+    ok 2 mem_alert_edges
+    ok 3 mem_apply_delta
+    ok 4 mem_window_roll
+    ok 5 mem_total_set
+    ok 6 mem_bad_level
+ok 37 airy_mem

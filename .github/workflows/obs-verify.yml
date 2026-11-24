@@ -1,6 +1,6 @@
 # ===========================================================================
 # agent-linux (AirymaxOS) CI Pipeline
-# 可观测性入口（P-09 eBPF、P-10 perf、P-11 token）：契约静态判定 + 出树构建
+# 可观测性入口（P-09 eBPF、P-10 perf、P-11 token、P-12 mem）：契约静态判定 + 出树构建
 # ===========================================================================
 # Authority: docs/docs-linux/90-observability/02-ebpf-probes.md
 #             （OS-OBS-011/012/015/016/018/020、OS-STD-OBS-012/013/014、
@@ -9,9 +9,11 @@
 #             （OS-OBS-032/033/038、OS-STD-022）
 #            docs/docs-linux/90-observability/07-token-efficiency.md
 #             （OS-OBS-04x、OS-STD-03x）
-# Design: 判据全部在 ci/gates/{ebpf-probe,perf-hooks,token-obs}.sh，YAML 只做
-#         checkout 与派遣；加载与实跑依赖 Airymax 内核符号，属 285H 验收面，
-#         不在托管 runner 上替身验证。
+#            docs/docs-linux/90-observability/09-memory-monitoring.md
+#             （OS-OBS-05x、OS-STD-04x）
+# Design: 判据全部在 ci/gates/{ebpf-probe,perf-hooks,token-obs,mem-obs}.sh，
+#         YAML 只做 checkout 与派遣；加载与实跑依赖 Airymax 内核符号，属
+#         285H 验收面，不在托管 runner 上替身验证。
 # ---------------------------------------------------------------------------
 # 监听面取 system gitlink 而不是 system/obs/**：父仓只能看到子模块指针
 # 的移动，按子目录过滤等于永不触发。其余 system 改动由 c-verify 承担，这里
@@ -28,6 +30,7 @@ on:
       - 'ci/gates/ebpf-probe.sh'
       - 'ci/gates/perf-hooks.sh'
       - 'ci/gates/token-obs.sh'
+      - 'ci/gates/mem-obs.sh'
       - 'ci/lib/**'
       - 'ci/ci.sh'
       - '.github/workflows/obs-verify.yml'
@@ -39,6 +42,7 @@ on:
       - 'ci/gates/ebpf-probe.sh'
       - 'ci/gates/perf-hooks.sh'
       - 'ci/gates/token-obs.sh'
+      - 'ci/gates/mem-obs.sh'
       - 'ci/lib/**'
       - 'ci/ci.sh'
       - '.github/workflows/obs-verify.yml'
@@ -94,3 +98,17 @@ jobs:
 
       - name: token meter contract, build and CLI paths
         run: ci/ci.sh token-obs
+
+  # 记忆计量同样横跨内核与入口：四层字段面、配额档位、占用绝对覆盖与鉴权
+  # 位置都在静态判据里，最后用导出头出树编译并跑通文本/JSON/TOP 与失败
+  # 路径。与另一条观测 job 无共享产物，可并行。
+  mem-verify:
+    name: memory Meter Contract and Build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { submodules: recursive }
+
+      - name: memory meter contract, build and CLI paths
+        run: ci/ci.sh mem-obs
