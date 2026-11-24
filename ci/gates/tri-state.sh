@@ -20,8 +20,11 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
-# shellcheck source=lib/three-state.sh
-. "${ROOT}/ci/gates/lib/three-state.sh"
+# shellcheck source=../lib/log.sh
+. "${ROOT}/ci/lib/log.sh"
+
+# 三态（0／1／3）与 CI_EINVAL（5）的取值是全局约定，见 ci/README.md §4；
+# 本门禁只用「通过」一种结论，故直接写字面 0，不为它另立一套常量。
 
 usage()
 {
@@ -98,7 +101,7 @@ while [ "$#" -gt 0 ]; do
         root="$2"
         shift
         ;;
-    -h|--help) usage; exit "${TS_PASS}" ;;
+    -h|--help) usage; exit 0 ;;
     *) err "未知参数: $1"; exit "${CI_EINVAL}" ;;
     esac
     shift
