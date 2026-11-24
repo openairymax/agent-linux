@@ -129,10 +129,10 @@ good()
     stub "${d}" airy-disk \
         "printf '%s\n' '{\"schema\":1,\"kind\":\"single\",\"install\":{\"verdict\":\"match\",\"layout\":\"single\",\"disk\":\"nvme0n1\"},\"disks\":[{\"name\":\"nvme0n1\",\"parts\":[{\"name\":\"nvme0n1p3\",\"role\":\"system\",\"mount\":\"/\"},{\"name\":\"nvme0n1p5\",\"role\":\"data\",\"mount\":\"/data\"}]}]}'"
     stub "${d}" airy-observe \
-        "printf 'AIRYMAX-OBSERVE net.ipv4=eth0=192.168.3.57\n'
+        "printf 'AIRYMAX-OBSERVE net.ipv4=eth0=192.0.2.57\n'
 printf 'AIRYMAX-OBSERVE net.src=dhcp\n'
-printf 'AIRYMAX-OBSERVE net.gw=192.168.3.1\n'
-printf 'AIRYMAX-OBSERVE net.dns=192.168.3.1\n'"
+printf 'AIRYMAX-OBSERVE net.gw=192.0.2.1\n'
+printf 'AIRYMAX-OBSERVE net.dns=192.0.2.1\n'"
     stub "${d}" airy-model \
         "printf '{\"state\":\"ready\",\"backend\":\"cpu\",\"reason\":null,\"digest\":\"0123456789abcdef\"}\n'"
 }
@@ -173,7 +173,7 @@ chk_obj()
         'disk install=match layout=single disk=nvme0n1' 0
     want "分区角色可读" "${rc}" "${out}" 'disk part nvme0n1p3 role=system mount=/' 0
     want "网络四元组可读" "${rc}" "${out}" \
-        'net ipv4=eth0=192.168.3.57 src=dhcp gw=192.168.3.1 dns=192.168.3.1' 0
+        'net ipv4=eth0=192.0.2.57 src=dhcp gw=192.0.2.1 dns=192.0.2.1' 0
     want "模型摘要可读" "${rc}" "${out}" 'model state=ready backend=cpu' 0
 
     good "${TMP}/nomodel"

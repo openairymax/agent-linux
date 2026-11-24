@@ -86,10 +86,10 @@ obs()
     cat >"${tmp}/stub/airy-observe" <<EOF
 #!/bin/sh
 cat <<REPORT
-AIRYMAX-OBSERVE net.ipv4=eth0=192.168.3.57
+AIRYMAX-OBSERVE net.ipv4=eth0=192.0.2.57
 AIRYMAX-OBSERVE net.src=$1
-AIRYMAX-OBSERVE net.gw=192.168.3.1
-AIRYMAX-OBSERVE net.dns=192.168.3.1
+AIRYMAX-OBSERVE net.gw=192.0.2.1
+AIRYMAX-OBSERVE net.dns=192.0.2.1
 REPORT
 EOF
     chmod +x "${tmp}/stub/airy-observe"
@@ -294,7 +294,7 @@ EOF
 chmod +x "${tmp}/stub/ping"
 
 out="$(live "${tmp}/stub" --live --wait 5)"
-check "联机成立判通过" 0 "$?" "${out}" "联机成立: eth0=192.168.3.57"
+check "联机成立判通过" 0 "$?" "${out}" "联机成立: eth0=192.0.2.57"
 
 obs static
 out="$(live "${tmp}/stub" --live --wait 0)"
@@ -304,7 +304,7 @@ obs dhcp
 printf '#!/bin/sh\nexit 1\n' >"${tmp}/stub/ping"
 chmod +x "${tmp}/stub/ping"
 out="$(live "${tmp}/stub" --live --wait 0)"
-check "网关不可达判失败" 1 "$?" "${out}" "网关不可达: 192.168.3.1"
+check "网关不可达判失败" 1 "$?" "${out}" "网关不可达: 192.0.2.1"
 
 # 现场验收会把本门禁单独拷到目标机执行，那台机器上没有 ci/lib。缺库时
 # 判定行必须照旧打出来——只剩退出码的验收没法告诉现场卡在哪一步。
