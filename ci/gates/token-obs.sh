@@ -16,7 +16,8 @@
 #   * 目录只放源码与 CMakeLists，不落产物；两侧首行均为 SPDX。
 #   * UAPI 契约：ABI 版本、60 秒/1 小时窗口、三条 ioctl、三处布局断言。
 #   * 内核侧：Kbuild 与 core 初始化接线、KUnit suite、TAP 基线棘轮。
-#   * 字段面：内核输出的 20 个键与 CLI 解析的键一一对应，双向无遗漏。
+#   * 字段面：内核输出 20 个键；CLI 经公共解析层逐字渲染，源码中除排序
+#     用的指标名外不得再出现第二份键表。
 #   * 鉴权：上报校验调用者自身的 Agent 身份与 SEND 权限，预算校验
 #     SUPERVISE；历史与留存不得落内核（属 logger_d）。
 #   * 出树构建通过 -Wall -Wextra -Werror；文本/JSON/TOP 与三条失败路径。
@@ -34,6 +35,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 SRC_DIR="${ROOT}/system/obs/token"
 SRC="${SRC_DIR}/airy_token.c"
 CMAKE="${SRC_DIR}/CMakeLists.txt"
+COMMON_DIR="${ROOT}/system/obs/common"
+COMMON="${COMMON_DIR}/obs_view.c"
 UAPI="${ROOT}/kernel/include/uapi/linux/airymax/token.h"
 KDIR="${ROOT}/kernel/kernel/obs"
 KSRC="${KDIR}/airy_token.c"
@@ -44,6 +47,8 @@ TAP="${ROOT}/tools/tap/kunit-tap-baseline.tap"
 need_dir --src "${SRC_DIR}"
 need_file "${SRC}" "token 入口源码"
 need_file "${CMAKE}" "构建脚本"
+need_dir --src "${COMMON_DIR}"
+need_file "${COMMON}" "公共解析层"
 need_file "${UAPI}" "契约头"
 need_file "${KSRC}" "内核计量源码"
 need_file "${KTEST}" "KUnit 用例"
@@ -63,6 +68,16 @@ chk_files()
 		bad "airy_token.c: 首行缺少 SPDX"
 	sed -n '1,8p' "${SRC}" | grep -q 'Copyright' ||
 		bad "airy_token.c: 缺少版权行"
+	got="$(find "${COMMON_DIR}" -mindepth 1 -maxdepth 1 -printf '%f\n' |
+		LC_ALL=C sort | tr '\n' ' ')"
+	if [ "${got}" != 'obs_view.c obs_view.h ' ]; then
+		bad "公共层目录内容不符: ${got}"
+	fi
+	[ "$(sed -n '1p' "${COMMON}")" = '// SPDX-License-Identifier: GPL-2.0-only' ] ||
+		bad "obs_view.c: 首行缺少 SPDX"
+	sed -n '1,8p' "${COMMON}" | grep -q 'Copyright' ||
+		bad "obs_view.c: 缺少版权行"
+	have 'obs_view\.c' "${CMAKE}" "构建未编入公共解析层"
 	have 'SPDX-License-Identifier' "${CMAKE}" "CMakeLists 缺少 SPDX"
 	have 'AIRY_HDR_ROOT' "${CMAKE}" "CMakeLists 未使用导出头"
 	endgroup
@@ -113,7 +128,7 @@ chk_kern()
 
 chk_parity()
 {
-	local keys k
+	local keys k n
 
 	group "字段面对齐"
 	keys="$(sed -n 's/.*seq_printf(m, "\([a-z_]*\):.*/\1/p' "${KSRC}" |
@@ -121,12 +136,20 @@ chk_parity()
 	if [ "$(printf '%s\n' "${keys}" | wc -l)" -ne 20 ]; then
 		bad "内核快照键数不是 20"
 	fi
-	for k in ${keys}; do
-		grep -q "\"${k}\"" "${SRC}" || bad "CLI 未解析内核键 ${k}"
-	done
+
+	have 'obs_parse\(' "${COMMON}" "公共层未提供行解析"
+	have 'obs_json\(' "${COMMON}" "公共层未提供 JSON 渲染"
+	have 'obs_json\(' "${SRC}" "入口未走公共 JSON 渲染"
+	have 'obs_scan\(' "${SRC}" "入口未走公共目录扫描"
+
+	n="$(grep -o '"[a-z_]*_total"' "${SRC}" | LC_ALL=C sort -u | wc -l)"
+	if [ "${n}" -ne 1 ]; then
+		bad "入口出现 ${n} 个指标名字面量，应只有排序用的一处"
+	fi
 	while read -r k; do
-		grep -q "\"${k}: " "${KSRC}" || bad "内核未输出 CLI 键 ${k}"
-	done < <(sed -n 's/^[[:space:]]*{ "\([a-z_]*\)", offsetof.*/\1/p' "${SRC}")
+		grep -q "\"${k}: " "${KSRC}" || bad "内核未输出入口使用的键 ${k}"
+	done < <(grep -o '"[a-z_]*_total"' "${SRC}" |
+		LC_ALL=C sort -u | tr -d '"')
 	endgroup
 }
 
@@ -140,8 +163,11 @@ chk_scope()
 	have 'airy_tok_ratio' "${KSRC}" "比例未走统一 ppm 换算"
 	deny '/var/log/airy' "${KSRC}" "内核负责历史留存"
 	deny '/var/log/airy' "${SRC}" "入口负责历史留存"
+	deny '/var/log/airy' "${COMMON}" "公共层负责历史留存"
 	deny 'system\(' "${SRC}" "经 shell 启动外部命令"
 	deny 'popen\(' "${SRC}" "经管道 shell 取输出"
+	deny 'system\(' "${COMMON}" "公共层经 shell 启动外部命令"
+	deny 'popen\(' "${COMMON}" "公共层经管道 shell 取输出"
 	deny '"/sys/' "${SRC}" "工具直接写 sysfs"
 	deny 'sched_setscheduler' "${SRC}" "工具干预调度策略"
 	endgroup
