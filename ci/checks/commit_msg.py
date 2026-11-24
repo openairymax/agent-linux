@@ -48,42 +48,33 @@ def usage(rc):
 
 def _log(repo, rev, one):
     """跑一次 git log：one 为真只取一条，否则取 rev 覆盖的全部历史。"""
-    args = ["git", "-C", repo, "log", "--no-merges",
-            "--format=%H%x1f%B%x1e"]
+    args = ["git", "-C", repo, "log", "--no-merges", "--format=%H%x1f%B%x1e"]
     args += ["-1"] if one else []
-    args.append(rev)
-    out = subprocess.run(args, capture_output=True, text=True, errors="replace")
-    if out.returncode != 0:
+    out = subprocess.run(args + [rev], capture_output=True, text=True,
+                         errors="replace")
+    if out.returncode:
         raise RuntimeError(out.stderr.strip() or "git log 失败")
     return [c for c in out.stdout.split("\x1e") if c.strip()]
 
 
 def _merge(repo, rev):
-    """rev 是否为合并提交：父提交多于一个。"""
-    out = subprocess.run(["git", "-C", repo, "rev-list", "--parents",
-                          "-n", "1", rev], capture_output=True, text=True,
-                         errors="replace")
-    if out.returncode != 0:
-        raise RuntimeError(out.stderr.strip() or "git rev-list 失败")
-    return len(out.stdout.split()) > 2
+    """rev 是否为合并提交：第二个父提交能解析即成立。"""
+    out = subprocess.run(["git", "-C", repo, "rev-parse", "--verify", "--quiet",
+                          rev + "^2"], capture_output=True)
+    return out.returncode == 0
 
 
 def commits(repo, rng):
     """取范围内提交的（哈希, 完整信息）。单版本号只取一条，两端式取区间。"""
     if ".." in rng:
-        return _log(repo, rng, one=False)
-    # -1 在遍历阶段就截断，--no-merges 之后不会再把合并提交补回来：合并
-    # 检出必须先把判据落到父提交（PR 头提交），否则判的就是平台生成的
-    # 合并信息。浅检出可能连父对象都没有，此时如实返回空，由调用方按
-    # 「未判」处理而不是放行。
+        return _log(repo, rng, False)
+    # -1 在遍历阶段就截断，--no-merges 之后不会再把合并提交补回来：合并检出
+    # 必须把判据落到父提交（PR 头提交），否则判的就是平台生成的合并信息。
+    # 浅检出可能连父对象都没有，此时 git log 取不到东西而返回空，由调用方
+    # 按「未判」处理而不是放行。
     if rng == "HEAD" and _merge(repo, rng):
-        for rev in ("HEAD^2", "HEAD^1"):
-            try:
-                return _log(repo, rev, one=True)
-            except RuntimeError:
-                continue
-        return []
-    return _log(repo, rng, one=True)
+        rng = "HEAD^2"
+    return _log(repo, rng, True)
 
 
 def subject(body):
@@ -107,41 +98,72 @@ def inspect(body, maxb):
     return issues
 
 
-def main(argv):
-    """解析参数、逐条判定、按退出码协议返回。"""
+def opts(argv):
+    """解析命令行，返回（命名空间, 余下的非选项词）。"""
     ap = argparse.ArgumentParser(add_help=False)
     ap.add_argument("--range", dest="rng", default="HEAD")
     ap.add_argument("--repo", default=".")
     ap.add_argument("--max-bytes", type=int, default=72)
     ap.add_argument("-h", "--help", action="store_true")
-    a, extra = ap.parse_known_args(argv)
-    if a.help:
-        return usage(0)
+    return ap.parse_known_args(argv)
+
+
+def bad_args(a, extra):
+    """未知选项或非正的上限告诉调用方参数不合法。"""
     if extra or a.max_bytes <= 0:
         print(f"commit-msg: 未知或非法参数: {' '.join(extra) or a.max_bytes}",
               file=sys.stderr)
-        return usage(EINVAL)
-    if subprocess.run(["git", "-C", a.repo, "rev-parse", "--git-dir"],
-                      capture_output=True).returncode != 0:
+        return True
+    return False
+
+
+def is_repo(repo):
+    """repo 是否在 git 工作树内。"""
+    return subprocess.run(["git", "-C", repo, "rev-parse", "--git-dir"],
+                          capture_output=True).returncode == 0
+
+
+def load(a):
+    """取待判提交；仓库、git 或范围任一不成立时打印原因并返回 None。"""
+    if not is_repo(a.repo):
         print(f"commit-msg: 不是 git 仓库: {a.repo}", file=sys.stderr)
-        return EINVAL
+        return None
     try:
         rows = commits(a.repo, a.rng)
     except RuntimeError as exc:
         print(f"commit-msg: {exc}", file=sys.stderr)
-        return EINVAL
+        return None
     if not rows:
         print(f"commit-msg: 范围内没有可判提交（{a.rng}），历史可能过浅",
               file=sys.stderr)
-        return EINVAL
+        return None
+    return rows
+
+
+def report(rows, maxb):
+    """逐条打印违规，返回违规处数。"""
     total = 0
     for row in rows:
         sha, _, body = row.partition("\x1f")
-        for code, msg in inspect(body, a.max_bytes):
+        for code, msg in inspect(body, maxb):
             print(f"{code} {sha[:9]} {msg}")
             total += 1
-    print(f"commit-msg: {len(rows)} 条提交，{total} 处不合规")
-    return 0 if total == 0 else 1
+    return total
+
+
+def main(argv):
+    """解析参数、逐条判定、按退出码协议返回。"""
+    a, extra = opts(argv)
+    if a.help:
+        return usage(0)
+    if bad_args(a, extra):
+        return EINVAL
+    rows = load(a)
+    if rows is None:
+        return EINVAL
+    bad = report(rows, a.max_bytes)
+    print(f"commit-msg: {len(rows)} 条提交，{bad} 处不合规")
+    return 0 if bad == 0 else 1
 
 
 if __name__ == "__main__":
