@@ -6,7 +6,7 @@
 #
 # 用法: ci/lint.sh [--no-distro]
 #
-# 检查十九件事：
+# 检查二十件事：
 #   1. workflow 薄化与命名约束（ci/checks/check-workflows.py）；
 #   2. ci/ 与 tools/ 下每个 shell 脚本可被 bash -n 解析；
 #   3. 函数名不超过 15 字节（ci/checks/name_lint.py，N001，覆盖 shell 与 python）；
@@ -26,12 +26,18 @@
 #  16. 文件头许可证与版权行（ci/checks/header_lint.py，H001/H002）；
 #  17. docs-linux 文档树的悬空相对链接（ci/gates/docs-links.sh，DOC-02）；
 #  18. 提交范围与施工图纸产出物的对账（ci/gates/wp-scope.sh，§2.1／§4.1）；
-#  19. 双通路依赖隔离（ci/gates/tui-dock-isolation.sh，§2.2 铁律①）。
+#  19. 双通路依赖隔离（ci/gates/tui-dock-isolation.sh，§2.2 铁律①）；
+#  20. 提交信息卫生（ci/checks/commit_msg.py，本机路径与措辞判据）。
 #
 # 第 18 项只在开发机上可判：册子在 docs-closed，单仓检出看不到。门禁因此
 # 会退 3（不适用），下面的分支把 3 与「通过」分开——跳过必须说出来。
 # 第 19 项正向永远可判，反向要看对侧 agentrt 树在不在，缺席时门禁自身打印
 # 「反向未判」。两项的判据本体都由 ci/tests 的回归夹具覆盖。
+#
+# 第 20 项拦的是「写进历史就改不掉」的一类内容：本机绝对路径与把低级问题
+# 写进主题的措辞。默认只判 HEAD，本地提交前即可拦住；复扫区间用
+# `ci/ci.sh commit-msg --range REV..REV`。判据由 ci/tests/test_commit_msg.sh
+# 覆盖并随第 7 项一起跑。
 #
 # 第 14、15 项把「禁桩」从文字变成判据：todo!/unimplemented!、产品代码里的
 # unreachable!、恒 Ok(()) 与 unsafe 逐条判负，allow(dead_code) 必须写理由，
@@ -281,6 +287,17 @@ if bash "${ROOT}/ci/ci.sh" tui-dock-isolation; then
     say "通过"
 else
     err "双通路依赖隔离未通过（ci/ci.sh tui-dock-isolation）"
+    rc=1
+fi
+endgroup
+
+group "提交信息卫生"
+# 提交信息随 push 进入三个公开仓库，写进本机路径或低级措辞就只能靠改写
+# 历史撤回；改历史会换掉发布树上的子仓指针，代价远高于提交前拦一次。
+if bash "${ROOT}/ci/ci.sh" commit-msg --range HEAD; then
+    say "通过"
+else
+    err "提交信息卫生未通过（ci/ci.sh commit-msg --range HEAD）"
     rc=1
 fi
 endgroup
