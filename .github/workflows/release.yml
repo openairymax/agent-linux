@@ -3,7 +3,7 @@
 # ===========================================================================
 # Authority: docs/docs-linux/70-build-system/03-ci-cd-pipeline.md
 #            docs/docs-linux/120-development-process/09-release-process.md
-# Constraint: 管理仓每个 workflow 最多 2 条流水线
+# Constraint: 作业数受 ci/baseline/workflow-budgets.txt 的逐文件预算约束（本文件 2）
 #
 # 全部逻辑在 ci/gates/release-*.sh，本文件只保留 checkout → ci/ci.sh <gate>
 # → upload。任一步都能在本地对着同一份物料重放，不必重跑整条流水线。

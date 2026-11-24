@@ -11,7 +11,7 @@
 #                  （ci/ci.sh kernel-airy --kind style）
 #
 # Authority: docs/docs-linux/70-build-system/03-ci-cd-pipeline.md
-# Constraint: 管理仓每个 workflow 最多 2 条流水线
+# Constraint: 作业数受 ci/baseline/workflow-budgets.txt 的逐文件预算约束（本文件 2）
 # Rules: OS-BUILD-026 / OS-BUILD-028（defconfig 基线 / 每架构 defconfig）
 #        OS-KER-106 / OS-OBS-012（BTF 基线）
 #        IRON-3（所有 Airymax 增强代码必须在新增目录中）
