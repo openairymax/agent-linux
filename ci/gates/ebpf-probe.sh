@@ -25,6 +25,9 @@
 #
 # 退出码: 0 通过；1 契约或构建不成立；5 参数或目录不满足。
 # ===========================================================================
+# OBS_* 配置变量由 ci/lib/obs.sh 读取，shellcheck 无法跨文件跟踪，
+# 故本文件整体关闭「变量未使用」。
+# shellcheck disable=SC2034
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
@@ -32,6 +35,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 . "${ROOT}/ci/lib/log.sh"
 # shellcheck source=../lib/apt.sh
 . "${ROOT}/ci/lib/apt.sh"
+# shellcheck source=../lib/obs.sh
+. "${ROOT}/ci/lib/obs.sh"
 
 SRC="${ROOT}/kernel"
 EBPF="${ROOT}/system/obs/ebpf"
@@ -52,29 +57,14 @@ code_only()
 }
 
 # 目录整洁与头注释 ---------------------------------------------------------
-# chk_head FILE —— 源文件首行 SPDX 标识与首六行版权行。
-chk_head()
-{
-    local f="$1"
-
-    [ "$(sed -n '1p' "${f}")" = '// SPDX-License-Identifier: GPL-2.0-only' ] ||
-        bad "$(basename "${f}"): 首行缺少 SPDX"
-    sed -n '1,6p' "${f}" | grep -q 'Copyright' ||
-        bad "$(basename "${f}"): 缺少版权行"
-}
-
 chk_files()
 {
-    local f got
+    local f
 
     group "目录与头注释"
-    got="$(find "${EBPF}" -mindepth 1 -maxdepth 1 -printf '%f\n' | sort |
-        tr '\n' ' ')"
-    if [ "${got}" != 'CMakeLists.txt airy_probe.bpf.c airy_probe.c ' ]; then
-        bad "目录内容不符: ${got}"
-    fi
+    obs_dir "${EBPF}" 'CMakeLists.txt airy_probe.bpf.c airy_probe.c '
     for f in "${BPF_C}" "${BPF_L}"; do
-        chk_head "${f}"
+        obs_head "${f}" "$(basename "${f}")"
     done
     have 'SPDX-License-Identifier' "${CMAKE}" "CMakeLists 缺少 SPDX"
     deny 'pt_regs|PT_REGS' <(code_only "${BPF_C}") \
@@ -174,44 +164,18 @@ chk_loader()
     endgroup
 }
 
-# 出树构建 -----------------------------------------------------------------
-# deps —— 探针构建依赖；已就位直接返回，否则一次装上。
-deps()
+# 编译参数与产物 -----------------------------------------------------------
+chk_flags()
 {
-    if command -v clang >/dev/null 2>&1 && command -v cmake >/dev/null 2>&1 &&
-        pkg-config --exists libbpf; then
-        return 0
-    fi
-    note "安装 eBPF 构建依赖"
-    apt_sync && apt_install_min clang libbpf-dev pkg-config
+    group "编译参数"
+    have '\-g \-O2 \-target bpf' "${CMAKE}" "编译参数不符 OS-OBS-015"
+    endgroup
 }
 
-# build_tree DIR —— 在 DIR 内配置并编译字节码；失败点各自留一行日志尾巴。
-build_tree()
-{
-    local dir="$1" log="$1/build.log"
-
-    if ! deps; then
-        bad "eBPF 构建依赖不可用"
-        return 1
-    fi
-    if ! cmake -S "${EBPF}" -B "${dir}/b" -DCMAKE_BUILD_TYPE=Release \
-        >"${log}" 2>&1; then
-        bad "cmake 配置失败"
-        tail -n 20 "${log}" >&2
-        return 1
-    fi
-    if ! cmake --build "${dir}/b" -j "$(nproc)" >>"${log}" 2>&1; then
-        bad "编译失败"
-        tail -n 40 "${log}" >&2
-        return 1
-    fi
-}
-
-# chk_obj DIR —— 字节码体积、BTF 段与加载器三处产物判据。
+# chk_obj DIR —— 字节码体积与 BTF 段两处产物判据。
 chk_obj()
 {
-    local dir="$1" obj="$1/b/airy_probe.bpf.o" size
+    local obj="$1/b/airy_probe.bpf.o" size
 
     if [ ! -f "${obj}" ]; then
         bad "缺少 airy_probe.bpf.o"
@@ -224,39 +188,24 @@ chk_obj()
     if ! readelf -S "${obj}" 2>/dev/null | grep -qF '.BTF'; then
         bad "字节码缺少 .BTF 段"
     fi
-    need_exe "${dir}/b/airy-probe" "airy-probe 加载器"
 }
 
-chk_build()
+bpf_ok()
 {
-    local tmp
-
-    group "出树构建"
-    have '\-g \-O2 \-target bpf' "${CMAKE}" "编译参数不符 OS-OBS-015"
-    tmp="$(mktemp -d)"
-    if [ -z "${tmp}" ]; then
-        bad "临时目录创建失败"
-        endgroup
-        return
-    fi
-    if build_tree "${tmp}"; then
-        chk_obj "${tmp}"
-    fi
-    rm -rf "${tmp}"
-    endgroup
+    pkg-config --exists libbpf
 }
 
-chk_files
-chk_hook
-chk_ctx
-chk_maps
-chk_loader
-chk_build
+OBS_TITLE="可编程探针"
+OBS_LABEL="eBPF "
+OBS_BIN="airy-probe"
+OBS_CMDS=(clang cmake)
+OBS_PKGS=(clang libbpf-dev pkg-config)
+OBS_PROBE=bpf_ok
 
-if [ "${FAILS}" -ne 0 ]; then
-    err "可编程探针门禁失败 ${FAILS} 项"
-    exit 1
-fi
+SRC_DIR="${EBPF}"
+chk_out()
+{
+    chk_obj "$1"
+}
 
-say "可编程探针门禁通过"
-exit 0
+obs_gate chk_files chk_hook chk_ctx chk_maps chk_loader chk_flags

@@ -25,6 +25,9 @@
 #
 # 退出码: 0 通过；1 契约或构建不成立；5 参数或目录不满足。
 # ===========================================================================
+# OBS_* 配置变量由 ci/lib/obs.sh 读取，shellcheck 无法跨文件跟踪，
+# 故本文件整体关闭「变量未使用」。
+# shellcheck disable=SC2034
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
@@ -32,6 +35,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 . "${ROOT}/ci/lib/log.sh"
 # shellcheck source=../lib/apt.sh
 . "${ROOT}/ci/lib/apt.sh"
+# shellcheck source=../lib/obs.sh
+. "${ROOT}/ci/lib/obs.sh"
 
 SRC_DIR="${ROOT}/system/obs/perf"
 SRC="${SRC_DIR}/airy_perf.c"
@@ -43,18 +48,9 @@ need_file "${CMAKE}" "构建脚本"
 
 chk_files()
 {
-	local got
-
 	group "目录与头注释"
-	got="$(find "${SRC_DIR}" -mindepth 1 -maxdepth 1 -printf '%f\n' |
-		LC_ALL=C sort | tr '\n' ' ')"
-	if [ "${got}" != 'CMakeLists.txt airy_perf.c ' ]; then
-		bad "目录内容不符: ${got}"
-	fi
-	[ "$(sed -n '1p' "${SRC}")" = '// SPDX-License-Identifier: GPL-2.0-only' ] ||
-		bad "airy_perf.c: 首行缺少 SPDX"
-	sed -n '1,6p' "${SRC}" | grep -q 'Copyright' ||
-		bad "airy_perf.c: 缺少版权行"
+	obs_dir "${SRC_DIR}" 'CMakeLists.txt airy_perf.c '
+	obs_head "${SRC}" "airy_perf.c"
 	have 'SPDX-License-Identifier' "${CMAKE}" "CMakeLists 缺少 SPDX"
 	endgroup
 }
@@ -97,53 +93,15 @@ chk_sysfs()
 	endgroup
 }
 
-deps()
-{
-	if command -v cmake >/dev/null 2>&1 && command -v cc >/dev/null 2>&1; then
-		return 0
-	fi
-	note "安装 perf 入口构建依赖"
-	apt_sync && apt_install_min cmake gcc libc6-dev
-}
-
-build_tree()
-{
-	local dir="$1" log="$1/build.log"
-
-	if ! deps; then
-		bad "构建依赖不可用"
-		return 1
-	fi
-	if ! cmake -S "${SRC_DIR}" -B "${dir}/b" -DCMAKE_BUILD_TYPE=Release \
-		>"${log}" 2>&1; then
-		bad "cmake 配置失败"
-		tail -n 20 "${log}" >&2
-		return 1
-	fi
-	if ! cmake --build "${dir}/b" -j "$(nproc)" >>"${log}" 2>&1; then
-		bad "编译失败"
-		tail -n 40 "${log}" >&2
-		return 1
-	fi
-}
-
 # chk_cli BIN —— 帮助、坏参数、缺输入三条入口判据，全部不需要 perf。
 chk_cli()
 {
 	local bin="$1"
-	local rc=0
 
-	"${bin}" --help >/dev/null 2>&1 || rc=$?
-	[ "${rc}" -eq 0 ] || bad "--help 未退 0"
-	rc=0
-	"${bin}" stat --duration 0 >/dev/null 2>&1 || rc=$?
-	[ "${rc}" -eq 2 ] || bad "坏参数未退 2"
-	rc=0
-	"${bin}" no-such-cmd >/dev/null 2>&1 || rc=$?
-	[ "${rc}" -eq 2 ] || bad "未知子命令未退 2"
-	rc=0
-	"${bin}" report --input "${bin}.absent" >/dev/null 2>&1 || rc=$?
-	[ "${rc}" -eq 4 ] || bad "缺输入未退 4"
+	obs_try 0 /dev/null "${bin}" --help
+	obs_try 2 /dev/null "${bin}" stat --duration 0
+	obs_try 2 /dev/null "${bin}" no-such-cmd
+	obs_try 4 /dev/null "${bin}" report --input "${bin}.absent"
 }
 
 # pmu_ok —— 宿主是否允许读硬件计数器；共享 CI 虚拟机常把 paranoid 抬到 4。
@@ -174,39 +132,16 @@ chk_sample()
 	grep -q 'cycles' "${csv}" || bad "CSV 中无 cycles 计数"
 }
 
-chk_build()
+chk_out()
 {
-	local tmp
-
-	group "出树构建"
-	tmp="$(mktemp -d)"
-	if [ -z "${tmp}" ]; then
-		bad "临时目录创建失败"
-		endgroup
-		return
-	fi
-	if build_tree "${tmp}"; then
-		if [ -x "${tmp}/b/airy-perf" ]; then
-			chk_cli "${tmp}/b/airy-perf"
-			chk_sample "${tmp}/b/airy-perf" "${tmp}"
-		else
-			bad "缺少 airy-perf 产物"
-		fi
-	fi
-	rm -rf "${tmp}"
-	endgroup
+	chk_cli "${1}/b/${OBS_BIN}"
+	chk_sample "${1}/b/${OBS_BIN}" "$1"
 }
 
-chk_files
-chk_stat
-chk_scope
-chk_sysfs
-chk_build
+OBS_TITLE="perf 采样入口"
+OBS_LABEL="perf 入口"
+OBS_BIN="airy-perf"
+OBS_CMDS=(cmake cc)
+OBS_PKGS=(cmake gcc libc6-dev)
 
-if [ "${FAILS}" -ne 0 ]; then
-	err "perf 采样入口门禁失败 ${FAILS} 项"
-	exit 1
-fi
-
-say "perf 采样入口门禁通过"
-exit 0
+obs_gate chk_files chk_stat chk_scope chk_sysfs

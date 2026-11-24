@@ -25,6 +25,9 @@
 #
 # 退出码: 0 通过；1 契约或构建不成立；5 参数或目录不满足。
 # ===========================================================================
+# OBS_* 配置变量由 ci/lib/obs.sh 读取，shellcheck 无法跨文件跟踪，
+# 故本文件整体关闭「变量未使用」。
+# shellcheck disable=SC2034
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
@@ -32,6 +35,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 . "${ROOT}/ci/lib/log.sh"
 # shellcheck source=../lib/apt.sh
 . "${ROOT}/ci/lib/apt.sh"
+# shellcheck source=../lib/obs.sh
+. "${ROOT}/ci/lib/obs.sh"
 
 SRC_DIR="${ROOT}/system/obs/mem"
 SRC="${SRC_DIR}/airy_mem.c"
@@ -59,21 +64,10 @@ need_file "${TAP}" "TAP 基线"
 
 chk_files()
 {
-	local got
-
 	group "目录与头注释"
-	got="$(find "${SRC_DIR}" -mindepth 1 -maxdepth 1 -printf '%f\n' |
-		LC_ALL=C sort | tr '\n' ' ')"
-	if [ "${got}" != 'CMakeLists.txt airy_mem.c ' ]; then
-		bad "目录内容不符: ${got}"
-	fi
-	[ "$(sed -n '1p' "${SRC}")" = '// SPDX-License-Identifier: GPL-2.0-only' ] ||
-		bad "airy_mem.c: 首行缺少 SPDX"
-	sed -n '1,8p' "${SRC}" | grep -q 'Copyright' ||
-		bad "airy_mem.c: 缺少版权行"
-	have 'obs_view\.c' "${CMAKE}" "构建未编入公共解析层"
-	have 'SPDX-License-Identifier' "${CMAKE}" "CMakeLists 缺少 SPDX"
-	have 'AIRY_HDR_ROOT' "${CMAKE}" "CMakeLists 未使用导出头"
+	obs_dir "${SRC_DIR}" 'CMakeLists.txt airy_mem.c '
+	obs_head "${SRC}" "airy_mem.c"
+	obs_cmake "${CMAKE}"
 	endgroup
 }
 
@@ -186,44 +180,6 @@ chk_scope()
 	endgroup
 }
 
-deps()
-{
-	if command -v cmake >/dev/null 2>&1 &&
-	   command -v cc >/dev/null 2>&1 &&
-	   command -v make >/dev/null 2>&1; then
-		return 0
-	fi
-	note "安装记忆入口构建依赖"
-	apt_sync && apt_install_min cmake gcc libc6-dev make
-}
-
-build_tree()
-{
-	local dir="$1" log="$1/build.log"
-
-	if ! deps; then
-		bad "构建依赖不可用"
-		return 1
-	fi
-	if ! make -C "${ROOT}/kernel" O="${dir}/kobj" headers_install \
-		INSTALL_HDR_PATH="${dir}/hdr" >"${log}" 2>&1; then
-		bad "UAPI 头导出失败"
-		tail -n 20 "${log}" >&2
-		return 1
-	fi
-	if ! cmake -S "${SRC_DIR}" -B "${dir}/b" -DCMAKE_BUILD_TYPE=Release \
-		-DAIRY_HDR_ROOT="${dir}/hdr/include" >>"${log}" 2>&1; then
-		bad "cmake 配置失败"
-		tail -n 20 "${log}" >&2
-		return 1
-	fi
-	if ! cmake --build "${dir}/b" -j "$(nproc)" >>"${log}" 2>&1; then
-		bad "编译失败"
-		tail -n 40 "${log}" >&2
-		return 1
-	fi
-}
-
 # lvl_kb AGENT LEVEL —— 夹具里一层的占用量；总和与全局 used_kb 相符。
 lvl_kb()
 {
@@ -285,96 +241,50 @@ mkfx()
 	done
 }
 
-# run_rc OUT CMD... —— 捕获退出码到 RC；输出重定向到 OUT。
-RC=0
-run_rc()
-{
-	local out="$1"
-
-	shift
-	"$@" >"${out}" 2>&1
-	RC=$?
-}
-
-# chk_cli BIN DIR —— 文本透传、JSON、TOP 与失败路径。
-chk_cli()
+# chk_view BIN DIR —— 文本透传、JSON 与 TOP 的字段面。
+chk_view()
 {
 	local bin="$1" fx="$2/fx" out="$2/cli.out"
 
 	mkfx "${fx}"
-
-	run_rc "${out}" "${bin}" --root "${fx}" show 7
-	[ "${RC}" -eq 0 ] || bad "show 7 未退 0"
-	grep -q '^agent_id: 7$' "${out}" || bad "show 7 未透出内核快照"
-	grep -q '^l3_read_bytes: 4096$' "${out}" || bad "show 7 缺分层专属键"
-
-	run_rc "${out}" "${bin}" --root "${fx}" show 7 --json
-	[ "${RC}" -eq 0 ] || bad "show --json 未退 0"
-	grep -q '"used_kb":640' "${out}" || bad "JSON 占用总量不对"
-	grep -q '"alert_state":"NORMAL"' "${out}" || bad "JSON 缺告警档位"
-
-	run_rc "${out}" "${bin}" --root "${fx}" top -n 1
-	[ "${RC}" -eq 0 ] || bad "top 未退 0"
+	obs_try 0 "${out}" "${bin}" --root "${fx}" show 7
+	have '^agent_id: 7$' "${out}" "show 7 未透出内核快照"
+	have '^l3_read_bytes: 4096$' "${out}" "show 7 缺分层专属键"
+	obs_try 0 "${out}" "${bin}" --root "${fx}" show 7 --json
+	have '"used_kb":640' "${out}" "JSON 占用总量不对"
+	have '"alert_state":"NORMAL"' "${out}" "JSON 缺告警档位"
+	obs_try 0 "${out}" "${bin}" --root "${fx}" top -n 1
 	[ "$(sed -n '2p' "${out}")" = "$(printf '7\t640')" ] ||
 		bad "top 未按占用降序取首行"
-
-	run_rc "${out}" "${bin}" --root "${fx}" top --json
-	[ "${RC}" -eq 0 ] || bad "top --json 未退 0"
-	grep -q '^\[{"agent_id":7,"used_kb":640},' "${out}" ||
-		bad "top --json 未按占用排序"
-
-	run_rc "${out}" "${bin}" --root "${fx}" show 9
-	[ "${RC}" -eq 3 ] || bad "缺失快照未退 3"
-
-	run_rc "${out}" "${bin}" --root "${fx}" show
-	[ "${RC}" -eq 2 ] || bad "缺参数未退 2"
-
-	run_rc "${out}" "${bin}" --dev "${fx}/absent" quota 7 1024
-	[ "${RC}" -eq 4 ] || bad "缺设备时配额未退 4"
-
-	run_rc "${out}" "${bin}" --dev "${fx}/absent" gauge 7 1 128
-	[ "${RC}" -eq 4 ] || bad "缺设备时占用未退 4"
-
-	run_rc "${out}" "${bin}" --root "${fx}" gauge 7 5 128
-	[ "${RC}" -eq 2 ] || bad "越界层号未退 2"
-
-	run_rc "${out}" "${bin}" --dev "${fx}/absent" report 7 1 1 1
-	[ "${RC}" -eq 2 ] || bad "report 字段不足未退 2"
+	obs_try 0 "${out}" "${bin}" --root "${fx}" top --json
+	have '^\[{"agent_id":7,"used_kb":640},' "${out}" \
+		"top --json 未按占用排序"
 }
 
-chk_build()
+# chk_fail BIN DIR —— 缺失、缺参、缺设备与越界四类出口码。
+chk_fail()
 {
-	local tmp
+	local bin="$1" fx="$2/fx" out="$2/cli.out"
 
-	group "出树构建"
-	tmp="$(mktemp -d)"
-	if [ -z "${tmp}" ]; then
-		bad "临时目录创建失败"
-		endgroup
-		return
-	fi
-	if build_tree "${tmp}"; then
-		if [ -x "${tmp}/b/airy-mem" ]; then
-			chk_cli "${tmp}/b/airy-mem" "${tmp}"
-		else
-			bad "缺少 airy-mem 产物"
-		fi
-	fi
-	rm -rf "${tmp}"
-	endgroup
+	obs_try 3 "${out}" "${bin}" --root "${fx}" show 9
+	obs_try 2 "${out}" "${bin}" --root "${fx}" show
+	obs_try 4 "${out}" "${bin}" --dev "${fx}/absent" quota 7 1024
+	obs_try 4 "${out}" "${bin}" --dev "${fx}/absent" gauge 7 1 128
+	obs_try 2 "${out}" "${bin}" --root "${fx}" gauge 7 5 128
+	obs_try 2 "${out}" "${bin}" --dev "${fx}/absent" report 7 1 1 1
 }
 
-chk_files
-chk_uapi
-chk_kern
-chk_parity
-chk_scope
-chk_build
+chk_out()
+{
+	chk_view "${1}/b/${OBS_BIN}" "$1"
+	chk_fail "${1}/b/${OBS_BIN}" "$1"
+}
 
-if [ "${FAILS}" -ne 0 ]; then
-	err "记忆计量门禁失败 ${FAILS} 项"
-	exit 1
-fi
+OBS_TITLE="记忆计量"
+OBS_LABEL="记忆入口"
+OBS_BIN="airy-mem"
+OBS_CMDS=(cmake cc make)
+OBS_PKGS=(cmake gcc libc6-dev make)
+OBS_HDRS=1
 
-say "记忆计量门禁通过"
-exit 0
+obs_gate chk_files chk_uapi chk_kern chk_parity chk_scope
