@@ -54,7 +54,9 @@ def _log(repo, rev, one):
                          errors="replace")
     if out.returncode:
         raise RuntimeError(out.stderr.strip() or "git log 失败")
-    return [c for c in out.stdout.split("\x1e") if c.strip()]
+    # git log 以换行分隔记录，切 \x1e 之后每条记录还带着这个前导换行：
+    # 不剥掉的话 sha 首位是换行，违规行会断开成两行。
+    return [c.strip() for c in out.stdout.split("\x1e") if c.strip()]
 
 
 def _merge(repo, rev):

@@ -87,6 +87,11 @@ fresh
 commit "ci: read the file from /home/alice/build"
 out="$(run)"
 check "家目录路径判拒绝" 1 "$?" "${out}" "P001"
+sha="$(git -C "${tmp}/repo" rev-parse HEAD | cut -c1-9)"
+case "${out}" in
+*"P001 ${sha}"*) ok "违规行带提交哈希" ;;
+*) bad "违规行带提交哈希（缺「P001 ${sha}」）"; printf '%s\n' "${out}" >&2 ;;
+esac
 
 fresh
 commit "ci: write the artifact under D:\\out"
