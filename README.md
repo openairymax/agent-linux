@@ -94,8 +94,10 @@ agent-linux/             # management repo (this repository)
 ├── cloudnative/         # cloud-native
 ├── distro/              # distro assembly
 ├── tests-linux/         # tests
-├── .github/workflows/   # CI pipelines
-└── tools/airy-flash/    # ISO flash and verification tool
+├── sdk/                 # generated language bindings (see sdk/README.md)
+├── ci/                  # gates, checks, tests and CI libraries
+├── tools/               # engineering tooling (entry point: tools/airy)
+└── .github/workflows/   # CI pipelines
 ```
 
 ## Leaf Repositories
