@@ -1,17 +1,19 @@
 # ===========================================================================
 # agent-linux (AirymaxOS) CI Pipeline
-# 可编程探针（P-09）：eBPF 契约静态判定 + 出树构建
+# 可观测性入口（P-09 eBPF、P-10 perf）：契约静态判定 + 出树构建
 # ===========================================================================
 # Authority: docs/docs-linux/90-observability/02-ebpf-probes.md
 #             （OS-OBS-011/012/015/016/018/020、OS-STD-OBS-012/013/014、
 #               OS-KER-115）
-# Design: 判据全部在 ci/gates/ebpf-probe.sh，YAML 只做 checkout 与派遣；
-#         加载与实跑依赖 Airymax 内核符号，属 285H 验收面，不在托管 runner
-#         上替身验证。
+#            docs/docs-linux/90-observability/03-perf-analysis.md
+#             （OS-OBS-032/033/038、OS-STD-022）
+# Design: 判据全部在 ci/gates/{ebpf-probe,perf-hooks}.sh，YAML 只做 checkout
+#         与派遣；加载与实跑依赖 Airymax 内核符号，属 285H 验收面，不在托管
+#         runner 上替身验证。
 # ---------------------------------------------------------------------------
-# 监听面取 system gitlink 而不是 system/obs/ebpf/**：父仓只能看到子模块指针
+# 监听面取 system gitlink 而不是 system/obs/**：父仓只能看到子模块指针
 # 的移动，按子目录过滤等于永不触发。其余 system 改动由 c-verify 承担，这里
-# 只多承担一次指针变动后的探针复验。
+# 只多承担一次指针变动后的入口复验。
 # ===========================================================================
 
 name: obs-verify
@@ -21,6 +23,7 @@ on:
     paths:
       - 'system'
       - 'ci/gates/ebpf-probe.sh'
+      - 'ci/gates/perf-hooks.sh'
       - 'ci/lib/**'
       - 'ci/ci.sh'
       - '.github/workflows/obs-verify.yml'
@@ -29,6 +32,7 @@ on:
     paths:
       - 'system'
       - 'ci/gates/ebpf-probe.sh'
+      - 'ci/gates/perf-hooks.sh'
       - 'ci/lib/**'
       - 'ci/ci.sh'
       - '.github/workflows/obs-verify.yml'
@@ -55,3 +59,18 @@ jobs:
       # 再以 clang -target bpf 出树编译并核产物，两步都过才算通过。
       - name: eBPF probe contract and out-of-tree build
         run: ci/ci.sh ebpf-probe
+
+  # perf 入口与 eBPF 探针是两条互不依赖的判据，拆成两个 job 并行：
+  # 任一条失败都只重跑它自己，不必为一个头注释断言重编另一条的产物。
+  perf-verify:
+    name: perf Entry Contract and Build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { submodules: recursive }
+
+      # 先判「只编排上游 perf、只产出机器可读」，再出树编译并走帮助、
+      # 坏参数、缺输入三条入口；宿主有 perf 时追加一次 1 秒真实采样。
+      - name: perf entry contract, build and CLI paths
+        run: ci/ci.sh perf-hooks
