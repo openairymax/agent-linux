@@ -1,0 +1,55 @@
+# ===========================================================================
+# agent-linux (AirymaxOS) CI Pipeline
+# 运维面入口（P-13 告警聚合）：契约静态判定 + 进程内端到端
+# ===========================================================================
+# Authority: docs/docs-linux/100-operations/04-alerting.md
+# Design: 判据全部在 ci/gates/alert-d.sh，YAML 只做 checkout 与派遣。
+#         告警聚合是纯用户态 Python 服务，不依赖内核符号与特权，因此整条
+#         判据可以在托管 runner 上完整复算，无需 285H 替身。
+# ---------------------------------------------------------------------------
+# 监听面取 system gitlink 而不是 system/**：父仓只能看到子模块指针的移动，
+# 按子目录过滤等于永不触发。其余 system 改动由 c-verify 与 os-chk-verify
+# 承担，这里只多承担一次指针变动后的运维入口复验。
+# ===========================================================================
+
+name: ops-verify
+
+on:
+  pull_request:
+    paths:
+      - 'system'
+      - 'ci/gates/alert-d.sh'
+      - 'ci/lib/**'
+      - 'ci/ci.sh'
+      - '.github/workflows/ops-verify.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'system'
+      - 'ci/gates/alert-d.sh'
+      - 'ci/lib/**'
+      - 'ci/ci.sh'
+      - '.github/workflows/ops-verify.yml'
+
+# 最小权限：只读检出与构建，不触发布与制品写。
+permissions:
+  contents: read
+
+# 同一 ref 只保留最新一轮：旧结论对当前树已失效，继续排队只抢并发额度。
+concurrency:
+  group: ops-verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  alert-verify:
+    name: Alert Aggregator Contract and End-to-End
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { submodules: recursive }
+
+      # 门禁覆盖布局与文件头、出厂规则、五个包的单测、守护与 CLI 的
+      # 真实进程对跑，以及坏规则/坏限额/缺状态三条失败路径。
+      - name: Alert aggregator contract and behavior
+        run: ci/ci.sh alert-d
