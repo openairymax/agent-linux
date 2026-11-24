@@ -45,8 +45,10 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 └── tui-verify.yml         # TUI 工作区：依赖源 + 格式/静态/单测 + 跨架构类型检查
 ```
 
-十四个流水线，作业数 1~4（`obs-verify`、`os-chk-verify` 各一个、`sdk-verify` 四个）。
-作业数上限登记在 `ci/baseline/workflow-budgets.txt`，只许下调。
+流水线条数不写死在正文里：`ci/checks/check-workflows.py` 的末行给出实际条数，
+逐条作业数与上限登记在 `ci/baseline/workflow-budgets.txt`，只许下调。正文写固定
+数字时，新增一条流水线就要同时改两处，改漏一处即失真（本节曾因此写出三个不同
+的条数）。
 
 ## 3. 流水线清单
 
@@ -284,7 +286,7 @@ L2/L3 都不改判据，只改「同一份物料要付几次成本」。任何�
 **作业数**：GitHub 的单 workflow 256 个作业、单作业 6 小时是上限，不是目标。
 工程通行区间是每条 3–8 个作业：少于 3 个说明判据没有分层，一处红要等全部
 步骤跑完；多于 8–10 个则固定成本超过判据本身的耗时，部分失败的组合数随之
-上升。本仓十三条流水线当前为 1–4 个作业，新增或拆分后的上限是 5，登记在
+上升。本仓流水线当前为 1–4 个作业，新增或拆分后的上限是 5，登记在
 `ci/baseline/workflow-budgets.txt` 且只许下调。
 
 | 模块 | 归属 | 依据 |
