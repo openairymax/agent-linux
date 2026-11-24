@@ -337,19 +337,15 @@ def _create(path: Path, data: bytes) -> None:
             handle.flush()
             os.fsync(handle.fileno())
         os.link(tmp, path)
-        _sync_dir(path.parent)
+        # 把目录项变更刷入磁盘，保证封口后可跨崩溃恢复。
+        dir_fd = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
     finally:
         if os.path.exists(tmp):
             os.unlink(tmp)
-
-
-def _sync_dir(path: Path) -> None:
-    """把目录项变更刷入磁盘，保证封口后可跨崩溃恢复。"""
-    fd = os.open(path, os.O_RDONLY)
-    try:
-        os.fsync(fd)
-    finally:
-        os.close(fd)
 
 
 def _digest(path: Path) -> str:
