@@ -47,9 +47,9 @@
 #     最坏情况保留，避免 runner 形态变化导致 job 被中途取消。
 #   * 源码以只读方式挂载进构建容器，产物只落 $RUNNER_TEMP/out，不违反
 #     「严禁在 airymaxhub 源码区内构建」。
-#   * 子模块由 ci/gates/submodules.sh 按需取：distro 与 system 是组装链的
-#     全部读点，kernel 只在复用 Release 内核包以外的路径上读。递归 checkout
-#     会多拉七棵树（kernel 1.5G），它们不进产物，只抬固定开销（W-1）。
+#   * 子模块由 ci/gates/submodules.sh 按读点取：装机腿取 distro 与 system，
+#     组装段再加 services 与 kernel（配方把二者归档为源码包，UAPI 头是编译
+#     输入）。递归 checkout 会多拉五棵树，它们不进产物，只抬固定开销（W-1）。
 #   * ISO 基线固定为 openEuler 24.03-LTS-SP3 netinst，容器镜像取官方
 #     docker_img tar；两条腿各取本架构官方件，文件名、URL 与 sha256 同时
 #     写死在矩阵项里，禁止浮动 latest。
@@ -160,10 +160,12 @@ jobs:
           KIND: ${{ startsWith(github.ref, 'refs/tags/') && 'tags' || 'heads' }}
         run: ci/ci.sh remote-sync --kind "$KIND" --ref "$REF" --sha "$SHA" --remote origin
 
-      # 与后面 Fetch release kernel RPMs 同一判据：有发行包就不建内核，
-      # 也就不需要 kernel 源码树。条件写在参数里，门禁本身不猜。
+      # 组装段取全部四棵读点子树：distro 与 system 承载配方与系统包，
+      # services 与 kernel 被配方归档为源码包（UAPI 头是系统包的编译契约）。
+      # 取法只由配方声明决定，不看内核包从哪来：复用发行包时省掉 kernel
+      # 正是缺件的来源，缺到 RPM 阶段才暴露整轮白跑。
       - name: Checkout submodules
-        run: ci/ci.sh submodules ${{ inputs.release_tag == '' && '--need-kernel' || '' }}
+        run: ci/ci.sh submodules --assemble
 
       # 静态门禁必须先于组装：spec / comps / kickstart 改坏一条断言，代价
       # 是整轮 240 分钟组装白跑。此前 assemble 首步是 free-disk，静态不合格
@@ -171,13 +173,10 @@ jobs:
       # --no-tests 只跳过规则回归那一段：它判的是仓库内容，push 门禁已在同一
       # 提交上全量跑过，组装再跑一遍不增加判据，却要付 111 秒（CI-16）。其余
       # 五段合计不足两秒，留着——dispatch 可以指向任何历史提交，不必假设它
-      # 一定走过 push 门禁。
-      # --partial-tree 是这条流水线的树形事实：这里只取 distro 与 system，
-      # 配方引用的 services 与 kernel/include 不在树上，源目录存在性由取全
-      # 子模块的 push 门禁与发版构建判定；在本树内判它必然假红（0.0.5 发布
-      # 链首轮即卡在此处）。
+      # 一定走过 push 门禁。源存在性按完整树判定：上一步已把配方引用的四棵
+      # 子树全部取到，判据与本树一致才有意义。
       - name: Static gates
-        run: ci/ci.sh distro-lint --no-tests --partial-tree
+        run: ci/ci.sh distro-lint --no-tests
 
       - name: Free runner disk
         run: ci/ci.sh free-disk

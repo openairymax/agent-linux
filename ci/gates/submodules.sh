@@ -4,14 +4,19 @@
 # ===========================================================================
 # ci/gates/submodules.sh — 只取本轮真正会被读到的子模块
 #
-# 用法: ci/gates/submodules.sh [--need-kernel]
+# 用法: ci/gates/submodules.sh [--assemble]
 #
-# 递归 checkout 会把九个子模块全部拉下来，其中 kernel 一棵树就有 1.5G，
-# 而组装段只在「没有从 Release 复用内核包」时才读它；memory / security /
-# cognition / services / cloudnative / tests-linux 在组装链里没有任何读点
-# （镜像载荷只由 distro/specs 的三个配方产出，Source 全部落在 distro 与
-# system）。这些下载不影响产物，只把每一轮的固定开销抬高几分钟，而
-# 固定开销正是 assemble 超时的主要成分（W-1）。
+# 递归 checkout 会把九个子模块全部拉下来，其中 kernel 一棵树就有 1.5G。
+# 默认集合是 distro 与 system：装机腿、通道回写与门禁脚本的读点都落在
+# 这两棵树上；memory / security / cognition / services / cloudnative /
+# tests-linux 在这些路径上没有读点。这些下载不影响产物，只把每一轮的
+# 固定开销抬高几分钟，而固定开销正是 assemble 超时的主要成分（W-1）。
+#
+# --assemble 是组装段的读点集合：distro/specs 下的配方以 source-root 与
+# source-bundle 引用 services 与 kernel/include（系统包要编译守护进程，
+# 并以 UAPI 头作为编译契约），组装因此必须同时取到这四棵子树。集合只由
+# 配方声明决定，不随「是否复用 Release 内核包」变化——UAPI 头是编译输入，
+# 与内核包从哪里来无关；曾按后者裁剪，缺件直到 RPM 阶段才暴露。
 #
 # 判据按「谁读它」而不是按体积：子树一旦被某条组装路径读到就必须在这里
 # 出现，否则产物会静默缺件——default_srcs() 对缺失目录是跳过而非报错。
@@ -29,17 +34,17 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 
-need_kernel=0
+assemble=0
 for arg in "$@"; do
     case "${arg}" in
-        --need-kernel) need_kernel=1 ;;
-        *) die "未知参数: ${arg}（可用: --need-kernel）" ;;
+        --assemble) assemble=1 ;;
+        *) die "未知参数: ${arg}（可用: --assemble）" ;;
     esac
 done
 
 subs=(distro system)
-if [ "${need_kernel}" -eq 1 ]; then
-    subs+=(kernel)
+if [ "${assemble}" -eq 1 ]; then
+    subs+=(services kernel)
 fi
 
 cd "${ROOT}"
