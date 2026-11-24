@@ -18,8 +18,8 @@
 #   * 内核侧：Kbuild 与 core 初始化接线、KUnit suite、TAP 基线棘轮。
 #   * 字段面：内核输出 20 个键；CLI 经公共解析层逐字渲染，源码中除排序
 #     用的指标名外不得再出现第二份键表。
-#   * 鉴权：上报校验调用者自身的 Agent 身份与 SEND 权限，预算校验
-#     SUPERVISE；历史与留存不得落内核（属 logger_d）。
+#   * 鉴权：计量模块一律走公共鉴权入口，由它校验调用者自身的 Agent 身份
+#     与 SEND 权限、预算校验 SUPERVISE；历史与留存不得落内核（属 logger_d）。
 #   * 出树构建通过 -Wall -Wextra -Werror；文本/JSON/TOP 与三条失败路径。
 #
 # 退出码: 0 通过；1 契约或构建不成立；5 参数或目录不满足。
@@ -42,6 +42,7 @@ KDIR="${ROOT}/kernel/kernel/obs"
 KSRC="${KDIR}/airy_token.c"
 KHDR="${KDIR}/airy_token.h"
 KTEST="${KDIR}/airy_token_test.c"
+KINIT="${KDIR}/airy_obs_core.c"
 TAP="${ROOT}/tools/tap/kunit-tap-baseline.tap"
 
 need_dir --src "${SRC_DIR}"
@@ -52,6 +53,7 @@ need_file "${COMMON}" "公共解析层"
 need_file "${UAPI}" "契约头"
 need_file "${KSRC}" "内核计量源码"
 need_file "${KTEST}" "KUnit 用例"
+need_file "${KINIT}" "公共鉴权入口"
 need_file "${TAP}" "TAP 基线"
 
 chk_files()
@@ -156,10 +158,12 @@ chk_parity()
 chk_scope()
 {
 	group "边界与鉴权"
-	have 'airy_agent_id\(current\)' "${KSRC}" "上报未校验调用者身份"
-	have 'AIRY_CAP_PERM_SEND' "${KSRC}" "上报未校验 SEND 权限"
-	have 'AIRY_CAP_PERM_SUPERVISE' "${KSRC}" "预算未校验 SUPERVISE"
-	have 'CAP_SYS_PTRACE' "${KSRC}" "缺少监督进程通道"
+	have 'airy_obs_self\(' "${KSRC}" "上报未走统一身份校验"
+	have 'airy_obs_supervise\(' "${KSRC}" "预算未走统一监督校验"
+	have 'airy_agent_id\(current\)' "${KINIT}" "公共鉴权未取调用者身份"
+	have 'AIRY_CAP_PERM_SEND' "${KINIT}" "公共鉴权未校验 SEND 权限"
+	have 'AIRY_CAP_PERM_SUPERVISE' "${KINIT}" "公共鉴权未校验 SUPERVISE"
+	have 'CAP_SYS_PTRACE' "${KINIT}" "缺少监督进程通道"
 	have 'airy_tok_ratio' "${KSRC}" "比例未走统一 ppm 换算"
 	deny '/var/log/airy' "${KSRC}" "内核负责历史留存"
 	deny '/var/log/airy' "${SRC}" "入口负责历史留存"

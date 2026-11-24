@@ -20,6 +20,8 @@
 #   * 不写 sysfs/procfs：irq_balancing 只以只读方式记录（OS-STD-022）。
 #   * 产物路径固定在 /var/log/airy，report 输出 JSON 字段 overhead/symbol/dso。
 #   * 出树构建通过 -Wall -Wextra -Werror；--help 退 0，坏参数退 2，缺输入退 4。
+#   * 实跑仅在宿主放行 PMU 时执行；受限宿主记 perf_event_paranoid 后留给
+#     285H 验收，不把环境限制记成实现缺陷。
 #
 # 退出码: 0 通过；1 契约或构建不成立；5 参数或目录不满足。
 # ===========================================================================
@@ -144,18 +146,30 @@ chk_cli()
 	[ "${rc}" -eq 4 ] || bad "缺输入未退 4"
 }
 
-# chk_sample BIN DIR —— 有 perf 时跑一次 1 秒真实采样并校验 CSV。
+# pmu_ok —— 宿主是否允许读硬件计数器；共享 CI 虚拟机常把 paranoid 抬到 4。
+pmu_ok()
+{
+	perf stat -x, -e cycles -a -- true >/dev/null 2>&1
+}
+
+# chk_sample BIN DIR —— 有 perf 且宿主放行 PMU 时跑一次 1 秒真实采样并校验 CSV。
 chk_sample()
 {
-	local bin="$1" dir="$2" csv="$2/stat.csv"
+	local bin="$1" dir="$2" csv="$2/stat.csv" err="$2/stat.err" paranoid
 
 	if ! command -v perf >/dev/null 2>&1; then
 		note "宿主无 perf，跳过实跑（285H 侧验收）"
 		return 0
 	fi
-	if ! "${bin}" stat --duration 1 --out "${csv}" >/dev/null 2>&1; then
-		bad "1 秒采样失败"
-		return 1
+	if ! "${bin}" stat --duration 1 --out "${csv}" >"${err}" 2>&1; then
+		if pmu_ok; then
+			bad "1 秒采样失败"
+			sed -n '1,3p' "${err}" >&2
+			return 1
+		fi
+		paranoid="$(cat /proc/sys/kernel/perf_event_paranoid 2>/dev/null)"
+		note "宿主禁读 PMU（perf_event_paranoid=${paranoid:-未知}），跳过实跑（285H 侧验收）"
+		return 0
 	fi
 	grep -q 'cycles' "${csv}" || bad "CSV 中无 cycles 计数"
 }
