@@ -30,7 +30,9 @@ kernel-verify.yml                 0     2
 mgmt-verify.yml                   0     2
 nightly.yml                       0     2
 obs-verify.yml                    0     4
-ops-verify.yml                    0     2
+# ops-verify 三条作业各承一个运维面（告警、事件台账、备份仓库），
+# 门禁互不共享状态，单条都在数秒内完成；拆开是为了失败能直接归因到面。
+ops-verify.yml                    0     3
 os-chk-verify.yml                 0     1
 payload-seed.yml                  0     2
 release.yml                       0     2
