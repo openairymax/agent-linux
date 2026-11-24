@@ -1,12 +1,14 @@
 # ===========================================================================
 # agent-linux (AirymaxOS) CI Pipeline
-# 运维面入口（P-13 告警聚合、P-14 事件响应）：契约静态判定 + 进程内端到端
+# 运维面入口（P-13 告警聚合、P-14 事件响应、P-15 备份恢复）：契约静态判定
+# + 进程内端到端
 # ===========================================================================
 # Authority: docs/docs-linux/100-operations/04-alerting.md
 #            docs/docs-linux/100-operations/05-incident-response.md
+#            docs/docs-linux/100-operations/06-backup-recovery.md
 # Design: 判据全部在 ci/gates/*.sh，YAML 只做 checkout 与派遣。
-#         告警与事件台账都是纯用户态组件，不依赖内核符号与特权，因此整条
-#         判据可以在托管 runner 上完整复算，无需 285H 替身。
+#         告警、事件台账与备份仓库都是纯用户态组件，不依赖内核符号与特权，
+#         因此整条判据可以在托管 runner 上完整复算，无需 285H 替身。
 # ---------------------------------------------------------------------------
 # 监听面取 system gitlink 而不是 system/**：父仓只能看到子模块指针的移动，
 # 按子目录过滤等于永不触发。其余 system 改动由 c-verify 与 os-chk-verify
@@ -21,6 +23,7 @@ on:
       - 'system'
       - 'ci/gates/alert-d.sh'
       - 'ci/gates/incident.sh'
+      - 'ci/gates/backup.sh'
       - 'ci/lib/**'
       - 'ci/ci.sh'
       - '.github/workflows/ops-verify.yml'
@@ -30,6 +33,7 @@ on:
       - 'system'
       - 'ci/gates/alert-d.sh'
       - 'ci/gates/incident.sh'
+      - 'ci/gates/backup.sh'
       - 'ci/lib/**'
       - 'ci/ci.sh'
       - '.github/workflows/ops-verify.yml'
@@ -69,3 +73,16 @@ jobs:
       # 告警取样幂等、检测到复盘的闭环，以及三条失败路径的退出码。
       - name: Incident ledger contract and behavior
         run: ci/ci.sh incident
+
+  backup-verify:
+    name: Backup Repository, Restore and Retention
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { submodules: recursive }
+
+      # 门禁覆盖全量与增量的创建、摘要与索引落盘、深核验、全量恢复的
+      # 确认门、单 Agent 回放、篡改停在解包之前，以及保留期删旧留新。
+      - name: Backup lifecycle and integrity
+        run: ci/ci.sh backup
