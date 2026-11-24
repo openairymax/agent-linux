@@ -104,9 +104,10 @@ chk_kern()
 	have '^ok 36 airy_token$' "${TAP}" "TAP 基线未登记新 suite"
 	have 'proc_create_single_data\(TOK_FILE, 0444' "${KSRC}" \
 		"快照节点不是只读"
-	have 'proc_mkdir\(TOK_SUBTREE' "${KSRC}" "agents 子树未创建"
-	have 'proc_mkdir\(name, tok_agents\)' "${KSRC}" \
-		"Agent 目录按记录惰性创建"
+	have 'airy_obs_agent_dir\(a->agent_id, true\)' "${KSRC}" \
+		"未走共享 Agent 目录"
+	have 'airy_obs_agent_dir' "${KDIR}/airy_obs_proc.c" \
+		"共享 Agent 目录未实现"
 	endgroup
 }
 
