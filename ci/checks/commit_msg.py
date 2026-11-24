@@ -46,15 +46,44 @@ def usage(rc):
     return rc
 
 
-def commits(repo, rng):
-    """取范围内提交的（哈希, 完整信息）。单版本号只取一条，两端式取区间。"""
-    fmt = "--format=%H%x1f%B%x1e"
-    args = ["git", "-C", repo, "log", "--no-merges", fmt]
-    args += [rng] if ".." in rng else ["-1", rng]
+def _log(repo, rev, one):
+    """跑一次 git log：one 为真只取一条，否则取 rev 覆盖的全部历史。"""
+    args = ["git", "-C", repo, "log", "--no-merges",
+            "--format=%H%x1f%B%x1e"]
+    args += ["-1"] if one else []
+    args.append(rev)
     out = subprocess.run(args, capture_output=True, text=True, errors="replace")
     if out.returncode != 0:
         raise RuntimeError(out.stderr.strip() or "git log 失败")
     return [c for c in out.stdout.split("\x1e") if c.strip()]
+
+
+def _merge(repo, rev):
+    """rev 是否为合并提交：父提交多于一个。"""
+    out = subprocess.run(["git", "-C", repo, "rev-list", "--parents",
+                          "-n", "1", rev], capture_output=True, text=True,
+                         errors="replace")
+    if out.returncode != 0:
+        raise RuntimeError(out.stderr.strip() or "git rev-list 失败")
+    return len(out.stdout.split()) > 2
+
+
+def commits(repo, rng):
+    """取范围内提交的（哈希, 完整信息）。单版本号只取一条，两端式取区间。"""
+    if ".." in rng:
+        return _log(repo, rng, one=False)
+    # -1 在遍历阶段就截断，--no-merges 之后不会再把合并提交补回来：合并
+    # 检出必须先把判据落到父提交（PR 头提交），否则判的就是平台生成的
+    # 合并信息。浅检出可能连父对象都没有，此时如实返回空，由调用方按
+    # 「未判」处理而不是放行。
+    if rng == "HEAD" and _merge(repo, rng):
+        for rev in ("HEAD^2", "HEAD^1"):
+            try:
+                return _log(repo, rev, one=True)
+            except RuntimeError:
+                continue
+        return []
+    return _log(repo, rng, one=True)
 
 
 def subject(body):
@@ -100,6 +129,10 @@ def main(argv):
         rows = commits(a.repo, a.rng)
     except RuntimeError as exc:
         print(f"commit-msg: {exc}", file=sys.stderr)
+        return EINVAL
+    if not rows:
+        print(f"commit-msg: 范围内没有可判提交（{a.rng}），历史可能过浅",
+              file=sys.stderr)
         return EINVAL
     total = 0
     for row in rows:

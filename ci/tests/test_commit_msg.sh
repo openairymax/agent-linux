@@ -5,8 +5,8 @@
 # ci/tests/test_commit_msg.sh — ci/checks/commit_msg.py 的分支回归
 #
 # 真实仓库常年为绿，判定逻辑只能靠负例驱动：逐条造出超长主题、本机绝对
-# 路径、低级措辞、空主题与错误参数，断言只看退出码与判据名。合规样例同时
-# 存在，否则「全判红」也能让负例全过。
+# 路径、低级措辞、空主题、合并检出与错误参数，断言只看退出码与判据名。
+# 合规样例同时存在，否则「全判红」也能让负例全过。
 #
 # 用法: bash ci/tests/test_commit_msg.sh
 # 退出码: 0 全部通过；1 有断言失败。
@@ -102,6 +102,18 @@ fresh
 commit ""
 out="$(run)"
 check "空主题判拒绝" 1 "$?" "${out}" "L001"
+
+# PR 检出的 HEAD 是平台生成的合并提交，--no-merges 会把它滤掉；判据必须
+# 落到第二个父提交（PR 头提交）上，否则这条腿只是空跑。
+fresh
+base="$(git -C "${tmp}/repo" symbolic-ref --short HEAD)"
+git -C "${tmp}/repo" checkout -q -b topic
+commit "feat: 从 /home/bob/src 取件"
+git -C "${tmp}/repo" checkout -q "${base}"
+git -C "${tmp}/repo" -c user.name=CI -c user.email=ci@example.invalid \
+    merge -q --no-ff -m "Merge branch 'topic'" topic
+out="$(run)"
+check "合并检出判 PR 头提交" 1 "$?" "${out}" "P001"
 
 fresh
 out="$(run --max-bytes 0)"
