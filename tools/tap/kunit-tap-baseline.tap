@@ -434,3 +434,10 @@ ok 34 airy_policy
     ok 6 obs_dir_guard
     ok 7 obs_fev_guard
 ok 35 airy_obs
+    # Subtest: airy_token
+    ok 1 tok_ratio_zero
+    ok 2 tok_ratio_half
+    ok 3 tok_alert_edges
+    ok 4 tok_apply_delta
+    ok 5 tok_window_roll
+ok 36 airy_token
