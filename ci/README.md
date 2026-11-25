@@ -27,6 +27,11 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 
 - `ci/tools/` 不是仓根 `tools/`。前者是被某条门禁调用的取证工具，后者是
   跨子模块的命令面（唯一入口 `tools/airy`）。两者互不引用。
+
+`gates/` 必须平铺：`ci.sh` 以 `gates/*.sh` 取门禁名，`checks/check-workflows.py`
+以 `tests/test_<门禁>.sh` 找回归夹具，`baseline/gate-owners.tsv` 以同一字符串
+登记归属。三处以文件名为唯一键，任何子目录都会让三者同时失配。共享实现一律
+落 `lib/`；Q-04 施工图纸预留的 `gates/lib/` 在引入分级发现规则之前不建立。
 - 三态（0／1／3）与 `CI_EINVAL`（5）的取值是 §4 的全局约定；单个门禁用到的
   常量与辅助函数留在该门禁文件里，不另建子目录存放只被一处使用的声明。
 
@@ -40,8 +45,7 @@ ci/
 ├── README.md            # 本文件：归属与规则
 ├── ci.sh                # 门禁分发器（--list 读取各门的「用法:」头）
 ├── lint.sh              # CI 层自检（20 项，见文件头）
-├── gates/               # 一个文件一条判据
-│   └── lib/             # 门禁协议声明（Q-04 施工图纸钉定此路径）
+├── gates/               # 一个文件一条判据，平铺，门禁 ID ≡ 文件名去 .sh
 ├── checks/              # Python 检查器
 ├── lib/                 # 共享实现（shell + python）
 ├── baseline/            # 棘轮基线与门禁归属登记
