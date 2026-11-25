@@ -425,6 +425,11 @@ jobs:
       # 与门禁同一条判据：release-rpms 解出的内核包保留 dist/rpm/<arch>/
       # 层级（run 42527470419 的 Fetch 步骤日志已写明落点），固定一层 glob
       # 只匹配到发行包一份，accept 的通道清单因此报「No kernel RPM」。
+      #
+      # 发版自证（release-005 --rpm）的输入是「发行包 + 系统包」一对：入口
+      # 二进制、单元、主题都在系统包里。只上传发行包，门禁在任何一台发布机
+      # 上都会判「内无发行包（airymaxos-release/system）」，路径断言因而从
+      # 无可复跑的输入。
       - name: Upload release rpms
         if: success() && inputs.release_tag != '' && !inputs.acceptance
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -432,6 +437,7 @@ jobs:
           name: airymaxos-release-rpms-${{ matrix.arch }}
           path: |
             ${{ runner.temp }}/out/rpms/RPMS/*/airymaxos-release-*.noarch.rpm
+            ${{ runner.temp }}/out/rpms/RPMS/*/airymaxos-system-*.rpm
             ${{ runner.temp }}/rel-rpms/**/airymaxos-kernel*.${{ matrix.arch }}.rpm
           retention-days: 7
           if-no-files-found: error
