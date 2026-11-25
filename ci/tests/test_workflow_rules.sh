@@ -2,13 +2,13 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 # SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 # ===========================================================================
-# ci/tests/test_workflow_rules.sh — ci/checks/check-workflows.py 规则 13–20 的负向回归
+# ci/tests/test_workflow_rules.sh — ci/checks/check_workflows.py 规则 13–20 的负向回归
 #
 # 这几条规则此前只有正向：真实树常年合规，规则写错、判反或者根本没接进
 # main() 都不会有人发现。本文件在一棵最小假树上逐条破坏，断言只看退出码
 # 与稳定判据字符串，因此不依赖真实 workflow 的数量与预算。
 #
-# 真实树是否合规不在这里判：os-chk-verify 直接跑 ci/checks/check-workflows.py
+# 真实树是否合规不在这里判：os-chk-verify 直接跑 ci/checks/check_workflows.py
 # 那一条，本文件只保证这几条规则既不漏判也不误判。
 #
 # 用法: bash ci/tests/test_workflow_rules.sh
@@ -24,7 +24,7 @@ SHA=11bd71901bbe5b1630ceea73d27597364c9af683
 fails=0
 
 mkdir -p "${FX}/ci/checks" "${FX}/ci/baseline" "${FX}/.github/workflows" "${FX}/tools/nightly"
-cp "${ROOT}/ci/checks/check-workflows.py" "${FX}/ci/checks/check-workflows.py"
+cp "${ROOT}/ci/checks/check_workflows.py" "${FX}/ci/checks/check_workflows.py"
 # check_gate_libs 无条件读 ci/ci.sh；本文件不判门禁库，留空文件即可。
 : >"${FX}/ci/ci.sh"
 # gate_callers 无条件读 ci/lint.sh；空文件等价于「lint.sh 没有调用任何门禁」。
@@ -43,7 +43,7 @@ bad()
 
 run()
 {
-    python3 "${FX}/ci/checks/check-workflows.py" 2>&1
+    python3 "${FX}/ci/checks/check_workflows.py" 2>&1
 }
 
 check()

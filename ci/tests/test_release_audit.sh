@@ -5,7 +5,7 @@
 # ci/tests/test_release_audit.sh — 资产集合两道门禁的分支回归
 #
 # release-audit.sh（写入后对账）与 release-prune.sh（写入前收回）共用
-# ci/lib/release-assets.sh 的期望集，因此用同一份清单夹具同时钉住两侧：
+# ci/lib/release_assets.sh 的期望集，因此用同一份清单夹具同时钉住两侧：
 # 期望集只算一次，两侧的差集语义必须互补——对账报缺件，剪枝报多余项。
 #
 # 对账的判据是双向的（缺失与多余都失败），而两种失败在页面上都表现
@@ -28,7 +28,7 @@ mkdir -p "${FX}/ci/gates" "${FX}/ci/lib" "${FX}/out" "${tmp}/stub"
 cp "${ROOT}/ci/gates/release-audit.sh" "${FX}/ci/gates/release-audit.sh"
 cp "${ROOT}/ci/gates/release-prune.sh" "${FX}/ci/gates/release-prune.sh"
 cp "${ROOT}/ci/lib/log.sh" "${FX}/ci/lib/log.sh"
-cp "${ROOT}/ci/lib/release-assets.sh" "${FX}/ci/lib/release-assets.sh"
+cp "${ROOT}/ci/lib/release_assets.sh" "${FX}/ci/lib/release_assets.sh"
 
 cat >"${tmp}/stub/curl" <<'EOF'
 #!/usr/bin/env bash

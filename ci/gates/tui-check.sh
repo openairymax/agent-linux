@@ -31,8 +31,8 @@ readonly EINVAL=5
 readonly KINDS="fmt clippy test cross"
 # shellcheck source=../lib/log.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/log.sh"
-# shellcheck source=../lib/tui-gate.sh
-. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/tui-gate.sh"
+# shellcheck source=../lib/tui_gate.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/tui_gate.sh"
 
 KIND=""
 TARGET=""

@@ -2,13 +2,13 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 # SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 # ===========================================================================
-# ci/tools/tui-field-collect.sh — 目标机取证记录采集器
+# ci/tools/tui_field_collect.sh — 目标机取证记录采集器
 #
 # 用法:
-#   ci/tools/tui-field-collect.sh --out DIR --case NAME --observed TEXT
+#   ci/tools/tui_field_collect.sh --out DIR --case NAME --observed TEXT
 #       [--result pass|fail|unavailable|blocked] [--note TEXT]
 #       [--screenshot FILE]
-#   ci/tools/tui-field-collect.sh --fixture --out DIR --case NAME
+#   ci/tools/tui_field_collect.sh --fixture --out DIR --case NAME
 #       --arch ARCH --cols N --rows N --observed TEXT [--result ...]
 #
 # 采集器只做一件事：把「操作者在目标机上看到的事实」落成一条记录。机器
@@ -50,9 +50,9 @@ FIXTURE=0
 usage()
 {
     cat <<'EOF'
-用法: ci/tools/tui-field-collect.sh --out DIR --case NAME --observed TEXT
+用法: ci/tools/tui_field_collect.sh --out DIR --case NAME --observed TEXT
                                   [--result R] [--note TEXT] [--screenshot FILE]
-       ci/tools/tui-field-collect.sh --fixture --out DIR --case NAME
+       ci/tools/tui_field_collect.sh --fixture --out DIR --case NAME
                                   --arch A --cols N --rows N --observed TEXT
 EOF
 }

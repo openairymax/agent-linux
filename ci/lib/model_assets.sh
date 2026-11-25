@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 # SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 # ===========================================================================
-# ci/lib/model-assets.sh — 模型资产门禁的临时离线包构造
+# ci/lib/model_assets.sh — 模型资产门禁的临时离线包构造
 #
 # 目的：llm-offline 与 model-manifest 都要造一份「引擎 + 资产 + 清单」的
 # 临时离线包来跑 install / verify 的正负例。此前 make_bundle 在两个门禁里

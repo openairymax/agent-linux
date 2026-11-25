@@ -66,7 +66,7 @@ tree()
         "${FX}/system/units" "${tmp}/bin" "${tmp}/rpm"
     cp "${ROOT}/ci/gates/release-005.sh" "${FX}/ci/gates/release-005.sh"
     cp "${ROOT}/ci/lib/log.sh" "${FX}/ci/lib/log.sh"
-    printf 'readonly PIN=1.90.0\n' >"${FX}/ci/lib/tui-gate.sh"
+    printf 'readonly PIN=1.90.0\n' >"${FX}/ci/lib/tui_gate.sh"
     printf 'VERSION_ID="0.0.5"\nNAME="AirymaxOS"\n' >"${FX}/distro/release/os-release"
     printf '%%global airy_version 0.0.5\n' >"${FX}/distro/specs/airymaxos-release.spec"
     printf '[toolchain]\nchannel = "1.90.0"\n' >"${FX}/system/tui/rust-toolchain.toml"

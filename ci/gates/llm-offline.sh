@@ -102,8 +102,8 @@ check_unit()
 
 # 实物面 -------------------------------------------------------------------
 
-# shellcheck source=../lib/model-assets.sh
-. "${ROOT}/ci/lib/model-assets.sh"
+# shellcheck source=../lib/model_assets.sh
+. "${ROOT}/ci/lib/model_assets.sh"
 
 install_bundle()
 {

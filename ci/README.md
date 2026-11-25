@@ -28,7 +28,7 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 - `ci/tools/` 不是仓根 `tools/`。前者是被某条门禁调用的取证工具，后者是
   跨子模块的命令面（唯一入口 `tools/airy`）。两者互不引用。
 
-`gates/` 必须平铺：`ci.sh` 以 `gates/*.sh` 取门禁名，`checks/check-workflows.py`
+`gates/` 必须平铺：`ci.sh` 以 `gates/*.sh` 取门禁名，`checks/check_workflows.py`
 以 `tests/test_<门禁>.sh` 找回归夹具，`baseline/gate-owners.tsv` 以同一字符串
 登记归属。三处以文件名为唯一键，任何子目录都会让三者同时失配。共享实现一律
 落 `lib/`；Q-04 施工图纸预留的 `gates/lib/` 在引入分级发现规则之前不建立。
@@ -79,9 +79,19 @@ ci/
 |------|------|----|
 | 门禁 | kebab-case，读作「对象-动作」；一词一义 | `kernel-kunit.sh`、`wp-scope.sh` |
 | 检查器 | snake_case `.py`，模块名即判据名 | `quality_metrics.py` |
-| 共享实现 | 按域命名，不做动作前缀 | `host.sh`、`rs_src.py` |
-| 回归夹具 | `test_<门禁>.sh`，与门禁同名同序 | `test_wp_scope.sh` |
+| 共享实现 | snake_case，按域命名，不做动作前缀 | `host.sh`、`model_assets.sh`、`rs_src.py` |
+| 取证工具 | snake_case，名字说明被取证的产物 | `tui_field_collect.sh`、`execstack_regress.py` |
+| 回归夹具 | `test_<门禁>.sh`，与门禁同名同序（`_`↔`-`） | `test_wp_scope.sh` |
 | 基线 | 固定三名，由 `--update` 写入 | `quality-baseline.json` |
+
+分隔符只有两套：`gates/` 用 kebab——门禁 ID 就是 `ci.sh <gate>` 的命令名，
+文件名与命令行必须逐字一致；其余目录一律 snake_case，因为它们是模块，不是
+命令面。`checks/` 里混一个 kebab 文件名，读者就要先猜它是不是门禁；`lib/`
+里混一个，`source` 的路径与函数名前缀就对不上号。
+
+`ci/tools/wx-table-gen.py` 是唯一冻结的原名：它的路径写进了内核与 distro
+两个子仓的生成物和清单注释，改名要三个仓库同时换指针，为一行注释牵动内核
+树不划算。新增工具不得照此办理。
 
 每条门禁的头部必须依次给出：用途、`# 用法:`（`ci/ci.sh --list` 直接读这一行）、
 `# 退出码:`、依赖的前置产物。其中「退出码」段的存在、命令位字面 `exit N` 的取值、
@@ -93,7 +103,7 @@ ci/
 「不适用」必须打印原因；「判不了」是 5，不是 3——把两者混同，跳过就不再可信。
 参数错误一律用 `EINVAL`／`CI_EINVAL`（值恒为 5），不得自造取值。
 
-门禁只允许调用它 `source` 过的库函数；这与 `ci/checks/check-workflows.py`
+门禁只允许调用它 `source` 过的库函数；这与 `ci/checks/check_workflows.py`
 第 6 条同源。共享实现被两个以上门禁使用时才下沉到 `lib/`，只有一个消费者
 时留在原地——提前抽层会让两处逻辑互相牵制。
 
@@ -109,7 +119,7 @@ ci/
    `./ci/lint.sh` 的第 7 项会跑它们，真实树常年为绿不会掩盖判据失效。
 5. 在流水线里只加一步 `ci/ci.sh <name>`；新增作业时同步
    `baseline/workflow-budgets.txt` 与 `.github/workflows/README.md`，
-   任一处漂移 `check-workflows.py` 立即判红。只能在特定现场手工执行的判据
+   任一处漂移 `check_workflows.py` 立即判红。只能在特定现场手工执行的判据
    （需要真机、两轮构建产物、宿主镜像出口）没有调用方，必须在
    `baseline/gate-owners.tsv` 登记 `manual` 与现场依赖；不登记即按无调用方
    判红，登记项指向不存在的门禁同样判红。
@@ -122,7 +132,7 @@ ci/
 ./ci/lint.sh                                   # CI 层全量自检
 ./ci/ci.sh --list                              # 可用门禁及其用法
 python3 ci/checks/quality_metrics.py --check   # 度量棘轮
-python3 ci/checks/check-workflows.py           # 流水线薄化与命名规则
+python3 ci/checks/check_workflows.py           # 流水线薄化与命名规则
 ```
 
 各门禁的具体参数由脚本头部的「用法:」行给出；`ci/ci.sh <gate> -h` 与直调

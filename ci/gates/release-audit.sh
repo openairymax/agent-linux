@@ -21,8 +21,8 @@ set -uo pipefail
 readonly EINVAL=5
 # shellcheck source=../lib/log.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/log.sh"
-# shellcheck source=../lib/release-assets.sh
-. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/release-assets.sh"
+# shellcheck source=../lib/release_assets.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/release_assets.sh"
 
 REPO="${GITHUB_REPOSITORY:-}"
 TAG=""

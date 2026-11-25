@@ -24,7 +24,7 @@ DIR="${tmp}/repo"
 mkdir -p "${FX}/ci/gates" "${FX}/ci/lib" "${DIR}" "${tmp}/stub"
 cp "${ROOT}/ci/gates/release-stage.sh" "${FX}/ci/gates/release-stage.sh"
 cp "${ROOT}/ci/lib/log.sh" "${FX}/ci/lib/log.sh"
-cp "${ROOT}/ci/lib/release-assets.sh" "${FX}/ci/lib/release-assets.sh"
+cp "${ROOT}/ci/lib/release_assets.sh" "${FX}/ci/lib/release_assets.sh"
 
 # 桩把三种请求分开处理：tags 详情、latest、PATCH。PATCH 真的改写夹具里的
 # 字段并把 make_latest 透传给 latest.json，这样「门禁有没有读回」才有意义。

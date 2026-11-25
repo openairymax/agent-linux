@@ -7,7 +7,7 @@
 # 用法: ci/lint.sh [--no-distro]
 #
 # 检查二十件事：
-#   1. workflow 薄化与命名约束（ci/checks/check-workflows.py）；
+#   1. workflow 薄化与命名约束（ci/checks/check_workflows.py）；
 #   2. ci/ 与 tools/ 下每个 shell 脚本可被 bash -n 解析；
 #   3. 函数名不超过 15 字节（ci/checks/name_lint.py，N001，覆盖 shell 与 python）；
 #   4. 代码度量棘轮（ci/gates/quality-metrics.sh → ci/checks/quality_metrics.py：新增
@@ -92,10 +92,10 @@ done
 rc=0
 
 group "workflow 薄化与命名约束"
-if python3 "${ROOT}/ci/checks/check-workflows.py"; then
+if python3 "${ROOT}/ci/checks/check_workflows.py"; then
     say "通过"
 else
-    err "ci/checks/check-workflows.py 未通过"
+    err "ci/checks/check_workflows.py 未通过"
     rc=1
 fi
 endgroup

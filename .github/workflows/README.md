@@ -20,7 +20,7 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 - **`ci/gates/*.sh`**：全部断言与宿主准备，带 `# 用法:` 头，可直接执行。
 - **`ci/lib/*.sh`**：跨门禁共用的实现（apt 获取、宿主清理、TAP 解析等）。
 
-这条分工由 `ci/checks/check-workflows.py` 的二十条规则强制执行（见第 4 节），而不是
+这条分工由 `ci/checks/check_workflows.py` 的二十条规则强制执行（见第 4 节），而不是
 靠评审时的自觉。一个约定如果没有执行者，它就不是约定。第 4 节的表格首列
 登记规则号，其覆盖范围由脚本反过来校验：文档漏登或重号同样判红。
 
@@ -45,7 +45,7 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 └── tui-verify.yml         # TUI 工作区：依赖源 + 格式/静态/单测 + 跨架构类型检查
 ```
 
-流水线条数不写死在正文里：`ci/checks/check-workflows.py` 的末行给出实际条数，
+流水线条数不写死在正文里：`ci/checks/check_workflows.py` 的末行给出实际条数，
 逐条作业数与上限登记在 `ci/baseline/workflow-budgets.txt`，只许下调。正文写固定
 数字时，新增一条流水线就要同时改两处，改漏一处即失真（本节曾因此写出三个不同
 的条数）。
@@ -92,7 +92,7 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 
 ## 4. 命名与结构约定
 
-规则实现在 `ci/checks/check-workflows.py`，由 `ci/lint.sh` 在 `os-chk-verify` 与本地
+规则实现在 `ci/checks/check_workflows.py`，由 `ci/lint.sh` 在 `os-chk-verify` 与本地
 lint 中执行。下表是规则本身，不是建议。
 
 | # | 规则 | 为什么 |

@@ -6,7 +6,7 @@
 #
 # 判据：段累计与汇总格式、缺省不落盘、CI artifact 目录默认路径、仓库内
 # 路径拒绝、跨进程追加不撕裂、未开始即结束的显式失败，以及 ci/ci.sh 包装
-# 后退出码不变、失败也留计时。最后跑一遍 ci/checks/check-workflows.py，确保改动
+# 后退出码不变、失败也留计时。最后跑一遍 ci/checks/check_workflows.py，确保改动
 # 没有破坏 workflow 结构断言。
 #
 # 并发说明：计时状态只在单进程内，门禁由 ci/ci.sh 顺序调用，不存在共享
@@ -183,10 +183,10 @@ else
 fi
 
 # --- 9. workflow 结构断言不因本次改动失效 --------------------------------
-if python3 "${ROOT}/ci/checks/check-workflows.py" >"${tmp}/wf.log" 2>&1; then
-    ok "check-workflows.py 通过"
+if python3 "${ROOT}/ci/checks/check_workflows.py" >"${tmp}/wf.log" 2>&1; then
+    ok "check_workflows.py 通过"
 else
-    bad "check-workflows.py 通过" "$(cat "${tmp}/wf.log")"
+    bad "check_workflows.py 通过" "$(cat "${tmp}/wf.log")"
 fi
 
 if [ "${fails}" -ne 0 ]; then

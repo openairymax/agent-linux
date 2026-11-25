@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 # SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 # ===========================================================================
-# ci/lib/release-assets.sh — 发布页资产的期望集与实测集
+# ci/lib/release_assets.sh — 发布页资产的期望集与实测集
 #
 # 被 release-prune.sh（写入前收回页面）与 release-audit.sh（写入后对账）共用。
 # 两处若各算一遍期望集，剪枝按 A 集合删、对账按 B 集合判，页面就可能在两道

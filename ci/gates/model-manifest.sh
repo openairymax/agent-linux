@@ -149,8 +149,8 @@ no_weights()
 
 # 实物面 -------------------------------------------------------------------
 
-# shellcheck source=../lib/model-assets.sh
-. "${ROOT}/ci/lib/model-assets.sh"
+# shellcheck source=../lib/model_assets.sh
+. "${ROOT}/ci/lib/model_assets.sh"
 
 # 期望的退出码与原因；rc 0 表示就绪，10 表示降级，1 表示失败。
 expect()

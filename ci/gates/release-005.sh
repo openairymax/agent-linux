@@ -138,10 +138,10 @@ ver_check()
     endgroup
 }
 
-# pin_of —— 工具链钉版只从 ci/lib/tui-gate.sh 读，避免第三份副本。
+# pin_of —— 工具链钉版只从 ci/lib/tui_gate.sh 读，避免第三份副本。
 pin_of()
 {
-    sed -n 's/^readonly[[:space:]]\{1,\}PIN=//p' "${ROOT}/ci/lib/tui-gate.sh"
+    sed -n 's/^readonly[[:space:]]\{1,\}PIN=//p' "${ROOT}/ci/lib/tui_gate.sh"
 }
 
 # ch_of —— rust-toolchain.toml 的 channel 取值。
@@ -173,7 +173,7 @@ tool_check()
 
     pin="$(pin_of)"
     ch="$(ch_of)"
-    [ -n "${pin}" ] || { fail "ci/lib/tui-gate.sh 未声明 PIN"; return 0; }
+    [ -n "${pin}" ] || { fail "ci/lib/tui_gate.sh 未声明 PIN"; return 0; }
     [ "${ch}" = "${pin}" ] ||
         fail "rust-toolchain.toml channel=${ch:-缺失} 与钉版 ${pin} 不一致"
 }

@@ -11,7 +11,7 @@
 # 是否触发，宿主判据仍是快速回路。
 #
 # 文件名词族：阻断型门禁一律取 `*-verify` 并由 pull_request 触发
-# （ci/checks/check-workflows.py 规则 14）。
+# （ci/checks/check_workflows.py 规则 14）。
 # ===========================================================================
 
 name: tui-input-verify

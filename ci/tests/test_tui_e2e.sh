@@ -24,7 +24,7 @@ GATE="${FX}/ci/gates/tui-e2e.sh"
 mkdir -p "${FX}/ci/gates" "${FX}/ci/lib" "${FX}/system/tui"
 cp "${ROOT}/ci/gates/tui-e2e.sh" "${GATE}"
 cp "${ROOT}/ci/lib/log.sh" "${FX}/ci/lib/log.sh"
-cp "${ROOT}/ci/lib/tui-gate.sh" "${FX}/ci/lib/tui-gate.sh"
+cp "${ROOT}/ci/lib/tui_gate.sh" "${FX}/ci/lib/tui_gate.sh"
 
 ok() { printf 'ok   %s\n' "$*"; }
 bad() { printf 'FAIL %s\n' "$*"; fails=$((fails + 1)); }

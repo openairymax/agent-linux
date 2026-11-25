@@ -1,4 +1,4 @@
-# 门禁归属登记（check-workflows.py 第 20 条规则）
+# 门禁归属登记（check_workflows.py 第 20 条规则）
 #
 # 背景：ci/gates/ 下的脚本有两种存在方式——被流水线或本地 lint 调用的，
 # 和只能在特定现场手工执行的。后者没有任何调用方，却照样留在树里，看上去
@@ -14,7 +14,7 @@
 # 依赖。登记不是免责声明：门禁改名时必须同步改这里，否则第 20 条规则会以
 # 「登记悬空」判红。
 #
-# 校验：ci/checks/check-workflows.py 第 20 条规则，ci/lint.sh 与
+# 校验：ci/checks/check_workflows.py 第 20 条规则，ci/lint.sh 与
 # os-chk-verify 各跑一次。
 #
 # gate	type	reason

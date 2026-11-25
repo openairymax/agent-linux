@@ -22,12 +22,12 @@ fails=0
 
 FX="${tmp}/fx"
 GATE="${FX}/ci/gates/tui-field.sh"
-TOOL="${FX}/ci/tools/tui-field-collect.sh"
+TOOL="${FX}/ci/tools/tui_field_collect.sh"
 mkdir -p "${FX}/ci/gates" "${FX}/ci/lib" "${FX}/ci/tools" "${FX}/system/tui"
 cp "${ROOT}/ci/gates/tui-field.sh" "${GATE}"
-cp "${ROOT}/ci/tools/tui-field-collect.sh" "${TOOL}"
+cp "${ROOT}/ci/tools/tui_field_collect.sh" "${TOOL}"
 cp "${ROOT}/ci/lib/log.sh" "${FX}/ci/lib/log.sh"
-cp "${ROOT}/ci/lib/tui-gate.sh" "${FX}/ci/lib/tui-gate.sh"
+cp "${ROOT}/ci/lib/tui_gate.sh" "${FX}/ci/lib/tui_gate.sh"
 
 ok() { printf 'ok   %s\n' "$*"; }
 bad() { printf 'FAIL %s\n' "$*"; fails=$((fails + 1)); }

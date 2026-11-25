@@ -14,7 +14,7 @@
 # 自带的幂等性。
 #
 # 本门禁只删多余项，不判缺失：它跑在写入之前，此刻缺件是正常的。写入之后
-# 的完整性由 release-audit.sh 把页面读回来对账，两者共用 ci/lib/release-assets.sh
+# 的完整性由 release-audit.sh 把页面读回来对账，两者共用 ci/lib/release_assets.sh
 # 的期望集，避免各算一套。
 #
 # 退出码: 0 一致或无可删；1 接口失败或删除失败；5 参数与前置条件不满足。
@@ -24,8 +24,8 @@ set -uo pipefail
 readonly EINVAL=5
 # shellcheck source=../lib/log.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/log.sh"
-# shellcheck source=../lib/release-assets.sh
-. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/release-assets.sh"
+# shellcheck source=../lib/release_assets.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/release_assets.sh"
 
 REPO="${GITHUB_REPOSITORY:-}"
 TAG=""

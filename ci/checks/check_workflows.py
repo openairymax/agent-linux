@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 # SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
-"""ci/checks/check-workflows.py —— 守住 workflow 薄化与命名约束
+"""ci/checks/check_workflows.py —— 守住 workflow 薄化与命名约束
 
 二十条规则：
 
@@ -629,7 +629,7 @@ def shape_sites() -> list[Path]:
     """形状判定的扫描面：门禁、库、工具与 workflow 本体（不含自测）。"""
     out = sorted(CIGATES.glob("*.sh")) + sorted(CILIB.glob("*.sh"))
     out += [p for p in sorted(ROOT.glob("tools/**/*.py"))
-            if "tests" not in p.parts and p.name != "check-workflows.py"]
+            if "tests" not in p.parts and p.name != "check_workflows.py"]
     return out + sorted(WORKFLOWS.glob("*.yml"))
 
 

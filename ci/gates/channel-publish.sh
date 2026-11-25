@@ -33,8 +33,8 @@ readonly EINVAL=5
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/log.sh"
 # shellcheck source=../lib/channel.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/channel.sh"
-# shellcheck source=../lib/release-assets.sh
-. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/release-assets.sh"
+# shellcheck source=../lib/release_assets.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/release_assets.sh"
 
 CH_REPO="${GITHUB_REPOSITORY:-}"
 DRY=0

@@ -22,7 +22,7 @@
 #   iso  subject 是装配目录里那唯一一盘 ISO，出证前与发行账本 <iso>.sha256
 #        对账；账本与现算摘要不符说明 ISO 在写账本之后被改过，拒绝出证。
 #   rel  subject 是发布页上的整套资产。集合不另立：直接取
-#        ci/lib/release-assets.sh 的 airy_asset_want，与剪枝、对账同一份
+#        ci/lib/release_assets.sh 的 airy_asset_want，与剪枝、对账同一份
 #        事实源——三处各算一遍集会得到三种「本次发布了什么」。
 #
 # 证明的取值口径：
@@ -62,8 +62,8 @@ LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)"
 # shellcheck source=../lib/log.sh
 . "${LIB}/log.sh"
 # 发布资产的期望集只在这一处定义：剪枝、对账与出证读同一份实现。
-# shellcheck source=../lib/release-assets.sh
-. "${LIB}/release-assets.sh"
+# shellcheck source=../lib/release_assets.sh
+. "${LIB}/release_assets.sh"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 readonly ROOT
 readonly BUILDID="${ROOT}/distro/scripts/lib/buildid.sh"

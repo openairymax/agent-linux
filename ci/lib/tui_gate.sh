@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 # SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 # ===========================================================================
-# ci/lib/tui-gate.sh — TUI 门禁共用的钉版校验与 cargo 调用
+# ci/lib/tui_gate.sh — TUI 门禁共用的钉版校验与 cargo 调用
 #
 # tui-check 与 tui-frame 曾各抄一份「取实际编译器版本、断言与钉版一致」
 # 和「产物落在 TMPDIR、源码树不留 target/」，再加上逐行相同的根目录推导
