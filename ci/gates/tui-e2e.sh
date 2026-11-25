@@ -11,7 +11,7 @@
 # airy-session-mode 的真实二进制，通过唯一的 AIRY_SESSION_ROOT 接缝把
 # systemctl／journalctl／chvt／loginctl／fgconsole／ps、会话状态目录、
 # /dev/tty1 与 /proc/cmdline 指向临时根里的假命令，覆盖冷启动两侧选择、
-# 命令行旁路、TUI↔GUI 双向切换、注销回落、忙碌拒绝、失败回滚与幂等。
+# 命令行旁路、无键盘旁路、TUI↔GUI 双向切换、注销回落、忙碌拒绝、失败回滚与幂等。
 #
 # 必须跑真实二进制：切换的次序（写 desired → 停旧确认 → 起新 → 等就绪 →
 # 写 mode → 落 journal → 失败回滚）就是被测对象本身；在测试里另写一遍编排
