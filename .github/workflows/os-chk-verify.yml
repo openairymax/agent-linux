@@ -8,7 +8,7 @@
 #         检查本体由既有执行器承担；gates.yaml 为门禁唯一事实源。
 # ---------------------------------------------------------------------------
 # 监听面按「受检对象」划定，而不是按子目录逐条枚举：os_chk.py 会调用 tools/
-# 下的全部执行器，逐个列举曾漏掉 airy-qemu、sdk 与 security，新工具加入后
+# 下的全部执行器，逐个列举曾漏掉 qemu-farm、sdk 与 security，新工具加入后
 # 也不会自动纳入。六个 gitlink 各有受检对象——kernel 供 defconfig / BTF /
 # kbuild 版本检查，system 供装机后启动契约的单测，distro 供 spec 与
 # kickstart 规则，security 供 LSM 用例，services 与 tests-linux 供守护与

@@ -41,7 +41,7 @@
 # build-desktop.sh check_payload() 提取后 cmp 断言过。
 #
 # 不做 gpg --verify：发布 job 不导入私钥，keyring 里没有公钥。密码学校验
-# 由取件方用发布页公钥完成（tools/airy-flash/README.md）。
+# 由取件方用发布页公钥完成（tools/flash/README.md）。
 #
 # 退出码: 0 通过；1 判定不通过；5 参数不满足或证据不可用。
 # ===========================================================================

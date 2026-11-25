@@ -87,18 +87,18 @@ case "${KIND}" in
         HINT="策略 DSL 产物漂移（IRON-9）：本地跑 make -C tools/dsl 后提交结果"
         ;;
     farm)
-        REQS=(tools/airy-qemu/requirements-dev.txt)
-        TESTS=(tools/airy-qemu/tests/)
+        REQS=(tools/qemu-farm/requirements-dev.txt)
+        TESTS=(tools/qemu-farm/tests/)
         HINT="QEMU farm 单元与端到端用例"
         ;;
     oschk)
         # OS-CHK 的检查器逐个复用下列工具的入口；缺任一依赖，对应门禁在
         # CI 恒为 ERROR 而本地不可见，故依赖必须在此装齐。集合以目录为单位
         # 声明，新增工具只加一行，不再维护两份平行清单。
-        for tool in os-chk codegen abi-check dsl sc-tri-compile airy-qemu \
-                    airy-checkpatch defconfig-matrix ci-matrix btf-integration \
+        for tool in os-chk codegen abi-check dsl sc-tri-compile qemu-farm \
+                    checkpatch defconfig-matrix ci-matrix btf-integration \
                     kbuild-version release-engineering nightly repo-scaffold \
-                    airy-rollback airy-flash osaccrt; do
+                    rollback flash osaccrt; do
             add_tool "${tool}" || die "工具目录缺失: tools/${tool}"
         done
         # system 子仓只有用例没有依赖清单。

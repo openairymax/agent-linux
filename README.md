@@ -79,7 +79,7 @@ verifies it after writing. Then:
 2. After install, check that `uname -r` ends with `-alk` and that
    `journalctl -b | grep AIRYMAX-DESKTOP-READY` reports the desktop is ready.
 
-Troubleshooting and login policy: [tools/airy-flash/README.md](tools/airy-flash/README.md).
+Troubleshooting and login policy: [tools/flash/README.md](tools/flash/README.md).
 
 ## Repository Layout
 

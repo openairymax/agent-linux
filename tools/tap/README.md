@@ -46,5 +46,5 @@ python3 tools/tap/kunit-tap-diff.py --current kunit.tap --update
 ## 新增工具
 
 放入本目录前先回答：它的判据是否只取决于一段 TAP/KTAP 文本？如果否（需要启动
-虚拟机、需要编译、需要联网），它属于 `tools/airy-qemu/` 或 `ci/gates/`，而不是
+虚拟机、需要编译、需要联网），它属于 `tools/qemu-farm/` 或 `ci/gates/`，而不是
 这里。

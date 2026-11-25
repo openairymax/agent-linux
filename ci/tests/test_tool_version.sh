@@ -6,7 +6,7 @@
 #
 # 产品版本的唯一来源是 distro/release/os-release 的 VERSION_ID。交付工具被
 # 打成单文件 pyz 后脱离仓库运行，读不到那份声明，只能各自持有字面量。两者
-# 分叉过一次：树内已是 0.0.4 时 tools/airy-flash 仍自报 0.0.3，直到发布日的
+# 分叉过一次：树内已是 0.0.4 时 tools/flash 仍自报 0.0.3，直到发布日的
 # 打包复核（ci/gates/tool-pack.sh 实跑 --version）才判负——那时离出包只剩
 # 一次 tag。这里在提交时就把两个数字钉在一起。
 #
@@ -30,7 +30,7 @@ import sys
 sys.path.insert(0, sys.argv[1])
 import airy_flash
 print(airy_flash.TOOL_VERSION)
-' "${ROOT}/tools/airy-flash" 2>"${err}")" || {
+' "${ROOT}/tools/flash" 2>"${err}")" || {
     printf 'FAIL 无法导入 airy_flash:\n' >&2
     cat "${err}" >&2
     exit 1

@@ -40,11 +40,11 @@ abi	abi-check/abi_check.py	系统调用 ABI 稳定性检查
 tri	sc-tri-compile/sc_tri_compile.py	[SC] 头文件三向编译与布局检查
 
 # -- 运行证据（真机 / 虚拟机） ------------------------------------------
-farm	airy-qemu/farm_cli.py	QEMU kselftest 农场（TAP 为准）
+farm	qemu-farm/farm_cli.py	QEMU kselftest 农场（TAP 为准）
 
 # -- 运维与发布 ----------------------------------------------------------
-rollback	airy-rollback/airy_rollback.py	三级回滚编排
-flash	airy-flash/airy_flash.py	ISO 可复现烧录与回读校验
+rollback	rollback/airy_rollback.py	三级回滚编排
+flash	flash/airy_flash.py	ISO 可复现烧录与回读校验
 sbom	release-engineering/merge_sbom.py	SPDX SBOM 片段合并
 release	release-engineering/release_manifest.py	发布物料契约检查与校验和
 pick	release-engineering/pick_image.py	按提交认领已验收镜像

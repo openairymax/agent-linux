@@ -75,7 +75,7 @@ tools/os-chk/
 | OS-BUILD-RELEASE | 发布物料清单一致性 | `tools/release-engineering/release_manifest.py` |
 | OS-BUILD-NIGHTLY | nightly 契约一致性 | `tools/nightly/nightly.py` |
 | OS-BUILD-REPO-SCAFFOLD | 八子仓脚手架一致性 | `tools/repo-scaffold/repo_scaffold.py` |
-| OS-OPS-ROLLBACK | 版本回滚契约一致性 | `tools/airy-rollback/airy_rollback.py` |
+| OS-OPS-ROLLBACK | 版本回滚契约一致性 | `tools/rollback/airy_rollback.py` |
 
 ## 使用方法
 

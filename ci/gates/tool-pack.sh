@@ -8,7 +8,7 @@
 #
 # 产物两份，取件方下载即用：
 #   agent-linux-sdk-<ver>.tar.gz   语言绑定（sdk/）
-#   airy-flash-<ver>.pyz           烧录工具单文件（tools/airy-flash/）
+#   airy-flash-<ver>.pyz           烧录工具单文件（tools/flash/）
 #
 # 确定性：同一份源码两次打包必须字节相同，否则摘要清单（release-verify.sh
 # 逐项重算）在重发时永远对不上。tar 按名排序、mtime 取 SOURCE_DATE_EPOCH、
@@ -26,7 +26,7 @@
 set -uo pipefail
 
 readonly EINVAL=5
-readonly SRC="tools/airy-flash"
+readonly SRC="tools/flash"
 readonly MODS=(airy_flash.py flash_types.py)
 # shellcheck source=../lib/log.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/log.sh"

@@ -66,7 +66,7 @@ sudo python3 airy-flash-<ver>.pyz write \
 2. 安装后检查：`uname -r` 以 `-alk` 结尾；
    `journalctl -b | grep AIRYMAX-DESKTOP-READY` 能看到桌面就绪。
 
-故障排查与登录策略见 [tools/airy-flash/README.md](tools/airy-flash/README.md)。
+故障排查与登录策略见 [tools/flash/README.md](tools/flash/README.md)。
 
 ## 仓库结构
 
@@ -81,7 +81,7 @@ agent-linux/             # 管理仓（本仓库）
 ├── cloudnative/         # 云原生
 ├── distro/              # 发行版组装层
 ├── tests-linux/         # 测试
-└── tools/airy-flash/    # ISO 烧录与校验工具
+└── tools/flash/    # ISO 烧录与校验工具
 ```
 
 ## 叶子仓库
