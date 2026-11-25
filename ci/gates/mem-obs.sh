@@ -118,11 +118,19 @@ chk_kern()
 	endgroup
 }
 
-chk_parity()
+lit_keys()
 {
-	local got lit p n
+	{ grep -o 'mem_row(m, "[a-z0-9_]*"' "${KSRC}" |
+			sed 's/.*"\([a-z0-9_]*\)"/\1/'
+	 grep -o 'seq_printf(m, "[a-z0-9_]*: ' "${KSRC}" |
+			sed 's/.*"\([a-z0-9_]*\): /\1/' ; } |
+		LC_ALL=C sort -u
+}
 
-	group "字段面对齐"
+chk_pub_keys()
+{
+	local got p
+
 	got="$(sed -n 's/.*%s_\([a-z0-9_]*\):.*/\1/p' "${KSRC}" |
 		LC_ALL=C sort -u | tr '\n' ' ')"
 	if [ "${got}" != 'access_total evict_ppm evict_total hit_ppm hit_total lat_avg_ns lat_p99_ns used_kb ' ]; then
@@ -131,12 +139,12 @@ chk_parity()
 	for p in l1 l2 l3 l4; do
 		have "mem_lines\\(m, \"${p}\"" "${KSRC}" "缺少 ${p} 层输出"
 	done
+}
 
-	lit="$( { grep -o 'mem_row(m, "[a-z0-9_]*"' "${KSRC}" |
-			sed 's/.*"\([a-z0-9_]*\)"/\1/'
-		 grep -o 'seq_printf(m, "[a-z0-9_]*: ' "${KSRC}" |
-			sed 's/.*"\([a-z0-9_]*\): /\1/' ; } |
-		LC_ALL=C sort -u)"
+chk_lit_keys()
+{
+	local lit="$1" p n
+
 	n="$(printf '%s\n' "${lit}" | wc -l)"
 	if [ "${n}" -ne 16 ]; then
 		bad "字面键数不是 16（全局 8 + 分层专属 8），实际 ${n}"
@@ -149,6 +157,11 @@ chk_parity()
 		printf '%s\n' "${lit}" | grep -qx "${p}" ||
 			bad "缺少键 ${p}"
 	done
+}
+
+chk_entry_keys()
+{
+	local lit="$1" p n
 
 	have 'obs_parse\(' "${COMMON}" "公共层未提供行解析"
 	have 'obs_json\(' "${COMMON}" "公共层未提供 JSON 渲染"
@@ -164,6 +177,17 @@ chk_parity()
 		printf '%s\n' "${lit}" | grep -qx "${p}" ||
 			bad "内核未输出入口使用的键 ${p}"
 	done
+}
+
+chk_parity()
+{
+	local lit
+
+	group "字段面对齐"
+	chk_pub_keys
+	lit="$(lit_keys)"
+	chk_lit_keys "${lit}"
+	chk_entry_keys "${lit}"
 	endgroup
 }
 

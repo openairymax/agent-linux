@@ -111,35 +111,54 @@ pick()
     ' | sort -k1,1n -k2,2 | cut -d' ' -f2-
 }
 
-# take <run-id> —— 0 已取回；1 本 run 无本版清单；3 清单不可信；5 环境不满足。
-take()
+art_names()
 {
-    local id="$1" names name dl rc
+    local id="$1" names
     names="$(gh api "repos/${CH_REPO}/actions/runs/${id}/artifacts?per_page=100" \
         --jq '.artifacts[].name' 2>/dev/null)" ||
         { note "run ${id} 制品清单不可读，跳过"; return 1; }
+    printf '%s\n' "${names}"
+}
+
+fetch_one()
+{
+    local id="$1" name="$2" dl rc
+    dl="${TMP}/run-${id}-${name}"
+    gh run download "${id}" --repo "${CH_REPO}" --name "${name}" \
+        --dir "${dl}" >/dev/null 2>&1 || return 1
+    [ -f "${dl}/${CH_NAME}" ] || return 1
+    channel_verify "${dl}/${CH_NAME}"
+    rc=$?
+    if [ "${rc}" -eq "${ETRUST}" ]; then
+        err "run ${id} 的 ${CH_NAME} 不可信: ${CH_MSG}"
+        return "${ETRUST}"
+    fi
+    [ "${rc}" -eq 0 ] || {
+        err "客户端校验器不可用（rc=${rc}）: ${CH_MSG}"
+        return "${EINVAL}"
+    }
+    [ "${CH_PICK}" = "${CH_WANT}" ] || return 1
+    place "${dl}/${CH_NAME}" "${DEST}" ||
+        { err "写入失败: ${DEST}"; return "${EINVAL}"; }
+    say "通道清单: ${DEST}（run ${id}，制品 ${name}，sha256 $(sha256sum "${DEST}" |
+        cut -d' ' -f1)）"
+    return 0
+}
+
+# take <run-id> —— 0 已取回；1 本 run 无本版清单；3 清单不可信；5 环境不满足。
+take()
+{
+    local id="$1" name rc names
+    names="$(art_names "${id}")" || return 1
     while IFS= read -r name; do
         [ -n "${name}" ] || continue
-        dl="${TMP}/run-${id}-${name}"
-        gh run download "${id}" --repo "${CH_REPO}" --name "${name}" \
-            --dir "${dl}" >/dev/null 2>&1 || continue
-        [ -f "${dl}/${CH_NAME}" ] || continue
-        channel_verify "${dl}/${CH_NAME}"
+        fetch_one "${id}" "${name}"
         rc=$?
-        if [ "${rc}" -eq "${ETRUST}" ]; then
-            err "run ${id} 的 ${CH_NAME} 不可信: ${CH_MSG}"
-            return "${ETRUST}"
-        fi
-        [ "${rc}" -eq 0 ] || {
-            err "客户端校验器不可用（rc=${rc}）: ${CH_MSG}"
-            return "${EINVAL}"
-        }
-        [ "${CH_PICK}" = "${CH_WANT}" ] || continue
-        place "${dl}/${CH_NAME}" "${DEST}" ||
-            { err "写入失败: ${DEST}"; return "${EINVAL}"; }
-        say "通道清单: ${DEST}（run ${id}，制品 ${name}，sha256 $(sha256sum "${DEST}" |
-            cut -d' ' -f1)）"
-        return 0
+        case "${rc}" in
+        0) return 0 ;;
+        1) ;;
+        *) return "${rc}" ;;
+        esac
     done < <(printf '%s\n' "${names}" | pick)
     note "run ${id} 无 ${ART} 制品或制品内无 ${CH_WANT} 的 ${CH_NAME}，跳过"
     return 1

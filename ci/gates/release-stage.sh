@@ -247,9 +247,31 @@ for r in rows:
 PY
 }
 
-do_hold()
+move_latest()
 {
     local stage id prev
+
+    prev="$(prev_stable)" || exit 1
+    prev="${prev%%$'\n'*}"
+    id="${prev%% *}"
+    if [ -z "${id}" ]; then
+        err "hold 无法移出 latest：仓库内没有其他稳定版可承接（${TAG}）"
+        exit 1
+    fi
+    set_last "${id}" || exit 1
+    seek
+    stage="$(stage_of "${REL_PRE}" "${REL_DRAFT}")" || exit 1
+    if [ "${stage}" = latest ]; then
+        err "hold 之后仍在 latest（latest 未能转给 ${prev#* }）: ${TAG}"
+        exit 1
+    fi
+    say "阶段=${stage}（latest 回退到 ${prev#* }）: ${TAG}"
+}
+
+do_hold()
+{
+    local stage
+
     seek
     [ "${REL_DRAFT}" = true ] && { err "draft 页面不能定阶段: ${TAG}"; exit 1; }
     set_stage "${REL_PRE}" false "${REL_ID}" || exit 1
@@ -258,21 +280,7 @@ do_hold()
     if [ "${stage}" = latest ]; then
         # make_latest=false 对已置 latest 的页面是空操作，退不出去。只能把
         # latest 指给另一个稳定版——这不是兜底分支，而是 hold 的唯一实现。
-        prev="$(prev_stable)" || exit 1
-        prev="${prev%%$'\n'*}"
-        id="${prev%% *}"
-        if [ -z "${id}" ]; then
-            err "hold 无法移出 latest：仓库内没有其他稳定版可承接（${TAG}）"
-            exit 1
-        fi
-        set_last "${id}" || exit 1
-        seek
-        stage="$(stage_of "${REL_PRE}" "${REL_DRAFT}")" || exit 1
-        if [ "${stage}" = latest ]; then
-            err "hold 之后仍在 latest（latest 未能转给 ${prev#* }）: ${TAG}"
-            exit 1
-        fi
-        say "阶段=${stage}（latest 回退到 ${prev#* }）: ${TAG}"
+        move_latest
         return 0
     fi
     say "阶段=${stage}（未进 latest）: ${TAG}"

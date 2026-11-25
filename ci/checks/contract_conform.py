@@ -199,6 +199,19 @@ def rename_mode(text: str, start: int) -> str | None:
     return mode.group(1) if mode else None
 
 
+def variant_name(line: str, mode: str | None,
+                 pending: str | None) -> tuple[str, str] | None:
+    name = re.match(r"([A-Za-z]\w*)", line)
+    if not name:
+        return None
+    return name.group(1), pending or wire_name(name.group(1), mode)
+
+
+def rename_attr(line: str, pending: str | None) -> str | None:
+    rename = re.search(r'rename = "([^"]+)"', line)
+    return rename.group(1) if rename else pending
+
+
 def variants(body: str, mode: str | None) -> list[tuple[str, str]]:
     """逐个变体取「变体名, 线名」；带字段的变体整段跳过。"""
     out: list[tuple[str, str]] = []
@@ -212,16 +225,15 @@ def variants(body: str, mode: str | None) -> list[tuple[str, str]]:
         if not line or line.startswith("//"):
             continue
         if line.startswith("#["):
-            rename = re.search(r'rename = "([^"]+)"', line)
-            pending = rename.group(1) if rename else pending
+            pending = rename_attr(line, pending)
             continue
-        name = re.match(r"([A-Za-z]\w*)", line)
-        if not name:
+        name = variant_name(line, mode, pending)
+        if name is None:
             continue
+        out.append(name)
+        pending = None
         brace = line.count("{") - line.count("}")
         depth = brace if brace > 0 else 0
-        out.append((name.group(1), pending or wire_name(name.group(1), mode)))
-        pending = None
     return out
 
 

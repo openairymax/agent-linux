@@ -124,6 +124,7 @@ PP_COUNT=""
 PP_ARCH=""
 PP_HIT=0
 PP_N=0
+PP_LAYER=""
 
 pp_read()
 {
@@ -193,31 +194,33 @@ pp_audit()
     [ "${bad}" -eq 0 ]
 }
 
-push()
+pp_exists()
 {
-    local tar_out layer
-    pp_audit || die "载荷未通过审计，拒绝发布（${MANIFEST}）"
-    say "载荷审计通过：${#PP_BASE[@]} 个包（${DIR}）"
+    local log="${tmp}/exist.log"
 
     login
-    if oras manifest fetch "${REF}:${TAG}" >"${tmp}/exist.log" 2>&1; then
+    if oras manifest fetch "${REF}:${TAG}" >"${log}" 2>&1; then
         say "tag 已存在，跳过推送: ${REF}:${TAG}"
         return 0
     fi
-    if ! grep -qiE 'not found|404|manifest unknown|NAME_UNKNOWN' \
-        "${tmp}/exist.log"; then
-        cat "${tmp}/exist.log" >&2
+    if ! grep -qiE 'not found|404|manifest unknown|NAME_UNKNOWN' "${log}"; then
+        cat "${log}" >&2
         die "无法确认 tag 是否存在（鉴权或网络）: ${REF}:${TAG}"
     fi
+    return 1
+}
 
-    tar_out="${tmp}/payload.tar"
+pp_send()
+{
+    local tar_out="${tmp}/payload.tar"
+
     if ! ( cd "${DIR}" &&
         tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner \
             -cf "${tar_out}" "${PP_BASE[@]}" ); then
         die "打包失败: ${DIR}"
     fi
-    layer="$(sha256sum "${tar_out}" | cut -d' ' -f1)"
-    say "载荷层 sha256: ${layer}"
+    PP_LAYER="$(sha256sum "${tar_out}" | cut -d' ' -f1)"
+    say "载荷层 sha256: ${PP_LAYER}"
 
     # 清单以固定名进制品：回取端只认 payload-manifest.txt，调用方传进来的
     # 路径名（可能是产物目录里的任意位置）不应决定制品内的布局。
@@ -236,12 +239,21 @@ push()
         cat "${tmp}/push.log" >&2
         die "oras 推送失败: ${REF}:${TAG}"
     fi
+}
+
+push()
+{
+    pp_audit || die "载荷未通过审计，拒绝发布（${MANIFEST}）"
+    say "载荷审计通过：${#PP_BASE[@]} 个包（${DIR}）"
+
+    pp_exists && return 0
+    pp_send
 
     [ "${VERIFY}" = "1" ] || {
         say "跳过回读（--no-verify）: ${REF}:${TAG}"
         return 0
     }
-    pp_verify "${layer}"
+    pp_verify "${PP_LAYER}"
 }
 
 # 回读判据按「字节是否等价」分层：层摘要相等即字节相等，这是内容寻址的
