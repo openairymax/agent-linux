@@ -30,12 +30,13 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 .github/workflows/
 ├── README.md              # 本文件
 ├── airy-verify.yml        # Airymax 内核扩展：四架构构建 + 静态检查
-├── c-verify.yml           # 用户态 C 组件：cloudnative / services 构建与冒烟
+├── c-verify.yml           # 用户态 C 组件：cloudnative / services / system / tests-linux
 ├── image-build.yml        # 桌面 ISO 组装 + 装机冷启动验收
 ├── kernel-verify.yml      # 内核构建矩阵 + 静态分析 + 测试
 ├── mgmt-verify.yml        # 治理文件完整性 + 叶仓 CI 汇总
 ├── nightly.yml            # 夜间测试套件 + 自动回退/预算检查
-├── obs-verify.yml         # 可编程探针：eBPF 契约判定 + 出树构建
+├── obs-verify.yml         # 可观测面：eBPF / perf / token / mem 契约与出树构建
+├── ops-verify.yml         # 运维面：告警聚合 / 事件台账 / 备份恢复 契约与端到端
 ├── os-chk-verify.yml      # OS-CHK 统一门禁编排（P0/P1 阻断）
 ├── payload-seed.yml       # 定时把闭包池推成按输入指纹命名的 seed 层
 ├── release.yml            # 构建 + SBOM + 签名 + 发布
@@ -57,11 +58,12 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 | `kernel-verify.yml` | `kernel-build`、`kernel-verify` | `kernel` gitlink、`ci/gates/kernel-*.sh`、`ci/checks/abi_snapshot.py`、`ci/lib/**` 的 PR 与 push | 构建矩阵为 4 配置 × 4 架构 × 2 编译器减 4 个排除格，共 28 格，`max-parallel: 8`；`W=2` 零告警。第二作业跑 checkpatch `--strict`、sparse `C=2`、Coccinelle、UAPI 头文件字节面冻结（K-03，集合与 sha256 两向）、UML 上的 KUnit 与 QEMU 上的 kselftest |
 | `airy-verify.yml` | `airy-build`、`airy-static` | `kernel` gitlink、`ci/gates/kernel-*.sh`、`ci/lib/**` 的 PR 与 push | `airy_defconfig` 在 x86_64/aarch64/riscv64/loongarch64 上构建；断言 Airymax CONFIG、BTF 内嵌、六个 `built-in.a` 产物、`security/airy/` 与 `kernel/superv/` 的符号不冲突。`airy-static` 只审 SPDX 标识 |
 | `os-chk-verify.yml` | `os-chk-verify` | `tools/**`、`sdk/**`、`ci/**` 与四个受审 gitlink 的 PR 与 push | 解析 `gates.yaml`，分派已登记的 OS-CHK 执行器，汇总报告并阻断 P0/P1 级结论。同时承载整套 Python 工具链（abi-check、codegen、dsl、farm、flash、rollback 等）：一次依赖安装、一次 pytest，工具改动不再排队四轮 |
-| `c-verify.yml` | `cloudnative`、`services` | `cloudnative`、`services`、`kernel` gitlink 与 `ci/gates/c-verify.sh`、`ci/lib/**` 的 PR 与 `main` 的 push | 两个用户态 C 模块各自出树 `cmake --build`（源码区不编译，`-Werror` 零告警），`cloudnative` 另跑 `agentctl` 核对 A-IPC magic 与 `[SC] ipc.h` 一致，`services` 另跑 CTest（`dmn_test`） |
+| `c-verify.yml` | `cloudnative`、`services`、`system`、`tests-linux` | `cloudnative`、`services`、`system`、`tests-linux`、`kernel` gitlink 与 `ci/gates/c-verify.sh`、`ci/lib/**` 的 PR 与 `main` 的 push | 四个用户态 C 模块各自出树 `cmake --build`（源码区不编译，`-Werror` 零告警），`cloudnative` 另跑 `agentctl` 核对 A-IPC magic 与 `[SC] ipc.h` 一致，`services` 另跑 CTest（`dmn_test`）与 config/logger/macro 三个守护的契约、`system` 与 `tests-linux` 各跑自身 CTest（后者另含 UAPI 契约套件） |
 | `mgmt-verify.yml` | `file-integrity`、`orchestrate-leaf-ci` | 文档、`.gitmodules`、`ssot-registry.yaml`、`MAINTAINERS`、`CODEOWNERS`、`tools/**`、`.github/**`、`kernel` 的 PR，以及 `main` 的 push | 校验由 `.gitmodules` 推导的子模块目录、12 份 `[SC]` 共享头、`ipc.h` 的物理唯一副本、12 份治理文件、不得出现 `airymaxos-` 前缀；第二作业汇总叶仓 CI、跑 markdownlint 与版权头检查 |
 | `image-build.yml` | `assemble`、`accept` | 仅 `workflow_dispatch`（发行门禁，不参与 PR） | `assemble` 先把构建工具链预热成可离线自证的 dnf 缓存树，再在特权官方容器内以钉版的 openEuler netinst 为基底组装桌面 ISO，校验装配清单与 ISO 校验和；`accept` 在 QEMU 下分别以 BIOS 与 UEFI 安装，冷启动到 `AIRYMAX-DESKTOP-READY`（`acceptance=true` 时为 `AIRYMAX-SMOKE-PASS`），发布 TAP 与串口日志；`release_tag` 非空且非验收剖面时，另为 ISO 出具 in-toto/SLSA 构建来源证明，以 `attest-<tag>` 推入同一制品仓库并回读摘要、`buildId` 与字节 |
 | `nightly.yml` | `nightly-test-suite`、`nightly-revert-or-budget` | cron `0 2 * * *` 与手动 | 形式化验证、72 小时浸泡、混沌注入（CPU 热插拔、内存热移除、I/O 错误、网络分区）；第二作业在回归时经 `auto-bisect` 自动回退，或做 CI 预算检查（稳态 60 分钟，内核冷缓存 90 分钟） |
-| `obs-verify.yml` | `ebpf-verify` | `system` gitlink、`ci/gates/ebpf-probe.sh`、`ci/lib/**`、`ci/ci.sh` 的 PR 与 `main` 的 push | 挂载点必须是 kprobe/kretprobe 成对的 `airy_cap_check` 与确有发射点的两个 tracepoint；探针上下文成员顺序与 `include/trace/events/airy.h` 的 `TP_STRUCT__entry` 逐项相等；ringbuf ≥ 4 MB、计数走 per-CPU array、map 显式 `max_entries`；加载器显式销毁 link、ringbuf 与 object，验证器日志落 `/var/log/airymaxos/bpf-load.log`；最后以 clang `-target bpf` 出树编译，断言产物小于 64 KB 且带 `.BTF` 段。加载与实跑需要 Airymax 内核符号，属 285H 验收面 |
+| `obs-verify.yml` | `ebpf-verify`、`perf-verify`、`token-verify`、`mem-verify` | `system` gitlink、`ci/gates/{ebpf-probe,perf-hooks,token-obs,mem-obs}.sh`、`ci/lib/**`、`ci/ci.sh` 的 PR 与 `main` 的 push | 四个可观测面各一作业。eBPF：挂载点必须是 kprobe/kretprobe 成对的 `airy_cap_check` 与确有发射点的两个 tracepoint，探针上下文成员顺序与 `include/trace/events/airy.h` 的 `TP_STRUCT__entry` 逐项相等，ringbuf ≥ 4 MB、计数走 per-CPU array、map 显式 `max_entries`，加载器显式销毁 link／ringbuf／object，验证器日志落 `/var/log/airymaxos/bpf-load.log`，最后以 clang `-target bpf` 出树编译并断言产物小于 64 KB 且带 `.BTF` 段；perf／token／mem 同构地断言入口契约后出树构建。加载与实跑需要 Airymax 内核符号，属 285H 验收面 |
+| `ops-verify.yml` | `alert-verify`、`incident-verify`、`backup-verify` | `system` gitlink、`ci/gates/{alert-d,incident,backup}.sh`、`ci/lib/**`、`ci/ci.sh` 的 PR 与 `main` 的 push | 三条运维面各一作业：告警聚合的出厂规则、五个包单测与守护/CLI 真实进程对跑，以及坏规则、坏限额、缺状态三条失败路径；事件台账的状态机合法边与拒绝边、编号与归档、告警取样幂等、检测到复盘的闭环；备份仓库的全量与增量、摘要与索引落盘、深核验、恢复确认门、单 Agent 回放、篡改停在解包之前与保留期删旧留新。三者均为纯用户态组件，托管 runner 上可完整复算 |
 | `payload-seed.yml` | `probe`、`warm` | cron `17 19 * * *`（北京时间 03:17）与手动 | `probe` 对实时上游取五段仓库元数据，算出 `seed-<arch>-<key16>`；`warm` 恢复上一轮构建留下的闭包池，仅当池的输入标签与该指纹一致时把它推成 seed 层，上游不可达或指纹已变则退 0 并说明原因。预热只搬运已有字节，不下载任何 RPM，因此也不得成为构建的先决条件；同一作业尾部回收陈旧 seed 层（每架构按创建时间留最近 4 个，`build-` 一律不动） |
 | `release.yml` | `build-and-sign`、`publish-release` | 标签 `v*`、`v*-rc*` 与手动 | 源码 tarball（超项目 + 逐子仓按 gitlink 导出）、`airy_defconfig` 四架构快照、syscall ABI 报告、逐子模块 SBOM 合并、内核 RPM、GPG 与 cosign 签名、SDK 压缩包；第二作业校验已签名产物、推送 OCI 镜像到 ghcr、清理过期资产、创建 GitHub Release（正式版一律 `make_latest: false`，创建后由 `release-stage hold` 读回断言页面停在 held，只有发布机在 B 轮 `AIRYMAX-SMOKE-PASS` 之后执行的 `release-stage promote` 才能把它推进 `releases/latest`），并在对账后为整套发布资产出具 in-toto/SLSA 证明（`attest-<tag>`，指纹取 run id 与检出提交） |
 | `ssot-verify.yml` | `ssot-syntax-and-rules`、`doc-links` | 文档、`ssot-registry.yaml`、`tools/governance/validate-ssot.py` 的 PR 与 `main` 的 push | PyYAML 语法、规则 ID 计数与唯一性、`validate-ssot.py` 交叉引用；相对路径链接完整性 |
@@ -215,6 +217,7 @@ L2/L3 都不改判据，只改「同一份物料要付几次成本」。任何�
 | `airy-verify.yml` | `ci/gates/kernel-airy.sh`、`ci/gates/kernel-build.sh` | 四架构 `airy_defconfig` 约 41 min | 无 |
 | `os-chk-verify.yml` | `ci/gates/lint.sh`（含 QG-01/QG-02 度量棘轮）与各 OS-CHK 门禁、pytest | 约 5 min | apt/pip 由 setup 动作自管 |
 | `nightly.yml` | `tools/nightly/nightly.py --check`、`ci/gates/nightly-helpers.sh` | 全量套件，单 job 上限 360 min | 无 |
+| `ops-verify.yml` | `ci/gates/alert-d.sh`、`ci/gates/incident.sh`、`ci/gates/backup.sh` | 三条各自数秒级（进程内对跑，无外部依赖） | 无 |
 | `payload-seed.yml` | `ci/gates/payload-seed.sh`（`probe` / `warm`） | 只搬缓存池字节，不下载；层已存在时为零 | actions 缓存（闭包池） |
 | `mgmt-verify.yml`、`ssot-verify.yml` | `ci/gates/repo-*.sh`、`tools/governance/validate-ssot.py` | 约 3 min | 无 |
 | `tui-verify.yml` | `ci/gates/tui-check.sh`、`ci/gates/rust-vendor.sh`、`ci/gates/lang-lock.sh` | 一次子模块检出 + 六个 crate 的编译，无注册表访问 | 无（vendor 离线源代替包缓存） |
@@ -296,12 +299,12 @@ L2/L3 都不改判据，只改「同一份物料要付几次成本」。任何�
 | 模块 | 归属 | 依据 |
 |------|------|------|
 | kernel | `kernel-verify`、`airy-verify`、`os-chk-verify` | 上游基线与自研目录分开审：前者查整棵内核树，后者只查 `security/airy` 等自研代码 |
-| system | `tui-verify`、`tui-input-verify` | 帧预算/跨架构与输入契约是两条独立验证轴，合并会让改一行注释也排队等完整集成 |
+| system | `c-verify`、`ops-verify`、`tui-verify`、`tui-input-verify` | 四条验证轴互不替代：C 构建面、运维三入口的契约与端到端、帧预算与跨架构、输入契约；合并会让改一行注释也排队等完整集成 |
 | distro | `os-chk-verify`、`image-build`、`payload-seed` | 静态规则随 PR，镜像组装属发行前，载荷预热按周期，三者触发时机不同 |
 | services、cloudnative | `c-verify`（各 1 个作业） | 同一构建面，作业分开保证失败结论互不掩盖 |
 | sdk | `sdk-verify`（一语言一作业） | 生成一致不代表能编译，四个编译器视角互不替代 |
 | security、memory、cognition | 无独立流水线 | 三棵是外部模块原型树，产品配方无引用、载荷不安装（`distro/` 内零引用）；产品路线的实现内建于 `kernel/security/airy/` 与 `kernel/kernel/syscalls/airy_clt.c`，由 `kernel-verify`／`airy-verify` 覆盖。原型树转成交付物（进配方或被载荷安装）时，按本节「何时才拆新流水线」补作业 |
-| tests-linux | 无独立流水线 | 单元测试由该叶仓自身 CI 承担，父仓只做 gitlink 完整性与 SBOM 归集 |
+| tests-linux | `c-verify`（1 个作业） | 出树构建与 CTest 并入同一 C 构建面，避免重复预热工具链；叶仓自身 CI 仍承担其单元测试 |
 | tools、ci | 无独立流水线 | `os-chk-verify` 的一次依赖安装与一次 pytest 已覆盖，拆开只会让一次工具改动排队多轮 |
 | docs | `mgmt-verify`、`ssot-verify` | 文档完整性与 SSoT 交叉引用是两件事，但都廉价，各一条流水线已足够 |
 
@@ -372,9 +375,12 @@ PATH="$HOME/.local/bin:$PATH" ./ci/lint.sh
 | `os-chk-verify` | `lint` 在度量棘轮、workflow 规则或 distro 静态门禁处判红；工具链 pytest 失败 | `./ci/lint.sh`、`./ci/ci.sh python-verify --kind oschk` |
 | `kernel-verify` | 某一格配置构建失败、`W=2` 出现告警、checkpatch/sparse 报出问题 | `./ci/ci.sh kernel-build --config <cfg> --arch <arch> --compiler gcc`、`./ci/ci.sh kernel-analyze --kind sparse` |
 | `airy-verify` | Airymax CONFIG 缺失、BTF 未内嵌、`security/airy` 与其他子树符号冲突 | `./ci/ci.sh kernel-airy --kind assert --arch <arch>` |
+| `c-verify` | 某模块出树构建告警、`agentctl` 的 A-IPC magic 与 `[SC] ipc.h` 不一致、CTest 用例失败 | `./ci/gates/c-verify.sh --module <cloudnative\|services\|system\|tests-linux>` |
 | `image-build` | 组装段看 `kern=` / `iso=` 分段行；装机段看 TAP 里第一条 `not ok`；清单回写看 `channel-publish` 的复验/读回 | `./ci/ci.sh image-verify --out <dir>`、`ACCEPTANCE=true ./ci/ci.sh tap-extract --dir <dir>`、`./ci/ci.sh channel-publish --tag <tag> --repo <owner/name> --dir <dir> --dry-run` |
 | `release` | `release-sign probe` 的私钥自检；`channel-fetch` 取不到 `channel.json` | `./ci/ci.sh release-sign probe`、`./ci/ci.sh channel-fetch --tag <tag> --repo <owner/name> --dir <dir>` |
 | `nightly` | helper 未落地或清单契约漂移 | `python3 tools/nightly/nightly.py --check`、`./ci/ci.sh nightly-helpers <helper>` |
+| `obs-verify` | 探针挂载点不成对、上下文成员与 tracepoint 结构不一致、出树编译超出体积或丢 `.BTF` | `./ci/ci.sh ebpf-probe`、`./ci/ci.sh perf-hooks`、`./ci/ci.sh token-obs`、`./ci/ci.sh mem-obs` |
+| `ops-verify` | 告警规则/限额校验、事件台账状态机拒绝边、备份深核验或保留期判据 | `./ci/ci.sh alert-d`、`./ci/ci.sh incident`、`./ci/ci.sh backup` |
 | `payload-seed` | `probe` 输出的 `tag=` 为空（上游不可达）或 `missing=0`（层已存在），两者都不该让流水线红 | `./ci/ci.sh payload-seed probe --arch <arch>` |
 
 ## 8. 许可
