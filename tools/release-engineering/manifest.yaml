@@ -299,7 +299,11 @@ materials:
     authority: docs/docs-linux/190-distribution/04-update-mechanism.md §2.3
     delivery: active
     evidence:
-      - channel.json
+      - channel*.json
     produce:
       - ["ci/ci.sh", "channel-fetch", "--tag", "${tag}", "--repo", "${repo}",
          "--dir", "."]
+      # aarch64 发行位从 0.0.6 起才有，重放更早的版本时没有这份清单：
+      # --optional 只接受「没有任何成功轮次提供它」，取到但不可信仍失败。
+      - ["ci/ci.sh", "channel-fetch", "--tag", "${tag}", "--repo", "${repo}",
+         "--dir", ".", "--arch", "aarch64", "--optional"]

@@ -172,8 +172,8 @@ for d in "${DIRS[@]}"; do
     collect "${d}"
 done
 
-# 附加件平铺到包根：制品根是下游唯一可寻址的命名空间。channel.json 由
-# channel-fetch 按「制品/channel.json」取件，塞进子目录等于让它取不到，
+# 附加件平铺到包根：制品根是下游唯一可寻址的命名空间。通道清单由
+# channel-fetch 按「制品/<清单名>」取件，塞进子目录等于让它取不到，
 # 建页那一步只能空手失败。
 for f in "${EXTRAS[@]}"; do
     [ -f "${f}" ] || continue

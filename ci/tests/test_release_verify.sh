@@ -164,20 +164,22 @@ mat_kernel()
     printf 'kernel rpm 0.0.4-13\n' >"${MAT}/airymaxos-kernel-0.0.4-13.x86_64.rpm"
 }
 
-# mat_chan [摘要] — 造 channel.json，摘要缺省取内核主包真值。
+# mat_chan [摘要] [架构] — 造通道清单。x86_64 沿用 channel.json（0.0.5 装机
+# 端写死的取件名），其余架构落 channel-<arch>.json；摘要缺省取同架构内核主包。
 mat_chan()
 {
-    local sum="${1:-}"
+    local sum="${1:-}" arch="${2:-x86_64}" name="channel.json"
 
-    [ -n "${sum}" ] || sum="$(sum_of "${MAT}/airymaxos-kernel-0.0.4-13.x86_64.rpm")"
-    cat >"${MAT}/channel.json" <<EOF
+    [ "${arch}" = x86_64 ] || name="channel-${arch}.json"
+    [ -n "${sum}" ] || sum="$(sum_of "${MAT}/airymaxos-kernel-0.0.4-13.${arch}.rpm")"
+    cat >"${MAT}/${name}" <<EOF
 {
   "schema_version": 1,
   "channel": "stable",
   "version": "0.0.4",
   "build": 27,
   "kernel": {
-    "nevra": "airymaxos-kernel-0.0.4-13.x86_64",
+    "nevra": "airymaxos-kernel-0.0.4-13.${arch}",
     "sha256": "${sum}"
   }
 }
@@ -330,6 +332,43 @@ mat_kernel
 printf '{"schema_version": 1}\n' >"${MAT}/channel.json"
 out="$(run --dir "${MAT}")"
 check "channel.json 缺 kernel 判失败" 1 "$?" "${out}" "读不出 kernel.sha256"
+
+# 清单按架构分名，每份只与同架构内核主包对账：aarch64 清单拿 x86_64 的包去
+# 比，要么比出假分叉，要么把两台架构的载荷凭证混为一谈。
+mat 3
+mat_kernel
+printf 'kernel rpm 0.0.4-13\n' >"${MAT}/airymaxos-kernel-0.0.4-13.aarch64.rpm"
+mat_chan "" aarch64
+out="$(run --dir "${MAT}")"
+check "aarch64 清单与同架构内核同字节通过" 0 "$?" "${out}" \
+    "内核包与通道清单同字节: airymaxos-kernel-0.0.4-13.aarch64.rpm"
+
+mat 3
+mat_kernel
+printf 'kernel rpm 0.0.4-13\n' >"${MAT}/airymaxos-kernel-0.0.4-13.aarch64.rpm"
+mat_chan 0000000000000000000000000000000000000000000000000000000000000000 aarch64
+out="$(run --dir "${MAT}")"
+check "aarch64 内核包与清单分叉判失败" 1 "$?" "${out}" \
+    "内核包与 channel-aarch64.json 分叉"
+
+mat 3
+mat_kernel
+mat_chan 1111111111111111111111111111111111111111111111111111111111111111 aarch64
+out="$(run --dir "${MAT}")"
+check "有 aarch64 清单缺 aarch64 内核主包判失败" 1 "$?" "${out}" \
+    "缺 aarch64 内核主包"
+
+# 两份清单共存是发行页常态：逐份对账，不能只验第一份。
+mat 3
+mat_kernel
+printf 'kernel rpm 0.0.4-13\n' >"${MAT}/airymaxos-kernel-0.0.4-13.aarch64.rpm"
+mat_chan
+mat_chan "" aarch64
+out="$(run --dir "${MAT}")"
+check "两份清单各自对账通过" 0 "$?" "${out}" "物料自证通过"
+n="$(printf '%s\n' "${out}" | grep -c '内核包与通道清单同字节')"
+[ "${n}" -eq 2 ] && ok "两份清单都参与对账" ||
+    { bad "两份清单都参与对账（实得 ${n} 次）"; printf '%s\n' "${out}" >&2; }
 
 # 公钥与署名同后缀，门禁按首行内容区分：把公钥当署名会要求一份并不存在
 # 的被签文件，发行页上有公钥反而判负。

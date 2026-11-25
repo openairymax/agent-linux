@@ -7,7 +7,14 @@
 # 用法: ci/gates/channel-fetch.sh --tag vX.Y.Z --repo OWNER/REPO --dir DIR
 #                                 [--workflow image-build.yml]
 #                                 [--artifact airymaxos-acceptance]
-#                                 [--name channel.json] [--limit 50]
+#                                 [--name channel.json] [--arch ARCH]
+#                                 [--optional] [--limit 50]
+#
+# 清单名按架构分（channel_name）：装有该架构 ISO 的验收制品里才有对应清单，
+# 所以「没有任何 run 提供这份清单」等于该架构本版没有发行位。--optional 把
+# 这件事实记成可接受并退出 0，用于可能没有该架构发行位的取件；缺省仍要求
+# 清单存在，免得某轮漏挂被当成「这台架构本版没发」。缺失与不可信分开：
+# 清单取到了却过不了客户端校验，有无 --optional 都失败。
 #
 # 发布时要挂到 Release 上的 channel.json，只能来自那台真正装配出 ISO 的
 # 机器的产物，不能在本机重新生成一份：重新生成等于用当前源码再推一次清单，
@@ -41,6 +48,7 @@ readonly ETRUST=3
 WF="image-build.yml"
 ART="airymaxos-acceptance"
 LIMIT=50
+OPTIONAL=0
 
 usage()
 {
@@ -48,7 +56,8 @@ usage()
 用法: ci/gates/channel-fetch.sh --tag vX.Y.Z --repo OWNER/REPO --dir DIR
                                 [--workflow image-build.yml]
                                 [--artifact airymaxos-acceptance]
-                                [--name channel.json] [--limit 50]
+                                [--name channel.json] [--arch ARCH]
+                                [--optional] [--limit 50]
 EOF
 }
 
@@ -57,6 +66,7 @@ while [ "$#" -gt 0 ]; do
     case "$1" in
         --workflow) WF="${2:-}"; shift 2 ;;
         --artifact) ART="${2:-}"; shift 2 ;;
+        --optional) OPTIONAL=1; shift ;;
         --limit)    LIMIT="${2:-}"; shift 2 ;;
         -h|--help)  usage; exit 0 ;;
         *) err "未知参数: $1"; exit "${EINVAL}" ;;
@@ -135,6 +145,17 @@ take()
     return 1
 }
 
+# absent MSG —— 「没有这份清单」的两档处理：--optional 记为可接受的事实并
+# 退出 0，否则判失败。不可信不走这里，它在 take 里已经直接失败。
+absent()
+{
+    if [ "${OPTIONAL}" -eq 1 ]; then
+        note "$1（--optional，本轮不挂该清单）"
+        exit 0
+    fi
+    die "$1"
+}
+
 while IFS= read -r id; do
     [ -n "${id}" ] || continue
     take "${id}"
@@ -146,4 +167,4 @@ while IFS= read -r id; do
     esac
 done <<<"${ids}"
 
-die "没有 run 提供 ${CH_WANT} 的 ${CH_NAME}（${CH_REPO} 近 ${LIMIT} 次成功的 ${WF}）"
+absent "没有 run 提供 ${CH_WANT} 的 ${CH_NAME}（${CH_REPO} 近 ${LIMIT} 次成功的 ${WF}）"

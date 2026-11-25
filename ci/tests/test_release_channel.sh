@@ -70,6 +70,7 @@ mkfix()
         "${FX}/tools/release-engineering" "${ISO_DIR}" "${RPM_DIR}"
     cp "${GATE}" "${FX}/ci/gates/release-channel.sh"
     cp "${ROOT}/ci/lib/log.sh" "${FX}/ci/lib/log.sh"
+    cp "${ROOT}/ci/lib/channel.sh" "${FX}/ci/lib/channel.sh"
     cp "${ROOT}/tools/release-engineering/release_manifest.py" \
         "${FX}/tools/release-engineering/release_manifest.py"
     printf 'iso-payload\n' >"${ISO_DIR}/airymaxos-${VER}.iso"
@@ -176,6 +177,18 @@ mkfix
 out="$(run --out "${OUT}" --version "${VER}" \
     --notes-url https://example.com/r/v${VER})"
 check "notes_url 越域退 5" 5 "$?" "${out}" "发行域"
+
+# 按架构分名：aarch64 落 channel-aarch64.json，x86_64 的历史名不被覆盖。
+# 两份清单共存是发行页的常态——每份只声明一台架构的载荷，客户端按
+# platform.machine() 选件。
+mkfix
+run --out "${OUT}" --version "${VER}" >/dev/null 2>&1
+out="$(run --out "${OUT}" --version "${VER}" --rpm-dir "${RPM_DIR}" --arch aarch64)"
+check "aarch64 生成 channel-aarch64.json" 0 "$?" "${out}" "channel-aarch64.json"
+[ -e "${OUT}/channel-aarch64.json" ] && ok "清单名随 --arch 派生" ||
+    bad "未生成 channel-aarch64.json"
+[ -e "${OUT}/channel.json" ] && ok "x86_64 历史名未被覆盖" ||
+    bad "aarch64 的产出覆盖了 channel.json"
 
 if [ "${fails}" -ne 0 ]; then
     printf 'test_release_channel: %d 项失败\n' "${fails}"

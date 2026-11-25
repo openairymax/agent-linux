@@ -196,6 +196,18 @@ grep -q '"version": "0.0.4"' \
         "${FAKE}/state/rel")" &&
     ok "页面字节即本地清单" || bad "页面字节不是本地清单"
 
+# 清单名随 --arch 派生：aarch64 的清单以 channel-aarch64.json 挂上同一页面，
+# 与 x86_64 的 channel.json 并存，互不顶替。
+mkfix
+chan 0.0.4
+run --tag v0.0.4 --repo o/r --dir "${OUT}" >/dev/null 2>&1
+cp "${OUT}/channel.json" "${OUT}/channel-aarch64.json"
+out="$(run --tag v0.0.4 --repo o/r --dir "${OUT}" --name channel-aarch64.json)"
+check "aarch64 清单独立挂载" 0 "$?" "${out}" "已发布"
+awk '$2 == "channel-aarch64.json"' "${FAKE}/state/rel" | grep -q . &&
+    ok "页面出现 channel-aarch64.json" || bad "页面缺 channel-aarch64.json"
+[ "$(count)" -eq 1 ] && ok "x86_64 清单仍在" || bad "x86_64 清单被顶替"
+
 # 同 tag 重建 ISO 后回写：旧件必须先删，否则同名上传被 422 拒回。
 mkfix
 chan 0.0.4

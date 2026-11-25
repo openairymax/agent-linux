@@ -231,8 +231,9 @@ L2/L3 都不改判据，只改「同一份物料要付几次成本」。任何�
 
 发布链上有三条判据互相等待，首次发布时环是闭合的：
 
-- `publish-release` 建页之前要 `channel-fetch` 取到 `channel.json`；
-- `channel.json` 只由 `image-build` 在 `release_tag` 非空时产出；
+- `publish-release` 建页之前要 `channel-fetch` 取到本架构的通道清单；
+- 清单只由 `image-build` 在 `release_tag` 非空时产出（x86_64 为
+  `channel.json`，其余架构为 `channel-<arch>.json`）；
 - 而该模式下 `release-rpms` 又要从发布页取内核包与发行校验和。
 
 首个版本还没有发布页，三条判据谁先谁后都无解。解法不是放宽判据，而是把
@@ -245,12 +246,14 @@ L2/L3 都不改判据，只改「同一份物料要付几次成本」。任何�
 2. **出 ISO 与通道清单。** `workflow_dispatch image-build`：`ref` 指该 tag，
    `release_tag=v<ver>`，`rpms_run=<第 1 步 run id>`，`replace` 按 ghcr 是否
    已有同 tag 产物决定。内核包改从制品取（`release-rpms --run-id`），accept
-   段产出 `channel.json` 并随 `airymaxos-acceptance-<arch>[-<leg>]` 上传
+   段产出本架构的通道清单（x86_64 为 `channel.json`，aarch64 为
+   `channel-aarch64.json`）并随 `airymaxos-acceptance-<arch>[-<leg>]` 上传
    （矩阵项各自命名，同名上传会在合并阶段 409），位置在制品根：`channel-fetch`
    以 `--artifact` 为名字基，同名优先、其后逐个试带后缀的件，但只认「制品根
-   /channel.json」，放进子目录等于取不到。
+   /<清单名>」，放进子目录等于取不到。每条架构只有一个实例发布（矩阵项
+   `publish=yes`），aarch64 由 usb 实例承担，cdrom 实例只收装机证据。
    `acceptance` 必须保持 `false`：验收剖面是自动登录的 B 轮字节，既不产
-   `channel.json`，也不允许占用发行 tag（`iso-publish` 与清单生成都带
+   通道清单，也不允许占用发行 tag（`iso-publish` 与清单生成都带
    `!inputs.acceptance`）。装机的 BIOS/UEFI 冷启动断言在两条剖面里都会跑，
    区别只在会话内冒烟的期望标记。此刻发布页尚未建（建页在第 3 步），
    `channel-publish` 对「页面不存在」按无操作放行——清单已随制品上传，
@@ -260,21 +263,22 @@ L2/L3 都不改判据，只改「同一份物料要付几次成本」。任何�
    存在」，正文与资产在第 3 步整体换掉。
 3. **只重放、不重编。** `workflow_dispatch release.yml`：`tag=v<ver>`，
    `publish_run=<第 1 步 run id>`。`build-and-sign` 跳过，`publish-release`
-   从该 run 重放制品；此时 `channel-fetch` 能取到第 2 步的 `channel.json`，
-   建页完成。页面仍停在 held，等实机 `AIRYMAX-SMOKE-PASS` 后由发布机
-   `release-stage promote` 推进 latest。
+   从该 run 重放制品；此时 `channel-fetch` 能取到第 2 步的通道清单，建页
+   完成。aarch64 取件带 `--optional`：更早的版本没有 aarch64 发行位，重放
+   时缺这份清单不判负，取到却不可信仍失败。页面仍停在 held，等实机
+   `AIRYMAX-SMOKE-PASS` 后由发布机 `release-stage promote` 推进 latest。
 
 判据一条未减：内核包只构建一次，ISO 载荷与发行资产字节相同；重放不产生
 任何新字节，签名、摘要与对账照旧全量校验。
 
-同版本重建 ISO（`replace=true`）时多一条收口：发布页上的 `channel.json`
+同版本重建 ISO（`replace=true`）时多一条收口：发布页上的通道清单
 必须跟着换。建页时上传的那一份只描述建页那一刻的字节，而装配轮可以在此
 之后重出 ISO；页面指着旧摘要、线上 ISO 已是新字节，两侧各自都能自证，却
 没有一处把它们对起来（0.0.4 收尾期的实际形态：页面是 build 19 / 内核
 `0.0.4-7`，线上已是重建后的字节）。`Publish release channel manifest`
-（`./ci/ci.sh channel-publish`）在清单生成后执行：写前用客户端解析器复验
-版本同源，同名旧件先删后传（Release 不接受同名覆盖），写后按资产 id 取回
-逐字节比对。写权限只给 `accept` job，`assemble` 保持只读。
+（`./ci/ci.sh channel-publish --name <清单名>`）在清单生成后执行：写前用
+客户端解析器复验版本同源，同名旧件先删后传（Release 不接受同名覆盖），
+写后按资产 id 取回逐字节比对。写权限只给 `accept` job，`assemble` 保持只读。
 
 ## 5.7 粒度、作业数与模块归属
 

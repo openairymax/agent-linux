@@ -127,10 +127,13 @@ art()
     mkdir -p "${FAKE}/art/$1/airymaxos-acceptance${2:+-$2}"
 }
 
-# chan <run-id> <版本> [后缀] — 写一份符合客户端白名单的清单。
+# chan <run-id> <版本> [后缀] [清单名] — 写一份符合客户端白名单的清单。
+# 清单名缺省 channel.json（x86_64 的历史名），其余架构传 channel-<arch>.json。
 chan()
 {
-    cat >"${FAKE}/art/$1/airymaxos-acceptance${3:+-$3}/channel.json" <<EOF
+    local name="${4:-channel.json}"
+
+    cat >"${FAKE}/art/$1/airymaxos-acceptance${3:+-$3}/${name}" <<EOF
 {
   "schema_version": 1,
   "channel": "stable",
@@ -227,6 +230,43 @@ chan 83 0.0.5 x86_64
 runs 83:2026-11-23T10:00:00Z
 out="$(run --tag v0.0.5 --repo o/r --dir "${OUT}")"
 check "同名制品优先" 0 "$?" "${out}" "制品 airymaxos-acceptance，"
+
+# 清单按架构分名：aarch64 只认 channel-aarch64.json，取回的也是这一份。
+mkfix
+art 91 aarch64-usb
+chan 91 0.0.6 aarch64-usb channel-aarch64.json
+runs 91:2026-11-25T10:00:00Z
+out="$(run --tag v0.0.6 --repo o/r --dir "${OUT}" --arch aarch64)"
+check "按架构取回 aarch64 清单" 0 "$?" "${out}" "channel-aarch64.json"
+[ -e "${OUT}/channel-aarch64.json" ] && ok "aarch64 清单落盘名正确" ||
+    bad "未生成 channel-aarch64.json"
+
+# 同一制品里只有 x86_64 清单：aarch64 取件不能把它当成自己的。
+mkfix
+art 92 x86_64
+chan 92 0.0.5 x86_64
+runs 92:2026-11-25T10:00:00Z
+out="$(run --tag v0.0.5 --repo o/r --dir "${OUT}" --arch aarch64)"
+check "架构不符不误取" 1 "$?" "${out}" "没有 run"
+
+# --optional 只接受「没有任何 run 提供这份清单」：该架构本版没有发行位。
+mkfix
+runs 93:2026-11-25T10:00:00Z
+out="$(run --tag v0.0.5 --repo o/r --dir "${OUT}" --arch aarch64 --optional)"
+check "--optional 缺清单退 0" 0 "$?" "${out}" "本轮不挂"
+[ -e "${OUT}/channel-aarch64.json" ] && bad "缺清单却落了盘" ||
+    ok "缺清单不落盘"
+
+# 清单取到了却过不了客户端校验，有没有 --optional 都失败：缺失与不可信
+# 是两件事，后者是发布事故。
+mkfix
+art 94 aarch64-usb
+chan 94 0.0.5 aarch64-usb channel-aarch64.json
+sed -i 's#https://github.com/#https://example.com/#' \
+    "${FAKE}/art/94/airymaxos-acceptance-aarch64-usb/channel-aarch64.json"
+runs 94:2026-11-25T10:00:00Z
+out="$(run --tag v0.0.5 --repo o/r --dir "${OUT}" --arch aarch64 --optional)"
+check "--optional 不吞不可信清单" 1 "$?" "${out}" "不可信"
 
 mkfix
 runs

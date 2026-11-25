@@ -69,9 +69,13 @@
 #     .sha256sum）而不是就地构建：ISO 载荷与发行资产的内核只能有一次
 #     构建，否则同名包哈希分叉，装机载荷无法用发行校验和核验。
 #   * ISO 发布挂在 accept 之后并排除验收剖面：只有双固件装机与冷启动
-#     通过的字节才配占用发行 tag。发布动作只由 x86_64 腿执行：ghcr 的 ISO
-#     包与 channel.json 目前都是单镜像契约，aarch64 的发行位随「按架构的
-#     通道清单」落地，在那之前它的镜像与验收证据走 Actions 制品。
+#     通过的字节才配占用发行 tag。发行位按架构独立：ISO 包引用与通道清单
+#     名都随架构派生（ghcr.io/openairymax/airymaxos-iso 与 -iso-<arch>、
+#     channel.json 与 channel-<arch>.json），两条腿可以同轮各发各的，不再
+#     共用一份单镜像契约。aarch64 按介质拆成两个实例后无法在单个 360 分钟
+#     job 内串行，发行位只由 usb 实例执行（矩阵项 publish=yes），cdrom 实例
+#     只贡献装机证据；两者同属一轮，任一实例失败会让整轮失败，而
+#     channel-fetch 只读成功轮次，发行位因此不会在另一条腿失败时被消费。
 # ===========================================================================
 
 name: image-build
@@ -413,10 +417,10 @@ jobs:
       - name: Verify UKUI component ledger
         run: ci/ci.sh ukui-lock --source .
 
-      # 通道清单（channel.json）要在 ISO 发布账本写出之后才能生成，而账本
-      # 属于 accept。清单同时需要发行包与内核包自证 build 与载荷摘要，故在
-      # 这里把两份包随产物交给 accept：跨 job 不共享文件系统，缺这一步
-      # accept 就只能手写构建号，清单退回成一组看起来对的字符串。
+      # 通道清单（channel.json / channel-<arch>.json）要在 ISO 发布账本写出
+      # 之后才能生成，而账本属于 accept。清单同时需要发行包与内核包自证 build
+      # 与载荷摘要，故在这里把两份包随产物交给 accept：跨 job 不共享文件系统，
+      # 缺这一步 accept 就只能手写构建号，清单退回成一组看起来对的字符串。
       # 两个制品根下载后层级不同，门禁按文件名递归取唯一一份。下载侧必须
       # 与门禁同一条判据：release-rpms 解出的内核包保留 dist/rpm/<arch>/
       # 层级（run 42527470419 的 Fetch 步骤日志已写明落点），固定一层 glob
@@ -474,9 +478,14 @@ jobs:
           # legs 是该项承载的装机腿：all 表示 x86_64 的三条腿串行后再发布，
           # 其余取值只跑对应介质的一条腿。时限不是拍定值，而是装机腿数与
           # 模拟器形态推导出来的（推导见文件头 accept 段）。
+          # channel 是该项装配出的通道清单名（x86_64 沿用 0.0.5 装机端写死
+          # 的 channel.json），publish 决定该项是否占用发行位：每条架构只能
+          # 有一个实例发布，否则同一 tag 上两份 ISO / 两种清单各执一词。
           - arch: x86_64
             runner: ubuntu-24.04
             legs: all
+            channel: channel.json
+            publish: 'yes'
             leg_timeout: 80
             install_timeout: 3600
             boot_timeout: 900
@@ -485,10 +494,14 @@ jobs:
           # 装机 9000 秒是实测值的 1.26 倍，冷启动 2400 秒覆盖纯软件模拟
           # 下的桌面会话拉起；两者之和 190 分钟仍小于 leg_timeout，超限时
           # 由装机入口先给结论，而不是被 Actions 强制取消。
+          # 发行位落在 usb 实例：它排在两条腿的最前，先给出介质布局结论；
+          # cdrom 实例的失败仍会通过整轮失败拦下清单取回。
           - arch: aarch64
             runner: ubuntu-24.04-arm
             legs: usb
             leg_dir: install-usb
+            channel: channel-aarch64.json
+            publish: 'yes'
             leg_timeout: 240
             install_timeout: 9000
             boot_timeout: 2400
@@ -496,6 +509,8 @@ jobs:
             runner: ubuntu-24.04-arm
             legs: cdrom
             leg_dir: install-uefi
+            channel: channel-aarch64.json
+            publish: 'no'
             leg_timeout: 240
             install_timeout: 9000
             boot_timeout: 2400
@@ -623,49 +638,48 @@ jobs:
       # 条件里显式写 success()：一旦给出 if 表达式，Actions 就不再套用默认的
       # success()，装机失败时发布步骤反而会被放行。
       #
-      # 发布只由 x86_64 腿执行：ghcr 的 ISO 包与 channel.json 目前都是单镜像
-      # 契约（release-channel 要求目录内唯一 *.iso，清单无架构字段）。两条腿
-      # 同时发布会在同一 tag 上撞车，而给 aarch64 编一个清单里没有的 tag，
-      # 客户端也发现不了。aarch64 的发行位随「按架构的通道清单」一并落地，
-      # 在那之前它的镜像与验收证据走 Actions 制品（airymaxos-image-aarch64 /
-      # airymaxos-acceptance-aarch64-usb / -cdrom），不占用发行 tag。
+      # 发布只由矩阵项 publish=yes 的实例执行：ISO 包引用与通道清单名都随
+      # 架构派生，同 tag 下各架构各占一个包、各挂一份清单，互不覆盖。每条
+      # 架构必须恰好一个实例发布——两份 ISO 争同一个 ref、两份清单争同一个
+      # 资产名时，哪一份生效取决于完成顺序，发行物就不再由矩阵声明决定。
+      # aarch64 的发行位因此落在 usb 实例；cdrom 实例只收装机证据。
       - uses: oras-project/setup-oras@22ce207df3b08e061f537244349aac6ae1d214f6 # v1
-        if: success() && inputs.release_tag != '' && !inputs.acceptance && matrix.arch == 'x86_64'
+        if: success() && inputs.release_tag != '' && !inputs.acceptance && matrix.publish == 'yes'
 
       # 幂等判据是「同 tag 同摘要」，重建同版本发行物必然摘要不同，故覆盖只
       # 能由输入显式开启：默认仍拒绝替换，避免把一次误触当成发行。
       - name: Publish ISO to ghcr.io
-        if: success() && inputs.release_tag != '' && !inputs.acceptance && matrix.arch == 'x86_64'
+        if: success() && inputs.release_tag != '' && !inputs.acceptance && matrix.publish == 'yes'
         env:
           GHCR_USER: ${{ github.actor }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ inputs.release_tag }}
-        run: ci/ci.sh iso-publish --out "$RUNNER_TEMP/image" --tag "$TAG" ${{ inputs.replace && '--force' || '' }}
+        run: ci/ci.sh iso-publish --out "$RUNNER_TEMP/image" --tag "$TAG" --arch "${{ matrix.arch }}" ${{ inputs.replace && '--force' || '' }}
 
       # 证明与 ISO 同批发布：ISO 一进 registry 就不再改动，证明若晚一步生成，
       # 中间就留下「镜像已在、来源只能靠构建日志口头说明」的窗口。buildId 取
       # 自镜像自带的 image-ci-manifest.txt（随制品一起下载），因此证明里的值
       # 与装机后 /etc/airymaxos-build 逐字相同——这是「装机可反查」的全部依据。
       - name: Build ISO provenance attestation
-        if: success() && inputs.release_tag != '' && !inputs.acceptance && matrix.arch == 'x86_64'
+        if: success() && inputs.release_tag != '' && !inputs.acceptance && matrix.publish == 'yes'
         env:
           TAG: ${{ inputs.release_tag }}
-        run: ci/ci.sh attest build --out "$RUNNER_TEMP/image" --tag "$TAG"
+        run: ci/ci.sh attest build --out "$RUNNER_TEMP/image" --tag "$TAG" --arch "${{ matrix.arch }}"
 
       # 推后回读比对摘要、buildId 与字节，任一处不符即红：证明本身也要能被
       # 验证，否则它只是另一段自述。
       - name: Publish ISO provenance attestation
-        if: success() && inputs.release_tag != '' && !inputs.acceptance && matrix.arch == 'x86_64'
+        if: success() && inputs.release_tag != '' && !inputs.acceptance && matrix.publish == 'yes'
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ inputs.release_tag }}
-        run: ci/ci.sh attest publish --out "$RUNNER_TEMP/image" --tag "$TAG" --token "$GHCR_TOKEN" ${{ inputs.replace && '--force' || '' }}
+        run: ci/ci.sh attest publish --out "$RUNNER_TEMP/image" --tag "$TAG" --arch "${{ matrix.arch }}" --token "$GHCR_TOKEN" ${{ inputs.replace && '--force' || '' }}
 
       # 清单只由产物推出：ISO 实测摘要对账本、build 对发行包 NEVRA，任一
       # 不等即不产出（生成器退 1，本步红）。放在发布之后是因为账本由
       # iso-publish 写出——提前生成等于给未经账本自证的字节发摘要。
       - name: Download release rpms
-        if: success() && inputs.release_tag != '' && !inputs.acceptance && matrix.arch == 'x86_64'
+        if: success() && inputs.release_tag != '' && !inputs.acceptance && matrix.publish == 'yes'
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: airymaxos-release-rpms-${{ matrix.arch }}
@@ -673,23 +687,23 @@ jobs:
           merge-multiple: true
 
       - name: Generate release channel manifest
-        if: success() && inputs.release_tag != '' && !inputs.acceptance && matrix.arch == 'x86_64'
+        if: success() && inputs.release_tag != '' && !inputs.acceptance && matrix.publish == 'yes'
         env:
           TAG: ${{ inputs.release_tag }}
-        run: ci/ci.sh release-channel --out "$RUNNER_TEMP/image" --rpm-dir "$RUNNER_TEMP/relch" --version "${TAG#v}"
+        run: ci/ci.sh release-channel --out "$RUNNER_TEMP/image" --rpm-dir "$RUNNER_TEMP/relch" --version "${TAG#v}" --arch "${{ matrix.arch }}"
 
       # 清单只有在发布页上才生效：客户端发现新版本读的是 releases/latest/
-      # download/channel.json。发布页与首份清单由 release.yml 建页时上传，
-      # 装配轮为同一 tag 重建 ISO 之后没有回写路径——0.0.4 收尾期的页面
-      # 仍是 build 19 / 内核 0.0.4-7，而线上 ISO 已是重建后的字节，两侧
-      # 各自都能自证，却没有一处把它们对起来。门禁写前按客户端解析器复验
-      # 版本同源，写后按资产 id 取回比对字节。
+      # download/channel.json（x86_64）或同目录的 channel-<arch>.json。发布页
+      # 与首份清单由 release.yml 建页时上传，装配轮为同一 tag 重建 ISO 之后
+      # 没有回写路径——0.0.4 收尾期的页面仍是 build 19 / 内核 0.0.4-7，而线上
+      # ISO 已是重建后的字节，两侧各自都能自证，却没有一处把它们对起来。门禁
+      # 写前按客户端解析器复验版本同源，写后按资产 id 取回比对字节。
       - name: Publish release channel manifest
-        if: success() && inputs.release_tag != '' && !inputs.acceptance && matrix.arch == 'x86_64'
+        if: success() && inputs.release_tag != '' && !inputs.acceptance && matrix.publish == 'yes'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ inputs.release_tag }}
-        run: ci/ci.sh channel-publish --tag "$TAG" --repo "$GITHUB_REPOSITORY" --dir "$RUNNER_TEMP/image"
+        run: ci/ci.sh channel-publish --tag "$TAG" --repo "$GITHUB_REPOSITORY" --dir "$RUNNER_TEMP/image" --name "${{ matrix.channel }}"
 
       # 收集规则属于判据：写进 YAML 就只能在云端验一次、也只能在云端改。
       # 交给门禁后，同一段收集逻辑可以对着旧产物本地复算，缺项还被逐条
@@ -700,7 +714,7 @@ jobs:
         if: always() && matrix.legs == 'all'
         env:
           ACCEPTANCE: ${{ inputs.acceptance }}
-        run: ci/ci.sh evidence --out "$RUNNER_TEMP/evidence" --dir "$RUNNER_TEMP/install-usb" --dir "$RUNNER_TEMP/install-bios" --dir "$RUNNER_TEMP/install-uefi" --extra "$RUNNER_TEMP/image/desktop/iso/iso-oci.txt" --extra "$RUNNER_TEMP/image/channel.json"
+        run: ci/ci.sh evidence --out "$RUNNER_TEMP/evidence" --dir "$RUNNER_TEMP/install-usb" --dir "$RUNNER_TEMP/install-bios" --dir "$RUNNER_TEMP/install-uefi" --extra "$RUNNER_TEMP/image/desktop/iso/iso-oci.txt" --extra "$RUNNER_TEMP/image/${{ matrix.channel }}"
 
       # 单腿实例只收自己那条腿：另外两条腿在本实例里根本没有跑，按「整腿
       # 全缺」登记会让验收剖面把没跑的腿误判成缺件。
@@ -708,7 +722,7 @@ jobs:
         if: always() && matrix.legs != 'all'
         env:
           ACCEPTANCE: ${{ inputs.acceptance }}
-        run: ci/ci.sh evidence --out "$RUNNER_TEMP/evidence" --dir "$RUNNER_TEMP/${{ matrix.leg_dir }}" --extra "$RUNNER_TEMP/image/desktop/iso/iso-oci.txt" --extra "$RUNNER_TEMP/image/channel.json"
+        run: ci/ci.sh evidence --out "$RUNNER_TEMP/evidence" --dir "$RUNNER_TEMP/${{ matrix.leg_dir }}" --extra "$RUNNER_TEMP/image/desktop/iso/iso-oci.txt" --extra "$RUNNER_TEMP/image/${{ matrix.channel }}"
 
       # 证据制品按矩阵项分名：同名上传会在合并阶段 409，先完成的那项拿到
       # 的名字反过来决定另一项能否写进去。三腿同实例的一项保持原名。

@@ -11,11 +11,13 @@
 #                                  [--output FILE] [--released-at STAMP]
 #                                  [--notes-url URL]
 #
-# 清单（channel.json）是版本的对外声明：装了这套系统的人据此判断「有没有
-# 新版本、新版本是不是另一个系统」。它只能由产物自身推出来，不能手写——
-# 0.0.3 的教训是发布页描述的取件形态与线上制品不一致，而链路上没有任何
-# 环节把它判成错。本门禁只负责「找到唯一的那几份产物」，字段取值与交叉
-# 断言（ISO 摘要对账本、build 对 release NEVRA）全部在
+# 清单（channel.json / channel-<arch>.json）是版本的对外声明：装了这套系统
+# 的人据此判断「有没有新版本、新版本是不是另一个系统」。它只能由产物自身
+# 推出来，不能手写——0.0.3 的教训是发布页描述的取件形态与线上制品不一致，
+# 而链路上没有任何环节把它判成错。清单名由 channel_name 统一决定：同一台
+# 架构的产物只生成自己那一份，多台架构的清单互不覆盖。
+# 本门禁只负责「找到唯一的那几份产物」，字段取值与交叉断言（ISO 摘要对
+# 账本、build 对 release NEVRA）全部在
 # tools/release-engineering/release_manifest.py 内完成，不在这里复制一份
 # 判定逻辑，避免两处口径分叉。
 #
@@ -32,8 +34,12 @@
 set -uo pipefail
 
 readonly EINVAL=5
+LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)"
 # shellcheck source=../lib/log.sh
-. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/log.sh"
+. "${LIB}/log.sh"
+# 清单名的唯一实现：x86_64 为 channel.json，其余 channel-<arch>.json。
+# shellcheck source=../lib/channel.sh
+. "${LIB}/channel.sh"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 GEN="${ROOT}/tools/release-engineering/release_manifest.py"
@@ -131,7 +137,7 @@ if [ -z "${RELEASE}" ]; then
     pick "${RPM_DIR}" 'airymaxos-release-*.rpm' "发行 RPM" || exit "${EINVAL}"
     RELEASE="${PICK}"
 fi
-[ -n "${DEST}" ] || DEST="${OUT}/channel.json"
+[ -n "${DEST}" ] || DEST="${OUT}/$(channel_name "${ARCH}")"
 
 args=(--channel --version "${VERSION}" --iso "${ISO}" --iso-oci "${OCI}"
       --kernel-rpm "${KERNEL}" --release-rpm "${RELEASE}" --output "${DEST}")

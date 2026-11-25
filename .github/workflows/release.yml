@@ -297,17 +297,29 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       # 通道清单只能来自装配出 ISO 的那一轮：它是客户端发现新版本的唯一入口
-      # （releases/latest/download/channel.json），在本机重新生成等于用当前源码
-      # 再推一份声明，与线上字节无关。取不到就不发版——发布页没有清单，装了
-      # 这套系统的人就永远收不到后续版本。预发布不进更新通道，也没有清单。
-      # 必须早于自证：channel.json 的 kernel.sha256 是内核包的对照锚，自证要
-      # 拿它比对 dist/rpm 里的同 NEVRA 包（0.0.4 两条构建路径各产一份，页面
-      # 上的包与 ISO 内字节不同而无人察觉）。
+      # （releases/latest/download/channel.json 与同目录的 channel-<arch>.json），
+      # 在本机重新生成等于用当前源码再推一份声明，与线上字节无关。取不到就不
+      # 发版——发布页没有清单，装了这套系统的人就永远收不到后续版本。预发布
+      # 不进更新通道，也没有清单。
+      # 必须早于自证：清单的 kernel.sha256 是内核包的对照锚，自证要拿它比对
+      # dist/rpm 里的同 NEVRA 包（0.0.4 两条构建路径各产一份，页面上的包与
+      # ISO 内字节不同而无人察觉）。
       - name: Fetch release channel manifest
         if: steps.meta.outputs.pre_rel == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ci/ci.sh channel-fetch --tag "${{ steps.meta.outputs.tag }}" --repo "${{ github.repository }}" --dir .
+
+      # aarch64 的发行位是 0.0.6 起才有的：更早的版本只有 x86_64 装配出 ISO，
+      # 没有 channel-aarch64.json 可选。--optional 只把「没有任何成功轮次提供
+      # 这份清单」记成可接受，取到了却过不了客户端校验仍判失败。重放 0.0.5
+      # 因此不会因为缺 aarch64 清单而断，而真正发布过 aarch64 的轮次也不会
+      # 把缺件当成「本版没发」。
+      - name: Fetch aarch64 release channel manifest
+        if: steps.meta.outputs.pre_rel == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ci/ci.sh channel-fetch --tag "${{ steps.meta.outputs.tag }}" --repo "${{ github.repository }}" --dir . --arch aarch64 --optional
 
       # 发布前自证：签名发生在另一台 runner，落盘字节可能已被 artifact
       # 打包解包改写。摘要、署名与 notes 形态在这一步重算，失败即停止，
@@ -356,7 +368,7 @@ jobs:
             sbom-agent-linux-*.spdx.json
             sbom-agent-linux-*-rust.cdx.json
             agent-linux-*-gpg-key.asc
-            channel.json
+            channel*.json
             agent-linux-*.sha256sum
             agent-linux-*.sha256sum.asc
             agent-linux-*-release-notes.md

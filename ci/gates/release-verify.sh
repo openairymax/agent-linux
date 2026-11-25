@@ -19,9 +19,9 @@
 #     * 清单内每份署名非空，且其被签文件在物料里存在
 #     * 清单内的发行公钥非空（公钥块不带被签文件，不能按署名要求）
 #     * release notes 恰好三个 ## 小节，正文不超过 12 行
-#     * channel.json 的 kernel.sha256 与 x86_64 内核主包同字节：清单随 ISO
-#       在装配轮产出、是装机侧的校验凭证，页面另建一份同 NEVRA 的包，装机
-#       载荷就再也无法按发行清单核验
+#     * 通道清单（channel.json / channel-<arch>.json）的 kernel.sha256 与同
+#       架构内核主包同字节：清单随 ISO 在装配轮产出、是装机侧的校验凭证，
+#       页面另建一份同 NEVRA 的包，装机载荷就再也无法按发行清单核验
 #
 # 二、发行自证（--iso/--iso-dir + --payload + --kernel-rpms）
 #   回答「这张 ISO 里的内核，是不是本版 %release 构建出来的那一份」。0.0.3
@@ -179,33 +179,56 @@ note_stat()
     NOTES_LINES="${lines}"
 }
 
-# channel.json 的 kernel.sha256 是装机侧核验内核包的凭证，由装配轮的
+# 清单名 → 架构：channel.json 是 x86_64 的历史名（0.0.5 装机端的取件地址
+# 写死在它上面），其余为 channel-<arch>.json。
+chan_arch()
+{
+    local base="${1##*/}"
+
+    case "${base}" in
+    channel.json) printf 'x86_64\n' ;;
+    channel-*.json)
+        base="${base#channel-}"
+        printf '%s\n' "${base%.json}"
+        ;;
+    *) return 1 ;;
+    esac
+}
+
+# 通道清单的 kernel.sha256 是装机侧核验内核包的凭证，由装配轮的
 # --kernel-rpm 现算。发布侧若另建一份同 NEVRA 的包（0.0.4 实测：ISO 内
 # 1c337fbc、页面 86fe39），两者各成体系却无一处断言，装机后就对不上号。
-# 清单只在取到装配轮制品之后才在场，预发布没有清单，缺省即跳过。
+# 清单只在取到装配轮制品之后才在场，预发布没有清单，缺省即跳过。清单按
+# 架构分名，逐份与同架构的内核主包对账：一份清单只声明一台架构的载荷，
+# 拿别的架构的包去比，要么比出「分叉」，要么把两台架构的凭证混为一谈。
 chan_pin()
 {
-    local chan hit want got
+    local chan arch hit want got
 
-    chan="$(walk -name 'channel.json' | head -n 1)"
-    [ -n "${chan}" ] || return 0
-    hit="$(walk -name "${KPKG}-[0-9]*.x86_64.rpm" | sort)"
-    [ -n "${hit}" ] || { err "有 channel.json 但缺 x86_64 内核主包"; return 1; }
-    [ "$(printf '%s\n' "${hit}" | wc -l)" -eq 1 ] ||
-        { err "x86_64 内核主包不唯一"; return 1; }
-    want="$(python3 - "${chan}" <<'PY'
+    while IFS= read -r chan; do
+        [ -n "${chan}" ] || continue
+        arch="$(chan_arch "${chan}")" ||
+            { err "无法从文件名判定架构: ${chan##*/}"; return 1; }
+        hit="$(walk -name "${KPKG}-[0-9]*.${arch}.rpm" | sort)"
+        [ -n "${hit}" ] ||
+            { err "有 ${chan##*/} 但缺 ${arch} 内核主包"; return 1; }
+        [ "$(printf '%s\n' "${hit}" | wc -l)" -eq 1 ] ||
+            { err "${arch} 内核主包不唯一"; return 1; }
+        want="$(python3 - "${chan}" <<'PY'
 import json, sys
 try:
     print(json.load(open(sys.argv[1], encoding="utf-8"))["kernel"]["sha256"])
 except Exception as exc:
-    print("channel.json 读不出 kernel.sha256: %s" % exc)
+    print("%s 读不出 kernel.sha256: %s" % (sys.argv[1].rsplit("/", 1)[-1], exc))
     sys.exit(1)
 PY
 )" || { err "${want}"; return 1; }
-    got="$(sha256sum "${hit}" | cut -d' ' -f1)"
-    [ "${got}" = "${want}" ] ||
-        { err "内核包与 channel.json 分叉: ${hit##*/} ${got} != ${want}"; return 1; }
-    say "内核包与通道清单同字节: ${hit##*/}"
+        got="$(sha256sum "${hit}" | cut -d' ' -f1)"
+        [ "${got}" = "${want}" ] ||
+            { err "内核包与 ${chan##*/} 分叉: ${hit##*/} ${got} != ${want}"; return 1; }
+        say "内核包与通道清单同字节: ${hit##*/}"
+    done < <(walk -name 'channel*.json' | sort)
+    return 0
 }
 
 material()

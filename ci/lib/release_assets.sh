@@ -32,8 +32,9 @@ AIRY_ASSETS_API="${GITHUB_API_URL:-https://api.github.com}"
 AIRY_ASSETS_UPLOAD="${GITHUB_UPLOADS_URL:-https://uploads.github.com}"
 
 # 期望集：摘要清单登记的物料，扣除只经 ghcr 交付的 OCI 镜像包，再加清单
-# 自身与 release notes 及其署名；channel.json 只在目录里存在时保留，因为它
-# 由装配轮取回，预发布轮不产出。
+# 自身与 release notes 及其署名；通道清单（channel.json / channel-<arch>.json）
+# 只在目录里存在时保留，因为它由装配轮取回，预发布轮不产出，二次架构也可能
+# 没有发行位。
 #
 # 两个易错点都在这里收口：
 #   ① 清单里 `*.asc` 已是独立条目，不能再按「每个文件补一份 .asc」推导，
@@ -61,9 +62,10 @@ airy_asset_want()
             "${sums##*/}" "${sums##*/}.asc" \
             "agent-linux-${ver}-release-notes.md" \
             "agent-linux-${ver}-release-notes.md.asc"
-        if [ -f "${dir}/channel.json" ]; then
-            printf 'channel.json\n'
-        fi
+        # 通道清单按架构分名（channel.json / channel-<arch>.json），一份也
+        # 可能没有：清单在装配轮的验收制品里，未发布过 ISO 的版本不带它。
+        find "${dir}" -maxdepth 1 -type f -name 'channel*.json' \
+            -printf '%f\n' | sort
         awk 'NF >= 2 && $2 !~ /^oci-image-/ { print $2 }' "${sums}"
     } | sort -u >"${out}"
 }

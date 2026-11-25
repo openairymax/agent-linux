@@ -11,8 +11,8 @@
 #
 # 同样收口的还有三件同形事项：
 #
-#   * 共同选项（--tag/--repo/--dir/--name）的解析——两边各写一遍参数循环，
-#     选项名与取值规则就会在某一侧漂移；
+#   * 共同选项（--tag/--repo/--dir/--name/--arch）的解析——两边各写一遍参数
+#     循环，选项名与取值规则就会在某一侧漂移；
 #   * 前置条件（tag 形态、客户端校验包在位、所需命令）；
 #   * 临时目录与退出清理：两处各写一次 trap，漏掉的一侧会留下半份清单。
 #
@@ -42,10 +42,23 @@ channel_opt()
         --repo) CH_REPO="$2" ;;
         --dir)  CH_DIR="$2" ;;
         --name) CH_NAME="$2" ;;
+        --arch) CH_NAME="$(channel_name "$2")" ;;
         *) return 1 ;;
     esac
     CH_SHIFT=2
     return 0
+}
+
+# channel_name ARCH —— 清单名按架构分：x86_64 沿用 channel.json（0.0.5
+# 装机端的取件地址写死在它上面，改名等于让存量机器永远收不到更新），其余
+# 架构为 channel-<arch>.json。命名只在本处实现：生成、取回、挂页三处各拼
+# 一次串，某次增列架构后必有一处拼得不一样，而拼错的清单一经发布就收不回。
+channel_name()
+{
+    case "${1:-}" in
+    ""|x86_64) printf 'channel.json\n' ;;
+    *) printf 'channel-%s.json\n' "$1" ;;
+    esac
 }
 
 # channel_need —— 前置条件。失败一律退 EINVAL：这是调用方式或环境问题，

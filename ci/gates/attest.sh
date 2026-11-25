@@ -54,7 +54,7 @@ set -uo pipefail
 
 readonly EINVAL=5
 readonly ISO_REL_DEFAULT="desktop/iso"
-readonly REF_DEFAULT="ghcr.io/openairymax/airymaxos-iso"
+readonly REF_BASE="ghcr.io/openairymax/airymaxos-iso"
 readonly ATTEST_TYPE="application/vnd.in-toto+json"
 readonly ANN="org.openairymax.attest"
 
@@ -76,7 +76,8 @@ OUT=""
 TAG=""
 ISO_REL="${ISO_REL_DEFAULT}"
 MANIFEST=""
-REF="${REF_DEFAULT}"
+ARCH="x86_64"
+REF=""
 TOKEN=""
 FORCE=0
 FILE=""
@@ -87,8 +88,8 @@ BUILD_RUN=""
 
 usage()
 {
-    echo "用法: ci/gates/attest.sh build   --out DIR --tag TAG [--kind iso|rel] [--iso-rel REL] [--manifest FILE] [--build-run RUN]"
-    echo "      ci/gates/attest.sh publish --out DIR --tag TAG [--kind iso|rel] [--iso-rel REL] [--ref REPO] [--token TOKEN] [--force]"
+    echo "用法: ci/gates/attest.sh build   --out DIR --tag TAG [--kind iso|rel] [--iso-rel REL] [--arch ARCH] [--manifest FILE] [--build-run RUN]"
+    echo "      ci/gates/attest.sh publish --out DIR --tag TAG [--kind iso|rel] [--iso-rel REL] [--arch ARCH] [--ref REPO] [--token TOKEN] [--force]"
     echo "      ci/gates/attest.sh verify  --file FILE (--iso FILE | --dir DIR) [--build-id ID]"
 }
 
@@ -100,6 +101,7 @@ while [ "$#" -gt 0 ]; do
         --tag)      TAG="${2:-}"; shift 2 ;;
         --iso-rel)  ISO_REL="${2:-}"; shift 2 ;;
         --manifest) MANIFEST="${2:-}"; shift 2 ;;
+        --arch)     ARCH="${2:-}"; shift 2 ;;
         --ref)      REF="${2:-}"; shift 2 ;;
         --token)    TOKEN="${2:-}"; shift 2 ;;
         --force)    FORCE=1; shift ;;
@@ -122,6 +124,16 @@ case "${BUILD_RUN}" in
 "") ;;
 *[!0-9]*) err "--build-run 只接受数字 run id: ${BUILD_RUN}"; exit "${EINVAL}" ;;
 esac
+
+# 证明推在发行物同一包里（attest-<tag> 这个固定标签），包按架构分：x86_64
+# 沿用 airymaxos-iso，其余 airymaxos-iso-<arch>。--ref 仍可整体覆盖。
+[ -n "${ARCH}" ] || { usage >&2; exit "${EINVAL}"; }
+if [ -z "${REF}" ]; then
+    case "${ARCH}" in
+        x86_64) REF="${REF_BASE}" ;;
+        *)      REF="${REF_BASE}-${ARCH}" ;;
+    esac
+fi
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "${WORK}"' EXIT

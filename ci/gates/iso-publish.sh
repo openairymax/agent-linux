@@ -5,6 +5,7 @@
 # ci/gates/iso-publish.sh — 把 ISO 切成定长 layer 交付到 OCI 制品通道
 #
 # 用法: ci/gates/iso-publish.sh --out DIR --tag v0.0.3
+#                               [--arch ARCH]
 #                               [--ref ghcr.io/openairymax/airymaxos-iso]
 #                               [--iso-rel desktop/iso]
 #                               [--chunk-size BYTES] [--force]
@@ -28,7 +29,9 @@
 # tag 推 OCI 基础镜像。同一个 tag 再放 ISO 清单，`oras pull` 与 `docker
 # pull` 都会按 tag 解析，谁后写谁赢；签名也按 digest 附着，排查时无法判断
 # 拿到的是镜像还是 ISO。故 ISO 走独立包 airymaxos-iso，tag 与发行 tag 一一
-# 对应，两个通道互不覆盖。
+# 对应，两个通道互不覆盖。包再按架构分：x86_64 用 airymaxos-iso，其余用
+# airymaxos-iso-<arch>。否则同一个 tag 下会并排两份不同架构的 ISO，取件方
+# 只能靠猜测 digest，而「同 tag 同产物」是这条通道唯一的不变量。
 #
 # 幂等与不可变：同 tag 已存在且三元组（sha256/块大小/块数）相同即视为已发
 # 布，不重传；不同即失败，发行产物被静默替换比没有发布更危险。确需覆盖才
@@ -56,13 +59,18 @@ readonly LAYER_TYPE="application/vnd.airymaxos.iso.layer.v1+iso"
 readonly LEDGER_TYPE="application/vnd.airymaxos.iso.ledger.v1"
 readonly DEFAULT_CHUNK=201326592
 readonly MIN_CHUNK=1048576
+# ISO 包按架构分仓：x86_64 沿用 airymaxos-iso（0.0.5 发行页与更新通道里
+# 的取件地址都指向它），其余架构加 -<arch> 后缀。tag 仍是发行 tag，一个 tag
+# 在一台架构的包里只对应一份 ISO，层级不会退化成「同 tag 多份 ISO」。
+readonly REF_BASE="ghcr.io/openairymax/airymaxos-iso"
 readonly ANN="org.openairymax.iso"
 # shellcheck source=../lib/log.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd -P)/log.sh"
 
 OUT=""
 TAG=""
-REF="ghcr.io/openairymax/airymaxos-iso"
+ARCH="x86_64"
+REF=""
 ISO_REL="desktop/iso"
 CHUNK="${DEFAULT_CHUNK}"
 FORCE=0
@@ -72,6 +80,7 @@ usage()
 {
     cat <<'EOF'
 用法: ci/gates/iso-publish.sh --out DIR --tag v0.0.3
+                              [--arch ARCH]
                               [--ref ghcr.io/openairymax/airymaxos-iso]
                               [--iso-rel desktop/iso]
                               [--chunk-size BYTES] [--force]
@@ -181,6 +190,7 @@ while [ "$#" -gt 0 ]; do
     case "$1" in
         --out)        OUT="${2:-}"; shift 2 ;;
         --tag)        TAG="${2:-}"; shift 2 ;;
+        --arch)       ARCH="${2:-}"; shift 2 ;;
         --ref)        REF="${2:-}"; shift 2 ;;
         --iso-rel)    ISO_REL="${2:-}"; shift 2 ;;
         --chunk-size) CHUNK="${2:-}"; shift 2 ;;
@@ -203,6 +213,15 @@ if [ "${CHUNK}" -lt "${MIN_CHUNK}" ]; then
     exit "${EINVAL}"
 fi
 
+# 包名按架构派生；--ref 仍可整体覆盖（镜像站或本地 registry 重放要用）。
+[ -n "${ARCH}" ] || { usage >&2; exit "${EINVAL}"; }
+if [ -z "${REF}" ]; then
+    case "${ARCH}" in
+        x86_64) REF="${REF_BASE}" ;;
+        *)      REF="${REF_BASE}-${ARCH}" ;;
+    esac
+fi
+
 # 未指定 tag 时不是错误：image-build 的日常手动轮次只做组装与验收，不对外发布。
 # 由调用方决定是否带 tag，门禁不替它猜。
 if [ -z "${TAG}" ]; then
@@ -215,6 +234,13 @@ need_cmd oras python3 sha256sum stat numfmt split mktemp
 iso="$(find "${OUT}/${ISO_REL}" -maxdepth 1 -name '*.iso' -type f | head -n 1)"
 [ -n "${iso}" ] || die "缺少 ISO: ${OUT}/${ISO_REL}"
 name="$(basename "${iso}")"
+# 包按架构分仓后，跨架发布是这条通道最危险的错法：aarch64 的包会挂上
+# x86_64 的字节，而两边的 digest 都自洽，取件方装完才发现跑不起来。
+# 构建脚本给出的 ISO 名以 -<arch>.iso 结尾，据此拦一次。
+case "${name}" in
+    *-"${ARCH}".iso) ;;
+    *) die "ISO 名与 --arch ${ARCH} 不符: ${name}" ;;
+esac
 sum_file="${iso}.sha256"
 [ -f "${sum_file}" ] || die "缺少 ISO 校验和: ${sum_file}"
 
