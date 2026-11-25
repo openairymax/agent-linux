@@ -307,7 +307,7 @@ def test_ci_hook_runs_farm_tests(repo_root: Path) -> None:
     text = gate.read_text(encoding="utf-8")
 
     # 农场目录必须留在 oschk 的工具集合里，否则它的用例会静默退出 CI。
-    assert "airy-qemu" in text
+    assert "tools/qemu-farm" in text
 
 
 def test_readme_documents_contract(farm_dir: Path) -> None:

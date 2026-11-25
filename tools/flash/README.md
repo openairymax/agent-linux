@@ -166,7 +166,7 @@ WSL2 的 `/dev/sd*` 只有 WSL 自己的虚拟磁盘，插在主机上的 U 盘�
 ## 使用方法
 
 发行页交付单文件 `airy-flash-<ver>.pyz`（Python 标准库自足，无解压、无依赖），
-示例统一用它；仓库内调试可等价改用 `python3 tools/airy-flash/airy_flash.py`。
+示例统一用它；仓库内调试可等价改用 `python3 tools/flash/airy_flash.py`。
 
 ```bash
 # 环境自检
@@ -355,8 +355,8 @@ AIRY-FLASH-PASS command=write host=airymax-build image=/path/airymaxos-0.0.4-x86
 ## 单元测试
 
 ```bash
-pip install -r tools/airy-flash/requirements-dev.txt
-python3 -m pytest tools/airy-flash/tests/ -q
+pip install -r tools/flash/requirements-dev.txt
+python3 -m pytest tools/flash/tests/ -q
 ```
 
 测试用临时目录合成 sysfs 树、挂载表与镜像侧车文件，以 `S_ISBLK`/`S_ISREG`

@@ -59,26 +59,26 @@ L1 不会回滚标记为 `%config(noreplace)` 的配置文件（OS-OPS-023），
 
 ```bash
 # 校验清单
-python3 tools/airy-rollback/airy_rollback.py check
+python3 tools/rollback/airy_rollback.py check
 
 # 生成回滚到上一版本的计划
-python3 tools/airy-rollback/airy_rollback.py plan
+python3 tools/rollback/airy_rollback.py plan
 
 # 回滚到指定版本 / 指定快照
-python3 tools/airy-rollback/airy_rollback.py apply --to 0.0.2
-python3 tools/airy-rollback/airy_rollback.py apply --snapshot pre-rollback-20260101T000000Z
+python3 tools/rollback/airy_rollback.py apply --to 0.0.2
+python3 tools/rollback/airy_rollback.py apply --snapshot pre-rollback-20260101T000000Z
 
 # 只做前置检查，不执行命令
-python3 tools/airy-rollback/airy_rollback.py apply --dry-run
+python3 tools/rollback/airy_rollback.py apply --dry-run
 
 # 强制 L3 且不自动重启
-python3 tools/airy-rollback/airy_rollback.py apply --layer l3 --no-reboot
+python3 tools/rollback/airy_rollback.py apply --layer l3 --no-reboot
 
 # 回滚后校验
-python3 tools/airy-rollback/airy_rollback.py verify
+python3 tools/rollback/airy_rollback.py verify
 
 # 清理过期快照（先演练）
-python3 tools/airy-rollback/airy_rollback.py prune --dry-run
+python3 tools/rollback/airy_rollback.py prune --dry-run
 ```
 
 ### 退出码
@@ -142,8 +142,8 @@ ISO-8601 时间。元数据缺失的快照目录会被忽略，元数据损坏�
 ## 单元测试
 
 ```bash
-pip install -r tools/airy-rollback/requirements-dev.txt
-python3 -m pytest tools/airy-rollback/tests/ -q
+pip install -r tools/rollback/requirements-dev.txt
+python3 -m pytest tools/rollback/tests/ -q
 ```
 
 测试以真实清单为基线，在临时目录合成快照、版本文件与审计目录，通过受控

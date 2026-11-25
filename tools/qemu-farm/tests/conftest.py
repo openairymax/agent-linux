@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """airy-qemu 单元测试共享夹具。
 
-把 tools/airy-qemu 注入 sys.path，使测试以 `import farm_types` 绝对导入
+把 tools/qemu-farm 注入 sys.path，使测试以 `import farm_types` 绝对导入
 共享类型模块；同时提供 agent-linux 仓库根夹具，供后续分片读取真实 CI
 工作流与 kselftest 安装布局。
 
@@ -29,7 +29,7 @@ if str(FARM_DIR) not in sys.path:
 
 @pytest.fixture(scope="session")
 def farm_dir() -> Path:
-    """tools/airy-qemu 目录（农场工具宿主）。"""
+    """tools/qemu-farm 目录（农场工具宿主）。"""
     return FARM_DIR
 
 

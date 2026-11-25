@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """farm_manifest — QEMU 测试农场清单的严格加载器。
 
-读取 tools/airy-qemu/manifest.yaml，按固定 schema 构造 FarmManifest。
+读取 tools/qemu-farm/manifest.yaml，按固定 schema 构造 FarmManifest。
 清单是「架构 × QEMU 机器 × kselftest 套件 × 并行预算」的唯一事实源
 （SSoT），本模块只做严格解析与校验，不重复实现执行逻辑，也不对任何
 非法输入做静默修正：未知字段、缺失字段、重复条目、非法取值一律以

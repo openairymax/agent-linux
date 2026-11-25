@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 # SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
-"""tools/airy-checkpatch 集成测试共享夹具。
+"""tools/checkpatch 集成测试共享夹具。
 
 被测对象是 kernel 子模块内的 Perl 规则引擎
 `kernel/scripts/airy_checkpatch_ext.pl`。夹具只提供内核根路径与 perl

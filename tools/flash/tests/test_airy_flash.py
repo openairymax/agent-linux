@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 # SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
-"""tools/airy-flash 单元与端到端用例。
+"""tools/flash 单元与端到端用例。
 
 全部用例不要求 root、不触碰真实块设备：块设备分支用临时 sysfs 树 + 假
 stat 模式走通，写入/回读用普通文件当靶子（--allow-file 的测试用途）。

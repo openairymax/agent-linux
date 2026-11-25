@@ -41,7 +41,7 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 ## 目录结构
 
 ```text
-tools/airy-qemu/
+tools/qemu-farm/
 ├── farm_types.py         # 共享类型地板（无外部依赖）
 ├── farm_manifest.py      # 清单加载
 ├── farm_target.py        # 目标解析
@@ -88,13 +88,13 @@ limits:
 
 ```bash
 # 本机架构单跑；默认使用清单全集套件
-python3 tools/airy-qemu/farm_cli.py \
+python3 tools/qemu-farm/farm_cli.py \
     --kernel x86_64=arch/x86/boot/bzImage \
     --ksft-dir kselftest-install \
     --out out/farm
 
 # 跨架构（arm64）必须提供 rootfs 磁盘镜像
-python3 tools/airy-qemu/farm_cli.py \
+python3 tools/qemu-farm/farm_cli.py \
     --kernel x86_64=arch/x86/boot/bzImage \
     --kernel arm64=arch/arm64/boot/Image \
     --rootfs rootfs.img \
@@ -102,7 +102,7 @@ python3 tools/airy-qemu/farm_cli.py \
     --out out/farm
 
 # 只跑指定套件（按清单顺序生效）；无 KVM 的宿主可强制 TCG
-python3 tools/airy-qemu/farm_cli.py \
+python3 tools/qemu-farm/farm_cli.py \
     --kernel x86_64=arch/x86/boot/bzImage \
     --ksft-dir kselftest-install \
     --out out/farm \
@@ -196,8 +196,8 @@ stdout 只输出控制台摘要，stderr 只输出 `ERROR: ...`；生产代码�
 ## 单元测试
 
 ```bash
-pip install -r tools/airy-qemu/requirements-dev.txt
-python3 -m pytest tools/airy-qemu/tests/ -q
+pip install -r tools/qemu-farm/requirements-dev.txt
+python3 -m pytest tools/qemu-farm/tests/ -q
 ```
 
 测试覆盖清单解析、目标解析、argv 构造、预检、执行取证、TAP 聚合、

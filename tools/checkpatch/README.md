@@ -104,8 +104,8 @@ init/airy_core.c  include/trace/events/airy.h
 ## 单元测试
 
 ```bash
-pip install -r tools/airy-checkpatch/requirements-dev.txt
-python3 -m pytest tools/airy-checkpatch/tests/ -q
+pip install -r tools/checkpatch/requirements-dev.txt
+python3 -m pytest tools/checkpatch/tests/ -q
 ```
 
 测试以受控输入驱动真实引擎，逐条断言规则命中与严重级语义；`perl`

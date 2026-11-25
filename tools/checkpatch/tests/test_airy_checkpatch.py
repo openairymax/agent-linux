@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 # SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
-"""tools/airy-checkpatch 集成测试。
+"""tools/checkpatch 集成测试。
 
 以受控输入驱动真实的 Perl 规则引擎
 `kernel/scripts/airy_checkpatch_ext.pl`，逐条验证 AIRY-CHECKPATCH-001~011

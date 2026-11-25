@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 # SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
-"""tools/airy-rollback 单元测试：清单、快照、层次决策与执行编排。
+"""tools/rollback 单元测试：清单、快照、层次决策与执行编排。
 
 覆盖 01-deployment.md §11 的三层回滚契约、OS-OPS-021 保留期、
 OS-OPS-022 回滚后校验、OS-OPS-023 配置豁免与 OS-OPS-036 记忆卷。
