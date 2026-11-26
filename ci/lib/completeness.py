@@ -38,6 +38,10 @@ PREFIX = ("ci/gates/", "system/", "services/", "distro/", "kernel/",
           "memory/", "cognition/", "cloudnative/", "tools/", "tests-linux/")
 USAGE = "用法: completeness.py DOC SRC DOCS [--release] [--json]"
 
+# 开关只认这两个；其余 `--` 开头的词按未知处理，不静默忽略。
+KNOWN_FLAGS = {"--release", "--json"}
+HELP_FLAGS = {"-h", "--help"}
+
 
 def die(msg):
     """判定失败：只留一句原因，调用方据此退出 1。"""
@@ -226,19 +230,25 @@ def emit(got, as_json):
           % (got["合计"], got["已实现"], got["0.0.5"], got["移出"]))
 
 
+def split_args(args):
+    """把位置参数与未知开关分开；已知开关只有 `--release` 与 `--json`。"""
+    pos = [a for a in args if not a.startswith("--")]
+    extra = set(args) - set(pos) - KNOWN_FLAGS
+    return pos, extra
+
+
 def main(argv):
     """命令行：三个位置参数（册、源码树、设计树）加两个开关。"""
     args = argv[1:]
-    if args and args[0] in ("-h", "--help"):
+    if HELP_FLAGS & set(args[:1]):
         print(USAGE)
         return 0
-    flags = [a for a in args if a.startswith("--")]
-    pos = [a for a in args if not a.startswith("--")]
-    if len(pos) != 3 or set(flags) - {"--release", "--json"}:
+    pos, extra = split_args(args)
+    if len(pos) != 3 or extra:
         print(USAGE, file=sys.stderr)
         return 2
-    got = audit(pos[0], pos[1], pos[2], "--release" in flags)
-    emit(got, "--json" in flags)
+    got = audit(pos[0], pos[1], pos[2], "--release" in args)
+    emit(got, "--json" in args)
     return 0
 
 
