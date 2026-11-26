@@ -23,6 +23,9 @@
 # apt-get install qemu、AIRYMAX-TAP| 解析），防止把逻辑再抄回 YAML。
 #
 # file                       inline  jobs
+# agent-verify 两个作业各承一个数据面（Agent 生命周期与健康、记忆块与擦除），
+# 判据互不依赖；与 ops-verify 分列，避免一次失败淹没归属。
+agent-verify.yml                  0     2
 airy-verify.yml                   0     2
 c-verify.yml                      0     4
 image-build.yml                   0     2

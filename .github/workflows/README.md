@@ -29,6 +29,7 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 ```text
 .github/workflows/
 ├── README.md              # 本文件
+├── agent-verify.yml       # Agent 与记忆运维面：生命周期 / 健康 / 块存储 / 擦除
 ├── airy-verify.yml        # Airymax 内核扩展：四架构构建 + 静态检查
 ├── c-verify.yml           # 用户态 C 组件：cloudnative / services / system / tests-linux
 ├── image-build.yml        # 桌面 ISO 组装 + 装机冷启动验收
@@ -64,6 +65,7 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 | `nightly.yml` | `nightly-test-suite`、`nightly-revert-or-budget` | cron `0 2 * * *` 与手动 | 形式化验证、72 小时浸泡、混沌注入（CPU 热插拔、内存热移除、I/O 错误、网络分区）；第二作业在回归时经 `auto-bisect` 自动回退，或做 CI 预算检查（稳态 60 分钟，内核冷缓存 90 分钟） |
 | `obs-verify.yml` | `ebpf-verify`、`perf-verify`、`token-verify`、`mem-verify` | `system` gitlink、`ci/gates/{ebpf-probe,perf-hooks,token-obs,mem-obs}.sh`、`ci/lib/**`、`ci/ci.sh` 的 PR 与 `main` 的 push | 四个可观测面各一作业。eBPF：挂载点必须是 kprobe/kretprobe 成对的 `airy_cap_check` 与确有发射点的两个 tracepoint，探针上下文成员顺序与 `include/trace/events/airy.h` 的 `TP_STRUCT__entry` 逐项相等，ringbuf ≥ 4 MB、计数走 per-CPU array、map 显式 `max_entries`，加载器显式销毁 link／ringbuf／object，验证器日志落 `/var/log/airymaxos/bpf-load.log`，最后以 clang `-target bpf` 出树编译并断言产物小于 64 KB 且带 `.BTF` 段；perf／token／mem 同构地断言入口契约后出树构建。加载与实跑需要 Airymax 内核符号，属 285H 验收面 |
 | `ops-verify.yml` | `alert-verify`、`incident-verify`、`backup-verify` | `system` gitlink、`ci/gates/{alert-d,incident,backup}.sh`、`ci/lib/**`、`ci/ci.sh` 的 PR 与 `main` 的 push | 三条运维面各一作业：告警聚合的出厂规则、五个包单测与守护/CLI 真实进程对跑，以及坏规则、坏限额、缺状态三条失败路径；事件台账的状态机合法边与拒绝边、编号与归档、告警取样幂等、检测到复盘的闭环；备份仓库的全量与增量、摘要与索引落盘、深核验、恢复确认门、单 Agent 回放、篡改停在解包之前与保留期删旧留新。三者均为纯用户态组件，托管 runner 上可完整复算 |
+| `agent-verify.yml` | `agent-verify`、`memory-verify` | `system` gitlink、`ci/gates/{agent-ops,memory-ops}.sh`、`ci/lib/**`、`ci/ci.sh` 的 PR 与 `main` 的 push | Agent 运维：8 态单一边表、六因素健康分在缺数据时重归一化、令牌与调度/内存整组校验、日志组权限与归档、配置覆盖、迁移与升级按单节点边界显式拒绝，以及打包接线；记忆运维：块格式与索引一致、碎片整理真实回收、项级迁移与敏感项拒绝、三级擦除与审计证据、crypto 显式拒绝。两条判据互不依赖，分列保证失败直接归因到面 |
 | `payload-seed.yml` | `probe`、`warm` | cron `17 19 * * *`（北京时间 03:17）与手动 | `probe` 对实时上游取五段仓库元数据，算出 `seed-<arch>-<key16>`；`warm` 恢复上一轮构建留下的闭包池，仅当池的输入标签与该指纹一致时把它推成 seed 层，上游不可达或指纹已变则退 0 并说明原因。预热只搬运已有字节，不下载任何 RPM，因此也不得成为构建的先决条件；同一作业尾部回收陈旧 seed 层（每架构按创建时间留最近 4 个，`build-` 一律不动） |
 | `release.yml` | `build-and-sign`、`publish-release` | 标签 `v*`、`v*-rc*` 与手动 | 源码 tarball（超项目 + 逐子仓按 gitlink 导出）、`airy_defconfig` 四架构快照、syscall ABI 报告、逐子模块 SBOM 合并、内核 RPM、GPG 与 cosign 签名、SDK 压缩包；第二作业校验已签名产物、推送 OCI 镜像到 ghcr、清理过期资产、创建 GitHub Release（正式版一律 `make_latest: false`，创建后由 `release-stage hold` 读回断言页面停在 held，只有发布机在 B 轮 `AIRYMAX-SMOKE-PASS` 之后执行的 `release-stage promote` 才能把它推进 `releases/latest`），并在对账后为整套发布资产出具 in-toto/SLSA 证明（`attest-<tag>`，指纹取 run id 与检出提交） |
 | `ssot-verify.yml` | `ssot-syntax-and-rules`、`doc-links` | 文档、`ssot-registry.yaml`、`tools/governance/validate-ssot.py` 的 PR 与 `main` 的 push | PyYAML 语法、规则 ID 计数与唯一性、`validate-ssot.py` 交叉引用；相对路径链接完整性 |
@@ -218,6 +220,7 @@ L2/L3 都不改判据，只改「同一份物料要付几次成本」。任何�
 | `os-chk-verify.yml` | `ci/gates/lint.sh`（含 QG-01/QG-02 度量棘轮）与各 OS-CHK 门禁、pytest | 约 5 min | apt/pip 由 setup 动作自管 |
 | `nightly.yml` | `tools/nightly/nightly.py --check`、`ci/gates/nightly-helpers.sh` | 全量套件，单 job 上限 360 min | 无 |
 | `ops-verify.yml` | `ci/gates/alert-d.sh`、`ci/gates/incident.sh`、`ci/gates/backup.sh` | 三条各自数秒级（进程内对跑，无外部依赖） | 无 |
+| `agent-verify.yml` | `ci/gates/agent-ops.sh`、`ci/gates/memory-ops.sh` | 两条各自数秒级（进程内对跑，临时目录即数据根） | 无 |
 | `payload-seed.yml` | `ci/gates/payload-seed.sh`（`probe` / `warm`） | 只搬缓存池字节，不下载；层已存在时为零 | actions 缓存（闭包池） |
 | `mgmt-verify.yml`、`ssot-verify.yml` | `ci/gates/repo-*.sh`、`tools/governance/validate-ssot.py` | 约 3 min | 无 |
 | `tui-verify.yml` | `ci/gates/tui-check.sh`、`ci/gates/rust-vendor.sh`、`ci/gates/lang-lock.sh` | 一次子模块检出 + 六个 crate 的编译，无注册表访问 | 无（vendor 离线源代替包缓存） |
@@ -299,7 +302,7 @@ L2/L3 都不改判据，只改「同一份物料要付几次成本」。任何�
 | 模块 | 归属 | 依据 |
 |------|------|------|
 | kernel | `kernel-verify`、`airy-verify`、`os-chk-verify` | 上游基线与自研目录分开审：前者查整棵内核树，后者只查 `security/airy` 等自研代码 |
-| system | `c-verify`、`ops-verify`、`tui-verify`、`tui-input-verify` | 四条验证轴互不替代：C 构建面、运维三入口的契约与端到端、帧预算与跨架构、输入契约；合并会让改一行注释也排队等完整集成 |
+| system | `c-verify`、`ops-verify`、`agent-verify`、`tui-verify`、`tui-input-verify` | 五条验证轴互不替代：C 构建面、运维三入口的契约与端到端、Agent 与记忆数据面的契约与端到端、帧预算与跨架构、输入契约；合并会让改一行注释也排队等完整集成 |
 | distro | `os-chk-verify`、`image-build`、`payload-seed` | 静态规则随 PR，镜像组装属发行前，载荷预热按周期，三者触发时机不同 |
 | services、cloudnative | `c-verify`（各 1 个作业） | 同一构建面，作业分开保证失败结论互不掩盖 |
 | sdk | `sdk-verify`（一语言一作业） | 生成一致不代表能编译，四个编译器视角互不替代 |
@@ -381,6 +384,7 @@ PATH="$HOME/.local/bin:$PATH" ./ci/lint.sh
 | `nightly` | helper 未落地或清单契约漂移 | `python3 tools/nightly/nightly.py --check`、`./ci/ci.sh nightly-helpers <helper>` |
 | `obs-verify` | 探针挂载点不成对、上下文成员与 tracepoint 结构不一致、出树编译超出体积或丢 `.BTF` | `./ci/ci.sh ebpf-probe`、`./ci/ci.sh perf-hooks`、`./ci/ci.sh token-obs`、`./ci/ci.sh mem-obs` |
 | `ops-verify` | 告警规则/限额校验、事件台账状态机拒绝边、备份深核验或保留期判据 | `./ci/ci.sh alert-d`、`./ci/ci.sh incident`、`./ci/ci.sh backup` |
+| `agent-verify` | 状态机非法迁移、健康分要素缺失、块索引不一致、碎片整理未回收、擦除审计缺失或 crypto 被伪报成功 | `./ci/ci.sh agent-ops`、`./ci/ci.sh memory-ops` |
 | `payload-seed` | `probe` 输出的 `tag=` 为空（上游不可达）或 `missing=0`（层已存在），两者都不该让流水线红 | `./ci/ci.sh payload-seed probe --arch <arch>` |
 
 ## 8. 许可

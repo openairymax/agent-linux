@@ -31,7 +31,7 @@ SYS="${ROOT}/system"
 PKG="${SYS}/ops/agent"
 ENTRY="${SYS}/bin/airy-agent"
 SPEC="${ROOT}/distro/specs/airymaxos-system.spec"
-FLOW="${ROOT}/.github/workflows/ops-verify.yml"
+FLOW="${ROOT}/.github/workflows/agent-verify.yml"
 
 need_cmd python3
 

@@ -1,0 +1,75 @@
+# ===========================================================================
+# agent-linux (AirymaxOS) CI Pipeline
+# Agent 与记忆运维入口（P-16 生命周期与健康、P-17 块存储与擦除）：
+# 契约静态判定 + 进程内端到端
+# ===========================================================================
+# Authority: docs/docs-linux/100-operations/08-agent-operations.md
+#            docs/docs-linux/100-operations/09-memory-operations.md
+# Design: 判据全部在 ci/gates/*.sh，YAML 只做 checkout 与派遣。
+#         两条入口都只动用户态仓库与进程，不依赖内核符号与特权，因此整条
+#         判据可以在托管 runner 上完整复算，无需 285H 替身。
+# ---------------------------------------------------------------------------
+# 与 ops-verify 分开的理由：Agent 与记忆的数据面同属 ops 包，但判据互不
+# 依赖；同一条流水线里挂五个作业会让一次失败淹没归属，也让无关改动触发
+# 全部重跑。分开后每条流水线 ≤2 个作业，失败可直接落到模块。
+#
+# 监听面取 system gitlink 而不是 system/**：父仓只能看到子模块指针的移动，
+# 按子目录过滤等于永不触发。
+# ===========================================================================
+
+name: agent-verify
+
+on:
+  pull_request:
+    paths:
+      - 'system'
+      - 'ci/gates/agent-ops.sh'
+      - 'ci/gates/memory-ops.sh'
+      - 'ci/lib/**'
+      - 'ci/ci.sh'
+      - '.github/workflows/agent-verify.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'system'
+      - 'ci/gates/agent-ops.sh'
+      - 'ci/gates/memory-ops.sh'
+      - 'ci/lib/**'
+      - 'ci/ci.sh'
+      - '.github/workflows/agent-verify.yml'
+
+# 最小权限：只读检出与构建，不触发布与制品写。
+permissions:
+  contents: read
+
+# 同一 ref 只保留最新一轮：旧结论对当前树已失效，继续排队只抢并发额度。
+concurrency:
+  group: agent-verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  agent-verify:
+    name: Agent Lifecycle, Health Score and Packaging
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { submodules: recursive }
+
+      # 门禁覆盖 8 态状态机、六因素健康分降权、令牌与调优、日志组权限与
+      # 归档、13 项配置覆盖、迁移/升级本版边界，以及三条失败路径的退出码。
+      - name: Agent lifecycle and operations contract
+        run: ci/ci.sh agent-ops
+
+  memory-verify:
+    name: Memory Blocks, Defrag, Transfer and Erase
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { submodules: recursive }
+
+      # 门禁覆盖块格式与索引一致、碎片整理真实回收、项级迁移与敏感项拒绝、
+      # 三级擦除与审计证据、crypto 显式拒绝，以及打包接线的静态判定。
+      - name: Memory operations contract and behavior
+        run: ci/ci.sh memory-ops
