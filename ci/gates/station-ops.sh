@@ -32,6 +32,7 @@ SYS="${ROOT}/system"
 PKG="${SYS}/ops/devstation"
 ENTRY="${SYS}/bin/airy-station"
 SPEC="${ROOT}/distro/specs/airymaxos-system.spec"
+KICKSTART="${ROOT}/distro/kickstart/airymaxos-workstation.ks"
 FLOW="${ROOT}/.github/workflows/station-verify.yml"
 BUDGET="${ROOT}/ci/baseline/workflow-budgets.txt"
 README="${ROOT}/.github/workflows/README.md"
@@ -230,7 +231,30 @@ have '"panel": "backup"' <(station --conf "${WORK}/good.conf" backup --json) \
     "合法配置未生效"
 endgroup
 
-# ─── 8. 安装接线、桩标记与本机路径 ───────────────────────────────────
+# ─── 8. 出厂配置与镜像闭包 ───────────────────────────────────────────
+group "station-ops: 出厂配置"
+CONF_SRC="${PKG}/default.conf"
+[ -f "${CONF_SRC}" ] || bad "缺少出厂配置 default.conf"
+python3 - "${CONF_SRC}" "${SYS}" <<'PY' || bad "出厂配置与内建默认值不一致"
+import sys
+sys.path.insert(0, sys.argv[2] + "/ops")
+from devstation import config
+
+doc = config.load(sys.argv[1])
+assert doc == dict(config.DEFAULTS), doc
+assert len(doc) == 8, doc
+print(f"default.conf=ok keys={len(doc)}")
+PY
+have 'install -m 0640 %\{buildroot\}%\{python3_sitelib\}/devstation/default.conf' \
+    "${SPEC}" "spec 未落出厂配置"
+have '%config\(noreplace\) %\{_sysconfdir\}/agentrt/devstation.conf' "${SPEC}" \
+    "spec 未把出厂配置标为保留"
+have '^Requires:       ncurses-libs' "${SPEC}" "spec 未声明终端库依赖"
+have '^airymaxos-system$' "${KICKSTART}" "工作站镜像未包含系统包"
+have '^airymaxos-kernel-devel$' "${KICKSTART}" "工作站镜像未包含开发闭包"
+endgroup
+
+# ─── 9. 安装接线、桩标记与本机路径 ───────────────────────────────────
 group "station-ops: 安装接线"
 have 'bin/airy-station' "${SYS}/CMakeLists.txt" "CMake 未安装入口"
 have 'ops/devstation' "${SYS}/CMakeLists.txt" "CMake 未安装运维包"
