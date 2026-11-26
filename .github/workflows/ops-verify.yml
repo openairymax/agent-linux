@@ -24,6 +24,7 @@ on:
       - 'ci/gates/alert-d.sh'
       - 'ci/gates/incident.sh'
       - 'ci/gates/backup.sh'
+      - 'ci/gates/agent-ops.sh'
       - 'ci/lib/**'
       - 'ci/ci.sh'
       - '.github/workflows/ops-verify.yml'
@@ -34,6 +35,7 @@ on:
       - 'ci/gates/alert-d.sh'
       - 'ci/gates/incident.sh'
       - 'ci/gates/backup.sh'
+      - 'ci/gates/agent-ops.sh'
       - 'ci/lib/**'
       - 'ci/ci.sh'
       - '.github/workflows/ops-verify.yml'
@@ -86,3 +88,16 @@ jobs:
       # 确认门、单 Agent 回放、篡改停在解包之前，以及保留期删旧留新。
       - name: Backup lifecycle and integrity
         run: ci/ci.sh backup
+
+  agent-verify:
+    name: Agent Lifecycle, Health Score and Packaging
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { submodules: recursive }
+
+      # 门禁覆盖 8 态状态机、六因素健康分降权、令牌与调优、日志组权限与
+      # 归档、13 项配置覆盖、迁移/升级本版边界，以及三条失败路径的退出码。
+      - name: Agent lifecycle and operations contract
+        run: ci/ci.sh agent-ops
