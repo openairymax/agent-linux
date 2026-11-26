@@ -18,6 +18,8 @@
 #   * 属性一律经 AIRY_OBS_ATTR 构造（固定 0444、无 store），且同文件内存在
 #     同名 show 回调；obs 目录内不出现 scnprintf/snprintf/sprintf。
 #   * /proc/airy 走 single_open，读取不消费故障环。
+#   * 预算与能力面齐备：superv 发布 budgets 目录、token 建 per-Agent 文件、
+#     ipc 暴露 capabilities；缺一即视为归属册与实现脱节。
 #   * Kbuild 的源文件清单与目录内容一致；三份 defconfig 与 KUnit 配置均已
 #     开启 CONFIG_AIRY_OBS。
 #   * 目录内每个源文件都带 SPDX 与版权行。
@@ -137,8 +139,24 @@ chk_headers()
     endgroup
 }
 
+# 能力与预算面 -------------------------------------------------------------
+chk_faces()
+{
+    group "能力与预算面"
+    have 'airy_obs_dir\(dir, "budgets"\)' "${OBS}/airy_obs_superv.c" \
+        "superv 未发布 budgets 目录"
+    have 'AIRY_OBS_ATTR\(budget_alerts\)' "${OBS}/airy_obs_superv.c" \
+        "macro 面缺少 budget_alerts"
+    have 'airy_obs_budgets\(' "${OBS}/airy_token.c" \
+        "token 未在 budgets 下建立 per-Agent 文件"
+    have 'AIRY_OBS_ATTR\(capabilities\)' "${OBS}/airy_obs_ipc.c" \
+        "ipc 面缺少 capabilities"
+    endgroup
+}
+
 chk_place
 chk_attrs
+chk_faces
 chk_kbuild
 chk_config
 chk_headers
