@@ -21,12 +21,14 @@
 #   供应链四件套：工具链钉版与 rust-toolchain.toml 一致、工作区唯一
 #     Cargo.lock、vendor/ 与 .cargo/config.toml 齐备、给 --sbom 时组件数与
 #     Cargo.lock 条目相等。
-#   打包清单：给 --rpm 时用 rpm -qlpv 逐条断言 §14.16 的目标路径。入口二进制
-#     不在脚本里另抄一份文件名表：清单从 system/units 的 ExecStart 推导，
-#     单元引用的 /usr/bin 路径缺一个就是开机降级（0.0.5 的 session-choice
-#     以 203/EXEC 失败即此）。入口必须是真实二进制（-rwx），不能是软链——
-#     软链会让 %{_bindir} 出现「同一条目两种形态」，%check 的 test -L 断言
-#     随之误判。systemctl 由 systemd 提供，不在发行包内，推导时排除。
+#   打包清单：本脚本要断言的路径表先与 distro/specs 的安装规则对齐——两处
+#     手抄的路径一旦漂移，静态口径会照常全绿，直到装机才暴露。给 --rpm 时再
+#     用 rpm -qlpv 逐条断言 §14.16 的目标路径。入口二进制不在脚本里另抄一份
+#     文件名表：清单从 system/units 的 ExecStart 推导，单元引用的 /usr/bin
+#     路径缺一个就是开机降级（0.0.5 的 session-choice 以 203/EXEC 失败即此）。
+#     入口必须是真实二进制（-rwx），不能是软链——软链会让 %{_bindir} 出现
+#     「同一条目两种形态」，%check 的 test -L 断言随之误判。systemctl 由
+#     systemd 提供，不在发行包内，推导时排除。
 #   门禁全集：默认（发版口径）按 §10「发版只跑既有门禁的全集并归档输出」
 #     逐个执行 ci/ci.sh，日志落 --out；tui-field 用 --evidence 指向的实机
 #     读数，夹具不计入。--static 只核对仓库事实，明确不构成发版结论。
@@ -46,7 +48,7 @@ readonly UNITS=(/usr/lib/systemd/system/boot-tui.service
                 /usr/lib/systemd/system/airy-session-choice.service
                 /usr/lib/systemd/system/airy-session-switch@.service
                 /usr/lib/systemd/system/lightdm.service.d/10-airymax-session-choice.conf
-                /usr/lib/systemd/system/airymax-desktop-ready.service.d/10-airymax-session-choice.conf)
+                /usr/lib/systemd/system/airymax-desktop-ready.service.d/20-airymax-session-mode.conf)
 readonly FILES=(/usr/lib/airymaxos/desktop/airy-session-cond.sh
                 /usr/lib/airymaxos/desktop/airy-session-state
                 /usr/lib/airymaxos/desktop/airy-session-cleanup.sh
@@ -285,6 +287,35 @@ gate_need()
     endgroup
 }
 
+# spec_norm —— 把打包规则里的路径宏还原成安装后的绝对路径。
+# UNITS/FILES 是手抄的路径表，与 spec 一旦漂移，静态口径照样全绿，
+# 直到装机才发现 203/EXEC。归一后逐条比对，两张表就必须同源。
+spec_norm()
+{
+    sed -e 's#%{buildroot}##g' \
+        -e 's#%{_unitdir}#/usr/lib/systemd/system#g' \
+        -e 's#%{_sysconfdir}#/etc#g' \
+        -e 's#%{_datadir}#/usr/share#g' \
+        -e 's#%{_bindir}#/usr/bin#g' \
+        -e 's#%{_sbindir}#/usr/sbin#g' \
+        -e 's#%{_presetdir}#/usr/lib/systemd/system-preset#g' \
+        -e 's#%{_tmpfilesdir}#/usr/lib/tmpfiles.d#g' \
+        "${ROOT}"/distro/specs/*.spec
+}
+
+# src_check —— 本 gate 要求交付的每个路径，打包规则里都必须登记。
+src_check()
+{
+    local p specs
+
+    group "交付路径登记"
+    specs="$(spec_norm)"
+    for p in "${UNITS[@]}" "${FILES[@]}"; do
+        grep -qF -- "${p}" <<<"${specs}" || fail "distro/specs 未登记交付: ${p}"
+    done
+    endgroup
+}
+
 gate_run()
 {
     local g rc
@@ -312,6 +343,7 @@ gate_run()
 ver_check
 supply_check
 gate_need
+src_check
 rpm_check
 
 if [ "${STATIC}" -eq 0 ]; then

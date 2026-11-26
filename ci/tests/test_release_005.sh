@@ -68,7 +68,19 @@ tree()
     cp "${ROOT}/ci/lib/log.sh" "${FX}/ci/lib/log.sh"
     printf 'readonly PIN=1.90.0\n' >"${FX}/ci/lib/tui_gate.sh"
     printf 'VERSION_ID="0.0.5"\nNAME="AirymaxOS"\n' >"${FX}/distro/release/os-release"
-    printf '%%global airy_version 0.0.5\n' >"${FX}/distro/specs/airymaxos-release.spec"
+    cat >"${FX}/distro/specs/airymaxos-release.spec" <<'EOF'
+%global airy_version 0.0.5
+%{_unitdir}/boot-tui.service
+%{_unitdir}/airy-session-choice.service
+%{_unitdir}/airy-session-switch@.service
+%{_unitdir}/lightdm.service.d/10-airymax-session-choice.conf
+%{_unitdir}/airymax-desktop-ready.service.d/20-airymax-session-mode.conf
+%{buildroot}/usr/lib/airymaxos/desktop/airy-session-cond.sh
+%{buildroot}/usr/lib/airymaxos/desktop/airy-session-state
+%{buildroot}/usr/lib/airymaxos/desktop/airy-session-cleanup.sh
+%{_datadir}/polkit-1/rules.d/50-airy-session-switch.rules
+%{_sysconfdir}/airymaxos/system/tui/approvals.d
+EOF
     printf '[toolchain]\nchannel = "1.90.0"\n' >"${FX}/system/tui/rust-toolchain.toml"
     printf '[[package]]\nname = "a"\n\n[[package]]\nname = "b"\n' \
         >"${FX}/system/tui/Cargo.lock"
@@ -106,7 +118,7 @@ rpm_ok()
 -rw-r--r--    1 root    root    100 Jan  1 2026 /usr/lib/systemd/system/airy-session-choice.service
 -rw-r--r--    1 root    root    100 Jan  1 2026 /usr/lib/systemd/system/airy-session-switch@.service
 -rw-r--r--    1 root    root    100 Jan  1 2026 /usr/lib/systemd/system/lightdm.service.d/10-airymax-session-choice.conf
--rw-r--r--    1 root    root    100 Jan  1 2026 /usr/lib/systemd/system/airymax-desktop-ready.service.d/10-airymax-session-choice.conf
+-rw-r--r--    1 root    root    100 Jan  1 2026 /usr/lib/systemd/system/airymax-desktop-ready.service.d/20-airymax-session-mode.conf
 -rwxr-xr-x    1 root    root    100 Jan  1 2026 /usr/lib/airymaxos/desktop/airy-session-cond.sh
 -rwxr-xr-x    1 root    root    100 Jan  1 2026 /usr/lib/airymaxos/desktop/airy-session-state
 -rwxr-xr-x    1 root    root    100 Jan  1 2026 /usr/lib/airymaxos/desktop/airy-session-cleanup.sh
@@ -131,7 +143,8 @@ out="$(run --static)"
 check "树内版本不是 0.0.5 判拒绝" 1 "$?" "${out}" "0.0.5 发版要求"
 
 tree
-printf '%%global airy_version 0.0.4\n' >"${FX}/distro/specs/airymaxos-release.spec"
+sed -i 's/^%global airy_version 0\.0\.5$/%global airy_version 0.0.4/' \
+    "${FX}/distro/specs/airymaxos-release.spec"
 out="$(run --static)"
 check "spec 与 os-release 不同源判拒绝" 1 "$?" "${out}" "不同源"
 
@@ -159,6 +172,18 @@ tree
 rm -f "${FX}/ci/gates/tui-frame.sh"
 out="$(run --static)"
 check "门禁脚本缺失判拒绝" 1 "$?" "${out}" "缺少 ci/gates/tui-frame.sh"
+
+# 打包规则与 gate 的路径表必须同源：spec 漏登记一条，装机才会缺文件。
+tree
+sed -i '/20-airymax-session-mode/d' "${FX}/distro/specs/airymaxos-release.spec"
+out="$(run --static)"
+check "spec 未登记交付路径判拒绝" 1 "$?" "${out}" "未登记交付"
+
+tree
+sed -i 's/airy-session-state$/airy-session-stat/' \
+    "${FX}/distro/specs/airymaxos-release.spec"
+out="$(run --static)"
+check "spec 路径拼写漂移判拒绝" 1 "$?" "${out}" "未登记交付"
 
 tree
 out="$(run --static --rpm "${tmp}/rpm")"
