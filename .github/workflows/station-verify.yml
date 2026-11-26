@@ -1,0 +1,55 @@
+# ===========================================================================
+# agent-linux (AirymaxOS) CI Pipeline
+# 开发运维工作站入口（P-18）：八面板采集、权限排序、审计与渲染契约
+# ===========================================================================
+# Authority: docs/docs-linux/100-operations/10-devstation.md
+# Design: 判据全部在 ci/gates/station-ops.sh，YAML 只做 checkout 与派遣。
+#         门禁只动用户态仓库与进程，不依赖内核符号与特权，因此整条判据
+#         可以在托管 runner 上完整复算。
+# ---------------------------------------------------------------------------
+# 监听面取 system gitlink 而不是 system/**：父仓只能看到子模块指针的移动，
+# 按子目录过滤等于永不触发。
+# ===========================================================================
+
+name: station-verify
+
+on:
+  pull_request:
+    paths:
+      - 'system'
+      - 'ci/gates/station-ops.sh'
+      - 'ci/lib/**'
+      - 'ci/ci.sh'
+      - '.github/workflows/station-verify.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'system'
+      - 'ci/gates/station-ops.sh'
+      - 'ci/lib/**'
+      - 'ci/ci.sh'
+      - '.github/workflows/station-verify.yml'
+
+# 最小权限：只读检出与构建，不触发布与制品写。
+permissions:
+  contents: read
+
+# 同一 ref 只保留最新一轮：旧结论对当前树已失效，继续排队只抢并发额度。
+concurrency:
+  group: station-verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  station-verify:
+    name: DevStation Panels, Permissions and Audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { submodules: recursive }
+
+      # 门禁覆盖八面板 fixture 读数与缺源 unavailable、view/operate/admin
+      # 排序与 --yes 二次确认、审计留痕、Web/远程显式拒绝、坏配置退出 3、
+      # 渲染帧尺寸，以及 CMake/spec/README 接线。
+      - name: DevStation contract and behavior
+        run: ci/ci.sh station-ops

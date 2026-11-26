@@ -43,6 +43,7 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 ├── release.yml            # 构建 + SBOM + 签名 + 发布
 ├── sdk-verify.yml         # 用户态 SDK：go / python / rust / ts 编译
 ├── ssot-verify.yml        # SSoT 语法与交叉引用校验
+├── station-verify.yml     # 开发运维工作站：八面板采集 / 权限 / 审计 / 渲染
 ├── tui-input-verify.yml   # TUI 输入面：四通道矩阵 + 中文语料 / 会话切换
 └── tui-verify.yml         # TUI 工作区：依赖源 + 格式/静态/单测 + 跨架构类型检查
 ```
@@ -68,6 +69,7 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 | `agent-verify.yml` | `agent-verify`、`memory-verify` | `system` gitlink、`ci/gates/{agent-ops,memory-ops}.sh`、`ci/lib/**`、`ci/ci.sh` 的 PR 与 `main` 的 push | Agent 运维：8 态单一边表、六因素健康分在缺数据时重归一化、令牌与调度/内存整组校验、日志组权限与归档、配置覆盖、迁移与升级按单节点边界显式拒绝，以及打包接线；记忆运维：块格式与索引一致、碎片整理真实回收、项级迁移与敏感项拒绝、三级擦除与审计证据、crypto 显式拒绝。两条判据互不依赖，分列保证失败直接归因到面 |
 | `payload-seed.yml` | `probe`、`warm` | cron `17 19 * * *`（北京时间 03:17）与手动 | `probe` 对实时上游取五段仓库元数据，算出 `seed-<arch>-<key16>`；`warm` 恢复上一轮构建留下的闭包池，仅当池的输入标签与该指纹一致时把它推成 seed 层，上游不可达或指纹已变则退 0 并说明原因。预热只搬运已有字节，不下载任何 RPM，因此也不得成为构建的先决条件；同一作业尾部回收陈旧 seed 层（每架构按创建时间留最近 4 个，`build-` 一律不动） |
 | `release.yml` | `build-and-sign`、`publish-release` | 标签 `v*`、`v*-rc*` 与手动 | 源码 tarball（超项目 + 逐子仓按 gitlink 导出）、`airy_defconfig` 四架构快照、syscall ABI 报告、逐子模块 SBOM 合并、内核 RPM、GPG 与 cosign 签名、SDK 压缩包；第二作业校验已签名产物、推送 OCI 镜像到 ghcr、清理过期资产、创建 GitHub Release（正式版一律 `make_latest: false`，创建后由 `release-stage hold` 读回断言页面停在 held，只有发布机在 B 轮 `AIRYMAX-SMOKE-PASS` 之后执行的 `release-stage promote` 才能把它推进 `releases/latest`），并在对账后为整套发布资产出具 in-toto/SLSA 证明（`attest-<tag>`，指纹取 run id 与检出提交） |
+| `station-verify.yml` | `station-verify` | `system` gitlink、`ci/gates/station-ops.sh`、`ci/lib/**`、`ci/ci.sh` 的 PR 与 `main` 的 push | 开发运维工作站的单条判据：八面板从真实 fixture 出数、缺源时显式 `unavailable` 并带原因、`view < operate < admin` 单排序表与 admin `--yes` 二次确认、拒绝写审计、Web 与远程 RPC 选项显式拒绝退出 3、坏配置退出 3、渲染帧宽高不越界，以及 CMake/spec/README 接线。纯用户态组件，托管 runner 上可完整复算 |
 | `ssot-verify.yml` | `ssot-syntax-and-rules`、`doc-links` | 文档、`ssot-registry.yaml`、`tools/governance/validate-ssot.py` 的 PR 与 `main` 的 push | PyYAML 语法、规则 ID 计数与唯一性、`validate-ssot.py` 交叉引用；相对路径链接完整性 |
 | `sdk-verify.yml` | `go`、`python`、`rust`、`ts` | `sdk/**`、`ci/gates/sdk-verify.sh`、`ci/lib/**` 的 PR 与 `main` 的 push | 四份语言绑定各自过编译器：go 走临时模块 `go vet`+`go build`，python 走 `py_compile`（字节码缓存重定向出源码区），rust 逐文件 `rustc --emit=metadata`，ts 走钉版 `tsc --strict --noEmit`。绑定由生成器产出，生成一致不代表能编译，这一层补的就是编译器视角 |
 | `tui-verify.yml` | `policy`、`build`、`cross` | `system`、`distro` gitlink、`ci/ci.sh`、`ci/lib/**`、`ci/gates/{tui-check,tui-frame,rust-vendor,lang-lock,submodules}.sh`、`ci/container/build-packages.txt` 的 PR 与 `main` 的 push | `policy` 断言语言政策（四组件 present、工具链钉版）与 `Cargo.lock`、`vendor/`、台账三者同源，不需要编译器；`build` 依次跑 `fmt --check`、`clippy -D warnings`、`cargo test`，全部 `--offline --locked`，最后以 `tui-frame` 收尾——85×24 整屏重绘 p99 ≤ 33 ms、常驻堆 ≤ 64 KiB（与单测共用一次检出与目标目录，红了不再花第二次基准编译）；`cross` 在 aarch64 与 riscv64gc 上做类型检查，两种目标互不掩盖。编译器版本只由 `system/tui/rust-toolchain.toml` 决定，`tui-check` 断言实际生效者与钉版一致 |
@@ -221,6 +223,7 @@ L2/L3 都不改判据，只改「同一份物料要付几次成本」。任何�
 | `nightly.yml` | `tools/nightly/nightly.py --check`、`ci/gates/nightly-helpers.sh` | 全量套件，单 job 上限 360 min | 无 |
 | `ops-verify.yml` | `ci/gates/alert-d.sh`、`ci/gates/incident.sh`、`ci/gates/backup.sh` | 三条各自数秒级（进程内对跑，无外部依赖） | 无 |
 | `agent-verify.yml` | `ci/gates/agent-ops.sh`、`ci/gates/memory-ops.sh` | 两条各自数秒级（进程内对跑，临时目录即数据根） | 无 |
+| `station-verify.yml` | `ci/gates/station-ops.sh` | 单条数秒级（进程内对跑，临时目录即数据根） | 无 |
 | `payload-seed.yml` | `ci/gates/payload-seed.sh`（`probe` / `warm`） | 只搬缓存池字节，不下载；层已存在时为零 | actions 缓存（闭包池） |
 | `mgmt-verify.yml`、`ssot-verify.yml` | `ci/gates/repo-*.sh`、`tools/governance/validate-ssot.py` | 约 3 min | 无 |
 | `tui-verify.yml` | `ci/gates/tui-check.sh`、`ci/gates/rust-vendor.sh`、`ci/gates/lang-lock.sh` | 一次子模块检出 + 六个 crate 的编译，无注册表访问 | 无（vendor 离线源代替包缓存） |
@@ -302,7 +305,7 @@ L2/L3 都不改判据，只改「同一份物料要付几次成本」。任何�
 | 模块 | 归属 | 依据 |
 |------|------|------|
 | kernel | `kernel-verify`、`airy-verify`、`os-chk-verify` | 上游基线与自研目录分开审：前者查整棵内核树，后者只查 `security/airy` 等自研代码 |
-| system | `c-verify`、`ops-verify`、`agent-verify`、`tui-verify`、`tui-input-verify` | 五条验证轴互不替代：C 构建面、运维三入口的契约与端到端、Agent 与记忆数据面的契约与端到端、帧预算与跨架构、输入契约；合并会让改一行注释也排队等完整集成 |
+| system | `c-verify`、`ops-verify`、`agent-verify`、`station-verify`、`tui-verify`、`tui-input-verify` | 六条验证轴互不替代：C 构建面、运维三入口的契约与端到端、Agent 与记忆数据面的契约与端到端、工作站八面板采集与权限审计、帧预算与跨架构、输入契约；合并会让改一行注释也排队等完整集成 |
 | distro | `os-chk-verify`、`image-build`、`payload-seed` | 静态规则随 PR，镜像组装属发行前，载荷预热按周期，三者触发时机不同 |
 | services、cloudnative | `c-verify`（各 1 个作业） | 同一构建面，作业分开保证失败结论互不掩盖 |
 | sdk | `sdk-verify`（一语言一作业） | 生成一致不代表能编译，四个编译器视角互不替代 |
@@ -385,6 +388,7 @@ PATH="$HOME/.local/bin:$PATH" ./ci/lint.sh
 | `obs-verify` | 探针挂载点不成对、上下文成员与 tracepoint 结构不一致、出树编译超出体积或丢 `.BTF` | `./ci/ci.sh ebpf-probe`、`./ci/ci.sh perf-hooks`、`./ci/ci.sh token-obs`、`./ci/ci.sh mem-obs` |
 | `ops-verify` | 告警规则/限额校验、事件台账状态机拒绝边、备份深核验或保留期判据 | `./ci/ci.sh alert-d`、`./ci/ci.sh incident`、`./ci/ci.sh backup` |
 | `agent-verify` | 状态机非法迁移、健康分要素缺失、块索引不一致、碎片整理未回收、擦除审计缺失或 crypto 被伪报成功 | `./ci/ci.sh agent-ops`、`./ci/ci.sh memory-ops` |
+| `station-verify` | 面板读数与 fixture 不符、缺源未报 unavailable、权限排序失效、admin 未要求 `--yes`、拒绝未留审计、Web/远程被静默接受、帧行数或宽度越界 | `./ci/ci.sh station-ops` |
 | `payload-seed` | `probe` 输出的 `tag=` 为空（上游不可达）或 `missing=0`（层已存在），两者都不该让流水线红 | `./ci/ci.sh payload-seed probe --arch <arch>` |
 
 ## 8. 许可

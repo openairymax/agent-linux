@@ -41,5 +41,8 @@ payload-seed.yml                  0     2
 release.yml                       0     2
 sdk-verify.yml                    0     4
 ssot-verify.yml                   0     2
+# station-verify 单作业承担八面板采集、权限排序、审计与渲染契约，
+# 判据互不依赖；与 agent-verify 分列，失败可直接归因到工作站面。
+station-verify.yml                0     1
 tui-input-verify.yml              0     2
 tui-verify.yml                    0     3
