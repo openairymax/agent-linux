@@ -1,0 +1,58 @@
+# ===========================================================================
+# agent-linux (AirymaxOS) CI Pipeline
+# Landlock 用户态沙箱（P-19 / CA-076）：策略解析、规则集构建、CLI 与打包
+# ===========================================================================
+# Authority: docs/docs-linux/110-security/02-landlock-sandbox.md
+# Design: 判据全部在 ci/gates/landlock-sandbox.sh，YAML 只做 checkout 与
+#         派遣。整条链路只依赖用户态工具链与宿主内核；内核不支持 Landlock
+#         时运行期用例在 TAP 中以 SKIP 记录，解析与参数校验仍必须全绿。
+# ---------------------------------------------------------------------------
+# 监听面取 security gitlink 而不是 security/**：父仓只能看到子模块指针的
+# 移动，按子目录过滤等于永不触发。
+# ===========================================================================
+
+name: security-verify
+
+on:
+  pull_request:
+    paths:
+      - 'security'
+      - 'distro'
+      - 'ci/gates/landlock-sandbox.sh'
+      - 'ci/lib/**'
+      - 'ci/ci.sh'
+      - 'ci/baseline/workflow-budgets.txt'
+      - '.github/workflows/security-verify.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'security'
+      - 'distro'
+      - 'ci/gates/landlock-sandbox.sh'
+      - 'ci/lib/**'
+      - 'ci/ci.sh'
+      - 'ci/baseline/workflow-budgets.txt'
+      - '.github/workflows/security-verify.yml'
+
+# 最小权限：只读检出与构建，不触发布与制品写。
+permissions:
+  contents: read
+
+# 同一 ref 只保留最新一轮：旧结论对当前树已失效，继续排队只抢并发额度。
+concurrency:
+  group: security-verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  landlock:
+    name: Landlock Policy, CLI and Packaging
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { submodules: recursive }
+
+      # 门禁覆盖策略解析正负例、handled 裁剪、规则上限、出树构建与 ctest、
+      # 出厂策略 check、status 读数、spec 与预算接线，以及源码树卫生。
+      - name: Landlock sandbox contract
+        run: ci/ci.sh landlock-sandbox
