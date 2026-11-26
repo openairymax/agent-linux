@@ -61,6 +61,16 @@ check "缺 --module" 5 "${rc}" "${out}" "--module 必填"
 out="$(run --module nope)"; rc=$?
 check "非法模块" 5 "${rc}" "${out}" "只接受 cloudnative|services|system|tests-linux"
 
+# cloudnative 与 tests-linux 同属用户态模块，构建前都要经 headers_install 导出
+# UAPI 头。先立最小内核桩，否则后续两条用例都会被「导出失败」提前截断，测不到
+# 各自真正要判定的分支。
+mkdir -p "${FX}/kernel"
+cat >"${FX}/kernel/Makefile" <<'EOF'
+headers_install:
+	@mkdir -p $(INSTALL_HDR_PATH)/include/linux/airymax
+	@touch $(INSTALL_HDR_PATH)/include/linux/airymax/ipc.h
+EOF
+
 # 编译错误：配置能过、编译必失败，断言门禁不把它当成「配置失败」蒙混过去，
 # 也不进入冒烟段。
 cat >"${FX}/cloudnative/CMakeLists.txt" <<'EOF'
@@ -74,14 +84,9 @@ out="$(run --module cloudnative)"; rc=$?
 check "编译失败判负" 1 "${rc}" "${out}" "cloudnative 构建失败"
 
 # tests-linux 必须先把 UAPI 头导出到源码树外，再把导出根经 -DAIRY_HDR_ROOT
-# 交给 CMake。用最小内核桩与只做断言的 CMakeLists 锁住这条接线：门禁若退
-# 回直接指向源码树的 kernel/include/uapi，配置阶段就会失败。
-mkdir -p "${FX}/kernel" "${FX}/tests-linux"
-cat >"${FX}/kernel/Makefile" <<'EOF'
-headers_install:
-	@mkdir -p $(INSTALL_HDR_PATH)/include/linux/airymax
-	@touch $(INSTALL_HDR_PATH)/include/linux/airymax/ipc.h
-EOF
+# 交给 CMake。用只做断言的 CMakeLists 锁住这条接线：门禁若退回直接指向源码树
+# 的 kernel/include/uapi，配置阶段就会失败。
+mkdir -p "${FX}/tests-linux"
 cat >"${FX}/tests-linux/CMakeLists.txt" <<'EOF'
 cmake_minimum_required(VERSION 3.20)
 project(hdrcheck NONE)
