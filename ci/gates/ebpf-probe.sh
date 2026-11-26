@@ -14,8 +14,11 @@
 #
 # 判据：
 #   * 目录只放 CT 源码、探测源码与 CMakeLists，不落产物。
-#   * kprobe/kretprobe 成对挂 airy_cap_check；tracepoint 挂内核已发布且
-#     确有发射点的 airy_policy_decision / airy_superv_enforce。
+#   * 四个内核边界（airy_cap_check、airy_clt_serve、airy_sched_ctl、
+#     airy_invoke_dispatch）各有一对 kprobe/kretprobe；tracepoint 挂内核
+#     已发布且确有发射点的 airy_policy_decision / airy_superv_enforce。
+#   * 四个符号以非 static 定义出现，且不带 notrace / __always_inline。
+#   * 四架构 defconfig 齐备 eBPF 装载与 kprobe 所需配置项。
 #   * 探针上下文成员与 include/trace/events/airy.h 的字段顺序逐项相等。
 #   * ringbuf 不小于 4 MB、计数用 PERCPU_ARRAY、map 均显式 max_entries。
 #   * 不含 pt_regs / PT_REGS：字节码因此与架构无关，四架构共用。
@@ -74,25 +77,67 @@ chk_files()
 }
 
 # 挂载面 -------------------------------------------------------------------
+# probe_ok SYM FILE —— 符号须以非 static、无 notrace/__always_inline 的定义
+# 出现，否则 kprobe 要么找不到符号，要么在内联后失去挂载点。
+probe_ok()
+{
+    local sym="$1" file="$2" ctx
+
+    ctx="$(code_only "${file}" |
+        grep -B3 -E "^(__must_check )?int ${sym}\\(" || true)"
+    if [ -z "${ctx}" ]; then
+        bad "${sym}: 未以非 static 符号定义"
+        return
+    fi
+    if printf '%s\n' "${ctx}" | grep -qE 'notrace|__always_inline'; then
+        bad "${sym}: 带 notrace/__always_inline，不可挂 kprobe"
+    fi
+}
+
 chk_hook()
 {
-    local cap="${SRC}/security/airy/airy_cap_check.c"
+    local d="${SRC}/security/airy" s="${SRC}/kernel/syscalls"
 
     group "挂载面"
-    have 'SEC\("kprobe/airy_cap_check"\)' "${BPF_C}" "缺少能力判定入口探针"
-    have 'SEC\("kretprobe/airy_cap_check"\)' "${BPF_C}" "缺少能力判定返回探针"
+    have 'SEC\("kprobe/" #sym\)' "${BPF_C}" "探针未成对生成入口挂载"
+    have 'SEC\("kretprobe/" #sym\)' "${BPF_C}" "探针未成对生成返回挂载"
+    for sym in airy_cap_check airy_clt_serve airy_sched_ctl \
+               airy_invoke_dispatch; do
+        have "AIRY_TRACE_PAIR\\(${sym}," "${BPF_C}" \
+            "缺少 ${sym} 的 kprobe/kretprobe 对"
+    done
     have 'SEC\("tracepoint/airy/airy_policy_decision"\)' "${BPF_C}" \
         "缺少策略裁决探针"
     have 'SEC\("tracepoint/airy/airy_superv_enforce"\)' "${BPF_C}" \
         "缺少监督强制探针"
-    have '^int airy_cap_check\(' "${cap}" "内核缺少 airy_cap_check 定义"
-    deny 'notrace|__always_inline' "${cap}" \
-        "airy_cap_check 不可被 kprobe 挂载"
-    have 'trace_airy_policy_decision\(' "${SRC}/security/airy/airy_policy.c" \
+    probe_ok airy_cap_check "${d}/airy_cap_check.c"
+    probe_ok airy_clt_serve "${s}/airy_clt.c"
+    probe_ok airy_sched_ctl "${s}/airy_sched.c"
+    probe_ok airy_invoke_dispatch "${s}/airy_syscalls.c"
+    have 'trace_airy_policy_decision\(' "${d}/airy_policy.c" \
         "airy_policy_decision 没有发射点"
-    have 'trace_airy_superv_enforce\(' \
-        "${SRC}/security/airy/airy_die_notify.c" \
+    have 'trace_airy_superv_enforce\(' "${d}/airy_die_notify.c" \
         "airy_superv_enforce 没有发射点"
+    endgroup
+}
+
+# 四架构配置 ---------------------------------------------------------------
+chk_conf()
+{
+    local arch cfg k
+
+    group "四架构配置"
+    for arch in x86 arm64 riscv loongarch; do
+        cfg="${SRC}/arch/${arch}/configs/airy_defconfig"
+        if [ ! -f "${cfg}" ]; then
+            bad "${arch}: 缺少 defconfig"
+            continue
+        fi
+        for k in BPF BPF_SYSCALL BPF_JIT BPF_JIT_ALWAYS_ON BPF_EVENTS \
+                 BPF_UNPRIV_DEFAULT_OFF DEBUG_INFO_BTF KPROBES; do
+            have "^CONFIG_${k}=y$" "${cfg}" "${arch} 未开启 CONFIG_${k}"
+        done
+    done
     endgroup
 }
 
@@ -208,4 +253,4 @@ chk_out()
     chk_obj "$1"
 }
 
-obs_gate chk_files chk_hook chk_ctx chk_maps chk_loader chk_flags
+obs_gate chk_files chk_hook chk_conf chk_ctx chk_maps chk_loader chk_flags
