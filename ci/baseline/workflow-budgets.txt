@@ -40,9 +40,10 @@ os-chk-verify.yml                 0     1
 payload-seed.yml                  0     2
 release.yml                       0     2
 sdk-verify.yml                    0     4
-# security-verify 单作业承担 Landlock 策略解析、出树构建、ctest 与打包
-# 接线；security 子仓已转成交付物（进配方并被载荷安装），按 §5.7 拆列。
-security-verify.yml               0     1
+# security-verify 两作业各承一条安全面判据：Landlock 策略解析、出树构建、
+# ctest 与打包接线；IPC 控制面 Reconciliation 的差异检测、修复与超时降级。
+# security 子仓已转成交付物（进配方并被载荷安装），按 §5.7 拆列。
+security-verify.yml               0     2
 ssot-verify.yml                   0     2
 # station-verify 单作业承担八面板采集、权限排序、审计与渲染契约，
 # 判据互不依赖；与 agent-verify 分列，失败可直接归因到工作站面。

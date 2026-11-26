@@ -124,13 +124,15 @@ endgroup
 
 # ─── 4. 打包与流水线接线 ─────────────────────────────────────────────
 group "landlock-sandbox: 安装接线"
-have '^Source107:[[:space:]]+landlock-%\{version\}\.tar\.gz$' \
-    "${SPEC}" "spec 未登记 landlock 源码束"
-have '^# spec-lint: source-bundle ../../security/landlock$' \
-    "${SPEC}" "spec-lint 未声明 landlock 源码束"
-have 'tar -xzf %\{SOURCE107\}' "${SPEC}" "spec 未解包 landlock 源码束"
-have 'cmake -S landlock -B landlock-build' "${SPEC}" \
-    "spec 未做 landlock 出树构建"
+have '^Source107:[[:space:]]+security-%\{version\}\.tar\.gz$' \
+    "${SPEC}" "spec 未登记 security 源码束"
+have '^# spec-lint: source-bundle ../../security$' \
+    "${SPEC}" "spec-lint 未声明 security 源码束"
+have 'tar -xzf %\{SOURCE107\}' "${SPEC}" "spec 未解包 security 源码束"
+have 'cmake -S security -B security-build' "${SPEC}" \
+    "spec 未做 security 出树构建"
+have 'security-build/landlock/airy-landlock' "${SPEC}" \
+    "spec 未从 security 构建树安装 landlock CLI"
 have '%\{_bindir\}/airy-landlock' "${SPEC}" "spec 未安装 CLI"
 have '%\{_datadir\}/airymax/landlock/agent\.conf' "${SPEC}" \
     "spec 未安装出厂策略"
@@ -140,7 +142,7 @@ have '^%dir %\{_datadir\}/airymax/landlock$' "${SPEC}" \
 have 'landlock-sandbox\.sh' "${FLOW}" "workflow 未监听门禁脚本"
 have '^  landlock:' "${FLOW}" "workflow 未新增 landlock 作业"
 have 'ci/ci\.sh landlock-sandbox' "${FLOW}" "workflow 未调用门禁"
-have '^security-verify\.yml[[:space:]]+0[[:space:]]+1$' "${BUDGET}" \
+have '^security-verify\.yml[[:space:]]+0[[:space:]]+[0-9]+$' "${BUDGET}" \
     "workflow 预算未登记 security-verify"
 endgroup
 
@@ -151,7 +153,7 @@ leftover="$(find "${ROOT}/security" \
     -o -name '*.a' -o -name ll_test -o -name airy-landlock \) \
     -print 2>/dev/null)"
 [ -z "${leftover}" ] || bad "源码树残留构建产物: ${leftover}"
-for d in "${ROOT}/landlock-build" "${LL}/build"; do
+for d in "${ROOT}/security-build" "${LL}/build"; do
     [ ! -e "${d}" ] || bad "源码树残留构建目录: ${d}"
 done
 for src in "${LL}"/*.c "${LL}"/*.h "${LL}"/tests/*.c \

@@ -1,11 +1,15 @@
 # ===========================================================================
 # agent-linux (AirymaxOS) CI Pipeline
-# Landlock 用户态沙箱（P-19 / CA-076）：策略解析、规则集构建、CLI 与打包
+# 安全面两条判据：
+#   * Landlock 用户态沙箱（P-19 / CA-076）：策略解析、规则集构建、CLI 与打包
+#   * IPC 控制面 Reconciliation（P-20 / CA-079）：差异检测、修复与超时降级
 # ===========================================================================
 # Authority: docs/docs-linux/110-security/02-landlock-sandbox.md
-# Design: 判据全部在 ci/gates/landlock-sandbox.sh，YAML 只做 checkout 与
-#         派遣。整条链路只依赖用户态工具链与宿主内核；内核不支持 Landlock
-#         时运行期用例在 TAP 中以 SKIP 记录，解析与参数校验仍必须全绿。
+#            docs/docs-linux/110-security/05-ipc-control-plane-reconciliation.md
+# Design: 判据全部在 ci/gates/，YAML 只做 checkout 与派遣。整条链路只依赖
+#         用户态工具链与宿主内核；内核不支持 Landlock 时运行期用例在 TAP 中
+#         以 SKIP 记录，解析与参数校验仍必须全绿。IPC 门禁为纯用户态 C11，
+#         托管 runner 上可完整复算。
 # ---------------------------------------------------------------------------
 # 监听面取 security gitlink 而不是 security/**：父仓只能看到子模块指针的
 # 移动，按子目录过滤等于永不触发。
@@ -19,6 +23,7 @@ on:
       - 'security'
       - 'distro'
       - 'ci/gates/landlock-sandbox.sh'
+      - 'ci/gates/ipc-reconcile.sh'
       - 'ci/lib/**'
       - 'ci/ci.sh'
       - 'ci/baseline/workflow-budgets.txt'
@@ -29,6 +34,7 @@ on:
       - 'security'
       - 'distro'
       - 'ci/gates/landlock-sandbox.sh'
+      - 'ci/gates/ipc-reconcile.sh'
       - 'ci/lib/**'
       - 'ci/ci.sh'
       - 'ci/baseline/workflow-budgets.txt'
@@ -56,3 +62,16 @@ jobs:
       # 出厂策略 check、status 读数、spec 与预算接线，以及源码树卫生。
       - name: Landlock sandbox contract
         run: ci/ci.sh landlock-sandbox
+
+  ipc:
+    name: IPC Control Plane Reconciliation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { submodules: recursive }
+
+      # 门禁覆盖 Ring/Capability 差异检测、修复动作顺序与失败语义、三类
+      # 消息 TTL、超时降级、容量上限与空输入幂等，以及 spec 与预算接线。
+      - name: IPC reconciliation contract
+        run: ci/ci.sh ipc-reconcile
