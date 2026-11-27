@@ -30,7 +30,7 @@
 #   · 只量 shell、python 与 rust——与 ci/checks/name_lint.py 同一交付面（ci tools
 #     distro system），kernel 是上游树、不参与本仓度量（ALK-01 亦要求内核侧
 #     零改动）；
-#   · tests/fixture 不量：那里的重复与分支是刻意构造的负例；vendor/target
+#   · tests/fixture(s) 不量：那里的重复与分支是刻意构造的负例；vendor/target
 #     不量：第三方快照不是自有代码，构建产物把门禁拖红没有意义；
 #   · 注释不算代码：shell 的整行 `#`、python 的文档字符串、rust 的 `//` 与
 #     `/* */` 都剔除。规范要求每个文件带中文文件头，若把它计进重复率，压低

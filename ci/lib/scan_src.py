@@ -9,7 +9,7 @@
 # 四处都要处理相对根，改一处必然漏改三处。这里收成一份。
 #
 # 两套跳过集不是冗余，口径本就不同：
-#   SKIP 度量口径：tests/ 与 fixture/ 里的函数名、复杂度由被测语义决定，
+#   SKIP 度量口径：tests/ 与 fixture(s)/ 里的函数名、复杂度由被测语义决定，
 #        按产品标准要求只会逼人改写断言；
 #   DEEP 扫描口径：零桩与死代码必须看进 tests/——`unreachable!` 的放行边界
 #        正是 tests/ 目录与 `#[cfg(test)]` 模块，引用计数也要算上测试里的使用。
@@ -25,7 +25,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-SKIP = frozenset(("tests", "fixture", "vendor", "target",
+SKIP = frozenset(("tests", "fixture", "fixtures", "vendor", "target",
                   "__pycache__", ".git", "node_modules"))
 DEEP = frozenset(("vendor", "target", "__pycache__", ".git", "node_modules"))
 SUFFIX = (".sh", ".py", ".rs")
