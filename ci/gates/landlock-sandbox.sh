@@ -98,7 +98,7 @@ endgroup
 
 # ─── 4. 打包与流水线接线 ─────────────────────────────────────────────
 group "landlock-sandbox: 安装接线"
-airy_security_wire landlock-sandbox landlock landlock-sandbox \
+airy_sec_wire landlock-sandbox landlock landlock-sandbox \
     'security-build/landlock/airy-landlock' \
     '%\{_bindir\}/airy-landlock' \
     '%\{_datadir\}/airymax/landlock/agent\.conf' \

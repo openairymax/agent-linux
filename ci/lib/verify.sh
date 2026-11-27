@@ -109,13 +109,13 @@ airy_build_test()
     return "${rc}"
 }
 
-# airy_security_wire <标签> <作业名> <门禁名> [spec 断言...]
+# airy_sec_wire <标签> <作业名> <门禁名> [spec 断言...]
 #
 # security 模块在 spec 与 security-verify 流水线里的接线是同一组断言：
 # 源码束登记与解包、出树构建、按 target 安装、作业与预算。两个门禁曾逐字
 # 各抄一份，改了配方只更新一处就漏一处；这里只留一份，模块自己的产物断言
 # 由调用方作为余下参数追加。
-airy_security_wire()
+airy_sec_wire()
 {
     local label="$1" job="$2" gate="$3"
     local spec="${ROOT}/distro/specs/airymaxos-system.spec"

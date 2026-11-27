@@ -99,7 +99,7 @@ endgroup
 
 # ─── 4. 打包与流水线接线 ─────────────────────────────────────────────
 group "ipc-reconcile: 安装接线"
-airy_security_wire ipc-reconcile ipc ipc-reconcile \
+airy_sec_wire ipc-reconcile ipc ipc-reconcile \
     'security-build/ipc/airy-reconcile' '%\{_sbindir\}/airy-reconcile'
 endgroup
 
