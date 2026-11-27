@@ -4,21 +4,14 @@
 /*
  * Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
  *
- * AirymaxOS policy decision tables generated from {{ source_name }}.
+ * AirymaxOS policy decision tables compiled from the L-03 DSL contract.
+ * Verdicts are raw integers (0..3) matching enum airy_verdict in
+ * <linux/airymax/security_types.h>; never redefine AIRY_VERDICT_* here
+ * (OS-IRON-014). Inside the kernel types come from <airymax/airy_policy.h>;
+ * user space uses the private copy below so tests build without kernel
+ * headers.
  *
- * L-03 DSL compiler output. This header is mechanism-only: it emits pure C
- * decision tables plus one static inline first-match evaluator per table.
- * Verdicts are stored as raw integers (0..3) matching the [SC] shared contract
- * enum airy_verdict defined in <linux/airymax/security_types.h>; this header
- * MUST NOT redefine AIRY_VERDICT_* (single-definition rule, OS-IRON-014).
- *
- * Inside the kernel the mechanism types come from <airymax/airy_policy.h>, so
- * the runtime and the generated tables share one definition. User space keeps
- * a private copy of the same layout below, which lets the toolchain tests
- * compile without kernel headers.
- *
- * DSL contract version: {{ dsl_version }}
- * Tables: {{ tables | length }}
+ * DSL contract version: {{ dsl_version }}; Tables: {{ tables | length }}
  */
 
 #ifndef {{ header_guard }}
