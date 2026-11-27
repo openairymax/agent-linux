@@ -63,10 +63,15 @@ fi
 cd "${SRC}" || die "无法进入 ${SRC}"
 
 group "KUnit on UML（OS-TEST-001~012）"
-set -o pipefail
+# stderr 不并入 TAP：kunit.py 收尾会调 `stty sane`，非交互执行时它的报错
+# 与内核控制台同流，且内核最后一行常无换行，报错就拼在 `# Subtest:` 行
+# 后面，把套件名污染成「airy_lockdownstty: ...」，基线比对随即误报套件
+# 缺失。stdout 只承载 KTAP，stderr 单独落盘再回显到日志。
 ./tools/testing/kunit/kunit.py run --arch=um --raw_output=kunit \
-    --kunitconfig=security/airy 2>&1 | tee "${TAP}"
-rc=${PIPESTATUS[0]}
+    --kunitconfig=security/airy >"${TAP}" 2>"${TAP}.err"
+rc=$?
+cat "${TAP}.err" >&2 || true
+rm -f "${TAP}.err"
 endgroup
 [ "${rc}" -eq 0 ] || die "KUnit 运行失败（rc=${rc}）"
 
