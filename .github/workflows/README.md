@@ -32,6 +32,8 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 ├── agent-verify.yml       # Agent 与记忆运维面：生命周期 / 健康 / 块存储 / 擦除
 ├── airy-verify.yml        # Airymax 内核扩展：四架构构建 + 静态检查
 ├── c-verify.yml           # 用户态 C 组件：cloudnative / services / system / tests-linux
+├── cloudnative-verify.yml # 云原生运行期契约：CRD / shim / CNI / 超节点
+├── cognition-verify.yml   # 认知面：Thinkdual 模式判定 / 认知数据流
 ├── image-build.yml        # 桌面 ISO 组装 + 装机冷启动验收
 ├── kernel-verify.yml      # 内核构建矩阵 + 静态分析 + 测试
 ├── mgmt-verify.yml        # 治理文件完整性 + 叶仓 CI 汇总
@@ -62,6 +64,8 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 | `airy-verify.yml` | `airy-build`、`airy-static` | `kernel` gitlink、`ci/gates/kernel-*.sh`、`ci/lib/**` 的 PR 与 push | `airy_defconfig` 在 x86_64/aarch64/riscv64/loongarch64 上构建；断言 Airymax CONFIG、BTF 内嵌、六个 `built-in.a` 产物、`security/airy/` 与 `kernel/superv/` 的符号不冲突。`airy-static` 只审 SPDX 标识 |
 | `os-chk-verify.yml` | `os-chk-verify` | `tools/**`、`sdk/**`、`ci/**` 与四个受审 gitlink 的 PR 与 push | 解析 `gates.yaml`，分派已登记的 OS-CHK 执行器，汇总报告并阻断 P0/P1 级结论。同时承载整套 Python 工具链（abi-check、codegen、dsl、farm、flash、rollback 等）：一次依赖安装、一次 pytest，工具改动不再排队四轮 |
 | `c-verify.yml` | `cloudnative`、`services`、`system`、`tests-linux` | `cloudnative`、`services`、`system`、`tests-linux`、`kernel` gitlink 与 `ci/gates/c-verify.sh`、`ci/lib/**` 的 PR 与 `main` 的 push | 四个用户态 C 模块各自出树 `cmake --build`（源码区不编译，`-Werror` 零告警），`cloudnative` 另跑 `agentctl` 核对 A-IPC magic 与 `[SC] ipc.h` 一致，`services` 另跑 CTest（`dmn_test`）与 config/logger/macro 三个守护的契约、`system` 与 `tests-linux` 各跑自身 CTest（后者另含 UAPI 契约套件） |
+| `cloudnative-verify.yml` | `crd`、`shim`、`cni`、`supernode` | `cloudnative`、`distro` gitlink、`ci/gates/{crd-schema,shim-runtime,cni-policy,supernode-os}.sh`、`ci/lib/**`、`ci/ci.sh` 的 PR 与 `main` 的 push | 云原生四个运行期契约面各一作业：CRD 模式与状态机、shim 的 bundle 注解与真实子进程退出、CNI 链式装配与默认拒绝、超节点拓扑聚合与迁移准入。与 `c-verify` 的构建面互不替代，纯用户态 C11，托管 runner 上可完整复算 |
+| `cognition-verify.yml` | `thinkdual`、`cogflow` | `cognition`、`distro` gitlink、`ci/gates/{cognition-thinkdual,cognition-flow}.sh`、`ci/lib/**`、`ci/ci.sh` 的 PR 与 `main` 的 push | 认知面两条判据各一作业：Thinkdual 的复杂度评分与模式判定、认知数据流的三相循环与规划守卫/补偿重试；只读 `[SC]` 契约头，纯用户态 C11，托管 runner 上可完整复算 |
 | `mgmt-verify.yml` | `file-integrity`、`orchestrate-leaf-ci` | 文档、`.gitmodules`、`ssot-registry.yaml`、`MAINTAINERS`、`CODEOWNERS`、`tools/**`、`.github/**`、`kernel` 的 PR，以及 `main` 的 push | 校验由 `.gitmodules` 推导的子模块目录、12 份 `[SC]` 共享头、`ipc.h` 的物理唯一副本、12 份治理文件、不得出现 `airymaxos-` 前缀；第二作业汇总叶仓 CI、跑 markdownlint 与版权头检查 |
 | `image-build.yml` | `assemble`、`accept` | 仅 `workflow_dispatch`（发行门禁，不参与 PR） | `assemble` 先把构建工具链预热成可离线自证的 dnf 缓存树，再在特权官方容器内以钉版的 openEuler netinst 为基底组装桌面 ISO，校验装配清单与 ISO 校验和；`accept` 在 QEMU 下分别以 BIOS 与 UEFI 安装，冷启动到 `AIRYMAX-DESKTOP-READY`（`acceptance=true` 时为 `AIRYMAX-SMOKE-PASS`），发布 TAP 与串口日志；`release_tag` 非空且非验收剖面时，另为 ISO 出具 in-toto/SLSA 构建来源证明，以 `attest-<tag>` 推入同一制品仓库并回读摘要、`buildId` 与字节 |
 | `nightly.yml` | `nightly-test-suite`、`nightly-revert-or-budget` | cron `0 2 * * *` 与手动 | 形式化验证、72 小时浸泡、混沌注入（CPU 热插拔、内存热移除、I/O 错误、网络分区）；第二作业在回归时经 `auto-bisect` 自动回退，或做 CI 预算检查（稳态 60 分钟，内核冷缓存 90 分钟） |
@@ -313,10 +317,11 @@ L2/L3 都不改判据，只改「同一份物料要付几次成本」。任何�
 | kernel | `kernel-verify`、`airy-verify`、`os-chk-verify` | 上游基线与自研目录分开审：前者查整棵内核树，后者只查 `security/airy` 等自研代码 |
 | system | `c-verify`、`ops-verify`、`agent-verify`、`station-verify`、`tui-verify`、`tui-input-verify` | 六条验证轴互不替代：C 构建面、运维三入口的契约与端到端、Agent 与记忆数据面的契约与端到端、工作站八面板采集与权限审计、帧预算与跨架构、输入契约；合并会让改一行注释也排队等完整集成 |
 | distro | `os-chk-verify`、`image-build`、`payload-seed` | 静态规则随 PR，镜像组装属发行前，载荷预热按周期，三者触发时机不同 |
-| services、cloudnative | `c-verify`（各 1 个作业） | 同一构建面，作业分开保证失败结论互不掩盖 |
+| services、cloudnative | `c-verify`（各 1 个作业）、`cloudnative-verify`（4 个作业） | 构建面同属 `c-verify`，作业分开保证失败结论互不掩盖；cloudnative 另有 CRD、shim、CNI、超节点四条运行期契约轴，各自独立成作业，与构建面互不替代 |
 | sdk | `sdk-verify`（一语言一作业） | 生成一致不代表能编译，四个编译器视角互不替代 |
 | security | `security-verify`（`landlock`、`ipc` 2 个作业） | security 子仓已转成交付物：配方引用 `security/landlock` 与 `security/ipc` 源码束并被载荷安装，按「何时才拆新流水线」第 1 条补作业；`landlock` 判据是策略解析、出树构建与打包接线，`ipc` 判据是控制面差异检测、修复与超时降级，两者互不依赖故分列；内核 LSM 面仍由 `kernel-verify`／`airy-verify` 覆盖 |
-| memory、cognition | 无独立流水线 | 两棵是外部模块原型树，产品配方无引用、载荷不安装（`distro/` 内零引用）；产品路线的实现内建于 `kernel/security/airy/` 与 `kernel/kernel/syscalls/airy_clt.c`，由 `kernel-verify`／`airy-verify` 覆盖。原型树转成交付物（进配方或被载荷安装）时，按本节「何时才拆新流水线」补作业 |
+| cognition | `cognition-verify`（`thinkdual`、`cogflow` 2 个作业） | cognition 子仓已转成交付物：配方引用 `cognition/thinkdual` 与 `cognition/cogflow` 源码束并被载荷安装，按同一条判据补作业；两条判据分别守在模式判定与数据流两轴，互不依赖 |
+| memory | 无独立流水线 | memory 仍是外部模块原型树，产品配方无引用、载荷不安装（`distro/` 内零引用）；产品路线的内建实现在 `kernel/security/airy/` 与 `kernel/kernel/syscalls/airy_clt.c`，由 `kernel-verify`／`airy-verify` 覆盖。原型树转成交付物时按本节「何时才拆新流水线」补作业 |
 | tests-linux | `c-verify`（1 个作业） | 出树构建与 CTest 并入同一 C 构建面，避免重复预热工具链；叶仓自身 CI 仍承担其单元测试 |
 | tools、ci | 无独立流水线 | `os-chk-verify` 的一次依赖安装与一次 pytest 已覆盖，拆开只会让一次工具改动排队多轮 |
 | docs | `mgmt-verify`、`ssot-verify` | 文档完整性与 SSoT 交叉引用是两件事，但都廉价，各一条流水线已足够 |
@@ -332,10 +337,10 @@ L2/L3 都不改判据，只改「同一份物料要付几次成本」。任何�
 `image-build` 装机三腿拆三个作业（§5 的 L4 否决——单 job 内并行不改变墙钟，
 只是把失败归因藏进一个作业）。
 
-两仓（memory / cognition）不设流水线的完整证据链见
-`docs/docs-linux/70-build-system/03-ci-cd-pipeline.md` §2.6；security 已因
-交付物化改列 `security-verify`。本表只登记结论，
-避免同一份证据在两处维护。
+memory 不设流水线的完整证据链见
+`docs/docs-linux/70-build-system/03-ci-cd-pipeline.md` §2.6；security 与
+cognition 已因交付物化改列各自的流水线，cloudnative 在 `c-verify` 之外
+另有四条运行期契约轴。本表只登记结论，避免同一份证据在两处维护。
 
 两条 0.0.5 的接线变化：`tui-frame`（QG-08 帧预算）并入 `tui-verify` 的
 `build` 作业，不再是无执行者的孤儿门禁；`quality-metrics` 的
