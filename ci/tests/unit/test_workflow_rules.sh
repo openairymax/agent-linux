@@ -67,14 +67,15 @@ reset()
     rm -rf "${FX}/.github"
     mkdir -p "${FX}/.github/workflows"
     rm -f "${FX}/ci/baseline/gate-owners.tsv"
+    : >"${FX}/ci/baseline/gate-fixtures.tsv"
     printf 'runner:\n  label: ubuntu-24.04\n  hosted_ceiling_minutes: 360\n' \
         >"${FX}/tools/nightly/manifest.yaml"
 }
 
-# doc [规则号列表] — 写第 4 节规则表；默认登记 1..20，与脚本自述一致。
+# doc [规则号列表] — 写第 4 节规则表；默认登记 1..21，与脚本自述一致。
 doc()
 {
-    local nums="${1:-1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20}"
+    local nums="${1:-1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21}"
 
     {
         printf '## 4. 命名与结构约定\n\n| # | 规则 | 为什么 |\n|---|------|--------|\n'
@@ -137,10 +138,10 @@ out=$(run)
 check "规则 15：规则表漏登" 1 "$?" "${out}" "规则 19 未出现"
 
 reset
-doc 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21
+doc 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22
 flow demo-verify.yml ubuntu-24.04 "actions/checkout@${SHA}" " # v4" pr
 out=$(run)
-check "规则 15：规则表多登" 1 "$?" "${out}" "不存在的规则 21"
+check "规则 15：规则表多登" 1 "$?" "${out}" "不存在的规则 22"
 
 reset
 doc 1,2,3,4,5,6,7,8,9,10,11,12,13,13,14,15,16,17,18
@@ -251,9 +252,10 @@ rm -rf "${FX}/tools" "${FX}/ci/gates"
 # heads 查，标签派发会去查不存在的同名分支，判负成「无此分支」。
 # 前一条用例删掉了 tools/ 与 ci/gates/，这里补齐规则 12 与 17 的对照基准，
 # 让正例只受规则 19 影响。
-mkdir -p "${FX}/tools/nightly" "${FX}/ci/gates"
+mkdir -p "${FX}/tools/nightly" "${FX}/ci/gates" "${FX}/ci/tests"
 printf '#!/bin/sh\n# 用法: ci/gates/remote-sync.sh\n' \
     >"${FX}/ci/gates/remote-sync.sh"
+: >"${FX}/ci/tests/test_remote_sync.sh"
 reset
 doc
 flow demo-verify.yml ubuntu-24.04 "actions/checkout@${SHA}" " # v4" pr
@@ -278,9 +280,10 @@ gate()
 {
     local name="$1"
 
-    mkdir -p "${FX}/ci/gates"
+    mkdir -p "${FX}/ci/gates" "${FX}/ci/tests"
     printf '#!/bin/sh\n# 用法: ci/gates/%s.sh\n' "${name}" \
         >"${FX}/ci/gates/${name}.sh"
+    : >"${FX}/ci/tests/test_${name//-/_}.sh"
 }
 
 # owners <行>... — 原样写入登记表；列数与分隔符由调用方给出的字面量决定。
@@ -294,7 +297,10 @@ rm -rf "${FX}/ci/gates"
 reset
 doc
 flow demo-verify.yml ubuntu-24.04 "actions/checkout@${SHA}" " # v4" pr
-gate orphan.sh
+# 不带夹具：同名夹具本身就是规则 20 认可的调用方，会掩盖「无人调用」。
+mkdir -p "${FX}/ci/gates"
+printf '#!/bin/sh\n# 用法: ci/gates/orphan.sh\n' \
+    >"${FX}/ci/gates/orphan.sh"
 out=$(run)
 check "规则 20：无调用方且未登记" 1 "$?" "${out}" "无调用方"
 

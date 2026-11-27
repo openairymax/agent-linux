@@ -22,7 +22,9 @@ fails=0
 ok() { printf 'ok   %s\n' "$*"; }
 bad() { printf 'FAIL %s\n' "$*"; fails=$((fails + 1)); }
 
-run() { bash "${ROOT}/ci/gates/pool-state.sh" "$@" 2>&1; }
+# 门禁在 GITHUB_OUTPUT 存在时只写文件、不打印；Actions 给每一步都设了
+# 这个变量，夹具必须显式清空才能读到标准输出。写文件的分支单独断言。
+run() { GITHUB_OUTPUT='' bash "${ROOT}/ci/gates/pool-state.sh" "$@" 2>&1; }
 
 # 从 "count=N lock=M digest=HEX" 里取字段
 val() { printf '%s\n' "$2" | tr ' ' '\n' | sed -n "s/^$1=//p"; }
