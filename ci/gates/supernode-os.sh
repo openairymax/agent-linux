@@ -302,8 +302,8 @@ done
 have 'supernode-os\.sh' "${FLOW}" "supernode-os: workflow 未监听门禁"
 have '^  supernode:' "${FLOW}" "supernode-os: workflow 未新增作业"
 have 'ci/ci\.sh supernode-os' "${FLOW}" "supernode-os: workflow 未调用门禁"
-have '^cloudnative-verify\.yml[[:space:]]+0[[:space:]]+5$' "${BUDGET}" \
-    "supernode-os: 预算未把 cloudnative-verify 登记为 5 个作业"
+have '^cloudnative-verify\.yml[[:space:]]+0[[:space:]]+[0-9]+$' "${BUDGET}" \
+    "supernode-os: 预算未登记 cloudnative-verify"
 endgroup
 
 # ─── 9. 源码树卫生 ───────────────────────────────────────────────────

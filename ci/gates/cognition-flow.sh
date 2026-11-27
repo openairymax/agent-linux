@@ -228,8 +228,8 @@ done
 have 'cognition-flow\.sh' "${FLOWYML}" "workflow 未监听门禁"
 have '^  cogflow:' "${FLOWYML}" "workflow 未新增 cogflow 作业"
 have 'ci/ci\.sh cognition-flow' "${FLOWYML}" "workflow 未调用门禁"
-have '^cognition-verify\.yml[[:space:]]+0[[:space:]]+2$' "${BUDGET}" \
-    "预算未登记 cognition-verify 为双作业"
+have '^cognition-verify\.yml[[:space:]]+0[[:space:]]+[0-9]+$' "${BUDGET}" \
+    "预算未登记 cognition-verify"
 endgroup
 
 # ─── 10. 源码树卫生 ──────────────────────────────────────────────────

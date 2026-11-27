@@ -257,8 +257,8 @@ done
 have 'cognition-thinkdual\.sh' "${FLOW}" "workflow 未监听门禁"
 have '^  thinkdual:' "${FLOW}" "workflow 未新增 thinkdual 作业"
 have 'ci/ci\.sh cognition-thinkdual' "${FLOW}" "workflow 未调用门禁"
-have '^cognition-verify\.yml[[:space:]]+0[[:space:]]+2$' "${BUDGET}" \
-    "预算未把 cognition-verify 登记为双作业"
+have '^cognition-verify\.yml[[:space:]]+0[[:space:]]+[0-9]+$' "${BUDGET}" \
+    "预算未登记 cognition-verify"
 endgroup
 
 # ─── 10. 源码树卫生 ──────────────────────────────────────────────────

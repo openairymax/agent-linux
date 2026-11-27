@@ -30,7 +30,7 @@ airy-verify.yml                   0     2
 c-verify.yml                      0     4
 # cloudnative-verify 按资源面拆作业：CRD 清单与校验、shim 运行时、CNI
 # 网络策略与超节点 OS 各为纯用户态判据，互不共享构建产物，失败可归因到面。
-cloudnative-verify.yml            0     5
+cloudnative-verify.yml            0     4
 # cognition-verify 按功能面各设一条判据：Thinkdual 的评分与策略热更新、
 # 认知数据流的三相循环与补偿重试，两条判据的构建入口不同，失败可归因。
 cognition-verify.yml              0     2

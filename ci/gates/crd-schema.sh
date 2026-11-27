@@ -13,7 +13,7 @@
 #   2. 出树 cmake 构建零警告（-Werror），ctest 全绿。
 #   3. CLI 合法输入退 0 并给出规整摘要；用法错退 2、坏输入退 3。
 #   4. 四类 CRD 清单的 apiVersion、kind、group、storage 与名字一致。
-#   5. spec 与 workflow 接线成立，预算登记为 2 个作业。
+#   5. spec 与 workflow 接线成立，预算已登记本流水线。
 #   6. cloudnative 源码树无构建残留、无占位标记与本地绝对路径。
 #
 # 退出码: 0 通过；1 判定失败；5 前置缺失。

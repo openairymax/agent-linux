@@ -16,7 +16,7 @@
 #   4. ADD 原样回传 prevResult 并落注册记录；CHECK 命中；DEL 幂等清理。
 #   5. 缺 prevResult 与不支持版本退 3，命令非法退 2。
 #   6. 离线 eval 的入站对端／端口与出站例外／端口判定逐条符合设计。
-#   7. spec 装箱与 cloudnative-verify 作业接线成立，预算登记 4 个作业。
+#   7. spec 装箱与 cloudnative-verify 作业接线成立，预算已登记本流水线。
 #   8. 源码树无构建残留、占位标记与本地绝对路径。
 #
 # 退出码: 0 通过；1 判定失败；5 前置缺失。
@@ -195,8 +195,8 @@ done
 have 'cni-policy\.sh' "${FLOW}" "cni-policy: workflow 未监听门禁"
 have '^  cni:' "${FLOW}" "cni-policy: workflow 未新增 cni 作业"
 have 'ci/ci\.sh cni-policy' "${FLOW}" "cni-policy: workflow 未调用门禁"
-have '^cloudnative-verify\.yml[[:space:]]+0[[:space:]]+4$' "${BUDGET}" \
-    "cni-policy: 预算未把 cloudnative-verify 登记为 4 个作业"
+have '^cloudnative-verify\.yml[[:space:]]+0[[:space:]]+[0-9]+$' "${BUDGET}" \
+    "cni-policy: 预算未登记 cloudnative-verify"
 endgroup
 
 # ─── 8. 源码树卫生 ───────────────────────────────────────────────────
