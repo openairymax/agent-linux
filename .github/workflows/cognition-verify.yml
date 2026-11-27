@@ -1,0 +1,61 @@
+# ===========================================================================
+# agent-linux (AirymaxOS) CI Pipeline
+# 认知面判据：
+#   * Thinkdual 双系统思考（P-26 / CA-010、CA-056）：复杂度评分、模式
+#     判定、策略热更新与审计账本
+# ===========================================================================
+# Authority: docs/docs-linux/20-modules/05-cognition.md
+#            docs/docs-linux/40-dataflows/01-cognition-flow.md
+# Design: 判据全部在 ci/gates/，YAML 只做 checkout 与派遣。实现为纯
+#         用户态 C11，只读 [SC] 契约头；托管 runner 上可完整复算。
+# ---------------------------------------------------------------------------
+# 监听面取 cognition gitlink 而不是 cognition/**：父仓只能看到子模块指针
+# 的移动，按子目录过滤等于永不触发。
+# ===========================================================================
+
+name: cognition-verify
+
+on:
+  pull_request:
+    paths:
+      - 'cognition'
+      - 'distro'
+      - 'ci/gates/cognition-thinkdual.sh'
+      - 'ci/lib/**'
+      - 'ci/ci.sh'
+      - 'ci/baseline/workflow-budgets.txt'
+      - '.github/workflows/cognition-verify.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'cognition'
+      - 'distro'
+      - 'ci/gates/cognition-thinkdual.sh'
+      - 'ci/lib/**'
+      - 'ci/ci.sh'
+      - 'ci/baseline/workflow-budgets.txt'
+      - '.github/workflows/cognition-verify.yml'
+
+# 最小权限：只读检出与构建，不触发布与制品写。
+permissions:
+  contents: read
+
+# 同一 ref 只保留最新一轮：旧结论对当前树已失效，继续排队只抢并发额度。
+concurrency:
+  group: cognition-verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  thinkdual:
+    name: Thinkdual Scoring, Switching and Policy Reload
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { submodules: recursive }
+
+      # 门禁覆盖文档边界 0.315 的评分、五类模式判定、策略逐字段与默认值
+      # 回退、热/冷两种策略更新、审计账本不落原文、退出码，以及 spec、
+      # 流水线预算与 [SC] 契约头的同源断言。
+      - name: Thinkdual contract
+        run: ci/ci.sh cognition-thinkdual
