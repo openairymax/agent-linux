@@ -8,6 +8,10 @@
 # 一个假 gh：run list 交出运行记录，run download 把制品目录复制出来。判定
 # 逻辑因此可以在没有网络、没有 token 的机器上逐条打穿。
 #
+# 假 gh 还要回答两处 git 查询：tag 引用与注解标签解引用。来源判据比的是
+# run 的 headSha 与 tag 指向的提交，两处都必须能造出「同提交」「旧提交」
+# 「注解标签」三种形态。
+#
 # 清单复验走真实解析器（system/services/airyupdate），不在这里另造一份：
 # 本文件守的是「取回的是不是客户端认的那一份」，用假校验器就把被测对象
 # 换掉了。
@@ -26,6 +30,11 @@ fails=0
 FX="${tmp}/fx"
 FAKE="${tmp}/fake"
 OUT="${tmp}/out"
+
+# SRC_SHA — tag 指向的提交；REF_TYPE=tag 让假 gh 交出注解标签，门禁须再解
+# 一层才拿到这个提交。
+SRC_SHA="$(printf 'a%.0s' {1..40})"
+REF_TYPE="commit"
 
 mkdir -p "${FX}/ci/gates" "${FX}/ci/lib" "${FX}/bin" \
     "${FX}/system/services"
@@ -62,7 +71,8 @@ check()
 
 run()
 {
-    PATH="${FX}/bin:${PATH}" FAKE="${FAKE}" \
+    PATH="${FX}/bin:${PATH}" FAKE="${FAKE}" SRC_SHA="${SRC_SHA}" \
+        REF_TYPE="${REF_TYPE}" \
         bash "${FX}/ci/gates/channel-fetch.sh" "$@" 2>&1
 }
 
@@ -101,6 +111,15 @@ run)
 api)
     url="${2:-}"
     case "${url}" in
+    */git/ref/tags/*)
+        printf '{"object":{"sha":"%s","type":"%s"}}\n' \
+            "${SRC_SHA}" "${REF_TYPE}"
+        exit 0
+        ;;
+    */git/tags/*)
+        printf '{"object":{"sha":"%s"}}\n' "${SRC_SHA}"
+        exit 0
+        ;;
     */actions/runs/*/artifacts*) ;;
     *) exit 2 ;;
     esac
@@ -154,17 +173,24 @@ chan()
 EOF
 }
 
-# runs <id:createdAt> ... — 运行记录，参数顺序即 gh 的返回顺序。
+# runs <id:createdAt[@sha]> ... — 运行记录，参数顺序即 gh 的返回顺序。
+# 缺省提交取 SRC_SHA；`@sha` 用来造「旧提交的装配轮」。
 runs()
 {
-    local pair first=1
+    local pair first=1 id rest sha
 
     printf '[' >"${FAKE}/runs.json"
     for pair in "$@"; do
+        id="${pair%%:*}"
+        rest="${pair#*:}"
+        case "${rest}" in
+        *@*) sha="${rest##*@}"; rest="${rest%@*}" ;;
+        *)   sha="${SRC_SHA}" ;;
+        esac
         [ "${first}" -eq 1 ] || printf ',' >>"${FAKE}/runs.json"
         first=0
-        printf '{"databaseId":%s,"createdAt":"%s"}' \
-            "${pair%%:*}" "${pair#*:}" >>"${FAKE}/runs.json"
+        printf '{"databaseId":%s,"createdAt":"%s","headSha":"%s"}' \
+            "${id}" "${rest}" "${sha}" >>"${FAKE}/runs.json"
     done
     printf ']\n' >>"${FAKE}/runs.json"
 }
@@ -194,6 +220,36 @@ out="$(run --tag v0.0.4 --repo o/r --dir "${OUT}")"
 check "版本不符回落到较旧 run" 0 "$?" "${out}" "通道清单"
 grep -q '"version": "0.0.4"' "${OUT}/channel.json" &&
     ok "回落取回的是本版清单" || bad "回落取回的版本不对"
+
+# tag 移动后，旧提交上同版本号的装配轮仍在成功列表里：它的清单对应另一份
+# 内核包，挂上新发行页就会在发布自证时分叉。来源判据是 run 的提交。
+mkfix
+art 23
+chan 23 0.0.4
+runs "23:2026-11-02T12:00:00Z@$(printf 'b%.0s' {1..40})"
+out="$(run --tag v0.0.4 --repo o/r --dir "${OUT}")"
+check "旧提交的装配轮不取用" 1 "$?" "${out}" "无 run 在"
+
+# 新旧提交并存时取本提交那一轮，而不是更新的旧提交轮。
+mkfix
+art 24
+chan 24 0.0.4
+art 25
+chan 25 0.0.4
+runs "25:2026-11-02T12:00:00Z@$(printf 'b%.0s' {1..40})" \
+    "24:2026-11-02T10:00:00Z"
+out="$(run --tag v0.0.4 --repo o/r --dir "${OUT}")"
+check "跳过旧提交取本提交轮" 0 "$?" "${out}" "run 24"
+
+# 注解标签的引用指向标签对象：解一层再比提交，否则任何注解标签都对不上。
+mkfix
+art 26
+chan 26 0.0.4
+runs 26:2026-11-02T10:00:00Z
+REF_TYPE=tag
+out="$(run --tag v0.0.4 --repo o/r --dir "${OUT}")"
+REF_TYPE=commit
+check "注解标签解引用后取回" 0 "$?" "${out}" "通道清单"
 
 # 最新的成功 run 可能只是验收轮（没有验收制品），不能因此判失败。
 mkfix

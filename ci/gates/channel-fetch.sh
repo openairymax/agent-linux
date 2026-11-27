@@ -23,10 +23,15 @@
 # 里取回清单，再用客户端解析器（system/services/airyupdate/feed.py）复验
 # 一遍：发布侧放行、客户端拒收的清单，等于把一次坏更新发给全体用户。
 #
-# 版本判定不靠 run 的元数据：workflow_dispatch 的输入（release_tag）不进
-# run 列表，按分支或标题都取不到。判据改为制品内容——清单里的 version 与
-# --tag 相等即命中。同一版本两次装配出不同内容属于发布事故，因此命中第一
-# 份即停：更新的 run 就是更权威的证据，回落到旧 run 只会掩盖差异。
+# 版本判定不靠 run 的分支或标题：workflow_dispatch 的输入（release_tag）不
+# 进 run 列表，按名字取不到。判据是制品内容——清单里的 version 与 --tag 相
+# 等即命中。同一版本两次装配出不同内容属于发布事故，因此命中第一份即停：
+# 更新的 run 就是更权威的证据，回落到旧 run 只会掩盖差异。
+#
+# 另有一条来源判据：run 的提交必须等于 tag 指向的提交。tag 移动后，同版本
+# 号的旧装配轮仍会列出，只按 version 匹配就会把上一提交的清单挂到新发行
+# 页上——清单里的内核摘要对应的是旧构建，发布自证随即判分叉（0.0.5 重切
+# 前的真实故障）。注解标签先解引用一层，比的是提交而不是标签对象。
 #
 # 制品名不是固定值：装配按矩阵项展开，验收制品带架构与腿名后缀
 # （airymaxos-acceptance-x86_64、airymaxos-acceptance-aarch64-usb），同名
@@ -84,9 +89,51 @@ place()
     cp "$1" "$2.part" && mv "$2.part" "$2"
 }
 
+# tag_sha —— tag 指向的提交。注解标签的引用指向标签对象而不是提交，必须
+# 再解一层，否则「同一提交」判据比较的对象根本不对。
+tag_sha()
+{
+    local sha type
+
+    gh api "repos/${CH_REPO}/git/ref/tags/${CH_TAG}" >"${TMP}/ref.json" \
+        2>/dev/null ||
+        { err "读不到标签: ${CH_TAG}（${CH_REPO}）"; return 1; }
+    sha="$(python3 -c '
+import json, sys
+obj = json.load(open(sys.argv[1]))["object"]
+print(obj["sha"], obj["type"])
+' "${TMP}/ref.json")" ||
+        { err "标签引用不是合法 JSON: ${CH_TAG}"; return 1; }
+    type="${sha#* }"
+    sha="${sha% *}"
+    [ "${type}" = "tag" ] || { printf '%s\n' "${sha}"; return 0; }
+    gh api "repos/${CH_REPO}/git/tags/${sha}" >"${TMP}/tag.json" \
+        2>/dev/null ||
+        { err "解不开注解标签: ${CH_TAG}"; return 1; }
+    python3 -c '
+import json, sys
+print(json.load(open(sys.argv[1]))["object"]["sha"])
+' "${TMP}/tag.json" ||
+        { err "注解标签不是合法 JSON: ${CH_TAG}"; return 1; }
+}
+
+# absent MSG —— 「没有这份清单」的两档处理：--optional 记为可接受的事实并
+# 退出 0，否则判失败。不可信不走这里，它在 take 里已经直接失败。
+absent()
+{
+    if [ "${OPTIONAL}" -eq 1 ]; then
+        note "$1（--optional，本轮不挂该清单）"
+        exit 0
+    fi
+    die "$1"
+}
+
+TAG_SHA="$(tag_sha)" || exit 1
+
 group "gh run list ${WF}"
 gh run list --workflow "${WF}" --repo "${CH_REPO}" --status success \
-    --limit "${LIMIT}" --json databaseId,createdAt >"${TMP}/runs.json" ||
+    --limit "${LIMIT}" --json databaseId,createdAt,headSha \
+    >"${TMP}/runs.json" ||
     die "列举 ${WF} 运行记录失败（${CH_REPO}）"
 endgroup
 
@@ -98,6 +145,21 @@ for run in sorted(json.load(open(sys.argv[1])),
 ' "${TMP}/runs.json")" || die "运行记录不是合法 JSON"
 
 [ -n "${ids}" ] || die "${CH_REPO} 没有成功的 ${WF} 运行"
+
+# 只保留在 tag 提交上跑出的装配轮：同版本号的旧提交轮次不是本发行位的
+# 凭证，它的清单对应另一份内核包。
+ids="$(python3 -c '
+import json, sys
+want = sys.argv[1]
+for run in sorted(json.load(open(sys.argv[2])),
+                  key=lambda r: r["createdAt"], reverse=True):
+    if run["headSha"] == want:
+        print(run["databaseId"])
+' "${TAG_SHA}" "${TMP}/runs.json")" || die "运行记录不是合法 JSON"
+
+MISS="无 run 在 ${TAG_SHA:0:12} 装配 ${CH_WANT} 的 ${CH_NAME}"
+MISS="${MISS}（${CH_REPO}，tag ${CH_TAG}）"
+[ -n "${ids}" ] || absent "${MISS}"
 
 DEST="${CH_DIR}/${CH_NAME}"
 
@@ -162,17 +224,6 @@ take()
     done < <(printf '%s\n' "${names}" | pick)
     note "run ${id} 无 ${ART} 制品或制品内无 ${CH_WANT} 的 ${CH_NAME}，跳过"
     return 1
-}
-
-# absent MSG —— 「没有这份清单」的两档处理：--optional 记为可接受的事实并
-# 退出 0，否则判失败。不可信不走这里，它在 take 里已经直接失败。
-absent()
-{
-    if [ "${OPTIONAL}" -eq 1 ]; then
-        note "$1（--optional，本轮不挂该清单）"
-        exit 0
-    fi
-    die "$1"
 }
 
 while IFS= read -r id; do
