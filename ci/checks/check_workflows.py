@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 """ci/checks/check_workflows.py —— 守住 workflow 薄化与命名约束
 
-二十条规则：
+二十一条规则：
 
 1. 结构上限：每个 workflow 的 job 数 ≤ 预算，内联 ``run: |`` 块数 ≤ 预算
    （预算见 ci/baseline/workflow-budgets.txt，只许下调）。
@@ -89,6 +89,11 @@
    悬空，读者仍以为它有人执行。缺了这条，门禁会静默漂成无人执行的文档：
    当前树里 alk-size、system-inventory、session-switch 与 closure-pool 四个
    脚本没有自动调用方，判据再对也拦不住任何合入，直到有人重读目录才发现。
+21. 每个 ``ci/gates/*.sh`` 必须有同名夹具 ``ci/tests/test_<name>.sh``（至少
+   一条负向与一条正向），或在 ``ci/baseline/gate-fixtures.tsv`` 登记豁免。
+   登记项须指向真实门禁、类别取自 static/daemon/host/build，且补上夹具后
+   删除该行。只有正向一侧的门禁在真实树上常年为绿，判负路径从未被触发；
+   判据写反、退出码漂移都看不出来，等同于没有判据。
 
 为什么需要它：这些约束此前只存在于文档里，没有执行者。78 段内联 shell
 就是这样一段段长出来的——每一次单看都合理，合起来就没有人能在本地验证。
@@ -106,6 +111,8 @@ WORKFLOWS = ROOT / ".github" / "workflows"
 BUDGETS = ROOT / "ci" / "baseline" / "workflow-budgets.txt"
 # 门禁归属登记：没有自动调用方的门禁必须在这里写清为什么只能手工执行。
 GATE_OWNERS = ROOT / "ci" / "baseline" / "gate-owners.tsv"
+# 夹具豁免登记：判据读取宿主现场或构建产物时，写清为什么造不出坏输入。
+GATE_FIXTURES = ROOT / "ci" / "baseline" / "gate-fixtures.tsv"
 LINT = ROOT / "ci" / "lint.sh"
 TESTS = ROOT / "ci" / "tests"
 
@@ -500,6 +507,51 @@ def gate_owned() -> list[str]:
     return errors
 
 
+def parse_fixtures() -> tuple[dict[str, tuple[str, int]], list[str]]:
+    """夹具豁免登记：三列、类别受限；注释与空行跳过。"""
+    exempt: dict[str, tuple[str, int]] = {}
+    errors: list[str] = []
+    if not GATE_FIXTURES.exists():
+        return exempt, [f"{GATE_FIXTURES.name}: 文件不存在，豁免无从对照"]
+    classes = {"static", "daemon", "host", "build"}
+    for no, s in enumerate(GATE_FIXTURES.read_text().splitlines(), 1):
+        if not s.strip() or s.lstrip().startswith("#"):
+            continue
+        cols = s.split("\t")
+        if len(cols) != 3:
+            errors.append(
+                f"ci/baseline/gate-fixtures.tsv:{no}: 列数 {len(cols)} ≠ 3")
+        elif cols[1] not in classes:
+            errors.append(
+                f"ci/baseline/gate-fixtures.tsv:{no}: 类别 {cols[1]} 不在 "
+                "static/daemon/host/build")
+        else:
+            exempt[cols[0]] = (cols[1], no)
+    return exempt, errors
+
+
+def fixture_owned() -> list[str]:
+    """缺夹具的门禁须登记豁免；登记项须指向真实门禁，补上夹具即删行。"""
+    exempt, errors = parse_fixtures()
+    gates = {p.stem for p in CIGATES.glob("*.sh")}
+    have = {test_gate(p) for p in TESTS.glob("test_*.sh")}
+    for name in sorted(gates - have - set(exempt)):
+        errors.append(
+            f"ci/gates/{name}.sh: 缺同名夹具 "
+            f"ci/tests/test_{name.replace('-', '_')}.sh 且未在 "
+            "ci/baseline/gate-fixtures.tsv 登记")
+    for name, (_, no) in exempt.items():
+        if name not in gates:
+            errors.append(
+                f"ci/baseline/gate-fixtures.tsv:{no}: 登记的 {name} 没有对应 "
+                "门禁（改名后登记悬空）")
+        elif name in have:
+            errors.append(
+                f"ci/baseline/gate-fixtures.tsv:{no}: {name} 已有同名夹具，"
+                "删除该豁免行")
+    return errors
+
+
 def check_pins(name: str, text: str) -> list[str]:
     """每个 uses: 钉 40 位 SHA 并带版本注释；本地 action 与镜像除外。"""
     errors: list[str] = []
@@ -805,7 +857,7 @@ def scan_workflows(files: list[str],
 
     顺序即错误报告顺序：跨文件问题只出现一次，排在单文件问题之前。
     """
-    errors = check_gate_libs() + check_doc() + gate_owned()
+    errors = check_gate_libs() + check_doc() + gate_owned() + fixture_owned()
     labels = runner_labels()
     if not labels:
         errors.append(

@@ -1,0 +1,75 @@
+# 门禁回归夹具豁免登记（check_workflows.py 第 21 条规则）
+#
+# 背景：ci/README.md §5.4 要求每个门禁配同名夹具 ci/tests/test_<name>.sh，
+# 至少一条负向与一条正向。多数门禁只读仓库内输入，夹具可在本机构造；
+# 另一些判据取的是宿主现场、构建产物或运行中的服务状态，没有可造坏的输入。
+# 把后者显式登记，是让「没有夹具」成为一个决定，而不是一次遗漏。
+#
+# 列（TAB 分隔，恰好三列）：
+#   * 第一列  门禁名，对应 ci/gates/<name>.sh
+#   * 第二列  类别：static（只读仓库输入）/ daemon（运行中服务）/
+#             host（特权、块设备、网络或镜像导入）/ build（编译或打包）
+#   * 第三列  判据读取的现场或产物，写清为什么造不出坏输入
+#
+# 登记即技术债：补上同名夹具后必须删除该行，否则第 21 条以「登记悬空」判红。
+# 新增门禁没有夹具时必须在这里登记，不得默默留白。
+#
+# gate	class	reason
+accept	host	判定取 guest 串口写出的 AIRYMAX-DESKTOP-READY/SMOKE-PASS 标记，需 qemu-system 装机并冷启动 ISO
+assemble	build	在固定 openEuler 容器内以 --cacheonly 重放 dnf 求解并组装 ISO
+closure-pool	host	需 root 且在宿主在线 dnf 求解收割约 2.5GB 安装闭包
+cni-policy	build	cmake -Werror 构建 airy-cni 后跑 ctest 与 ADD/CHECK/DEL 判定矩阵
+cognition-flow	build	cmake 构建 flow 后由 ctest/CLI 断言 FAST/SLOW 账本与守卫退出码 6/7/8
+cognition-thinkdual	build	cmake 构建后断言复杂度 0.315 判 SLOW、热更新阈值与退出码 2/3/4
+config-d	build	出树 cmake 构建 config_d，比对出厂配置与内置默认值及退出码 101/102/105
+container-load	host	docker load 镜像 tar 后读 /etc/os-release 断言 ID=openeuler
+crd-schema	build	cmake 构建 airy-crdctl 后跑 ctest 并核对四类 CRD 清单 apiVersion/kind/storage
+distro-lint	static	转调 distro/ci/run-lint.sh 用 python 标准库检查 spec/comps/kickstart/preset 规则
+ebpf-probe	build	以 -g -O2 -target bpf 编译探针，断言 .BTF 段、体积<64KB 与 tracepoint 成员顺序
+free-disk	host	在托管 runner 上 sudo 删除镜像/缓存并 chmod /dev/kvm
+fw-preflight	host	在 docker 会话里解包四架构内核模块包与固件清单比对覆盖
+ime-corpus	build	cargo test --offline 跑 boot-ime 3000 句语料，断言首选准确率≥95%、p99≤50ms
+input-matrix	build	cargo test 驱动键盘/语音/API/批处理四通道各成功与失败路径
+ipc-reconcile	build	cmake 构建 airy-reconcile 后 ctest 与坏输入=3、用法错=2
+iso-publish	host	切块后经 oras 推送 ghcr 并按 annotation 三元组判幂等
+kernel-airy	build	断言构建产物 11 个 CONFIG、CONFIG_LSM 含 airy、vmlinux .BTF 与六个 built-in.a
+kernel-analyze	build	对 refbuild 的 .o 跑 sparse 与 10 个 coccinelle 脚本，解析 checkpatch errors 计数
+kernel-build	build	按 (config,arch,compiler) 实编 Kbuild 一格并判 error: 与自有路径 warning
+kernel-consistency	build	默认 all 含 uapi 的 headers_install+cc 自包含编译，另比对版本/矩阵/ABI/codegen 生成物
+kernel-debugfs	static	grep 内核源断言 fs_initcall 注册、节点 0444 只读、randtag 不入非测试源
+kernel-deps	host	用 apt 安装或仅校验交叉工具链/sparse/coccinelle/virtme-ng
+kernel-kselftest	host	用 virtme-ng 起虚拟机跑 kselftest 并解析 TAP，按 /dev/kvm 自适应加速
+kernel-kunit	build	O=.kunit 外置构建 UML 内核并跑 KUnit，与 TAP 基线比对
+kernel-obs	static	grep 内核源断言 core_initcall、AIRY_OBS_ATTR 无 store、Kbuild 与 defconfig 齐备
+kernel-policy	static	比对 .adl 契约与两份生成头字节一致、airy_init 注册三表与 KUnit 基线
+kernel-refbuild	build	实编 x86_64 airy_defconfig 并断言 11 CONFIG、CONFIG_LSM、vmlinux .BTF
+kernel-uevent	static	grep UAPI 与内核契约表断言事件名/格式串与载荷尺寸断言、不复制字面量
+landlock-sandbox	build	cmake -Werror 构建后 ctest，断言坏策略=3 与无内核支持时 SKIP
+lint	static	汇总 20 项自检：workflow 规则、度量棘轮、bash -n 并执行 ci/tests 全部门禁夹具
+llm-accel	static	跑 airy-model probe 断言行式四后端顺序与 JSON 字段集合、证据前缀
+log-dump	static	只按 --dir tail 出产物日志，无判定断言
+logger-d	build	出树 cmake 构建 logger_d 并跑 logd_cfg/logd_file 单测与退出码 78/64
+macro-d	build	出树 cmake 构建 macro_d 并跑 macro_cfg 单测与六故障码默认裁决
+media-fetch	host	按 sha256 从多镜像下载介质，受总预算/续传/停滞换源约束
+mem-obs	build	编译 UAPI 导出侧与 -Werror CLI，断言 48 键字段面与四条 ioctl 布局断言
+mgmt-leaves	host	aggregate-subrepo-ci.py --fail-on-red 读远端 CI 状态，且 npm 安装 markdownlint-cli2
+nightly-helpers	static	按 helper 键分派 tools/nightly 脚本，未落地时只打印 SKIP
+perf-hooks	build	编译 perf 集成 -Werror，断言 perf stat -x, 事件集与 --help=0/坏参=2/缺输入=4
+python-verify	host	pip 安装各 tools/*/requirements-dev.txt 后跑 pytest 与漂移检查
+release-deps	host	apt 安装内核四腿所需交叉 gcc/strip/clang 并逐个校验在位
+release-kernel	build	单 job 顺序编译四架构内核 RPM 并核对包矩阵
+release-oci	build	按 SOURCE_DATE_EPOCH 确定性构建镜像 tar，再在第二台 runner 载入推送并 cosign 签名
+release-prune	host	经 GitHub API 列出并删除同 tag 下多余资产
+release-sbom	build	syft 扫描 kernel 与 7 个子仓产出 SPDX，再由 merge_sbom.py 合并
+release-sign	host	用 GPG_PASSPHRASE 在临时密钥环对 RPM/SDK/清单做分离签名
+session-switch	daemon	在目标机用 systemctl/journalctl/loginctl 读运行中服务的 VT 号与日志
+shim-runtime	build	cmake -Werror 构建后 ctest，断言 bundle 规划六行 caps=0x103、坏 bundle=3
+ssot-verify	static	校验 ssot-registry.yaml 可解析且规则 ID 数与 validate-ssot.py 一致、扫 .md 相对链接
+submodules	host	git submodule update --init --depth 1 拉取远端并校验目录非空
+supernode-os	build	cmake -Werror 构建后 ctest，断言 discover/affinity/令牌池/迁移准入与快照恢复
+tests-linux	build	headers_install 导出头后出树 cmake+ctest 编译并执行用户态契约用例
+token-obs	build	编译 UAPI 导出侧与 -Werror CLI，断言 20 键字段面与三条失败路径
+tool-pack	build	用 tar/gzip/pyz 打 SDK 与烧录工具两遍比对字节确定性并做 --version 对账
+tui-check	build	cargo fmt/clippy/test/cross --offline --locked 并核对 rust-toolchain 钉版
+tui-frame	build	cargo 跑 frame_budget 与 benches，断言 p99≤33ms、常驻堆≤64KiB
+uevent-daemon	static	grep UAPI 与封装库断言 DIAG_IOCSREG 注册串、writev 布局与使能位读取顺序

@@ -39,7 +39,7 @@ setup()
 
 run()
 {
-    out="$(bash "${GATE}" "$@" 2>&1)"
+    out="$(bash "${GATE}" 2>&1)"
     rc=$?
 }
 

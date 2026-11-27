@@ -125,6 +125,7 @@ lint 中执行。下表是规则本身，不是建议。
 | 18 | 门禁、库、工具与 workflow 都禁止由名称形状推语义：不得以「标签以 `-latest` 结尾」判定托管，也不得写 `*-latest` 做比较、`case` 匹配或表达式判断 | 托管运行器的两种写法都表示托管，自托管标签任意命名；形状与语义之间没有蕴含关系，`run 40864072696` 就是这样误判 |
 | 19 | 调用 `ci/ci.sh remote-sync` 必须显式给出 `--kind` | 门禁缺省查 `refs/heads/<ref>`，而 `github.ref_name` 已剥掉 `refs/` 前缀：标签派发时它去查不存在的同名分支，判负成「无此分支」（`run 42335415156` 整轮组装在第一步落空） |
 | 20 | 每个 `ci/gates/*.sh` 必须有调用方：workflow 或 `ci/lint.sh` 的 `ci/ci.sh <gate>`、同名 `ci/tests/test_<gate>.sh`，或在 `ci/baseline/gate-owners.tsv` 登记；登记项必须指向真实门禁，且每行恰好三列 | 没有执行者的门禁只是文档：`alk-size`、`system-inventory`、`session-switch`、`closure-pool` 四个脚本没有自动调用方，判据再对也拦不住任何合入 |
+| 21 | 每个 `ci/gates/*.sh` 必须有同名夹具 `ci/tests/test_<gate>.sh`（一负一正），或在 `ci/baseline/gate-fixtures.tsv` 登记豁免；登记项必须指向真实门禁、类别取自 `static`/`daemon`/`host`/`build`，补上夹具后删除该行 | 只有正向一侧的门禁在真实树上常年为绿，判负路径从未被触发：判据写反、退出码漂移都看不出来，等同于没有判据 |
 
 新增或改名一个流水线需要三处同步：文件、`name:`、`ci/baseline/workflow-budgets.txt`。
 `./ci/lint.sh` 在任一处漂移时直接判红。
