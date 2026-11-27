@@ -69,7 +69,7 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 | `ops-verify.yml` | `alert-verify`、`incident-verify`、`backup-verify` | `system` gitlink、`ci/gates/{alert-d,incident,backup}.sh`、`ci/lib/**`、`ci/ci.sh` 的 PR 与 `main` 的 push | 三条运维面各一作业：告警聚合的出厂规则、五个包单测与守护/CLI 真实进程对跑，以及坏规则、坏限额、缺状态三条失败路径；事件台账的状态机合法边与拒绝边、编号与归档、告警取样幂等、检测到复盘的闭环；备份仓库的全量与增量、摘要与索引落盘、深核验、恢复确认门、单 Agent 回放、篡改停在解包之前与保留期删旧留新。三者均为纯用户态组件，托管 runner 上可完整复算 |
 | `agent-verify.yml` | `agent-verify`、`memory-verify` | `system` gitlink、`ci/gates/{agent-ops,memory-ops}.sh`、`ci/lib/**`、`ci/ci.sh` 的 PR 与 `main` 的 push | Agent 运维：8 态单一边表、六因素健康分在缺数据时重归一化、令牌与调度/内存整组校验、日志组权限与归档、配置覆盖、迁移与升级按单节点边界显式拒绝，以及打包接线；记忆运维：块格式与索引一致、碎片整理真实回收、项级迁移与敏感项拒绝、三级擦除与审计证据、crypto 显式拒绝。两条判据互不依赖，分列保证失败直接归因到面 |
 | `payload-seed.yml` | `probe`、`warm` | cron `17 19 * * *`（北京时间 03:17）与手动 | `probe` 对实时上游取五段仓库元数据，算出 `seed-<arch>-<key16>`；`warm` 恢复上一轮构建留下的闭包池，仅当池的输入标签与该指纹一致时把它推成 seed 层，上游不可达或指纹已变则退 0 并说明原因。预热只搬运已有字节，不下载任何 RPM，因此也不得成为构建的先决条件；同一作业尾部回收陈旧 seed 层（每架构按创建时间留最近 4 个，`build-` 一律不动） |
-| `release.yml` | `build-and-sign`、`publish-release` | 标签 `v*`、`v*-rc*` 与手动 | 源码 tarball（超项目 + 逐子仓按 gitlink 导出）、`airy_defconfig` 四架构快照、syscall ABI 报告、逐子模块 SBOM 合并、内核 RPM、GPG 与 cosign 签名、SDK 压缩包；第二作业校验已签名产物、推送 OCI 镜像到 ghcr、清理过期资产、创建 GitHub Release（正式版一律 `make_latest: false`，创建后由 `release-stage hold` 读回断言页面停在 held，只有发布机在 B 轮 `AIRYMAX-SMOKE-PASS` 之后执行的 `release-stage promote` 才能把它推进 `releases/latest`），并在对账后为整套发布资产出具 in-toto/SLSA 证明（`attest-<tag>`，指纹取 run id 与检出提交） |
+| `release.yml` | `build-and-sign`、`publish-release` | 标签 `v*`、`v*-rc*` 与手动 | 源码 tarball（超项目 + 逐子仓按 gitlink 导出）、`airy_defconfig` 四架构快照、syscall ABI 报告、逐子模块 SBOM 合并、内核 RPM、GPG 与 cosign 签名、SDK 压缩包；第二作业只在手动派发并给出 `publish_run` 时运行：校验已签名产物、推送 OCI 镜像到 ghcr、清理过期资产、创建 GitHub Release（正式版一律 `make_latest: false`，创建后由 `release-stage hold` 读回断言页面停在 held，只有发布机在 B 轮 `AIRYMAX-SMOKE-PASS` 之后执行的 `release-stage promote` 才能把它推进 `releases/latest`），并在对账后为整套发布资产出具 in-toto/SLSA 证明（`attest-<tag>`，指纹取 run id 与检出提交） |
 | `station-verify.yml` | `station-verify` | `system` gitlink、`ci/gates/station-ops.sh`、`ci/lib/**`、`ci/ci.sh` 的 PR 与 `main` 的 push | 开发运维工作站的单条判据：八面板从真实 fixture 出数、缺源时显式 `unavailable` 并带原因、`view < operate < admin` 单排序表与 admin `--yes` 二次确认、拒绝写审计、Web 与远程 RPC 选项显式拒绝退出 3、坏配置退出 3、渲染帧宽高不越界，以及 CMake/spec/README 接线。纯用户态组件，托管 runner 上可完整复算 |
 | `security-verify.yml` | `landlock`、`ipc` | `security`、`distro` gitlink、`ci/gates/{landlock-sandbox,ipc-reconcile}.sh`、`ci/lib/**`、`ci/ci.sh` 的 PR 与 `main` 的 push | 安全面两条判据各一作业。`landlock`：策略解析正负例与 handled 裁剪、规则上限、出树 cmake（`-Werror` 零告警）与 ctest、`status`/`check` 读数、坏策略退出 3，以及 CMake/spec 接线；内核不支持 Landlock 时运行期用例以 `# SKIP landlock unavailable` 记录，静态判据仍全绿。`ipc`：Ring 三类差异与去重排序、Capability 两类差异、冲突时数据面优先、三类消息 TTL 边界、回调失败继续并返回首错、扫描/检测/修复/总预算超时降级与 60s 重试字段、容量 `-E2BIG`、空输入幂等，以及 spec 与预算接线；纯用户态 C11，托管 runner 上可完整复算 |
 | `ssot-verify.yml` | `ssot-syntax-and-rules`、`doc-links` | 文档、`ssot-registry.yaml`、`tools/governance/validate-ssot.py` 的 PR 与 `main` 的 push | PyYAML 语法、规则 ID 计数与唯一性、`validate-ssot.py` 交叉引用；相对路径链接完整性 |
@@ -92,8 +92,9 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 `release.yml` 的参数含义：
 
 - `tag` — 要发布或重放的版本号，必填；与推送触发的 `v*` 标签同源。
-- `publish_run` — 只重放该 run 的 `build-and-sign` 制品，跳过重编；发布页
-  因此可以晚于制品建（第 5.6 节第 3 步）。
+- `publish_run` — 发布轮必填：只重放该 run 的 `build-and-sign` 制品，跳过
+  重编（第 5.6 节第 3 步）。tag 推送轮不进入发布，因此没有「同一轮构建后
+  直接建页」的路径：通道清单只有在 `image-build` 跑完之后才存在。
 
 `nightly.yml` 与 `payload-seed.yml` 不带派发参数：手动运行与定时运行执行
 同一套判据，不给「手动模式」留一条没被定时验证过的旁路。
@@ -240,22 +241,23 @@ L2/L3 都不改判据，只改「同一份物料要付几次成本」。任何�
 - **不以牺牲覆盖面换时间**：`--no-tests` 只在「同一提交的 push 门禁已全量跑过」
   时使用，且理由写在该步的注释里。
 
-## 5.6 首个版本的发布引导顺序
+## 5.6 每个版本的发布推进顺序
 
-发布链上有三条判据互相等待，首次发布时环是闭合的：
+发布链上有三条判据互相等待：
 
 - `publish-release` 建页之前要 `channel-fetch` 取到本架构的通道清单；
 - 清单只由 `image-build` 在 `release_tag` 非空时产出（x86_64 为
   `channel.json`，其余架构为 `channel-<arch>.json`）；
 - 而该模式下 `release-rpms` 又要从发布页取内核包与发行校验和。
 
-首个版本还没有发布页，三条判据谁先谁后都无解。解法不是放宽判据，而是把
-「内核包从哪来」与「发布页何时建」解耦。首版按下面三段引导，之后版本恢复
-单次 `release.yml`：
+任何版本在发布页建起来之前都存在这个环：页面由发布轮创建，而发布轮需要的
+通道清单只能由装配轮产出。解法不是放宽判据，而是把「内核包从哪来」与
+「发布页何时建」解耦。每个版本都按下面三段推进：
 
-1. **构建并留存制品。** `release.yml` 照常由 tag 推送触发。`build-and-sign`
-   成功并上传 `release-artifacts-<ver>`；`publish-release` 在 `channel-fetch`
-   处失败是**预期结果**，不影响制品。记下该 run 的 id。
+1. **构建并留存制品。** `release.yml` 由 tag 推送触发。`build-and-sign`
+   成功并上传 `release-artifacts-<ver>`；`publish-release` 在该轮不运行
+   （门禁条件为 `workflow_dispatch` 且给出 `publish_run`），整轮结论就是
+   「制品就绪」，不留一笔预期失败。记下该 run 的 id。
 2. **出 ISO 与通道清单。** `workflow_dispatch image-build`：`ref` 指该 tag，
    `release_tag=v<ver>`，`rpms_run=<第 1 步 run id>`，`replace` 按 ghcr 是否
    已有同 tag 产物决定。内核包改从制品取（`release-rpms --run-id`），accept

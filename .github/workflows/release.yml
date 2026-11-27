@@ -22,7 +22,7 @@ on:
         description: 'Release tag (如 v0.0.3)'
         required: true
       publish_run:
-        description: '只发布该 run 的 build-and-sign 制品（首个版本建页前用）'
+        description: '发布轮必填：只重放该 run 的 build-and-sign 制品'
         type: string
         default: ''
       replace:
@@ -249,8 +249,12 @@ jobs:
     # 上传制品与写 Release 都是短操作，60 分钟足够；不给默认 360 分钟。
     timeout-minutes: 60
     needs: build-and-sign
-    # build-and-sign 被跳过时（只重放制品）needs 结果为 skipped，仍须继续。
-    if: ${{ always() && (inputs.publish_run != '' || needs.build-and-sign.result == 'success') }}
+    # 发布不能与构建同轮：通道清单只由 image-build 产出，而 image-build 必须先
+    # 拿到本轮 build-and-sign 的 run id，tag 推送时清单必然还不存在。让推送轮
+    # 进入发布只会在 channel-fetch 处留下一笔必然失败，把真正的发布故障淹没。
+    # 因此 tag 推送轮止于制品上传，发布一律由 workflow_dispatch 指定 publish_run
+    # 重放；build-and-sign 在该路径被跳过（needs=skipped），故仍需 always()。
+    if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.publish_run != '' }}
     permissions:
       contents: write
       packages: write
