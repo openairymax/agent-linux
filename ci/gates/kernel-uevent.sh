@@ -130,15 +130,8 @@ chk_nofork()
 # 文件头 -------------------------------------------------------------------
 chk_headers()
 {
-    local f
-
     group "文件头"
-    for f in "${UAPI}" "${EVENT}"; do
-        sed -n '1p' "${f}" | grep -q 'SPDX-License-Identifier:' ||
-            bad "$(basename "${f}"): 首行缺少 SPDX"
-        sed -n '1,5p' "${f}" | grep -q 'Copyright' ||
-            bad "$(basename "${f}"): 缺少版权行"
-    done
+    need_spdx "${UAPI}" "${EVENT}"
     endgroup
 }
 

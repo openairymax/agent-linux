@@ -22,6 +22,7 @@ on:
       - 'ci/gates/config-d.sh'
       - 'ci/gates/logger-d.sh'
       - 'ci/gates/macro-d.sh'
+      - 'ci/gates/uevent-daemon.sh'
       - 'ci/gates/tests-linux.sh'
       - 'ci/gates/i18n.sh'
       - 'ci/lib/**'
@@ -38,6 +39,7 @@ on:
       - 'ci/gates/config-d.sh'
       - 'ci/gates/logger-d.sh'
       - 'ci/gates/macro-d.sh'
+      - 'ci/gates/uevent-daemon.sh'
       - 'ci/gates/tests-linux.sh'
       - 'ci/gates/i18n.sh'
       - 'ci/lib/**'
@@ -80,6 +82,8 @@ jobs:
         run: ci/ci.sh logger-d
       - name: Verify macro_d
         run: ci/ci.sh macro-d
+      - name: Verify user_events producer
+        run: ci/ci.sh uevent-daemon
       - name: Verify i18n
         run: ci/ci.sh i18n
 

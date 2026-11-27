@@ -140,6 +140,21 @@ need_file()
     [ -f "$1" ] || { err "缺少${2}: $1"; exit "${CI_EINVAL}"; }
 }
 
+# need_spdx FILE... —— 新源文件首行须带 SPDX 标识、前五行须带版权行。
+#
+# 每个产出源文件的门禁都抄过一遍这两条 sed 断言，规范化后与相邻的
+# group/endgroup 拼成重复窗口。文件头规范只有一份，判定也就只能有一处。
+need_spdx()
+{
+    local f
+    for f in "$@"; do
+        sed -n '1p' "${f}" | grep -q 'SPDX-License-Identifier:' ||
+            bad "$(basename "${f}"): 首行缺少 SPDX"
+        sed -n '1,5p' "${f}" | grep -q 'Copyright' ||
+            bad "$(basename "${f}"): 缺少版权行"
+    done
+}
+
 # py_verify SCRIPT CHECK SRC [ARG...] —— 调校验器的 verify 子命令，回传退出码。
 #
 # «仓库根缺省为本脚本上两级、校验器必须存在、python3 必须可用、以
