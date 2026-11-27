@@ -36,7 +36,6 @@ kernel-airy	build	断言构建产物 11 个 CONFIG、CONFIG_LSM 含 airy、vmlin
 kernel-analyze	build	对 refbuild 的 .o 跑 sparse 与 10 个 coccinelle 脚本，解析 checkpatch errors 计数
 kernel-build	build	按 (config,arch,compiler) 实编 Kbuild 一格并判 error: 与自有路径 warning
 kernel-consistency	build	默认 all 含 uapi 的 headers_install+cc 自包含编译，另比对版本/矩阵/ABI/codegen 生成物
-kernel-debugfs	static	grep 内核源断言 fs_initcall 注册、节点 0444 只读、randtag 不入非测试源
 kernel-deps	host	用 apt 安装或仅校验交叉工具链/sparse/coccinelle/virtme-ng
 kernel-kselftest	host	用 virtme-ng 起虚拟机跑 kselftest 并解析 TAP，按 /dev/kvm 自适应加速
 kernel-kunit	build	O=.kunit 外置构建 UML 内核并跑 KUnit，与 TAP 基线比对
