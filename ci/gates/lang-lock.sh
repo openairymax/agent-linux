@@ -53,6 +53,13 @@ done
 args=()
 [ "${PENDING}" -eq 1 ] && args+=(--allow-pending)
 
+# 语言政策是本仓唯一读取 YAML 的判据；托管 runner 的系统 python3 不带
+# PyYAML。缺了才装，已经装过的不再碰网络——与 ssot-verify 的语法校验
+# 同一写法，避免同一条流水线里两种环境假设。
+python3 -c 'import yaml' 2>/dev/null ||
+    python3 -m pip install -q --disable-pip-version-check pyyaml ||
+    die "PyYAML 不可用，且安装失败"
+
 py_verify "${BASH_SOURCE[0]}" "${CHECK}" "${SOURCE}" "${args[@]}"
 rc=$?
 case "${rc}" in
