@@ -6,10 +6,12 @@
 #   * shim 运行时（P-23 / CA-086）：bundle 注解契约、550 内核桥降级与
 #     真实子进程监管
 #   * CNI 网络策略（P-24 / CA-087）：链式装配、默认拒绝判定与注册记录
+#   * 超节点 OS（P-25 / CA-088）：拓扑发现、令牌池、迁移准入与快照恢复
 # ===========================================================================
 # Authority: docs/docs-linux/150-cloudnative/01-k8s-crd-design.md
 #            docs/docs-linux/150-cloudnative/02-containerd-shim.md
 #            docs/docs-linux/150-cloudnative/03-cni-network-policy.md
+#            docs/docs-linux/150-cloudnative/04-supernode-os.md
 # Design: 判据全部在 ci/gates/，YAML 只做 checkout 与派遣。整条链路为纯
 #         用户态 C11，托管 runner 上可完整复算；不需要内核导出头。
 # ---------------------------------------------------------------------------
@@ -27,6 +29,7 @@ on:
       - 'ci/gates/crd-schema.sh'
       - 'ci/gates/shim-runtime.sh'
       - 'ci/gates/cni-policy.sh'
+      - 'ci/gates/supernode-os.sh'
       - 'ci/lib/**'
       - 'ci/ci.sh'
       - 'ci/baseline/workflow-budgets.txt'
@@ -39,6 +42,7 @@ on:
       - 'ci/gates/crd-schema.sh'
       - 'ci/gates/shim-runtime.sh'
       - 'ci/gates/cni-policy.sh'
+      - 'ci/gates/supernode-os.sh'
       - 'ci/lib/**'
       - 'ci/ci.sh'
       - 'ci/baseline/workflow-budgets.txt'
@@ -95,3 +99,17 @@ jobs:
       # 流水线预算与设计常量。
       - name: CNI policy contract
         run: ci/ci.sh cni-policy
+
+  supernode:
+    name: Supernode Topology, Budget and Migration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { submodules: recursive }
+
+      # 门禁覆盖 /sys 拓扑聚合、亲和度加权、令牌池分配与借用、迁移准入
+      # 的六类拒绝、549 号内核桥在托管 runner 上的降级语义、快照与硬件
+      # 摘要核对，以及 spec、流水线预算与 UAPI 常量一致性。
+      - name: Supernode OS contract
+        run: ci/ci.sh supernode-os

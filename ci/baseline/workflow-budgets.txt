@@ -28,9 +28,9 @@
 agent-verify.yml                  0     2
 airy-verify.yml                   0     2
 c-verify.yml                      0     4
-# cloudnative-verify 按资源面拆作业：CRD 清单与校验、shim 运行时各为
-# 纯用户态判据，后续 CNI / 超节点各自成线，互不共享构建产物。
-cloudnative-verify.yml            0     4
+# cloudnative-verify 按资源面拆作业：CRD 清单与校验、shim 运行时、CNI
+# 网络策略与超节点 OS 各为纯用户态判据，互不共享构建产物，失败可归因到面。
+cloudnative-verify.yml            0     5
 image-build.yml                   0     2
 kernel-verify.yml                 0     2
 mgmt-verify.yml                   0     2
