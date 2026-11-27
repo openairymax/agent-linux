@@ -52,7 +52,6 @@ macro-d	build	出树 cmake 构建 macro_d 并跑 macro_cfg 单测与六故障码
 media-fetch	host	按 sha256 从多镜像下载介质，受总预算/续传/停滞换源约束
 mem-obs	build	编译 UAPI 导出侧与 -Werror CLI，断言 48 键字段面与四条 ioctl 布局断言
 mgmt-leaves	host	aggregate-subrepo-ci.py --fail-on-red 读远端 CI 状态，且 npm 安装 markdownlint-cli2
-nightly-helpers	static	按 helper 键分派 tools/nightly 脚本，未落地时只打印 SKIP
 perf-hooks	build	编译 perf 集成 -Werror，断言 perf stat -x, 事件集与 --help=0/坏参=2/缺输入=4
 python-verify	host	pip 安装各 tools/*/requirements-dev.txt 后跑 pytest 与漂移检查
 release-deps	host	apt 安装内核四腿所需交叉 gcc/strip/clang 并逐个校验在位
