@@ -65,4 +65,3 @@ token-obs	build	编译 UAPI 导出侧与 -Werror CLI，断言 20 键字段面与
 tool-pack	build	用 tar/gzip/pyz 打 SDK 与烧录工具两遍比对字节确定性并做 --version 对账
 tui-check	build	cargo fmt/clippy/test/cross --offline --locked 并核对 rust-toolchain 钉版
 tui-frame	build	cargo 跑 frame_budget 与 benches，断言 p99≤33ms、常驻堆≤64KiB
-uevent-daemon	static	grep UAPI 与封装库断言 DIAG_IOCSREG 注册串、writev 布局与使能位读取顺序
