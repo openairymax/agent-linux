@@ -31,17 +31,17 @@ table uring_guard {
 	default verdict ALLOW;
 }
 
-# Task creation accounting: deny capability forgeries (badge/type mismatch)
-# and audit anonymous kernel worker allocation.
+# Task creation accounting: audit user-namespace creation and anonymous
+# kernel worker allocation. Both verdicts are observational, so enabling the
+# table cannot fail a fork that the capability checks already admitted.
 table task_guard {
 	hook = task_alloc;
-	input cap_flags : u64;
+	input clone_flags : u64;
 	input task_type : u8;
 
 	rule 5 {
-		when cap_flags & 0x0000000000000001;
-		verdict DENY;
-		fault 0x1001;
+		when clone_flags & 0x0000000010000000;
+		verdict AUDIT;
 	}
 
 	rule 15 {
@@ -52,16 +52,17 @@ table task_guard {
 	default verdict ALLOW;
 }
 
-# File open mediation: deny writes to the protected system class and default
-# to audit so unlabelled paths are observable before enforcement is enabled.
+# File open mediation: complain on write-only opens and default to audit so
+# every open is observable before path labelling can enforce. The hook's
+# field vector is open_flags, acc_mode, agent_id; acc_mode 3 is read-write.
 table file_open_guard {
 	hook = file_open;
-	input path_class : u8;
+	input acc_mode : u8;
 	input open_flags : u32;
 
 	rule 30 {
-		when path_class == 2;
-		verdict DENY;
+		when acc_mode == 3;
+		verdict AUDIT;
 	}
 
 	rule 40 {

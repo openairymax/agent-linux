@@ -424,6 +424,7 @@ ok 33 airy_lockdown
     ok 15 policy_full
     ok 16 policy_reset
     ok 17 policy_wx
+    ok 18 policy_tables
 ok 34 airy_policy
     # Subtest: airy_obs
     ok 1 obs_sec_table

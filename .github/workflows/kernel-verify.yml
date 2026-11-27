@@ -138,6 +138,10 @@ jobs:
       - name: user_events contract
         run: ci/ci.sh kernel-uevent
 
+      # 决策表契约：.adl 单一来源、内核侧消费者、启动顺序与 KUnit 基线。
+      - name: Policy tables contract
+        run: ci/ci.sh kernel-policy
+
       # 零漂移三连：真值（任务书矩阵 / ABI 黄金样本 / DSL）与生成物必须一致。
       - name: Consistency (matrix / ABI / codegen)
         run: ci/ci.sh kernel-consistency --kind all

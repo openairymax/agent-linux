@@ -44,9 +44,15 @@ from dsl_types import DslSourceError, ProgramIR  # noqa: E402
 __all__ = ["CONTRACTS", "compile_text", "render_outputs", "generate", "check", "main"]
 
 # ── 契约源 → 生成目标（相对 agent-linux/ 仓库根） ──
+# 同一契约渲染两份：examples 下供工具链测试直接编译，kernel 下供 LSM 启动
+# 注册。两份由同一次渲染产生，--check 同时比对，避免内核仓脱离父仓构建时
+# 依赖跨仓相对路径。
 _EXAMPLE_DIR = Path("tools") / "dsl" / "examples"
+_KERNEL_DIR = Path("kernel") / "security" / "airy"
+_SOURCE = _EXAMPLE_DIR / "security_policy.adl"
 CONTRACTS: tuple[tuple[Path, Path], ...] = (
-    (_EXAMPLE_DIR / "security_policy.adl", _EXAMPLE_DIR / "security_policy_tables.h"),
+    (_SOURCE, _EXAMPLE_DIR / "security_policy_tables.h"),
+    (_SOURCE, _KERNEL_DIR / "security_policy_tables.h"),
 )
 
 

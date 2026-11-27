@@ -178,20 +178,20 @@ static inline __u8 airy_policy_uring_guard_eval(const __u64 *fields)
 
 /* ─── Table: task_guard (hook: task_alloc) ─────────────────── */
 static const char *const airy_policy_task_guard_field_names[2] AIRY_POLICY_UNUSED = {
-	"cap_flags",
+	"clone_flags",
 	"task_type",
 };
 
 #define AIRY_POLICY_TASK_GUARD_ROW_COUNT 2
 static const struct airy_policy_cond airy_policy_task_guard_row5_conds[1] AIRY_POLICY_UNUSED = {
-	{ .field = 0, .op = AIRY_CMP_MASK, .value = 1 },
+	{ .field = 0, .op = AIRY_CMP_MASK, .value = 0x10000000 },
 };
 static const struct airy_policy_cond airy_policy_task_guard_row15_conds[1] AIRY_POLICY_UNUSED = {
 	{ .field = 1, .op = AIRY_CMP_EQ, .value = 0 },
 };
 
 static const struct airy_policy_row airy_policy_task_guard_rows[2] AIRY_POLICY_UNUSED = {
-	{ .conds = airy_policy_task_guard_row5_conds, .cond_count = 1, .verdict = 1, .fault = 0x1001 },
+	{ .conds = airy_policy_task_guard_row5_conds, .cond_count = 1, .verdict = 2, .fault = 0 },
 	{ .conds = airy_policy_task_guard_row15_conds, .cond_count = 1, .verdict = 2, .fault = 0 },
 };
 
@@ -222,20 +222,20 @@ static inline __u8 airy_policy_task_guard_eval(const __u64 *fields)
 
 /* ─── Table: file_open_guard (hook: file_open) ─────────────────── */
 static const char *const airy_policy_file_open_guard_field_names[2] AIRY_POLICY_UNUSED = {
-	"path_class",
+	"acc_mode",
 	"open_flags",
 };
 
 #define AIRY_POLICY_FILE_OPEN_GUARD_ROW_COUNT 2
 static const struct airy_policy_cond airy_policy_file_open_guard_row30_conds[1] AIRY_POLICY_UNUSED = {
-	{ .field = 0, .op = AIRY_CMP_EQ, .value = 2 },
+	{ .field = 0, .op = AIRY_CMP_EQ, .value = 3 },
 };
 static const struct airy_policy_cond airy_policy_file_open_guard_row40_conds[1] AIRY_POLICY_UNUSED = {
 	{ .field = 1, .op = AIRY_CMP_MASK, .value = 1 },
 };
 
 static const struct airy_policy_row airy_policy_file_open_guard_rows[2] AIRY_POLICY_UNUSED = {
-	{ .conds = airy_policy_file_open_guard_row30_conds, .cond_count = 1, .verdict = 1, .fault = 0 },
+	{ .conds = airy_policy_file_open_guard_row30_conds, .cond_count = 1, .verdict = 2, .fault = 0 },
 	{ .conds = airy_policy_file_open_guard_row40_conds, .cond_count = 1, .verdict = 3, .fault = 0 },
 };
 

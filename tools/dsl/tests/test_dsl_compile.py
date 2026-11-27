@@ -52,8 +52,12 @@ class TestCompileText:
 
 
 class TestContracts:
-    def test_single_contract_registered(self) -> None:
-        assert CONTRACTS == ((_EXAMPLE_SOURCE, _EXAMPLE_OUTPUT),)
+    def test_contracts_registered(self) -> None:
+        assert CONTRACTS == (
+            (_EXAMPLE_SOURCE, _EXAMPLE_OUTPUT),
+            (_EXAMPLE_SOURCE, Path("kernel") / "security" / "airy" /
+             "security_policy_tables.h"),
+        )
 
     def test_render_outputs_target_paths(self, repo_root: Path) -> None:
         rendered = render_outputs(repo_root)

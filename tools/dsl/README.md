@@ -32,14 +32,13 @@ tools/dsl/
 ├── examples/
 │   ├── security_policy.adl      # 参考 LSM 策略（端到端样例）
 │   └── security_policy_tables.h # 生成物，提交入库
-├── tests/                # lexer/parser/semantics/codegen/compile 单元测试
-└── README.md             # 本文件
+├── tests/                # lexer/parser/semantics/codegen/compile 单元测试└── README.md             # 本文件
 ```
 
 ## 用法
 
 ```sh
-make -C tools/dsl all     # 重新生成 security_policy_tables.h
+make -C tools/dsl all     # 重新生成两份 security_policy_tables.h
 make -C tools/dsl check   # 零漂移校验（CI 使用）
 make -C tools/dsl test    # 单元测试
 make -C tools/dsl clean   # 删除生成物（提交前需重新生成）
@@ -55,10 +54,12 @@ python3 tools/dsl/dsl_compile.py --repo-root DIR
 
 ## 契约与边界
 
-- **生成物入库**：`examples/security_policy_tables.h` 是交付面的一部分，
-  改 `.adl` 或模板必须同批提交重新生成的结果，否则 `check` 失败。
+- **生成物入库**：`examples/security_policy_tables.h` 与
+  `kernel/security/airy/security_policy_tables.h` 都是交付面的一部分，
+  改 `.adl` 或模板必须同批提交两份重新生成的结果，否则 `check` 失败。
 - **单源产物登记**：产物清单由 `dsl_compile.py` 的 `CONTRACTS` 登记，
   写入统一走 `tools/codegen/codegen_io.py`；不在别处再写一份路径表。
 - **依赖**：仅 Python 标准库与 Jinja2（模板渲染），测试依赖 pytest。
-- **不写内核树**：编译器只读 `.adl`、只写登记过的生成物，
-  内核侧改动由内核仓自己的补丁流程负责。
+- **双份渲染**：同一契约渲染两次——示例副本供工具链测试编译，内核副本
+  与 `airy_policy_tables.c` 同目录提交，使内核仓脱离父仓仍可构建；两份
+  由 `check` 同时比对。内核侧注册与启动顺序由 `kernel-policy` 门禁校验。
