@@ -47,7 +47,6 @@ kernel-uevent	static	grep UAPI 与内核契约表断言事件名/格式串与载
 landlock-sandbox	build	cmake -Werror 构建后 ctest，断言坏策略=3 与无内核支持时 SKIP
 lint	static	汇总 20 项自检：workflow 规则、度量棘轮、bash -n 并执行 ci/tests 全部门禁夹具
 llm-accel	static	跑 airy-model probe 断言行式四后端顺序与 JSON 字段集合、证据前缀
-log-dump	static	只按 --dir tail 出产物日志，无判定断言
 logger-d	build	出树 cmake 构建 logger_d 并跑 logd_cfg/logd_file 单测与退出码 78/64
 macro-d	build	出树 cmake 构建 macro_d 并跑 macro_cfg 单测与六故障码默认裁决
 media-fetch	host	按 sha256 从多镜像下载介质，受总预算/续传/停滞换源约束
