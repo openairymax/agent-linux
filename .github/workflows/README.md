@@ -129,7 +129,7 @@ lint 中执行。下表是规则本身，不是建议。
 新增或改名一个流水线需要三处同步：文件、`name:`、`ci/baseline/workflow-budgets.txt`。
 `./ci/lint.sh` 在任一处漂移时直接判红。
 
-规则 13–20 的负向回归在 `ci/tests/test_workflow_rules.sh`：它在一棵最小假树上
+规则 13–20 的负向回归在 `ci/tests/unit/test_workflow_rules.sh`：它在一棵最小假树上
 逐条破坏并断言判据字符串，因此真实树常年为绿也不会掩盖规则失效。
 
 ## 5. 流水线治理：先记账，再提速

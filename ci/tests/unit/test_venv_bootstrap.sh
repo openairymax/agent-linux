@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 # SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 # ===========================================================================
-# ci/tests/test_venv_bootstrap.sh — ci/lib/pyenv.sh 与 tools/venv-bootstrap.sh
+# ci/tests/unit/test_venv_bootstrap.sh — ci/lib/pyenv.sh 与 tools/venv-bootstrap.sh
 # 的分支回归
 #
 # 引导脚本的失效方式都很安静：指纹没算进解释器版本，系统 python 升级后沿用
@@ -11,12 +11,12 @@
 # 这里用一棵只带引导脚本与依赖清单的假树 + 一个假 python3 覆盖这些分支，
 # 不联网、不落盘到真实缓存。
 #
-# 用法: bash ci/tests/test_venv_bootstrap.sh
+# 用法: bash ci/tests/unit/test_venv_bootstrap.sh
 # 退出码: 0 全部通过；1 有断言失败。
 # ===========================================================================
 set -uo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd -P)"
 tmp="$(mktemp -d)"
 trap 'rm -rf "${tmp}"' EXIT
 fails=0

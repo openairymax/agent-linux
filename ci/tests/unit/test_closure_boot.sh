@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 # SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 # ===========================================================================
-# ci/tests/test_closure_boot.sh — 引导链必须进载荷事务（回归）
+# ci/tests/unit/test_closure_boot.sh — 引导链必须进载荷事务（回归）
 #
 # 装机阶段 anaconda 通过 GRUB2.packages 隐式请求引导包，comps 刻意不列它们
 # 的二进制名（x86_64 与 aarch64 不同名，写进组里必有一侧落空），交由
@@ -15,12 +15,12 @@
 # 后半段锁住载荷核对的口径：请求名可以是虚拟名（shim-x64 由 shim 提供），
 # 判定要同时接受文件名与包内 Provides，真缺的项仍须逐个列出。
 #
-# 用法: bash ci/tests/test_closure_boot.sh
+# 用法: bash ci/tests/unit/test_closure_boot.sh
 # 退出码: 0 全部通过；1 有断言失败。
 # ===========================================================================
 set -uo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd -P)"
 tmp="$(mktemp -d)"
 trap 'rm -rf "${tmp}"' EXIT
 mkdir -p "${tmp}/bin"

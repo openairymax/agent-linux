@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 # SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 # ===========================================================================
-# ci/tests/test_toolchain_gate.sh — ci/gates/toolchain.sh 的分支回归
+# ci/tests/test_toolchain.sh — ci/gates/toolchain.sh 的分支回归
 #
 # 门禁两条路径都要真 docker 才能跑，回归用桩顶替：桩不碰缓存内容，只按
 # 预置计划逐次给出成败，并把「第几次调用、什么模式」记进序列。断言序列
@@ -14,7 +14,7 @@
 # 「timeout: failed to run command 'dnf_run'」，工具链永远补不齐。桩在
 # PATH 里，函数没被真正执行时调用序列为空，断言立刻可见。
 #
-# 用法: bash ci/tests/test_toolchain_gate.sh
+# 用法: bash ci/tests/test_toolchain.sh
 # 退出码: 0 全部通过；1 有断言失败。
 # ===========================================================================
 set -uo pipefail

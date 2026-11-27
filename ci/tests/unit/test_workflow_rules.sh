@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 # SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 # ===========================================================================
-# ci/tests/test_workflow_rules.sh — ci/checks/check_workflows.py 规则 13–20 的负向回归
+# ci/tests/unit/test_workflow_rules.sh — ci/checks/check_workflows.py 规则 13–20 的负向回归
 #
 # 这几条规则此前只有正向：真实树常年合规，规则写错、判反或者根本没接进
 # main() 都不会有人发现。本文件在一棵最小假树上逐条破坏，断言只看退出码
@@ -11,12 +11,12 @@
 # 真实树是否合规不在这里判：os-chk-verify 直接跑 ci/checks/check_workflows.py
 # 那一条，本文件只保证这几条规则既不漏判也不误判。
 #
-# 用法: bash ci/tests/test_workflow_rules.sh
+# 用法: bash ci/tests/unit/test_workflow_rules.sh
 # 退出码: 0 全部通过；1 有断言失败。
 # ===========================================================================
 set -uo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd -P)"
 tmp="$(mktemp -d)"
 trap 'rm -rf "${tmp}"' EXIT
 FX="${tmp}/fx"

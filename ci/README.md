@@ -49,7 +49,7 @@ ci/
 ├── checks/              # Python 检查器
 ├── lib/                 # 共享实现（shell + python）
 ├── baseline/            # 棘轮基线与门禁归属登记
-├── tests/               # 门禁回归夹具
+├── tests/               # 回归夹具：门禁同名夹具在根级，非门禁判据在 unit/
 ├── tools/               # 门禁私有取证工具（回归器、字段采集器）
 └── container/           # 基础镜像定义与包清单
 ```
@@ -82,12 +82,21 @@ ci/
 | 共享实现 | snake_case，按域命名，不做动作前缀 | `host.sh`、`model_assets.sh`、`rs_src.py` |
 | 取证工具 | snake_case，名字说明被取证的产物 | `tui_field_collect.sh`、`execstack_regress.py` |
 | 回归夹具 | `test_<门禁>.sh`，与门禁同名同序（`_`↔`-`） | `test_wp_scope.sh` |
+| 非门禁夹具 | `tests/unit/test_<对象>.sh`，对象是检查器或库而非门禁 | `test_header_lint.sh` |
 | 基线 | 固定三名，由 `--update` 写入 | `quality-baseline.json` |
 
 分隔符只有两套：`gates/` 用 kebab——门禁 ID 就是 `ci.sh <gate>` 的命令名，
 文件名与命令行必须逐字一致；其余目录一律 snake_case，因为它们是模块，不是
 命令面。`checks/` 里混一个 kebab 文件名，读者就要先猜它是不是门禁；`lib/`
 里混一个，`source` 的路径与函数名前缀就对不上号。
+
+夹具的位置承担接线语义：根级 `test_<门禁>.sh` 是门禁的调用方之一，
+`checks/check_workflows.py` 以非递归 glob 取它们，因此 `unit/` 下的夹具不会
+被误认成某条门禁的执行者；`lint.sh` 用递归 `find` 发现并执行两者。判据针对
+检查器或共享库而不是门禁时，落 `unit/`。
+
+`gates/lint.sh` 与 `ci/lint.sh` 同名但不是重复：前者是门禁分发下的薄包装，
+转调后者，使 `ci/ci.sh lint` 与 `./ci/lint.sh` 行为同一。
 
 `ci/tools/wx-table-gen.py` 是唯一冻结的原名：它的路径写进了内核与 distro
 两个子仓的生成物和清单注释，改名要三个仓库同时换指针，为一行注释牵动内核

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 # SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 # ===========================================================================
-# ci/tests/test_accel_contract.sh — 加速后端输出契约的判据回归
+# ci/tests/unit/test_accel_contract.sh — 加速后端输出契约的判据回归
 #
 # 三份契约（行式、JSON、两种渲染同源）此前内嵌在 gate 的 heredoc 里，只能
 # 靠造一台真机跑门禁来验。收进 ci/lib/accel_contract.py 之后可以用负例驱动：
@@ -11,12 +11,12 @@
 # 断言只看退出码：文案要能改，判据不能改。用法类错误单列 2，与契约被违反
 # 的 1 分开，避免流水线把「调用写错」当成「契约漂移」。
 #
-# 用法: bash ci/tests/test_accel_contract.sh
+# 用法: bash ci/tests/unit/test_accel_contract.sh
 # 退出码: 0 全部通过；1 有断言失败。
 # ===========================================================================
 set -uo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd -P)"
 TOOL="${ROOT}/ci/lib/accel_contract.py"
 fails=0
 

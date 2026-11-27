@@ -2,17 +2,17 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Apache-2.0
 # SPDX-FileCopyrightText: 2025-2026 SPHARX Ltd.
 # ===========================================================================
-# ci/tests/test_header_lint.sh — ci/checks/header_lint.py 的分支回归
+# ci/tests/unit/test_header_lint.sh — ci/checks/header_lint.py 的分支回归
 #
 # 真实树在本次提交后才合规，判定逻辑本身只能靠负例驱动：缺许可证、缺版权、
 # 声明写在字符串里、tests/ 与 vendor/ 的口径差异，逐条断言退出码与判据名。
 #
-# 用法: bash ci/tests/test_header_lint.sh
+# 用法: bash ci/tests/unit/test_header_lint.sh
 # 退出码: 0 全部通过；1 有断言失败。
 # ===========================================================================
 set -uo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd -P)"
 tmp="$(mktemp -d)"
 trap 'rm -rf "${tmp}"' EXIT
 fails=0
