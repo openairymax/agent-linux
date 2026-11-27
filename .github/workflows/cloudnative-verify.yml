@@ -5,9 +5,11 @@
 #     四类资源的集群声明
 #   * shim 运行时（P-23 / CA-086）：bundle 注解契约、550 内核桥降级与
 #     真实子进程监管
+#   * CNI 网络策略（P-24 / CA-087）：链式装配、默认拒绝判定与注册记录
 # ===========================================================================
 # Authority: docs/docs-linux/150-cloudnative/01-k8s-crd-design.md
 #            docs/docs-linux/150-cloudnative/02-containerd-shim.md
+#            docs/docs-linux/150-cloudnative/03-cni-network-policy.md
 # Design: 判据全部在 ci/gates/，YAML 只做 checkout 与派遣。整条链路为纯
 #         用户态 C11，托管 runner 上可完整复算；不需要内核导出头。
 # ---------------------------------------------------------------------------
@@ -24,6 +26,7 @@ on:
       - 'distro'
       - 'ci/gates/crd-schema.sh'
       - 'ci/gates/shim-runtime.sh'
+      - 'ci/gates/cni-policy.sh'
       - 'ci/lib/**'
       - 'ci/ci.sh'
       - 'ci/baseline/workflow-budgets.txt'
@@ -35,6 +38,7 @@ on:
       - 'distro'
       - 'ci/gates/crd-schema.sh'
       - 'ci/gates/shim-runtime.sh'
+      - 'ci/gates/cni-policy.sh'
       - 'ci/lib/**'
       - 'ci/ci.sh'
       - 'ci/baseline/workflow-budgets.txt'
@@ -77,3 +81,17 @@ jobs:
       # 预算与 shim 常量对 UAPI 的一致性。
       - name: Shim runtime contract
         run: ci/ci.sh shim-runtime
+
+  cni:
+    name: CNI Chaining and Network Policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { submodules: recursive }
+
+      # 门禁覆盖 NetConf 归一、prevResult 原样回传、注册记录落盘与幂等
+      # 清理、缺链与版本拒绝、入站对端与出站例外的判定矩阵，以及 spec、
+      # 流水线预算与设计常量。
+      - name: CNI policy contract
+        run: ci/ci.sh cni-policy
