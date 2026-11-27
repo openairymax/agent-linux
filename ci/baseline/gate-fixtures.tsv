@@ -59,7 +59,6 @@ release-sbom	build	syft 扫描 kernel 与 7 个子仓产出 SPDX，再由 merge_
 release-sign	host	用 GPG_PASSPHRASE 在临时密钥环对 RPM/SDK/清单做分离签名
 session-switch	daemon	在目标机用 systemctl/journalctl/loginctl 读运行中服务的 VT 号与日志
 shim-runtime	build	cmake -Werror 构建后 ctest，断言 bundle 规划六行 caps=0x103、坏 bundle=3
-ssot-verify	static	校验 ssot-registry.yaml 可解析且规则 ID 数与 validate-ssot.py 一致、扫 .md 相对链接
 submodules	host	git submodule update --init --depth 1 拉取远端并校验目录非空
 supernode-os	build	cmake -Werror 构建后 ctest，断言 discover/affinity/令牌池/迁移准入与快照恢复
 tests-linux	build	headers_install 导出头后出树 cmake+ctest 编译并执行用户态契约用例
