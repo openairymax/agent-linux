@@ -3,8 +3,11 @@
 # 云原生面判据：
 #   * CRD 清单与校验（P-22 / CA-012、CA-085）：模式表、规划、状态机与
 #     四类资源的集群声明
+#   * shim 运行时（P-23 / CA-086）：bundle 注解契约、550 内核桥降级与
+#     真实子进程监管
 # ===========================================================================
 # Authority: docs/docs-linux/150-cloudnative/01-k8s-crd-design.md
+#            docs/docs-linux/150-cloudnative/02-containerd-shim.md
 # Design: 判据全部在 ci/gates/，YAML 只做 checkout 与派遣。整条链路为纯
 #         用户态 C11，托管 runner 上可完整复算；不需要内核导出头。
 # ---------------------------------------------------------------------------
@@ -20,6 +23,7 @@ on:
       - 'cloudnative'
       - 'distro'
       - 'ci/gates/crd-schema.sh'
+      - 'ci/gates/shim-runtime.sh'
       - 'ci/lib/**'
       - 'ci/ci.sh'
       - 'ci/baseline/workflow-budgets.txt'
@@ -30,6 +34,7 @@ on:
       - 'cloudnative'
       - 'distro'
       - 'ci/gates/crd-schema.sh'
+      - 'ci/gates/shim-runtime.sh'
       - 'ci/lib/**'
       - 'ci/ci.sh'
       - 'ci/baseline/workflow-budgets.txt'
@@ -58,3 +63,17 @@ jobs:
       # 源码树卫生。
       - name: CRD schema contract
         run: ci/ci.sh crd-schema
+
+  shim:
+    name: Shim Bundle Contract and Process Supervision
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { submodules: recursive }
+
+      # 门禁覆盖 bundle 注解契约、缺省补齐、非法层名拒绝、能力位、六行
+      # 规划、真实子进程退出码折算、550 内核桥降级语义，以及 spec、流水线
+      # 预算与 shim 常量对 UAPI 的一致性。
+      - name: Shim runtime contract
+        run: ci/ci.sh shim-runtime
