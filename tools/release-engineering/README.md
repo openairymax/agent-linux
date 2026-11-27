@@ -13,7 +13,7 @@ Copyright (c) 2025-2026 SPHARX Ltd. All Rights Reserved.
 | [`merge_sbom.py`](#merge_sbompy--spdx-sbom-分片合并) | 把各子仓扫描出的 SPDX 2.3 SBOM 分片合并为单一 `agent-linux` 主体物料清单 |
 | [`release_manifest.py`](#release_manifestpy--发布物料清单门禁与生成) | 以 `manifest.yaml` 为唯一事实源，校验「物料清单 ↔ release 流水线」双向一致，并生成校验和与 release notes |
 | [`pick_image.py`](#pick_imagepy--安装镜像认领) | 按提交认领已被 `image-build` 验收的安装镜像，使发行物与验收过的镜像字节同一 |
-| [`acceptance-report-template.md`](acceptance-report-template.md) | 验收报告模板（§1 准备 → §8 归档），占位符残留即视为未取证 |
+| [`templates/acceptance-report-template.md`](templates/acceptance-report-template.md) | 验收报告模板（§1 准备 → §8 归档），占位符残留即视为未取证 |
 
 三个工具都**只做真实计算**，不做任何占位跳过：冲突即失败，绝不静默丢弃或覆盖。
 

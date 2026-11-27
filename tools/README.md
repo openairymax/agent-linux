@@ -170,9 +170,9 @@ tools/
     ├── merge_sbom.py            # Merge per-submodule SPDX 2.3 JSON fragments into one document
     ├── release_manifest.py      # Manifest ↔ release.yml bidirectional gate + checksums + notes (`--check` gate)
     ├── pick_image.py            # Claim the already-accepted image artifact for a commit (sha + name + not expired)
-    ├── acceptance-report-template.md  # Evidence table skeleton the release note links to
     ├── manifest.yaml            # Single source of truth for the 12 release materials + pipeline supply
     ├── requirements-dev.txt     # Runtime + test dependency (pyyaml, pytest)
+    ├── templates/               # Evidence table skeleton the release note links to
     ├── tests/                   # pytest suite (sbom merge/dedupe/conflict; manifest schema/pipeline/checksums/notes/pick/CLI)
     └── README.md                # Tool-specific documentation
 ```
