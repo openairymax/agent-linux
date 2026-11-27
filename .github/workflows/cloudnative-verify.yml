@@ -1,0 +1,60 @@
+# ===========================================================================
+# agent-linux (AirymaxOS) CI Pipeline
+# 云原生面判据：
+#   * CRD 清单与校验（P-22 / CA-012、CA-085）：模式表、规划、状态机与
+#     四类资源的集群声明
+# ===========================================================================
+# Authority: docs/docs-linux/150-cloudnative/01-k8s-crd-design.md
+# Design: 判据全部在 ci/gates/，YAML 只做 checkout 与派遣。整条链路为纯
+#         用户态 C11，托管 runner 上可完整复算；不需要内核导出头。
+# ---------------------------------------------------------------------------
+# 监听面取 cloudnative gitlink 而不是 cloudnative/**：父仓只能看到子模块
+# 指针的移动，按子目录过滤等于永不触发。
+# ===========================================================================
+
+name: cloudnative-verify
+
+on:
+  pull_request:
+    paths:
+      - 'cloudnative'
+      - 'distro'
+      - 'ci/gates/crd-schema.sh'
+      - 'ci/lib/**'
+      - 'ci/ci.sh'
+      - 'ci/baseline/workflow-budgets.txt'
+      - '.github/workflows/cloudnative-verify.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'cloudnative'
+      - 'distro'
+      - 'ci/gates/crd-schema.sh'
+      - 'ci/lib/**'
+      - 'ci/ci.sh'
+      - 'ci/baseline/workflow-budgets.txt'
+      - '.github/workflows/cloudnative-verify.yml'
+
+# 最小权限：只读检出与构建，不触发布与制品写。
+permissions:
+  contents: read
+
+# 同一 ref 只保留最新一轮：旧结论对当前树已失效，继续排队只抢并发额度。
+concurrency:
+  group: cloudnative-verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  crd:
+    name: CRD Schema, CLI and Packaging
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { submodules: recursive }
+
+      # 门禁覆盖 JSON 读取正负例、模式表必填与区间、跨字段约束、资源单位
+      # 换算、状态机允许与拒绝的转移、四类清单一致性，以及 spec、预算与
+      # 源码树卫生。
+      - name: CRD schema contract
+        run: ci/ci.sh crd-schema
