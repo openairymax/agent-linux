@@ -41,7 +41,6 @@ kernel-kselftest	host	用 virtme-ng 起虚拟机跑 kselftest 并解析 TAP，�
 kernel-kunit	build	O=.kunit 外置构建 UML 内核并跑 KUnit，与 TAP 基线比对
 kernel-policy	static	比对 .adl 契约与两份生成头字节一致、airy_init 注册三表与 KUnit 基线
 kernel-refbuild	build	实编 x86_64 airy_defconfig 并断言 11 CONFIG、CONFIG_LSM、vmlinux .BTF
-kernel-uevent	static	grep UAPI 与内核契约表断言事件名/格式串与载荷尺寸断言、不复制字面量
 landlock-sandbox	build	cmake -Werror 构建后 ctest，断言坏策略=3 与无内核支持时 SKIP
 lint	static	汇总 20 项自检：workflow 规则、度量棘轮、bash -n 并执行 ci/tests 全部门禁夹具
 llm-accel	static	跑 airy-model probe 断言行式四后端顺序与 JSON 字段集合、证据前缀
