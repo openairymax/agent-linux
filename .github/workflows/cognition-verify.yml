@@ -3,6 +3,8 @@
 # 认知面判据：
 #   * Thinkdual 双系统思考（P-26 / CA-010、CA-056）：复杂度评分、模式
 #     判定、策略热更新与审计账本
+#   * 认知数据流（P-27 / CA-056）：三相循环、规划守卫、补偿重试、事件
+#     账本与 L1 记忆落盘
 # ===========================================================================
 # Authority: docs/docs-linux/20-modules/05-cognition.md
 #            docs/docs-linux/40-dataflows/01-cognition-flow.md
@@ -21,6 +23,7 @@ on:
       - 'cognition'
       - 'distro'
       - 'ci/gates/cognition-thinkdual.sh'
+      - 'ci/gates/cognition-flow.sh'
       - 'ci/lib/**'
       - 'ci/ci.sh'
       - 'ci/baseline/workflow-budgets.txt'
@@ -31,6 +34,7 @@ on:
       - 'cognition'
       - 'distro'
       - 'ci/gates/cognition-thinkdual.sh'
+      - 'ci/gates/cognition-flow.sh'
       - 'ci/lib/**'
       - 'ci/ci.sh'
       - 'ci/baseline/workflow-budgets.txt'
@@ -59,3 +63,17 @@ jobs:
       # 流水线预算与 [SC] 契约头的同源断言。
       - name: Thinkdual contract
         run: ci/ci.sh cognition-thinkdual
+
+  cogflow:
+    name: Cognition Flow Phases, Guards and Compensation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { submodules: recursive }
+
+      # 门禁覆盖 FAST 单节点与 SLOW 三节点、守卫拒绝、深度超限、补偿后
+      # 重试、无备用规划的执行中止、计数与账本一致性、规划与状态退出码，
+      # 以及 spec、流水线与 [SC] 契约同源断言。
+      - name: Cognition flow contract
+        run: ci/ci.sh cognition-flow
