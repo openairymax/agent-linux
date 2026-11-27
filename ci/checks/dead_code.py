@@ -108,10 +108,16 @@ def scan(path: Path, counts: dict[str, int]):
     return allow_hits(path, lines), pub_items(path, lines, cut)
 
 
-def main(argv: list[str]) -> int:
-    bases, bad = scan_src.bases(argv, ROOT, DEFAULT)
+def _file_issues(held, pending, named, path):
+    pending += [(path, no, name) for no, name in named]
+    for line in held:
+        print(line)
+    return len(held)
+
+
+def _scan_all(bases):
     files = 0
-    issues = bad
+    issues = 0
     counts: dict[str, int] = {}
     pending: list[tuple[Path, int, str]] = []
     for base in bases:
@@ -123,11 +129,20 @@ def main(argv: list[str]) -> int:
                 print(f"{path}: {exc}", file=sys.stderr)
                 issues += 1
                 continue
-            pending += [(path, no, name) for no, name in named]
-            for line in held:
-                print(line)
-            issues += len(held)
-    review = [item for item in pending if counts.get(item[2], 0) <= 1]
+            issues += _file_issues(held, pending, named, path)
+    return files, issues, counts, pending
+
+
+def _review(pending: list[tuple[Path, int, str]],
+            counts: dict[str, int]) -> list[tuple[Path, int, str]]:
+    return [item for item in pending if counts.get(item[2], 0) <= 1]
+
+
+def main(argv: list[str]) -> int:
+    bases, bad = scan_src.bases(argv, ROOT, DEFAULT)
+    files, issues, counts, pending = _scan_all(bases)
+    issues += bad
+    review = _review(pending, counts)
     for path, no, name in review:
         print(f"{path}:{no}: D100 pub {name} 无外部引用（人工复核）")
     print(f"dead-code: {files} file(s), {issues} issue(s), "

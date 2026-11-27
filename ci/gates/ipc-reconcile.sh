@@ -22,19 +22,14 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 # shellcheck source=../lib/log.sh
 . "${ROOT}/ci/lib/log.sh"
+# shellcheck source=../lib/verify.sh
+. "${ROOT}/ci/lib/verify.sh"
 
 IPC="${ROOT}/security/ipc"
-SPEC="${ROOT}/distro/specs/airymaxos-system.spec"
-FLOW="${ROOT}/.github/workflows/security-verify.yml"
-BUDGET="${ROOT}/ci/baseline/workflow-budgets.txt"
 
-need_cmd cmake
-need_cmd ctest
-need_cmd gcc
-need_cmd make
+need_cmd cmake ctest gcc make
 
-WORK="$(mktemp -d)"
-trap 'rm -rf "${WORK}"' EXIT
+airy_workdir WORK
 BUILD="${WORK}/build"
 BIN="${BUILD}/ipc/airy-reconcile"
 
@@ -62,30 +57,9 @@ done
 endgroup
 
 # ─── 2. 出树构建与测试 ───────────────────────────────────────────────
-group "ipc-reconcile: 出树构建与测试"
 built=0
-if cmake -S "${ROOT}/security" -B "${BUILD}" \
-    -DCMAKE_BUILD_TYPE=Release >"${WORK}/cmake.log" 2>&1; then
-    if cmake --build "${BUILD}" -j4 >"${WORK}/build.log" 2>&1; then
-        built=1
-    else
-        bad "cmake --build 失败"
-        tail -n 40 "${WORK}/build.log" >&2
-    fi
-else
-    bad "cmake 配置失败"
-    tail -n 40 "${WORK}/cmake.log" >&2
-fi
-if [ "${built}" -eq 1 ]; then
-    deny 'warning:' "${WORK}/build.log" "构建出现警告"
-    if ctest --test-dir "${BUILD}" --output-on-failure \
-        >"${WORK}/ctest.log" 2>&1; then
-        say "ctest 全绿"
-    else
-        bad "ctest 未全绿"
-        tail -n 40 "${WORK}/ctest.log" >&2
-    fi
-fi
+group "ipc-reconcile: 出树构建与测试"
+airy_build_test "${ROOT}/security" "${BUILD}" security && built=1
 endgroup
 
 # ─── 3. CLI 行为 ─────────────────────────────────────────────────────
@@ -125,22 +99,8 @@ endgroup
 
 # ─── 4. 打包与流水线接线 ─────────────────────────────────────────────
 group "ipc-reconcile: 安装接线"
-have '^Source107:[[:space:]]+security-%\{version\}\.tar\.gz$' \
-    "${SPEC}" "spec 未登记 security 源码束"
-have '^# spec-lint: source-bundle ../../security$' \
-    "${SPEC}" "spec-lint 未声明 security 源码束"
-have 'tar -xzf %\{SOURCE107\}' "${SPEC}" "spec 未解包 security 源码束"
-have 'cmake -S security -B security-build' "${SPEC}" \
-    "spec 未做 security 出树构建"
-have 'security-build/ipc/airy-reconcile' "${SPEC}" \
-    "spec 未从 security 构建树安装 reconcile CLI"
-have '%\{_sbindir\}/airy-reconcile' "${SPEC}" "spec 未安装 CLI"
-
-have 'ipc-reconcile\.sh' "${FLOW}" "workflow 未监听门禁脚本"
-have '^  ipc:' "${FLOW}" "workflow 未新增 ipc 作业"
-have 'ci/ci\.sh ipc-reconcile' "${FLOW}" "workflow 未调用门禁"
-have '^security-verify\.yml[[:space:]]+0[[:space:]]+[0-9]+$' "${BUDGET}" \
-    "workflow 预算未登记 security-verify"
+airy_security_wire ipc-reconcile ipc ipc-reconcile \
+    'security-build/ipc/airy-reconcile' '%\{_sbindir\}/airy-reconcile'
 endgroup
 
 # ─── 5. 源码树卫生 ───────────────────────────────────────────────────

@@ -71,3 +71,69 @@ airy_build()
     endgroup
     [ "${rc}" -eq 0 ] || die "${label} 构建失败（构建目录 ${build}）"
 }
+
+# _airy_step <日志> <失败描述> <命令...> —— 跑一步，失败时打印日志尾部。
+_airy_step()
+{
+    local log="$1" label="$2"
+
+    shift 2
+    if "$@" >"${log}" 2>&1; then
+        return 0
+    fi
+    bad "${label}"
+    tail -n 40 "${log}" >&2
+    return 1
+}
+
+# airy_build_test <源码根> <构建根> <标签>
+#
+# 出树配置 → 全量构建 → 零警告 → ctest。任一步失败记一次 bad 并返回 1，
+# 调用方据此决定后续行为断言是否还有意义（构建没成就没有二进制可跑）。
+airy_build_test()
+{
+    local src="$1" build="$2" label="$3" log rc=0
+
+    log="$(mktemp)"
+    if _airy_step "${log}" "${label} 配置失败" \
+            cmake -S "${src}" -B "${build}" -DCMAKE_BUILD_TYPE=Release &&
+       _airy_step "${log}" "${label} 构建失败" \
+            cmake --build "${build}" --parallel; then
+        deny 'warning:' "${log}" "${label} 构建出现警告"
+        _airy_step "${log}" "${label} ctest 未全绿" \
+            ctest --test-dir "${build}" --output-on-failure || rc=1
+    else
+        rc=1
+    fi
+    rm -f "${log}"
+    return "${rc}"
+}
+
+# airy_security_wire <标签> <作业名> <门禁名> [spec 断言...]
+#
+# security 模块在 spec 与 security-verify 流水线里的接线是同一组断言：
+# 源码束登记与解包、出树构建、按 target 安装、作业与预算。两个门禁曾逐字
+# 各抄一份，改了配方只更新一处就漏一处；这里只留一份，模块自己的产物断言
+# 由调用方作为余下参数追加。
+airy_security_wire()
+{
+    local label="$1" job="$2" gate="$3"
+    local spec="${ROOT}/distro/specs/airymaxos-system.spec"
+    local flow="${ROOT}/.github/workflows/security-verify.yml"
+    local budget="${ROOT}/ci/baseline/workflow-budgets.txt"
+    local pattern
+
+    shift 3
+    for pattern in \
+        '^Source107:[[:space:]]+security-%\{version\}\.tar\.gz$' \
+        '^# spec-lint: source-bundle \.\./\.\./security$' \
+        'tar -xzf %\{SOURCE107\}' \
+        'cmake -S security -B security-build' "$@"; do
+        have "${pattern}" "${spec}" "${label}: spec 缺少 ${pattern}"
+    done
+    have "${gate}\.sh" "${flow}" "${label}: workflow 未监听门禁"
+    have "^  ${job}:" "${flow}" "${label}: workflow 未新增 ${job} 作业"
+    have "ci/ci\.sh ${gate}" "${flow}" "${label}: workflow 未调用门禁"
+    have '^security-verify\.yml[[:space:]]+0[[:space:]]+[0-9]+$' "${budget}" \
+        "${label}: 预算未登记 security-verify"
+}

@@ -45,7 +45,9 @@
 #     awk」误读成「shell 有多绕」；
 #     嵌套定义的判定点只计入它自己，不摊给外层；
 #   · 重复窗口按内容登记：改名会让旧窗口退役、新窗口登记，因此 --update
-#     只比总量——数量不增即可换登记，数量增加即判红。
+#     只比总量——数量不增即可换登记，数量增加即判红；
+#   · 全由 import 组成的窗口不计重复：import 是声明不是逻辑，两个模块从
+#     标准库取同样几个名字，判红只会逼人把 import 拆散或改写。
 #
 # 退出码: 0 通过（或已更新基线）；1 有判据不满足；2 参数不合法。
 # ===========================================================================
@@ -78,6 +80,7 @@ PY_DEF = (ast.FunctionDef, ast.AsyncFunctionDef)
 DOC_NODES = PY_DEF + (ast.Module, ast.ClassDef)
 PY_STEP = (ast.If, ast.For, ast.AsyncFor, ast.While, ast.IfExp,
            ast.Assert, ast.ExceptHandler)
+PY_IMPORT = re.compile(r"^(?:from\s+\S+\s+import\s+.+|import\s+\S+)$")
 SH_DEF = re.compile(r"^\s*(?:function\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*\)")
 SH_STEP = re.compile(r"(?<![\w-])(?:if|elif|for|while|until|case)(?![\w-])|&&|\|\|")
 SCAFFOLD = frozenset(("fi", "done", "then", "else", "esac", "do", "{", "}"))
@@ -262,6 +265,23 @@ def rs_close(raw, indent):
             and raw.lstrip().startswith("}"))
 
 
+def _rs_open(hit, raw):
+    """拆出定义行的函数名、缩进与同行剩余正文。"""
+    name = hit.group(2)
+    indent = len(hit.group(1))
+    return name, indent, raw[hit.end():]
+
+
+def _rs_inline(name, body):
+    """同行有体就地结算：声明返回 None，单行函数返回 (名称, cc)，
+    需要按缩进继续扫描的多行体重返 False。"""
+    if body.strip().endswith(";"):
+        return None
+    if "{" in body and "}" in body:
+        return (name, 1 + len(RS_STEP.findall(body)))
+    return False
+
+
 def rs_funcs(lines):
     """按缩进分段取函数圈复杂度；无体的声明行（`;` 结尾）不计。
 
@@ -274,13 +294,14 @@ def rs_funcs(lines):
         if hit:
             if name:
                 out.append((name, cc))
-            name, indent, cc = hit.group(2), len(hit.group(1)), 1
-            body = raw[hit.end():]
-            if body.strip().endswith(";"):
-                name, cc = None, 1
-            elif "{" in body and "}" in body:
-                out.append((name, 1 + len(RS_STEP.findall(body))))
-                name, cc = None, 1
+            name, indent, body = _rs_open(hit, raw)
+            cc = 1
+            inline = _rs_inline(name, body)
+            if inline is None:
+                name = None
+            elif inline:
+                out.append(inline)
+                name = None
             continue
         if name is None:
             continue
@@ -301,11 +322,24 @@ def rs_scan(path):
     return rs_funcs(plain), norm(plain, marks=RS_MARKS, pad=RS_PAD)
 
 
-def windows(lines):
-    """连续 WINDOW 行窗口的摘要，用于重复片段登记。"""
+def windows(lines, skip=frozenset()):
+    """连续 WINDOW 行窗口的摘要，用于重复片段登记。
+
+    skip 是「不计入重复」的行下标：全为 import 的窗口只有声明、没有逻辑，
+    两个模块都从标准库取同样几个名字不构成复制粘贴。把这种窗口判红，唯一
+    的改法是把 import 拆散或换写法，只会让代码更难读。
+    """
     for i in range(len(lines) - WINDOW + 1):
+        if skip and all(j in skip for j in range(i, i + WINDOW)):
+            continue
         blob = "\n".join(lines[i:i + WINDOW])
         yield hashlib.sha1(blob.encode("utf-8")).hexdigest()
+
+
+def py_imports(rows):
+    """规范化行里纯 import 的下标集合。"""
+    return frozenset(i for i, row in enumerate(rows)
+                     if PY_IMPORT.match(row))
 
 
 def scan(roots):
@@ -313,9 +347,11 @@ def scan(roots):
     funcs, dup, lines, bad = [], Counter(), 0, 0
     for base in roots:
         for path in scan_src.sources(base):
+            skip = frozenset()
             try:
                 if path.suffix == ".py":
                     got, rows = py_scan(path)
+                    skip = py_imports(rows)
                 elif path.suffix == ".rs":
                     got, rows = rs_scan(path)
                 else:
@@ -327,7 +363,7 @@ def scan(roots):
                 continue
             lines += len(rows)
             funcs += [(str(path), name, cc) for name, cc in got]
-            dup.update(windows(rows))
+            dup.update(windows(rows, skip))
     return funcs, dup, lines, bad
 
 
@@ -409,26 +445,32 @@ def check(funcs, dup, base):
     return fails
 
 
-def update(funcs, dup, base, path, fresh):
-    """只减不增：数量增加即拒绝，同量换登记（改名）放行；首次建档不受此限。"""
-    over = over_names(funcs)
-    hashes = sorted(dup_hashes(dup))
-    fails = 0
+def _gate_over(over, base, fresh):
     if not fresh and len(over) > len(base["over"]):
-        fails += 1
         print("quality/cc: 超标函数 %d -> %d，基线只降不升"
               % (len(base["over"]), len(over)))
+        return 1
+    return 0
+
+
+def _gate_dup(hashes, base, fresh):
     if not fresh and len(hashes) > len(base["dup"]):
-        fails += 1
         print("quality/dup: 重复窗口 %d -> %d，基线只降不升"
               % (len(base["dup"]), len(hashes)))
+        return 1
+    return 0
+
+
+def _gate_mean(funcs, base, fresh):
     rise = mean_rise(funcs, base)
     if not fresh and rise:
-        fails += 1
         print("quality/mean: 均值 %.2f -> %.2f，基线只降不升"
               % (rise[2], rise[3]))
-    if fails:
-        return fails
+        return 1
+    return 0
+
+
+def _write_base(over, hashes, funcs, base, path):
     for name in sorted(set(over) - set(base["over"])):
         print("登记超标函数: %s" % name)
     for name in sorted(set(base["over"]) - set(over)):
@@ -440,6 +482,18 @@ def update(funcs, dup, base, path, fresh):
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n",
                     encoding="utf-8")
     print("基线已写入 %s" % path)
+
+
+def update(funcs, dup, base, path, fresh):
+    """只减不增：数量增加即拒绝，同量换登记（改名）放行；首次建档不受此限。"""
+    over = over_names(funcs)
+    hashes = sorted(dup_hashes(dup))
+    fails = (_gate_over(over, base, fresh)
+             + _gate_dup(hashes, base, fresh)
+             + _gate_mean(funcs, base, fresh))
+    if fails:
+        return fails
+    _write_base(over, hashes, funcs, base, path)
     return 0
 
 
