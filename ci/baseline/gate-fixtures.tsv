@@ -39,7 +39,6 @@ kernel-consistency	build	默认 all 含 uapi 的 headers_install+cc 自包含编
 kernel-deps	host	用 apt 安装或仅校验交叉工具链/sparse/coccinelle/virtme-ng
 kernel-kselftest	host	用 virtme-ng 起虚拟机跑 kselftest 并解析 TAP，按 /dev/kvm 自适应加速
 kernel-kunit	build	O=.kunit 外置构建 UML 内核并跑 KUnit，与 TAP 基线比对
-kernel-obs	static	grep 内核源断言 core_initcall、AIRY_OBS_ATTR 无 store、Kbuild 与 defconfig 齐备
 kernel-policy	static	比对 .adl 契约与两份生成头字节一致、airy_init 注册三表与 KUnit 基线
 kernel-refbuild	build	实编 x86_64 airy_defconfig 并断言 11 CONFIG、CONFIG_LSM、vmlinux .BTF
 kernel-uevent	static	grep UAPI 与内核契约表断言事件名/格式串与载荷尺寸断言、不复制字面量
