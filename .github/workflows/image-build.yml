@@ -48,8 +48,9 @@
 #   * 源码以只读方式挂载进构建容器，产物只落 $RUNNER_TEMP/out，不违反
 #     「严禁在 airymaxhub 源码区内构建」。
 #   * 子模块由 ci/gates/submodules.sh 按读点取：装机腿取 distro 与 system，
-#     组装段再加 services 与 kernel（配方把二者归档为源码包，UAPI 头是编译
-#     输入）。递归 checkout 会多拉五棵树，它们不进产物，只抬固定开销（W-1）。
+#     组装段再按 distro/specs 的 source-root 与 source-bundle 声明补齐
+#     services、kernel 与随系统包发行的源码树（安全、云原生、认知）。递归
+#     checkout 会多拉不读的子树，它们不进产物，只抬固定开销（W-1）。
 #   * ISO 基线固定为 openEuler 24.03-LTS-SP3 netinst，容器镜像取官方
 #     docker_img tar；两条腿各取本架构官方件，文件名、URL 与 sha256 同时
 #     写死在矩阵项里，禁止浮动 latest。
